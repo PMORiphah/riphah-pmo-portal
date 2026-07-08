@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Navy rounded background -->
+  <rect width="32" height="32" rx="6" fill="#185078"/>
+
+  <!-- Gold top accent line -->
+  <rect x="0" y="0" width="32" height="3" rx="2" fill="#D89840"/>
+
+  <!-- Bar chart icon — 3 bars in gold representing CAPEX data -->
+  <!-- Left bar (short) -->
+  <rect x="4" y="18" width="6" height="11" rx="1.5" fill="#D89840" opacity="0.7"/>
+  <!-- Centre bar (tallest) -->
+  <rect x="13" y="10" width="6" height="19" rx="1.5" fill="#D89840"/>
+  <!-- Right bar (medium) -->
+  <rect x="22" y="14" width="6" height="15" rx="1.5" fill="#D89840" opacity="0.85"/>
+</svg>
