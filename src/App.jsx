@@ -71,7 +71,8 @@ const STAGE = {
   approved:  { label:"Approved",    light:"#2DD4BF", dark:"rgba(45,212,191,0.15)" },
   closed:    { label:"Closed",      light:"#6B7280", dark:"rgba(107,114,128,0.15)" },
 };
-const PRIORITY = { high:"#F87171", medium:"#F59E0B", low:"#60A5FA" };
+const PRIORITY = { top_priority:"#F87171", first_priority:"#F59E0B", second_priority:"#60A5FA", third_priority:"#94A3B8", carry_forward:"#A855F7" };
+const PRIORITY_LABEL = { top_priority:"Top Priority", first_priority:"First Priority", second_priority:"2nd Priority", third_priority:"3rd Priority", carry_forward:"Carry Forward" };
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 const NAV = [
@@ -744,7 +745,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 <td style={td}>
                   <span style={{ display:"inline-flex", alignItems:"center", gap:5 }}>
                     <span style={{ width:7, height:7, borderRadius:"50%", background:PRIORITY[p.priority]||"#aaa" }}/>
-                    <span style={{ fontSize:11, color:T.muted, textTransform:"capitalize" }}>{p.priority||"—"}</span>
+                    <span style={{ fontSize:11, color:T.muted }}>{PRIORITY_LABEL[p.priority]||"—"}</span>
                   </span>
                 </td>
               </tr>
@@ -1006,7 +1007,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     sector_id:project?.sector_id||"", region_id:project?.region_id||"",
     segment_id:project?.segment_id||"", cost_center_id:project?.cost_center_id||"",
     campus:project?.campus||"",
-    project_type:project?.project_type||"", priority:project?.priority||"medium",
+    project_type:project?.project_type||"", priority:project?.priority||"",
     workflow_stage:project?.workflow_stage||"identified",
     is_carry_forward:project?.is_carry_forward||false, payments_pending:project?.payments_pending||false,
     scope_change:project?.scope_change||false,
@@ -1035,7 +1036,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         sector_id:form.sector_id||null, region_id:form.region_id||null,
         segment_id:form.segment_id||null, cost_center_id:form.cost_center_id||null,
         campus:form.campus||null,
-        project_type:form.project_type||null, start_date:form.start_date||null,
+        project_type:form.project_type||null, priority:form.priority||null, start_date:form.start_date||null,
         end_date:form.end_date||null,
         actual_start_date:form.actual_start_date||null, actual_end_date:form.actual_end_date||null,
         notes:form.notes||null,
@@ -1092,7 +1093,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
           <Col flex={2}><label style={lbl}>Cost Centre</label><select value={form.cost_center_id} onChange={e=>set("cost_center_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.cost_centers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Col>
           <Col flex={2}><label style={lbl}>Campus / Site</label><input type="text" value={form.campus} onChange={e=>set("campus",e.target.value)} placeholder="e.g. Islamabad Campus, I-14" style={inp}/></Col>
           <Col><label style={lbl}>Project Type</label><input value={form.project_type} onChange={e=>set("project_type",e.target.value)} placeholder="e.g. Construction" style={inp}/></Col>
-          <Col><label style={lbl}>Priority</label><select value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></Col>
+          <Col><label style={lbl}>Priority</label><select value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="">— None —</option><option value="top_priority">Top Priority</option><option value="first_priority">First Priority</option><option value="second_priority">2nd Priority</option><option value="third_priority">3rd Priority</option><option value="carry_forward">Carry Forward</option></select></Col>
         </Row>
 
         <Sec T={T} title="Workflow"/>
@@ -1277,7 +1278,7 @@ function downloadTemplate() {
     "New Academic Block - Islamabad", // Project Name
     40,                    // Approved Budget (M)
     "Academic",            // Segment
-    "high",                // Priority
+    "top_priority",         // Priority
     "Infrastructure Development", // Strategic Priority
     "approved",            // Stage
     40, 40,               // SU Requested, DF Recommended
@@ -1421,12 +1422,18 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
         const key = String(s).toLowerCase().trim();
         return STAGE_ALIASES[key] || (["pdd_not_submitted","identified","df_review","ed_review","mt_review","approved","closed"].includes(key) ? key : "identified");
       };
-      // Priority: blank stays null — don't default to medium
+      // Priority: blank stays null — don't default to any value
+      const PRIO_ALIASES = {
+        "top_priority":"top_priority", "top priority":"top_priority", "top":"top_priority",
+        "first_priority":"first_priority", "first priority":"first_priority", "first":"first_priority", "1st":"first_priority", "1st priority":"first_priority",
+        "second_priority":"second_priority", "second priority":"second_priority", "second":"second_priority", "2nd":"second_priority", "2nd priority":"second_priority",
+        "third_priority":"third_priority", "third priority":"third_priority", "third":"third_priority", "3rd":"third_priority", "3rd priority":"third_priority",
+        "carry_forward":"carry_forward", "carry forward":"carry_forward", "carryforward":"carry_forward",
+      };
       const validPrio = p => {
         if (!p || !String(p).trim()) return null;
         const key = String(p).toLowerCase().trim();
-        if (["low","medium","med","high"].includes(key)) return key === "med" ? "medium" : key;
-        return null;
+        return PRIO_ALIASES[key] || null;
       };
       const toInsert = parsed.map(r => ({
         code:r.code, name:r.name,
@@ -1825,9 +1832,11 @@ function ProjectsPage({ T, session, onSelectProject }) {
                   <td style={fc}>
                     <select value={fPri} onChange={e=>setFPri(e.target.value)} style={highlight(fPri)}>
                       <option value="">All</option>
-                      <option value="high">High</option>
-                      <option value="medium">Medium</option>
-                      <option value="low">Low</option>
+                      <option value="top_priority">Top Priority</option>
+                      <option value="first_priority">First Priority</option>
+                      <option value="second_priority">2nd Priority</option>
+                      <option value="third_priority">3rd Priority</option>
+                      <option value="carry_forward">Carry Forward</option>
                     </select>
                   </td>
                   <td style={fc}>
@@ -1860,7 +1869,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                 <td style={{...td,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
                 <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:GOLD}}>{fmtM(p.bac)}</td>
                 <td style={{...td,fontSize:12,color:T.muted}}>{p.sectors?.name||"—"}</td>
-                <td style={td}><span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY[p.priority]||"#aaa"}}/><span style={{fontSize:12,color:T.muted,textTransform:"capitalize"}}>{p.priority||"—"}</span></span></td>
+                <td style={td}><span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY[p.priority]||"#aaa"}}/><span style={{fontSize:12,color:T.muted}}>{PRIORITY_LABEL[p.priority]||"—"}</span></span></td>
                 <td style={{...td,fontSize:12,color:T.muted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.strategic_priority||"—"}</td>
                 <td style={td}><StageBadge stage={p.workflow_stage}/></td>
                 {isPMO&&(
@@ -2489,7 +2498,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             )}
             {evm.is_carry_forward && <span style={{fontSize:9, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"3px 8px", borderRadius:6}}>CARRY FORWARD</span>}
             <span style={{fontSize:12, fontWeight:600, color:stc, background:`${stc}20`, padding:"4px 12px", borderRadius:20}}>{stLabel}</span>
-            <span style={{fontSize:12, color:T.muted, textTransform:"capitalize"}}>{evm.priority} priority</span>
+            {evm.priority && <span style={{fontSize:12, color:T.muted}}>{PRIORITY_LABEL[evm.priority]||evm.priority}</span>}
           </div>
         </div>
       </div>
