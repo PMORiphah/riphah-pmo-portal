@@ -1605,7 +1605,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const [data, sectors, regions, segments, cost_centers] = await Promise.all([
-        supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,sectors(name),regions(name),segments(name)&order=code.asc",{},session.access_token),
+        supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
         supa("/rest/v1/sectors?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/regions?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/segments?select=id,name&order=name.asc",{},session.access_token),
@@ -1792,6 +1792,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
               <th style={th}>Priorities</th>
               <th style={{...th,minWidth:160}}>Strategic Priorities</th>
               <th style={th}>Stage</th>
+              <th style={th}>Cost Centre</th>
               {isPMO&&<th style={{...th,textAlign:"center",width:80}}>Actions</th>}
             </tr>
             {/* Filter row */}
@@ -1848,6 +1849,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                       {Object.entries(STAGE).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                     </select>
                   </td>
+                  <td style={fc}></td>
                   {isPMO&&<td style={fc}></td>}
                 </tr>
               );
@@ -1872,6 +1874,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                 <td style={td}><span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY[p.priority]||"#aaa"}}/><span style={{fontSize:12,color:T.muted}}>{PRIORITY_LABEL[p.priority]||"—"}</span></span></td>
                 <td style={{...td,fontSize:12,color:T.muted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.strategic_priority||"—"}</td>
                 <td style={td}><StageBadge stage={p.workflow_stage}/></td>
+                <td style={{...td,fontSize:12,color:T.muted}}>{p.cost_centers?.name||"—"}</td>
                 {isPMO&&(
                   <td style={{...td,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
                     {confirmDel?.id===p.id?(
