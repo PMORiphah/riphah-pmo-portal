@@ -993,6 +993,10 @@ function StageBadge({ stage, size = 11 }) {
 }
 
 // ─── PROJECT FORM MODAL (add / edit) ─────────────────────────────────────────
+const Sec = ({T,title})=><div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",margin:"14px 0 10px",paddingBottom:6,borderBottom:`1px solid ${T.border}`}}>{title}</div>;
+const Row = ({children,mb=14})=><div style={{display:"flex",gap:12,marginBottom:mb}}>{children}</div>;
+const Col = ({children,flex=1})=><div style={{flex}}>{children}</div>;
+
 function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
   const isEdit = !!project;
   const initForm = () => ({
@@ -1062,9 +1066,6 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
   const inp = {background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",outline:"none",width:"100%",boxSizing:"border-box"};
   const sel = {...inp,cursor:"pointer"};
   const lbl = {display:"block",fontSize:10,fontWeight:700,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:5};
-  const Sec = ({title})=><div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",margin:"14px 0 10px",paddingBottom:6,borderBottom:`1px solid ${T.border}`}}>{title}</div>;
-  const Row = ({children,mb=14})=><div style={{display:"flex",gap:12,marginBottom:mb}}>{children}</div>;
-  const Col = ({children,flex=1})=><div style={{flex}}>{children}</div>;
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -1075,13 +1076,13 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         </div>
         {err&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:7,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#F87171",fontSize:13,display:"flex",gap:8}}><span>⚠</span>{err}</div>}
 
-        <Sec title="Basic"/>
+        <Sec T={T} title="Basic"/>
         <Row>
           <Col flex={1}><label style={lbl}>Code *</label><input value={form.code} onChange={e=>set("code",e.target.value)} placeholder="PRJ-2627-099" style={inp}/></Col>
           <Col flex={3}><label style={lbl}>Name *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Project name" style={inp}/></Col>
         </Row>
 
-        <Sec title="Classification"/>
+        <Sec T={T} title="Classification"/>
         <Row>
           <Col><label style={lbl}>Segment</label><select value={form.sector_id} onChange={e=>set("sector_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.sectors.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Col>
           <Col><label style={lbl}>Region</label><select value={form.region_id} onChange={e=>set("region_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.regions.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></Col>
@@ -1094,7 +1095,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
           <Col><label style={lbl}>Priority</label><select value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></Col>
         </Row>
 
-        <Sec title="Workflow"/>
+        <Sec T={T} title="Workflow"/>
         <Row mb={0}>
           <Col flex={2}><label style={lbl}>Stage</label><select value={form.workflow_stage} onChange={e=>set("workflow_stage",e.target.value)} style={sel}><option value="pdd_not_submitted">PDD Not Submitted</option><option value="identified">PDD Submitted</option><option value="df_review">DF Review</option><option value="ed_review">ED Review</option><option value="mt_review">MT Review</option><option value="approved">Approved</option><option value="closed">Closed</option></select></Col>
           <Col>
@@ -1106,7 +1107,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
           </Col>
         </Row>
 
-        <Sec title="Financials (PKR Millions)"/>
+        <Sec T={T} title="Financials (PKR Millions)"/>
         <Row>
           <Col><label style={lbl}>SU Requested</label><input type="number" step="0.1" value={form.su_requested_amount} onChange={e=>set("su_requested_amount",e.target.value)} style={inp}/></Col>
           <Col><label style={lbl}>DF Recommended</label><input type="number" step="0.1" value={form.df_recommended_amount} onChange={e=>set("df_recommended_amount",e.target.value)} style={inp}/></Col>
@@ -1119,7 +1120,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
           <Col/>
         </Row>
 
-        <Sec title="Schedule"/>
+        <Sec T={T} title="Schedule"/>
         <Row>
           <Col><label style={lbl}>Planned Start Date</label><input type="date" value={form.start_date} onChange={e=>set("start_date",e.target.value)} style={inp}/></Col>
           <Col><label style={lbl}>Planned End Date</label><input type="date" value={form.end_date} onChange={e=>set("end_date",e.target.value)} style={inp}/></Col>
@@ -1133,12 +1134,12 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
           <Col><label style={lbl}>Budget Status</label><select value={form.manual_budget_flag} onChange={e=>set("manual_budget_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="within">Within Budget</option><option value="over">Over Budget</option></select></Col>
         </Row>
 
-        <Sec title="Additional"/>
+        <Sec T={T} title="Additional"/>
         <Row>
           <Col><label style={lbl}>Fiscal Year</label><input value={form.fiscal_year} onChange={e=>set("fiscal_year",e.target.value)} placeholder="e.g. FY 2026-27" style={inp}/></Col>
           <Col flex={2}><label style={lbl}>Strategic Priority</label><input value={form.strategic_priority} onChange={e=>set("strategic_priority",e.target.value)} placeholder="e.g. Infrastructure Development" style={inp}/></Col>
         </Row>
-        <Sec title="Notes"/>
+        <Sec T={T} title="Notes"/>
         <textarea value={form.notes} onChange={e=>set("notes",e.target.value)} rows={3} placeholder="Additional notes…" style={{...inp,resize:"vertical",lineHeight:1.6,marginBottom:18}}/>
 
         <div style={{display:"flex",gap:10}}>
@@ -1871,7 +1872,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                       </div>
                     ):(
                       <div style={{display:"flex",gap:6,justifyContent:"center"}}>
-                        <button onClick={()=>{setEditProject(p);setShowForm(true);}} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}} title="Edit"><Edit2 size={13}/></button>
+                        <button onClick={async ()=>{ const full = await supa(`/rest/v1/projects?id=eq.${p.id}&select=*`,{},session.access_token); setEditProject(full[0]||p); setShowForm(true); }} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}} title="Edit"><Edit2 size={13}/></button>
                         <button onClick={()=>startDelete(p)} style={{background:"none",border:"none",cursor:"pointer",color:"#F87171",display:"flex",padding:2,opacity:.65}} title="Delete"><Trash2 size={13}/></button>
                       </div>
                     )}
