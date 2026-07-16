@@ -210,7 +210,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
           <input value={eSub} onChange={e=>setESub(e.target.value)} placeholder="Sub-label" style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"4px 8px", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:8 }} />
           <div style={{ display:"flex", gap:5 }}>
             <button onClick={save} disabled={saving} style={{ flex:1, padding:"4px 0", background:NAVY, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer" }}>{saving?"…":"Save"}</button>
-            <button onClick={async ()=>{ setSaving(true); await onSave(kpiKey,{value:"",sub:""}); setSaving(false); setEditing(false); }} style={{ padding:"4px 7px", background:"none", border:"1px solid rgba(45,212,191,0.4)", borderRadius:5, color:"#2DD4BF", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }} title="Clear override — show live data">↺ Live</button>
+            <button onClick={async ()=>{ setSaving(true); await onSave(kpiKey,{value:"",sub:eSub}); setSaving(false); setEditing(false); }} style={{ padding:"4px 7px", background:"none", border:"1px solid rgba(45,212,191,0.4)", borderRadius:5, color:"#2DD4BF", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }} title="Reset value to live — keeps your custom sub-label">↺ Live</button>
             <button onClick={cancel} style={{ padding:"4px 7px", background:"none", border:"1px solid "+T.border, borderRadius:5, color:T.muted, fontSize:11, cursor:"pointer" }}>✕</button>
           </div>
         </div>
