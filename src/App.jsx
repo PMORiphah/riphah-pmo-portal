@@ -3367,15 +3367,17 @@ const buildTree = comments => {
 
 function CommentBubble({ T, comment, replies, onReply, depth }) {
   const ROLE = { pmo:{ c:GOLD, label:"Admin" }, project_manager:{ c:"#60A5FA", label:"PM" }, guest:{ c:"#9CA3AF", label:"Guest" } };
-  const rc   = ROLE[comment.user_profiles?.role] || { c:"#9CA3AF", label:"?" };
-  const deleted = !comment.author_id || !comment.user_profiles;
-  const init = deleted ? "✕" : (comment.user_profiles?.username || "?")[0].toUpperCase();
+  const role = comment.author_role || comment.user_profiles?.role;
+  const rc   = ROLE[role] || { c:"#9CA3AF", label:"?" };
+  const name = comment.author_name || comment.user_profiles?.full_name || comment.user_profiles?.username;
+  const deleted = !name;
+  const init = deleted ? "✕" : name[0].toUpperCase();
   return (
     <div style={{ marginLeft: depth ? 36 : 0, marginBottom:10 }}>
       <div style={{ background:T.card2, borderRadius:10, padding:"11px 14px", border:`1px solid ${T.border}` }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
           <div style={{ width:26, height:26, borderRadius:"50%", background:NAVY, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>{init}</div>
-          <span style={{ fontSize:13, fontWeight:600, color:deleted ? T.dim : T.text }}>{deleted ? "Deleted User" : (comment.user_profiles?.full_name || comment.user_profiles?.username)}</span>
+          <span style={{ fontSize:13, fontWeight:600, color:deleted ? T.dim : T.text }}>{deleted ? "Deleted User" : name}</span>
           <span style={{ fontSize:10, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"2px 8px", borderRadius:20 }}>{rc.label}</span>
           <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{timeAgo(comment.created_at)}</span>
         </div>
@@ -3403,7 +3405,7 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
     <div style={{ padding:"14px 20px", borderTop:`1px solid ${T.border}`, flexShrink:0, background:T.headerBg }}>
       {replyingTo && (
         <div style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", background:T.card2, borderRadius:6, marginBottom:8, fontSize:12, color:T.muted }}>
-          <span>↩ Replying to <strong style={{ color:T.text }}>{replyingTo.user_profiles?.username || "Deleted User"}</strong></span>
+          <span>↩ Replying to <strong style={{ color:T.text }}>{replyingTo.author_name || replyingTo.user_profiles?.full_name || replyingTo.user_profiles?.username || "Deleted User"}</strong></span>
           <button onClick={onCancelReply} style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", color:T.dim, fontSize:16, padding:0, lineHeight:1 }}>×</button>
         </div>
       )}
@@ -3444,7 +3446,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault }) {
     try {
       const [projData, sumData] = await Promise.all([
         supa("/rest/v1/projects?select=id,code,name&order=code.asc", {}, session.access_token),
-        supa("/rest/v1/comments?select=id,project_id,is_read_by_pmo,created_at,user_profiles(role)&order=created_at.desc", {}, session.access_token),
+        supa("/rest/v1/comments?select=id,project_id,is_read_by_pmo,created_at,author_role,user_profiles(role)&order=created_at.desc", {}, session.access_token),
       ]);
       setProjects(projData);
       setSummary(sumData);
@@ -3470,14 +3472,14 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault }) {
     setLoadingThread(true); setThread([]);
     try {
       const data = await supa(
-        `/rest/v1/comments?project_id=eq.${id}&select=id,body,parent_id,is_read_by_pmo,created_at,user_profiles(username,full_name,role)&order=created_at.asc`,
+        `/rest/v1/comments?project_id=eq.${id}&select=id,body,parent_id,author_id,author_name,author_role,is_read_by_pmo,created_at,user_profiles(username,full_name,role)&order=created_at.asc`,
         {}, session.access_token
       );
       setThread(data);
 
       // PMO: mark unread as read
       if (session.role === "pmo") {
-        const unread = data.filter(c => !c.is_read_by_pmo && c.user_profiles?.role !== "pmo");
+        const unread = data.filter(c => !c.is_read_by_pmo && (c.author_role || c.user_profiles?.role) !== "pmo");
         if (unread.length > 0) {
           await supa(`/rest/v1/comments?project_id=eq.${id}&is_read_by_pmo=eq.false`,
             { method:"PATCH", body:JSON.stringify({is_read_by_pmo:true}), headers:{"Prefer":"return=minimal"} },
@@ -3502,7 +3504,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault }) {
     try {
       await supa("/rest/v1/comments", {
         method:"POST",
-        body: JSON.stringify({ project_id:selId, author_id:session.user_id, body:body.trim(), parent_id:replyingTo?.id||null }),
+        body: JSON.stringify({ project_id:selId, author_id:session.user_id, author_name:(session.full_name||session.username), author_role:session.role, body:body.trim(), parent_id:replyingTo?.id||null }),
         headers:{"Prefer":"return=minimal"},
       }, session.access_token);
       setBody(""); setReplyingTo(null);
@@ -3518,7 +3520,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault }) {
     summary.forEach(c => {
       if (!m[c.project_id]) m[c.project_id] = { total:0, unread:0, lastAt:null };
       m[c.project_id].total++;
-      if (!c.is_read_by_pmo && c.user_profiles?.role !== "pmo") m[c.project_id].unread++;
+      if (!c.is_read_by_pmo && (c.author_role || c.user_profiles?.role) !== "pmo") m[c.project_id].unread++;
       if (!m[c.project_id].lastAt || c.created_at > m[c.project_id].lastAt) m[c.project_id].lastAt = c.created_at;
     });
     return m;
