@@ -88,7 +88,7 @@ const PMO_NAV = [
   { id:"set",   Icon:Settings, label:"Settings" },
 ];
 
-function Sidebar({ page, setPage, session, onChangePassword }) {
+function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword }) {
   const navItems = session?.role === "project_manager" ? NAV.filter(n => n.id !== "cmd") : NAV;
   return (
     <div style={{
@@ -113,7 +113,12 @@ function Sidebar({ page, setPage, session, onChangePassword }) {
             transition:"all .12s",
           }}>
             <Icon size={16} strokeWidth={page===id ? 2 : 1.5} />
-            {label}
+            <span style={{ flex:1 }}>{label}</span>
+            {id==="upd" && unreadCount>0 && (
+              <span style={{ minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:"#F87171", color:"#fff", fontSize:10.5, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", boxSizing:"border-box" }}>
+                {unreadCount>99 ? "99+" : unreadCount}
+              </span>
+            )}
           </div>
         ))}
         {session?.role === "pmo" && (
@@ -3428,7 +3433,7 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
   );
 }
 
-function UpdatesPage({ T, session, defaultProjectId, onClearDefault }) {
+function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChange }) {
   const [projects,       setProjects]       = useState([]);
   const [summary,        setSummary]        = useState([]); // {id, project_id, is_read_by_pmo, created_at, user_profiles:{role}}
   const [userAssignments,setUserAssignments]= useState(new Set());
@@ -3477,7 +3482,21 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault }) {
       );
       setThread(data);
 
-      // PMO: mark unread as read
+      // Mark any comments I haven't read (and didn't write) as read — for ALL roles.
+      const myReads = await supa(`/rest/v1/comment_reads?select=comment_id`, {}, session.access_token);
+      const readSet = new Set((myReads||[]).map(r => r.comment_id));
+      const toMark = data.filter(c => c.author_id !== session.user_id && !readSet.has(c.id));
+      if (toMark.length > 0) {
+        await supa("/rest/v1/comment_reads",
+          { method:"POST",
+            body:JSON.stringify(toMark.map(c => ({ user_id: session.user_id, comment_id: c.id }))),
+            headers:{ "Prefer":"resolution=ignore-duplicates,return=minimal" } },
+          session.access_token
+        );
+        onReadChange?.();
+      }
+
+      // Legacy PMO inbox flag — keep in sync so the Inbox tab still works
       if (session.role === "pmo") {
         const unread = data.filter(c => !c.is_read_by_pmo && (c.author_role || c.user_profiles?.role) !== "pmo");
         if (unread.length > 0) {
@@ -3490,7 +3509,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault }) {
       }
     } catch(_) {}
     setLoadingThread(false);
-  }, [session.access_token, session.role, loadSummary]);
+  }, [session.access_token, session.role, session.user_id, loadSummary, onReadChange]);
 
   const selectProject = useCallback(p => {
     setSelId(p.id); setSelProject(p); setReplyingTo(null); setBody("");
@@ -4532,6 +4551,30 @@ export default function App() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [discussionProjectId, setDiscussionProjectId] = useState(null); // {token, type}
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadTick, setUnreadTick] = useState(0); // bump to force an immediate refresh
+
+  // Global unread-comment count (for sidebar badge) — polls every 45s.
+  // "Unread for me" = a comment I can see, that I didn't write, and haven't opened yet.
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    const fetchUnread = async () => {
+      try {
+        const [comments, reads] = await Promise.all([
+          supa("/rest/v1/comments?select=id,author_id", {}, session.access_token),
+          supa("/rest/v1/comment_reads?select=comment_id", {}, session.access_token),
+        ]);
+        if (!alive) return;
+        const readSet = new Set((reads||[]).map(r => r.comment_id));
+        const count = (comments||[]).filter(c => c.author_id !== session.user_id && !readSet.has(c.id)).length;
+        setUnreadCount(count);
+      } catch(_) {}
+    };
+    fetchUnread();
+    const iv = setInterval(fetchUnread, 45000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [session?.access_token, session?.user_id, unreadTick]);
 
   // Session expiry timer
   useEffect(() => {
@@ -4598,7 +4641,7 @@ export default function App() {
 
   return (
     <div style={{ display:"flex", height:"100vh", fontFamily:"Inter,sans-serif", background:T.mainBg }}>
-      <Sidebar page={effectivePage} setPage={setPage} session={session} onChangePassword={() => setShowChangePassword(true)} />
+      <Sidebar page={effectivePage} setPage={setPage} session={session} unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)} />
       <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
         <TopBar T={T} title={pageInfo.title} subtitle={pageInfo.subtitle} dark={dark} setDark={setDark} onLogout={handleLogout} />
         {selectedProjectId ? (
@@ -4614,7 +4657,7 @@ export default function App() {
             {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "perf" && <PerformancePage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "upd"  && <UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} />}
+            {effectivePage === "upd"  && <UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} />}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} />}
             {effectivePage === "users" && <UserManagementPage T={T} session={session} />}
