@@ -3448,14 +3448,16 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
 
   // ── Load ────────────────────────────────────────────────────────────────────
   const loadSummary = useCallback(async () => {
+    // Load projects independently so a comments-query failure can't blank the list
     try {
-      const [projData, sumData] = await Promise.all([
-        supa("/rest/v1/projects?select=id,code,name&order=code.asc", {}, session.access_token),
-        supa("/rest/v1/comments?select=id,project_id,is_read_by_pmo,created_at,author_role,user_profiles(role)&order=created_at.desc", {}, session.access_token),
-      ]);
+      const projData = await supa("/rest/v1/projects?select=id,code,name&order=code.asc", {}, session.access_token);
       setProjects(projData);
+    } catch(_) {}
+    try {
+      const sumData = await supa("/rest/v1/comments?select=id,project_id,is_read_by_pmo,created_at,author_role,user_profiles!comments_author_id_fkey(role)&order=created_at.desc", {}, session.access_token);
       setSummary(sumData);
-
+    } catch(_) {}
+    try {
       if (session.role === "project_manager") {
         const assigns = await supa("/rest/v1/project_assignments?select=project_id&user_id=eq."+session.user_id, {}, session.access_token);
         setUserAssignments(new Set(assigns.map(a => a.project_id)));
@@ -3477,7 +3479,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
     setLoadingThread(true); setThread([]);
     try {
       const data = await supa(
-        `/rest/v1/comments?project_id=eq.${id}&select=id,body,parent_id,author_id,author_name,author_role,is_read_by_pmo,created_at,user_profiles(username,full_name,role)&order=created_at.asc`,
+        `/rest/v1/comments?project_id=eq.${id}&select=id,body,parent_id,author_id,author_name,author_role,is_read_by_pmo,created_at,user_profiles!comments_author_id_fkey(username,full_name,role)&order=created_at.asc`,
         {}, session.access_token
       );
       setThread(data);
