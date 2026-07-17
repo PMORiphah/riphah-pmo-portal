@@ -72,7 +72,7 @@ const STAGE = {
   closed:    { label:"Closed",      light:"#6B7280", dark:"rgba(107,114,128,0.15)" },
 };
 const PRIORITY = { top_priority:"#F87171", first_priority:"#F59E0B", second_priority:"#60A5FA", third_priority:"#94A3B8", carry_forward:"#A855F7" };
-const PRIORITY_LABEL = { top_priority:"Top Priority", first_priority:"First Priority", second_priority:"2nd Priority", third_priority:"3rd Priority", carry_forward:"Carry Forward" };
+const PRIORITY_LABEL = { top_priority:"1st Priority", first_priority:"First Priority", second_priority:"2nd Priority", third_priority:"3rd Priority", carry_forward:"Carry Forward" };
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 const NAV = [
@@ -1098,7 +1098,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
           <Col flex={2}><label style={lbl}>Cost Centre</label><select value={form.cost_center_id} onChange={e=>set("cost_center_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.cost_centers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Col>
           <Col flex={2}><label style={lbl}>Campus / Site</label><input type="text" value={form.campus} onChange={e=>set("campus",e.target.value)} placeholder="e.g. Islamabad Campus, I-14" style={inp}/></Col>
           <Col><label style={lbl}>Project Type</label><input value={form.project_type} onChange={e=>set("project_type",e.target.value)} placeholder="e.g. Construction" style={inp}/></Col>
-          <Col><label style={lbl}>Priority</label><select value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="">— None —</option><option value="top_priority">Top Priority</option><option value="second_priority">2nd Priority</option><option value="third_priority">3rd Priority</option><option value="carry_forward">Carry Forward</option></select></Col>
+          <Col><label style={lbl}>Priority</label><select value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="">— None —</option><option value="top_priority">1st Priority</option><option value="second_priority">2nd Priority</option><option value="third_priority">3rd Priority</option><option value="carry_forward">Carry Forward</option></select></Col>
         </Row>
 
         <Sec T={T} title="Workflow"/>
@@ -1429,8 +1429,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       };
       // Priority: blank stays null — don't default to any value
       const PRIO_ALIASES = {
-        "top_priority":"top_priority", "top priority":"top_priority", "top":"top_priority",
-        "first_priority":"first_priority", "first priority":"first_priority", "first":"first_priority", "1st":"first_priority", "1st priority":"first_priority",
+        "top_priority":"top_priority", "top priority":"top_priority", "top":"top_priority", "1st":"top_priority", "1st priority":"top_priority", "first":"top_priority", "first priority":"top_priority",
         "second_priority":"second_priority", "second priority":"second_priority", "second":"second_priority", "2nd":"second_priority", "2nd priority":"second_priority",
         "third_priority":"third_priority", "third priority":"third_priority", "third":"third_priority", "3rd":"third_priority", "3rd priority":"third_priority",
         "carry_forward":"carry_forward", "carry forward":"carry_forward", "carryforward":"carry_forward",
@@ -1838,7 +1837,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                   <td style={fc}>
                     <select value={fPri} onChange={e=>setFPri(e.target.value)} style={highlight(fPri)}>
                       <option value="">All</option>
-                      <option value="top_priority">Top Priority</option>
+                      <option value="top_priority">1st Priority</option>
                       <option value="second_priority">2nd Priority</option>
                       <option value="third_priority">3rd Priority</option>
                       <option value="carry_forward">Carry Forward</option>
