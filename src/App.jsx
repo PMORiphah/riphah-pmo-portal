@@ -3370,7 +3370,7 @@ const buildTree = comments => {
   return { roots, replies };
 };
 
-function CommentBubble({ T, comment, replies, onReply, depth }) {
+function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
   const ROLE = { pmo:{ c:GOLD, label:"Admin" }, project_manager:{ c:"#60A5FA", label:"PM" }, guest:{ c:"#9CA3AF", label:"Guest" } };
   const role = comment.author_role || comment.user_profiles?.role;
   const rc   = ROLE[role] || { c:"#9CA3AF", label:"?" };
@@ -3385,6 +3385,11 @@ function CommentBubble({ T, comment, replies, onReply, depth }) {
           <span style={{ fontSize:13, fontWeight:600, color:deleted ? T.dim : T.text }}>{deleted ? "Deleted User" : name}</span>
           <span style={{ fontSize:10, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"2px 8px", borderRadius:20 }}>{rc.label}</span>
           <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{timeAgo(comment.created_at)}</span>
+          {onDelete && (
+            <button onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:"#F87171", display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
         <div style={{ fontSize:13.5, color:T.text, lineHeight:1.65, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{comment.body}</div>
         {!depth && onReply && (
@@ -3394,7 +3399,7 @@ function CommentBubble({ T, comment, replies, onReply, depth }) {
         )}
       </div>
       {(replies || []).map(r => (
-        <CommentBubble key={r.id} T={T} comment={r} replies={[]} onReply={null} depth={1} />
+        <CommentBubble key={r.id} T={T} comment={r} replies={[]} onReply={null} onDelete={onDelete} depth={1} />
       ))}
     </div>
   );
@@ -3535,6 +3540,27 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
     setPosting(false);
   };
 
+  // ── Delete (PMO only) ────────────────────────────────────────────────────────
+  const deleteComment = async (comment) => {
+    const isReply = !!comment.parent_id;
+    const msg = isReply
+      ? "Delete this reply? This cannot be undone."
+      : "Delete this comment? Any replies to it will also be deleted. This cannot be undone.";
+    if (!window.confirm(msg)) return;
+    try {
+      // Deleting a root comment cascades to its replies via the parent_id FK
+      await supa(`/rest/v1/comments?id=eq.${comment.id}`,
+        { method:"DELETE", headers:{ "Prefer":"return=minimal" } },
+        session.access_token
+      );
+      await loadThread(selId);
+      await loadSummary();
+      onReadChange?.();
+    } catch(_) {
+      alert("Could not delete the comment. Please try again.");
+    }
+  };
+
   // ── Derived ─────────────────────────────────────────────────────────────────
   const commentsByProject = useMemo(() => {
     const m = {};
@@ -3672,6 +3698,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                   key={c.id} T={T} comment={c}
                   replies={replies[c.id] || []}
                   onReply={canPost ? setReplyingTo : null}
+                  onDelete={session.role === "pmo" ? deleteComment : null}
                   depth={0}
                 />
               ))}
