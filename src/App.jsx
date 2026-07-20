@@ -1615,7 +1615,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const [data, sectors, regions, segments, cost_centers, campuses] = await Promise.all([
-        supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
+        supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,df_recommended_amount,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
         supa("/rest/v1/sectors?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/regions?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/segments?select=id,name&order=name.asc",{},session.access_token),
@@ -1798,6 +1798,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
               <th style={th}>Organization</th>
               <th style={{...th,minWidth:120}}>Project ID</th>
               <th style={{...th,minWidth:220}}>Project Name</th>
+              <th style={{...th,textAlign:"right"}}>DF Rec Budget</th>
               <th style={{...th,textAlign:"right"}}>Approved Budget</th>
               <th style={th}>Segment</th>
               <th style={th}>Priorities</th>
@@ -1834,6 +1835,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                   <td style={fc}>
                     <input value={fName} onChange={e=>setFName(e.target.value)} placeholder="Filter name…" style={highlightI(fName)}/>
                   </td>
+                  <td style={fc}></td>
                   <td style={fc}></td>
                   <td style={fc}>
                     <select value={fSeg} onChange={e=>setFSeg(e.target.value)} style={highlight(fSeg)}>
@@ -1879,6 +1881,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                   </div>
                 </td>
                 <td style={{...td,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
+                <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:T.muted}}>{fmtM(p.df_recommended_amount)}</td>
                 <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:GOLD}}>{fmtM(p.bac)}</td>
                 <td style={{...td,fontSize:12,color:T.muted}}>{p.sectors?.name||"—"}</td>
                 <td style={td}><span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY[p.priority]||"#aaa"}}/><span style={{fontSize:12,color:T.muted}}>{PRIORITY_LABEL[p.priority]||"—"}</span></span></td>
@@ -1986,6 +1989,7 @@ function CampusPage({ T, session, onSelectProject }) {
       delayed:  filtered.filter(r => r.workflow_stage==="approved" && r.schedule_flag==="delayed").length,
       over:     filtered.filter(r => r.workflow_stage==="approved" && r.budget_flag==="over").length,
       budget:   filtered.reduce((s,r) => s + (parseFloat(r.bac)||0), 0),
+      dfBudget: filtered.reduce((s,r) => s + (parseFloat(r.df_recommended_amount)||0), 0),
     };
   }, [filtered]);
 
@@ -2010,7 +2014,7 @@ function CampusPage({ T, session, onSelectProject }) {
         </select>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Quick search…" style={{...ctl,flex:1,minWidth:200}}/>
         <span style={{fontSize:12,color:T.muted,whiteSpace:"nowrap"}}>
-          {filtered.length} project{filtered.length===1?"":"s"} · PKR {fmtM(k.budget)}
+          {filtered.length} project{filtered.length===1?"":"s"} · DF {fmtM(k.dfBudget)} · Approved {fmtM(k.budget)}
         </span>
       </div>
 
