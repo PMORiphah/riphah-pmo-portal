@@ -78,6 +78,7 @@ const PRIORITY_LABEL = { top_priority:"1st Priority", first_priority:"First Prio
 const NAV = [
   { id:"cmd",  Icon:LayoutDashboard, label:"Capex Dashboard" },
   { id:"proj", Icon:FolderKanban,    label:"Projects" },
+  { id:"camp", Icon:Building2,       label:"Campus / Sites" },
   { id:"perf", Icon:TrendingUp,      label:"Performance" },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
   { id:"team", Icon:Users,           label:"Team & About" },
@@ -1011,7 +1012,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     strategic_priority:project?.strategic_priority||"",
     sector_id:project?.sector_id||"", region_id:project?.region_id||"",
     segment_id:project?.segment_id||"", cost_center_id:project?.cost_center_id||"",
-    campus:project?.campus||"",
+    campus_id:project?.campus_id||"",
     project_type:project?.project_type||"", priority:project?.priority||"",
     workflow_stage:project?.workflow_stage||"identified",
     is_carry_forward:project?.is_carry_forward||false, payments_pending:project?.payments_pending||false,
@@ -1040,7 +1041,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         strategic_priority:form.strategic_priority||null,
         sector_id:form.sector_id||null, region_id:form.region_id||null,
         segment_id:form.segment_id||null, cost_center_id:form.cost_center_id||null,
-        campus:form.campus||null,
+        campus_id:form.campus_id||null,
         project_type:form.project_type||null, priority:form.priority||null, start_date:form.start_date||null,
         end_date:form.end_date||null,
         actual_start_date:form.actual_start_date||null, actual_end_date:form.actual_end_date||null,
@@ -1096,7 +1097,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         </Row>
         <Row mb={0}>
           <Col flex={2}><label style={lbl}>Cost Centre</label><select value={form.cost_center_id} onChange={e=>set("cost_center_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.cost_centers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Col>
-          <Col flex={2}><label style={lbl}>Campus / Site</label><input type="text" value={form.campus} onChange={e=>set("campus",e.target.value)} placeholder="e.g. Islamabad Campus, I-14" style={inp}/></Col>
+          <Col flex={2}><label style={lbl}>Campus / Site</label><select value={form.campus_id} onChange={e=>set("campus_id",e.target.value)} style={sel}><option value="">— None —</option>{(lookups.campuses||[]).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Col>
           <Col><label style={lbl}>Project Type</label><input value={form.project_type} onChange={e=>set("project_type",e.target.value)} placeholder="e.g. Construction" style={inp}/></Col>
           <Col><label style={lbl}>Priority</label><select value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="">— None —</option><option value="top_priority">1st Priority</option><option value="second_priority">2nd Priority</option><option value="third_priority">3rd Priority</option><option value="carry_forward">Carry Forward</option></select></Col>
         </Row>
@@ -1309,7 +1310,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
   const [step,     setStep]     = useState("pick"); // pick | preview | done
   const [parsed,   setParsed]   = useState([]);
   const [errors,   setErrors]   = useState([]);
-  const [newL,     setNewL]     = useState({sectors:[],regions:[],segments:[],cost_centers:[]});
+  const [newL,     setNewL]     = useState({sectors:[],regions:[],segments:[],cost_centers:[],campuses:[]});
   const [counts,   setCounts]   = useState({projects:0,comments:0});
   const [importing,setImporting]= useState(false);
   const [progress, setProgress] = useState("");
@@ -1332,8 +1333,9 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       regions:      new Set(lookups.regions.map(x=>x.name.toLowerCase())),
       segments:     new Set(lookups.segments.map(x=>x.name.toLowerCase())),
       cost_centers: new Set(lookups.cost_centers.map(x=>x.name.toLowerCase())),
+      campuses:     new Set((lookups.campuses||[]).map(x=>x.name.toLowerCase())),
     };
-    const newSets = {sectors:new Set(),regions:new Set(),segments:new Set(),cost_centers:new Set()};
+    const newSets = {sectors:new Set(),regions:new Set(),segments:new Set(),cost_centers:new Set(),campuses:new Set()};
 
     dataRows.forEach((row,i) => {
       const obj={};
@@ -1346,11 +1348,12 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       if (obj.region_name && !existN.regions.has(obj.region_name.toLowerCase()))           newSets.regions.add(obj.region_name);
       if (obj.segment_name && !existN.segments.has(obj.segment_name.toLowerCase()))        newSets.segments.add(obj.segment_name);
       if (obj.cost_center_name && !existN.cost_centers.has(obj.cost_center_name.toLowerCase())) newSets.cost_centers.add(obj.cost_center_name);
+      if (obj.campus && !existN.campuses.has(obj.campus.toLowerCase()))                         newSets.campuses.add(obj.campus);
       parsed.push(obj);
     });
 
     setParsed(parsed); setErrors(errs);
-    setNewL({sectors:[...newSets.sectors],regions:[...newSets.regions],segments:[...newSets.segments],cost_centers:[...newSets.cost_centers]});
+    setNewL({sectors:[...newSets.sectors],regions:[...newSets.regions],segments:[...newSets.segments],cost_centers:[...newSets.cost_centers],campuses:[...newSets.campuses]});
     try {
       const [pRes,cRes] = await Promise.all([
         supa("/rest/v1/projects?select=id",{},session.access_token),
@@ -1381,11 +1384,13 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
         regions:      Object.fromEntries(lookups.regions.map(x=>[x.name.toLowerCase(),x.id])),
         segments:     Object.fromEntries(lookups.segments.map(x=>[x.name.toLowerCase(),x.id])),
         cost_centers: Object.fromEntries(lookups.cost_centers.map(x=>[x.name.toLowerCase(),x.id])),
+        campuses:     Object.fromEntries((lookups.campuses||[]).map(x=>[x.name.toLowerCase(),x.id])),
       };
       for (const name of newL.sectors)      { const r=await supa("/rest/v1/sectors",     {method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.sectors[name.toLowerCase()]=r[0].id; }
       for (const name of newL.regions)      { const r=await supa("/rest/v1/regions",     {method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.regions[name.toLowerCase()]=r[0].id; }
       for (const name of newL.segments)     { const r=await supa("/rest/v1/segments",    {method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.segments[name.toLowerCase()]=r[0].id; }
       for (const name of newL.cost_centers) { const r=await supa("/rest/v1/cost_centers",{method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.cost_centers[name.toLowerCase()]=r[0].id; }
+      for (const name of (newL.campuses||[])) { const r=await supa("/rest/v1/campuses",  {method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.campuses[name.toLowerCase()]=r[0].id; }
 
       // 3. Delete all existing projects (CASCADE removes comments / milestones / assignments)
       setProgress("Removing existing project data…");
@@ -1447,7 +1452,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
         region_id:           lmap.regions[r.region_name?.toLowerCase()]      || null,
         segment_id:          lmap.segments[r.segment_name?.toLowerCase()]    || null,
         cost_center_id:      lmap.cost_centers[r.cost_center_name?.toLowerCase()] || null,
-        campus:              r.campus||null,
+        campus_id:           lmap.campuses[r.campus?.toLowerCase()] || null,
         project_type:        r.project_type   || null,
         priority:            validPrio(r.priority),
         workflow_stage:      validStage(r.workflow_stage),
@@ -1553,7 +1558,8 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
                 {newL.sectors.length>0&&<span>Sectors: {newL.sectors.join(", ")}<br/></span>}
                 {newL.regions.length>0&&<span>Regions: {newL.regions.join(", ")}<br/></span>}
                 {newL.segments.length>0&&<span>Segments: {newL.segments.join(", ")}<br/></span>}
-                {newL.cost_centers.length>0&&<span>Cost Centres: {newL.cost_centers.join(", ")}</span>}
+                {newL.cost_centers.length>0&&<span>Cost Centres: {newL.cost_centers.join(", ")}<br/></span>}
+                {(newL.campuses||[]).length>0&&<span>Campuses: {newL.campuses.join(", ")}</span>}
               </div>
             )}
 
@@ -1585,7 +1591,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 function ProjectsPage({ T, session, onSelectProject }) {
   const isPMO = session?.role === "pmo";
   const [rows,         setRows]         = useState([]);
-  const [lookups,      setLookups]      = useState({sectors:[],regions:[],segments:[],cost_centers:[]});
+  const [lookups,      setLookups]      = useState({sectors:[],regions:[],segments:[],cost_centers:[],campuses:[]});
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [search,       setSearch]       = useState("");
@@ -1608,14 +1614,15 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const [data, sectors, regions, segments, cost_centers] = await Promise.all([
+      const [data, sectors, regions, segments, cost_centers, campuses] = await Promise.all([
         supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
         supa("/rest/v1/sectors?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/regions?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/segments?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/cost_centers?select=id,name&order=name.asc",{},session.access_token),
+        supa("/rest/v1/campuses?select=id,name&order=name.asc",{},session.access_token),
       ]);
-      setRows(data); setLookups({sectors,regions,segments,cost_centers});
+      setRows(data); setLookups({sectors,regions,segments,cost_centers,campuses});
     } catch(e) { setErr(e.message); }
     setLoading(false);
   }, [session.access_token]);
@@ -1912,6 +1919,166 @@ function ProjectsPage({ T, session, onSelectProject }) {
       {/* Modals */}
       {showForm&&<ProjectFormModal T={T} session={session} project={editProject} lookups={lookups} onSaved={()=>{setShowForm(false);setEditProject(null);load();}} onClose={()=>{setShowForm(false);setEditProject(null);}}/>}
       {showImport&&<ImportExcelModal T={T} session={session} lookups={lookups} onImported={()=>{setShowImport(false);load();}} onClose={()=>setShowImport(false)}/>}
+    </div>
+  );
+}
+
+// ─── CAMPUS / SITES ───────────────────────────────────────────────────────────
+function CampusPage({ T, session, onSelectProject }) {
+  const [rows,     setRows]     = useState([]);
+  const [campuses, setCampuses] = useState([]);
+  const [sel,      setSel]      = useState("");
+  const [q,        setQ]        = useState("");
+  const [loading,  setLoading]  = useState(true);
+  const [err,      setErr]      = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null);
+    try {
+      const [metrics, projs, camps] = await Promise.all([
+        supa("/rest/v1/project_metrics?select=id,code,name,bac,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
+        supa("/rest/v1/projects?select=id,campus",{},session.access_token),
+        supa("/rest/v1/campuses?select=id,name&order=name.asc",{},session.access_token),
+      ]);
+      const campusById = Object.fromEntries((projs||[]).map(p=>[p.id, p.campus||null]));
+      setRows((metrics||[]).map(m=>({ ...m, campus: campusById[m.id] || null })));
+      setCampuses(camps||[]);
+    } catch(e) { setErr(e.message); }
+    setLoading(false);
+  }, [session.access_token]);
+  useEffect(() => { load(); }, [load]);
+
+  const UNASSIGNED = "— Unassigned —";
+  const countByCampus = useMemo(() => {
+    const m = {};
+    rows.forEach(r => { const key = r.campus || UNASSIGNED; m[key] = (m[key]||0)+1; });
+    return m;
+  }, [rows]);
+
+  const campusOptions = useMemo(() => {
+    const names = new Set(campuses.map(c=>c.name));
+    rows.forEach(r => { if (r.campus) names.add(r.campus); });
+    const list = [...names].sort((a,b)=>a.localeCompare(b));
+    if (rows.some(r => !r.campus)) list.push(UNASSIGNED);
+    return list;
+  }, [campuses, rows]);
+
+  const filtered = useMemo(() => {
+    let out = sel ? rows.filter(r => (r.campus || UNASSIGNED) === sel) : rows;
+    if (q.trim()) {
+      const s = q.toLowerCase();
+      out = out.filter(r => (r.code||"").toLowerCase().includes(s) || (r.name||"").toLowerCase().includes(s));
+    }
+    return out;
+  }, [rows, sel, q]);
+
+  const k = useMemo(() => {
+    const active = st => filtered.filter(r => r.workflow_stage===st && !r.is_carry_forward).length;
+    return {
+      pddNot:   active("pdd_not_submitted"),
+      pddSub:   active("identified"),
+      df:       active("df_review"),
+      ed:       active("ed_review"),
+      mt:       active("mt_review"),
+      approved: active("approved"),
+      closed:   filtered.filter(r => r.workflow_stage==="closed").length,
+      onTime:   filtered.filter(r => r.workflow_stage==="approved" && r.schedule_flag==="on_time").length,
+      delayed:  filtered.filter(r => r.workflow_stage==="approved" && r.schedule_flag==="delayed").length,
+      over:     filtered.filter(r => r.workflow_stage==="approved" && r.budget_flag==="over").length,
+      budget:   filtered.reduce((s,r) => s + (parseFloat(r.bac)||0), 0),
+    };
+  }, [filtered]);
+
+  const good="#2DD4BF", warn="#F59E0B", bad="#F87171";
+  const th = {fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",whiteSpace:"nowrap",textAlign:"left",borderBottom:"1px solid "+T.border};
+  const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
+  const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",outline:"none"};
+
+  if (loading) return <div style={{color:T.muted,fontSize:13,padding:20}}>Loading campuses…</div>;
+  if (err)     return <div style={{color:"#F87171",fontSize:13,padding:20}}>{err}</div>;
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+      {/* Campus selector */}
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+        <select value={sel} onChange={e=>setSel(e.target.value)} style={{...ctl,cursor:"pointer",minWidth:230,...(sel?{border:"1px solid "+GOLD,color:GOLD}:{})}}>
+          <option value="">All Campuses ({rows.length})</option>
+          {campusOptions.map(name => (
+            <option key={name} value={name}>{name} ({countByCampus[name]||0})</option>
+          ))}
+        </select>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Quick search…" style={{...ctl,flex:1,minWidth:200}}/>
+        <span style={{fontSize:12,color:T.muted,whiteSpace:"nowrap"}}>
+          {filtered.length} project{filtered.length===1?"":"s"} · PKR {fmtM(k.budget)}
+        </span>
+      </div>
+
+      {/* Approvals */}
+      <div>
+        <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Approvals</div>
+        <div style={{display:"flex",gap:10}}>
+          <KCard T={T} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" />
+          <KCard T={T} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review" />
+          <KCard T={T} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} />
+          <KCard T={T} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} />
+          <KCard T={T} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} />
+          <KCard T={T} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured />
+        </div>
+      </div>
+
+      {/* Execution */}
+      <div>
+        <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Execution</div>
+        <div style={{display:"flex",gap:10}}>
+          <KCard T={T} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured />
+          <KCard T={T} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good} />
+          <KCard T={T} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn} />
+          <KCard T={T} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad} />
+          <KCard T={T} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} />
+        </div>
+      </div>
+
+      {/* Project list */}
+      <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:10,overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead>
+              <tr>
+                <th style={{...th,width:44}}>#</th>
+                <th style={th}>Project ID</th>
+                <th style={th}>Project Name</th>
+                <th style={th}>Campus / Site</th>
+                <th style={{...th,textAlign:"right"}}>Approved Budget</th>
+                <th style={th}>Priority</th>
+                <th style={th}>Stage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length===0 ? (
+                <tr><td colSpan={7} style={{...td,textAlign:"center",color:T.dim,padding:"28px 12px"}}>No projects match this filter.</td></tr>
+              ) : filtered.map((p,i) => (
+                <tr key={p.id}>
+                  <td style={{...td,color:T.dim}}>{i+1}</td>
+                  <td style={td}>
+                    <button onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:GOLD,fontSize:12.5,fontFamily:"monospace"}}>{p.code}</button>
+                  </td>
+                  <td style={{...td,minWidth:220}}>{p.name}</td>
+                  <td style={{...td,color:T.muted}}>{p.campus || "—"}</td>
+                  <td style={{...td,textAlign:"right"}}>{fmtM(p.bac)}</td>
+                  <td style={td}>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY[p.priority]||"#aaa"}}/>
+                      <span style={{fontSize:12,color:T.muted}}>{PRIORITY_LABEL[p.priority]||"—"}</span>
+                    </span>
+                  </td>
+                  <td style={td}><StageBadge stage={p.workflow_stage}/></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -4561,6 +4728,7 @@ function Login({ T, dark, onLogin }) {
 const PAGE_TITLES = {
   cmd:  { title:"Capex Dashboard",  subtitle:"Portfolio FY 2026-2027" },
   proj: { title:"Projects",        subtitle:"All capital projects across the portfolio" },
+  camp: { title:"Campus / Sites",  subtitle:"Projects and approvals by campus" },
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
   team: { title:"Team & About",    subtitle:"PMO team and portal information" },
@@ -4684,6 +4852,7 @@ export default function App() {
           <>
             {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
+            {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "perf" && <PerformancePage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "upd"  && <UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} />}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
