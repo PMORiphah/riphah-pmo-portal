@@ -18,6 +18,7 @@ import * as XLSX from "xlsx";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPA_URL = "https://prmxkecomqqngvrmytcj.supabase.co";
+const PORTAL_LINK = "https://pmoriphah.github.io/riphah-pmo-portal/";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBybXhrZWNvbXFxbmd2cm15dGNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDUxNzAsImV4cCI6MjA5Nzk4MTE3MH0.4MtGQqpuv9DdPOdoyKTh-RbHG9JAgTV94TJW74apAw8";
 const GOLD  = "#D89840";
 const NAVY  = "#185078";
@@ -2974,12 +2975,29 @@ function UserManagementPage({ T, session }) {
   const [savingAssign,     setSavingAssign]     = useState(false);
   const [confirmDelete,    setConfirmDelete]    = useState(null); // user id pending confirmation
   const [deleting,         setDeleting]         = useState(null); // user id being deleted
+  const [editPhoneId,      setEditPhoneId]      = useState(null);
+  const [phoneDraft,       setPhoneDraft]       = useState("");
+
+  const savePhone = async (userId) => {
+    const raw = phoneDraft.trim();
+    // Normalise: strip spaces/dashes/brackets so wa.me gets clean digits
+    const cleaned = raw ? raw.replace(/[\s\-()]/g, "") : null;
+    setEditPhoneId(null);
+    try {
+      await supa(`/rest/v1/user_profiles?id=eq.${userId}`, {
+        method:"PATCH",
+        body: JSON.stringify({ phone: cleaned }),
+        headers:{ "Prefer":"return=minimal" },
+      }, session.access_token);
+      setUsers(us => us.map(u => u.id===userId ? { ...u, phone: cleaned } : u));
+    } catch(_) {}
+  };
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
       const [usersData, assignData, projData] = await Promise.all([
-        supa("/rest/v1/user_profiles?select=id,username,full_name,email,role,is_active,created_at&order=role.asc,username.asc", {}, session.access_token),
+        supa("/rest/v1/user_profiles?select=id,username,full_name,email,phone,whatsapp_opt_in,role,is_active,created_at&order=role.asc,username.asc", {}, session.access_token),
         supa("/rest/v1/project_assignments?select=user_id,project_id,projects(code,name)", {}, session.access_token),
         supa("/rest/v1/projects?select=id,code,name,workflow_stage&order=code.asc", {}, session.access_token),
       ]);
@@ -3120,6 +3138,7 @@ function UserManagementPage({ T, session }) {
                 <th style={th}>Username</th>
                 <th style={th}>Full Name</th>
                 <th style={th}>Email</th>
+                <th style={th}>WhatsApp No.</th>
                 <th style={th}>Role</th>
                 <th style={th}>Status</th>
                 <th style={th}>Assigned Projects</th>
@@ -3144,6 +3163,25 @@ function UserManagementPage({ T, session }) {
                     </td>
                     <td style={{ ...td, fontSize:13, color:T.text }}>{u.full_name || "—"}</td>
                     <td style={{ ...td, fontSize:12, color:T.muted }}>{u.email || "—"}</td>
+                    <td style={{ ...td, fontSize:12, color:T.muted }}>
+                      {editPhoneId === u.id ? (
+                        <input
+                          autoFocus
+                          value={phoneDraft}
+                          onChange={e=>setPhoneDraft(e.target.value)}
+                          onBlur={()=>savePhone(u.id)}
+                          onKeyDown={e=>{ if(e.key==="Enter") savePhone(u.id); if(e.key==="Escape") setEditPhoneId(null); }}
+                          placeholder="+923001234567"
+                          style={{ width:150, background:T.inputBg, border:"1px solid "+GOLD, borderRadius:5, padding:"4px 7px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}
+                        />
+                      ) : (
+                        <span
+                          onClick={()=>{ setEditPhoneId(u.id); setPhoneDraft(u.phone||""); }}
+                          title="Click to edit — international format, e.g. +923001234567"
+                          style={{ cursor:"pointer", borderBottom:"1px dashed "+T.border, paddingBottom:1 }}
+                        >{u.phone || "—"}</span>
+                      )}
+                    </td>
                     <td style={td}>
                       <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:20 }}>{rc.label}</span>
                     </td>
@@ -3620,6 +3658,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
   const [selId,          setSelId]          = useState(null);
   const [selProject,     setSelProject]     = useState(null);
   const [thread,         setThread]         = useState([]);
+  const [threadPMs,      setThreadPMs]      = useState([]);
   const [loadingThread,  setLoadingThread]  = useState(false);
   const [view, setView] = useState(session.role === "project_manager" ? "all" : "inbox");
   const [replyingTo,     setReplyingTo]     = useState(null);
@@ -3664,6 +3703,16 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       );
       setThread(data);
 
+      // Assigned PM(s) for this project — used by the WhatsApp nudge button
+      try {
+        const assigns = await supa(`/rest/v1/project_assignments?project_id=eq.${id}&select=user_id`, {}, session.access_token);
+        const ids = (assigns||[]).map(a=>a.user_id);
+        if (ids.length) {
+          const pms = await supa(`/rest/v1/user_profiles?id=in.(${ids.join(",")})&is_active=eq.true&select=id,full_name,username,phone`, {}, session.access_token);
+          setThreadPMs(pms||[]);
+        } else setThreadPMs([]);
+      } catch(_) { setThreadPMs([]); }
+
       // Mark any comments I haven't read (and didn't write) as read — for ALL roles.
       const myReads = await supa(`/rest/v1/comment_reads?select=comment_id`, {}, session.access_token);
       const readSet = new Set((myReads||[]).map(r => r.comment_id));
@@ -3703,14 +3752,24 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
     if (!body.trim() || !selId) return;
     setPosting(true);
     try {
-      await supa("/rest/v1/comments", {
+      const created = await supa("/rest/v1/comments", {
         method:"POST",
         body: JSON.stringify({ project_id:selId, author_id:session.user_id, author_name:(session.full_name||session.username), author_role:session.role, body:body.trim(), parent_id:replyingTo?.id||null }),
-        headers:{"Prefer":"return=minimal"},
+        headers:{"Prefer":"return=representation"},
       }, session.access_token);
       setBody(""); setReplyingTo(null);
       await loadThread(selId);
       await loadSummary();
+
+      // Fire the email notification. Best-effort: a delivery problem must never
+      // make it look like the comment itself failed to post.
+      const newId = Array.isArray(created) ? created[0]?.id : created?.id;
+      if (newId) {
+        supa("/functions/v1/notify-comment", {
+          method:"POST",
+          body: JSON.stringify({ comment_id:newId }),
+        }, session.access_token).catch(()=>{});
+      }
     } catch(_) {}
     setPosting(false);
   };
@@ -3880,6 +3939,26 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
             </div>
 
             {/* Compose */}
+            {session.role === "pmo" && (() => {
+              const proj = projects.find(p => p.id === selId);
+              const pmsWithPhone = threadPMs.filter(pm => pm.phone && pm.phone.trim());
+              if (!proj || pmsWithPhone.length === 0) return null;
+              const msg = `PMO Update — ${proj.code}: ${proj.name}\n\nThere is a new update for you on the PMO Portal. Please review and respond:\n${PORTAL_LINK}`;
+              return (
+                <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", padding:"0 0 10px" }}>
+                  <span style={{ fontSize:11, color:T.dim }}>Nudge on WhatsApp:</span>
+                  {pmsWithPhone.map(pm => (
+                    <a key={pm.id}
+                       href={`https://wa.me/${pm.phone.replace(/[^0-9]/g,"")}?text=${encodeURIComponent(msg)}`}
+                       target="_blank" rel="noopener noreferrer"
+                       style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"5px 11px", background:"rgba(37,211,102,0.10)", border:"1px solid rgba(37,211,102,0.45)", borderRadius:20, color:"#25D366", fontSize:11.5, fontWeight:600, textDecoration:"none" }}>
+                      {pm.full_name || pm.username}
+                    </a>
+                  ))}
+                </div>
+              );
+            })()}
+
             <ComposeBox
               T={T} value={body} onChange={setBody}
               onPost={postComment} posting={posting}
