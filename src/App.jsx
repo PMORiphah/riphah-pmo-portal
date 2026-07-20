@@ -1936,7 +1936,7 @@ function CampusPage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const [metrics, projs, camps] = await Promise.all([
-        supa("/rest/v1/project_metrics?select=id,code,name,bac,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
+        supa("/rest/v1/project_metrics?select=id,code,name,bac,df_recommended_amount,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
         supa("/rest/v1/projects?select=id,campus",{},session.access_token),
         supa("/rest/v1/campuses?select=id,name&order=name.asc",{},session.access_token),
       ]);
@@ -2049,6 +2049,7 @@ function CampusPage({ T, session, onSelectProject }) {
                 <th style={th}>Project ID</th>
                 <th style={th}>Project Name</th>
                 <th style={th}>Campus / Site</th>
+                <th style={{...th,textAlign:"right"}}>DF Rec Budget</th>
                 <th style={{...th,textAlign:"right"}}>Approved Budget</th>
                 <th style={th}>Priority</th>
                 <th style={th}>Stage</th>
@@ -2056,7 +2057,7 @@ function CampusPage({ T, session, onSelectProject }) {
             </thead>
             <tbody>
               {filtered.length===0 ? (
-                <tr><td colSpan={7} style={{...td,textAlign:"center",color:T.dim,padding:"28px 12px"}}>No projects match this filter.</td></tr>
+                <tr><td colSpan={8} style={{...td,textAlign:"center",color:T.dim,padding:"28px 12px"}}>No projects match this filter.</td></tr>
               ) : filtered.map((p,i) => (
                 <tr key={p.id}>
                   <td style={{...td,color:T.dim}}>{i+1}</td>
@@ -2065,6 +2066,7 @@ function CampusPage({ T, session, onSelectProject }) {
                   </td>
                   <td style={{...td,minWidth:220}}>{p.name}</td>
                   <td style={{...td,color:T.muted}}>{p.campus || "—"}</td>
+                  <td style={{...td,textAlign:"right"}}>{fmtM(p.df_recommended_amount)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtM(p.bac)}</td>
                   <td style={td}>
                     <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
