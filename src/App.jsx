@@ -1615,7 +1615,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const [data, sectors, regions, segments, cost_centers, campuses] = await Promise.all([
-        supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,df_recommended_amount,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
+        supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,df_recommended_amount,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,campus,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
         supa("/rest/v1/sectors?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/regions?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/segments?select=id,name&order=name.asc",{},session.access_token),
@@ -1655,22 +1655,25 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); };
 
   const downloadExport = () => {
-    const headers = ["Sr #","Fiscal Year","Organization","Project ID","Project Name","Approved Budget (M)","Segment","Priority","Strategic Priority","Stage"];
+    const headers = ["Sr #","Fiscal Year","Organization","Project ID","Project Name","DF Recommended (M)","Approved Budget (M)","Segment","Priority","Strategic Priority","Stage","Cost Centre","Campus/Site"];
     const data = filtered.map((p,i) => [
       i+1,
       p.fiscal_year||"",
       p.segments?.name||"",
       p.code||"",
       p.name||"",
+      p.df_recommended_amount ? (p.df_recommended_amount/1e6).toFixed(1) : "",
       p.bac ? (p.bac/1e6).toFixed(1) : "",
       p.sectors?.name||"",
-      p.priority||"",
+      PRIORITY_LABEL[p.priority]||"",
       p.strategic_priority||"",
       STAGE[p.workflow_stage]?.label||p.workflow_stage||"",
+      p.cost_centers?.name||"",
+      p.campus||"",
     ]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers,...data]);
-    ws["!cols"] = headers.map((_,i)=>({wch:i===4||i===8?30:20}));
+    ws["!cols"] = headers.map((_,i)=>({wch: i===4||i===9 ? 30 : 20}));
     XLSX.utils.book_append_sheet(wb,ws,"Projects");
     const ts = new Date().toISOString().slice(0,10);
     const filterLabel = activeFilterCount > 0 ? `_Filtered${activeFilterCount}` : "_All";
