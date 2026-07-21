@@ -2006,7 +2006,8 @@ function CampusPage({ T, session, onSelectProject }) {
   if (err)     return <div style={{color:"#F87171",fontSize:13,padding:20}}>{err}</div>;
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{flex:1,overflow:"auto",padding:"16px 20px 24px",display:"flex",flexDirection:"column",gap:16}}>
 
       {/* Campus selector */}
       <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
@@ -2051,7 +2052,7 @@ function CampusPage({ T, session, onSelectProject }) {
       <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:10,overflow:"hidden"}}>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead>
+            <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
               <tr>
                 <th style={{...th,width:44}}>#</th>
                 <th style={th}>Project ID</th>
@@ -2088,6 +2089,7 @@ function CampusPage({ T, session, onSelectProject }) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   );
