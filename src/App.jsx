@@ -2007,10 +2007,10 @@ function CampusPage({ T, session, onSelectProject }) {
 
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{flex:1,overflow:"auto",padding:"16px 20px 24px",display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",padding:"16px 20px 24px"}}>
 
       {/* Campus selector */}
-      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
         <select value={sel} onChange={e=>setSel(e.target.value)} style={{...ctl,cursor:"pointer",minWidth:230,...(sel?{border:"1px solid "+GOLD,color:GOLD}:{})}}>
           <option value="">All Campuses ({rows.length})</option>
           {campusOptions.map(name => (
@@ -2024,7 +2024,7 @@ function CampusPage({ T, session, onSelectProject }) {
       </div>
 
       {/* Approvals */}
-      <div>
+      <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Approvals</div>
         <div style={{display:"flex",gap:10}}>
           <KCard T={T} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" />
@@ -2037,7 +2037,7 @@ function CampusPage({ T, session, onSelectProject }) {
       </div>
 
       {/* Execution */}
-      <div>
+      <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Execution</div>
         <div style={{display:"flex",gap:10}}>
           <KCard T={T} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured />
