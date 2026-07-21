@@ -91,7 +91,7 @@ const PMO_NAV = [
 ];
 
 function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword }) {
-  const navItems = session?.role === "project_manager" ? NAV.filter(n => n.id !== "cmd") : NAV;
+  const navItems = session?.role === "project_manager" ? NAV.filter(n => n.id !== "cmd" && n.id !== "camp") : NAV;
   return (
     <div style={{
       width:240, flexShrink:0, background:NAVY, display:"flex", flexDirection:"column",
@@ -4917,7 +4917,7 @@ export default function App() {
   const T = dark ? DK : LT;
 
   // PMs cannot see Capex Dashboard — redirect to Projects
-  const effectivePage = (session?.role === "project_manager" && page === "cmd") ? "proj" : page;
+  const effectivePage = (session?.role === "project_manager" && (page === "cmd" || page === "camp")) ? "proj" : page;
 
   if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:"Inter,sans-serif" }}>Loading…</div>;
   if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
