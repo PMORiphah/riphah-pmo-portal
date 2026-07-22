@@ -3042,7 +3042,7 @@ function UserManagementPage({ T, session }) {
         ok:true,
         msg: result.email_sent
           ? `Invite email sent to ${form.email}.`
-          : `User created. Email delivery uncertain — use the link below to share the invitation directly.`
+          : `User created, but the invite email did not send${result.email_error ? ` (${result.email_error})` : ""}. Use the link below to share the invitation directly.`
       });
       setForm({ username:"", full_name:"", email:"", role:"project_manager" });
       load();
