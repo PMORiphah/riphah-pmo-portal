@@ -1943,7 +1943,7 @@ function CampusPage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const [metrics, projs, camps] = await Promise.all([
-        supa("/rest/v1/project_metrics?select=id,code,name,bac,df_recommended_amount,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
+        supa("/rest/v1/project_metrics?select=id,code,name,bac,df_recommended_amount,amount_released,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
         supa("/rest/v1/projects?select=id,campus",{},session.access_token),
         supa("/rest/v1/campuses?select=id,name&order=name.asc",{},session.access_token),
       ]);
@@ -1994,6 +1994,7 @@ function CampusPage({ T, session, onSelectProject }) {
       over:     filtered.filter(r => r.workflow_stage==="approved" && r.budget_flag==="over").length,
       budget:   filtered.reduce((s,r) => s + (parseFloat(r.bac)||0), 0),
       dfBudget: filtered.reduce((s,r) => s + (parseFloat(r.df_recommended_amount)||0), 0),
+      released: filtered.reduce((s,r) => s + (parseFloat(r.amount_released)||0), 0),
     };
   }, [filtered]);
 
@@ -2017,10 +2018,21 @@ function CampusPage({ T, session, onSelectProject }) {
             <option key={name} value={name}>{name} ({countByCampus[name]||0})</option>
           ))}
         </select>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Quick search…" style={{...ctl,flex:1,minWidth:200}}/>
-        <span style={{fontSize:12,color:T.muted,whiteSpace:"nowrap"}}>
-          {filtered.length} project{filtered.length===1?"":"s"} · DF {fmtM(k.dfBudget)} · Approved {fmtM(k.budget)}
-        </span>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Quick search…" style={{...ctl,flex:"0 1 260px",minWidth:150}}/>
+        <div style={{flex:1,display:"flex",gap:16,alignItems:"baseline",justifyContent:"flex-end",flexWrap:"wrap",minWidth:0}}>
+          {[
+            {label:"Projects",  value:String(filtered.length), color:T.text},
+            {label:"DF Rec",    value:fmtM(k.dfBudget),        color:T.text},
+            {label:"Approved",  value:fmtM(k.budget),          color:GOLD},
+            {label:"Released",  value:fmtM(k.released),        color:"#2DD4BF"},
+            {label:"Remaining", value:fmtM(k.budget - k.released), color:"#60A5FA"},
+          ].map(s => (
+            <div key={s.label} style={{textAlign:"right",whiteSpace:"nowrap"}}>
+              <div style={{fontSize:9,color:T.muted,letterSpacing:1.2,textTransform:"uppercase",marginBottom:2}}>{s.label}</div>
+              <div style={{fontSize:14,fontWeight:700,color:s.color,fontVariantNumeric:"tabular-nums"}}>{s.value}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Approvals */}
