@@ -770,7 +770,7 @@ function CommandCenter({ T, session, onSelectProject }) {
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [kpiOverrides, setKpiOverrides] = useState({});
-  const [activeTab,    setActiveTab]    = useState("pipeline");
+  const [activeTab,    setActiveTab]    = useState("budgeting");
   const [activeCard,   setActiveCard]   = useState(null);
   const [dashProjects, setDashProjects] = useState([]);
 
