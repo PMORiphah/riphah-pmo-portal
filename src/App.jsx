@@ -2018,8 +2018,8 @@ function CampusPage({ T, session, onSelectProject }) {
             <option key={name} value={name}>{name} ({countByCampus[name]||0})</option>
           ))}
         </select>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Quick search…" style={{...ctl,flex:"0 1 260px",minWidth:150}}/>
-        <div style={{flex:1,display:"flex",gap:16,alignItems:"baseline",justifyContent:"flex-end",flexWrap:"wrap",minWidth:0}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Quick search…" style={{...ctl,flex:"0 1 400px",minWidth:180}}/>
+        <div style={{flex:1,display:"flex",gap:26,alignItems:"baseline",justifyContent:"flex-end",flexWrap:"wrap",minWidth:0}}>
           {[
             {label:"Projects",  value:String(filtered.length), color:T.text},
             {label:"DF Rec",    value:fmtM(k.dfBudget),        color:T.text},
