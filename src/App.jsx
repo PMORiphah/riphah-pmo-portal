@@ -959,7 +959,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         <div style={{ display:"flex", gap:10 }}>
           <EditableKCard T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
           <EditableKCard T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
-          <EditableKCard T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.budget_remaining),         fmtP((d.budget_remaining/d.total_capex)*100)+" available")} />
+          <EditableKCard T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
           <EditableKCard T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
           <EditableKCard T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
         </div>
@@ -2025,7 +2025,7 @@ function CampusPage({ T, session, onSelectProject }) {
             {label:"DF Rec",    value:fmtM(k.dfBudget),        color:T.text},
             {label:"Approved",  value:fmtM(k.budget),          color:GOLD},
             {label:"Released",  value:fmtM(k.released),        color:"#2DD4BF"},
-            {label:"Remaining", value:fmtM(k.budget - k.released), color:"#60A5FA"},
+            {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:"#60A5FA"},
           ].map(s => (
             <div key={s.label} style={{textAlign:"right",whiteSpace:"nowrap"}}>
               <div style={{fontSize:9,color:T.muted,letterSpacing:1.2,textTransform:"uppercase",marginBottom:2}}>{s.label}</div>
