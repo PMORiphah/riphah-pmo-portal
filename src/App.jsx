@@ -237,10 +237,23 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   );
 }
 
-function KCard({ T, label, value, sub, accent, featured }) {
+function KCard({ T, label, value, sub, accent, featured, onClick, isSelected }) {
   const valFontSize = String(value).length > 8 ? 19 : String(value).length > 5 ? 24 : 28;
+  const clickable = typeof onClick === "function";
   return (
-    <div style={{ flex:1, background:T.card, border:"1px solid "+T.border, borderRadius:10, padding:"15px 18px", borderTop: featured ? "3px solid "+(accent||GOLD) : "3px solid "+T.border+"60", minWidth:0 }}>
+    <div
+      onClick={onClick}
+      title={clickable ? (isSelected ? "Click to clear filter" : "Click to see these projects") : undefined}
+      style={{
+        flex:1, background:T.card,
+        border:"1px solid "+(isSelected ? (accent||GOLD) : T.border),
+        borderRadius:10, padding:"15px 18px",
+        borderTop: featured ? "3px solid "+(accent||GOLD) : "3px solid "+T.border+"60",
+        minWidth:0,
+        cursor: clickable ? "pointer" : "default",
+        boxShadow: isSelected ? `0 0 0 1px ${accent||GOLD}55` : "none",
+        transition:"border-color .15s, box-shadow .15s",
+      }}>
       <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:8, fontWeight:600, opacity:0.6 }}>{label}</div>
       <div style={{ fontSize:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.1 }}>{value}</div>
       {sub && <div style={{ fontSize:11, color:T.muted, marginTop:5, lineHeight:1.4 }}>{sub}</div>}
@@ -1935,6 +1948,7 @@ function CampusPage({ T, session, onSelectProject }) {
   const [rows,     setRows]     = useState([]);
   const [campuses, setCampuses] = useState([]);
   const [sel,      setSel]      = useState("");
+  const [activeCard, setActiveCard] = useState(null);
   const [q,        setQ]        = useState("");
   const [loading,  setLoading]  = useState(true);
   const [err,      setErr]      = useState(null);
@@ -1999,6 +2013,30 @@ function CampusPage({ T, session, onSelectProject }) {
   }, [filtered]);
 
   const good="#2DD4BF", warn="#F59E0B", bad="#F87171";
+
+  // Each KPI card maps to a predicate over the campus-filtered rows, so clicking
+  // a card drills the list down to exactly the projects it counted.
+  const CARD_FILTERS = {
+    pddNot:   { label:"PDDs Not Submitted", fn: r => r.workflow_stage==="pdd_not_submitted" && !r.is_carry_forward },
+    pddSub:   { label:"PDDs Submitted",     fn: r => r.workflow_stage==="identified"        && !r.is_carry_forward },
+    df:       { label:"DF Review",          fn: r => r.workflow_stage==="df_review"         && !r.is_carry_forward },
+    ed:       { label:"ED Review",          fn: r => r.workflow_stage==="ed_review"         && !r.is_carry_forward },
+    mt:       { label:"MT Review",          fn: r => r.workflow_stage==="mt_review"         && !r.is_carry_forward },
+    approved: { label:"Approved",           fn: r => r.workflow_stage==="approved"          && !r.is_carry_forward },
+    active:   { label:"Active Projects",    fn: r => r.workflow_stage==="approved"          && !r.is_carry_forward },
+    onTime:   { label:"On Schedule",        fn: r => r.workflow_stage==="approved" && r.schedule_flag==="on_time" },
+    delayed:  { label:"Delayed",            fn: r => r.workflow_stage==="approved" && r.schedule_flag==="delayed" },
+    over:     { label:"Over Budget",        fn: r => r.workflow_stage==="approved" && r.budget_flag==="over" },
+    closed:   { label:"Closed",             fn: r => r.workflow_stage==="closed" },
+  };
+
+  const toggleCard = (id) => setActiveCard(c => c === id ? null : id);
+
+  const visible = useMemo(() => {
+    if (!activeCard || !CARD_FILTERS[activeCard]) return filtered;
+    return filtered.filter(CARD_FILTERS[activeCard].fn);
+  }, [filtered, activeCard]);
+
   const th = {fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",whiteSpace:"nowrap",textAlign:"left",borderBottom:"1px solid "+T.border};
   const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
   const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",outline:"none"};
@@ -2039,12 +2077,12 @@ function CampusPage({ T, session, onSelectProject }) {
       <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Approvals</div>
         <div style={{display:"flex",gap:10}}>
-          <KCard T={T} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" />
-          <KCard T={T} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review" />
-          <KCard T={T} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} />
-          <KCard T={T} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} />
-          <KCard T={T} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} />
-          <KCard T={T} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured />
+          <KCard T={T} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" onClick={()=>toggleCard("pddNot")}   isSelected={activeCard==="pddNot"} />
+          <KCard T={T} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review"      onClick={()=>toggleCard("pddSub")}   isSelected={activeCard==="pddSub"} />
+          <KCard T={T} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} onClick={()=>toggleCard("df")} isSelected={activeCard==="df"} />
+          <KCard T={T} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} onClick={()=>toggleCard("ed")} isSelected={activeCard==="ed"} />
+          <KCard T={T} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
+          <KCard T={T} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured onClick={()=>toggleCard("approved")} isSelected={activeCard==="approved"} />
         </div>
       </div>
 
@@ -2052,16 +2090,28 @@ function CampusPage({ T, session, onSelectProject }) {
       <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Execution</div>
         <div style={{display:"flex",gap:10}}>
-          <KCard T={T} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured />
-          <KCard T={T} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good} />
-          <KCard T={T} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn} />
-          <KCard T={T} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad} />
-          <KCard T={T} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} />
+          <KCard T={T} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured onClick={()=>toggleCard("active")}  isSelected={activeCard==="active"} />
+          <KCard T={T} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good}    onClick={()=>toggleCard("onTime")}  isSelected={activeCard==="onTime"} />
+          <KCard T={T} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn}    onClick={()=>toggleCard("delayed")} isSelected={activeCard==="delayed"} />
+          <KCard T={T} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad}     onClick={()=>toggleCard("over")}    isSelected={activeCard==="over"} />
+          <KCard T={T} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} onClick={()=>toggleCard("closed")} isSelected={activeCard==="closed"} />
         </div>
       </div>
 
       {/* Project list */}
       <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:10,overflow:"hidden"}}>
+        {activeCard && CARD_FILTERS[activeCard] && (
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:"1px solid "+T.border,background:T.card2}}>
+            <span style={{fontSize:12,color:T.muted}}>
+              Showing <strong style={{color:T.text}}>{CARD_FILTERS[activeCard].label}</strong> — {visible.length} project{visible.length===1?"":"s"}
+              {sel ? ` in ${sel}` : ""}
+            </span>
+            <button onClick={()=>setActiveCard(null)}
+              style={{marginLeft:"auto",background:"none",border:"1px solid "+T.border,borderRadius:6,color:T.muted,fontSize:11,padding:"4px 10px",cursor:"pointer",fontFamily:"Inter,sans-serif"}}>
+              ✕ Clear
+            </button>
+          </div>
+        )}
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
@@ -2077,9 +2127,9 @@ function CampusPage({ T, session, onSelectProject }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.length===0 ? (
+              {visible.length===0 ? (
                 <tr><td colSpan={8} style={{...td,textAlign:"center",color:T.dim,padding:"28px 12px"}}>No projects match this filter.</td></tr>
-              ) : filtered.map((p,i) => (
+              ) : visible.map((p,i) => (
                 <tr key={p.id}>
                   <td style={{...td,color:T.dim}}>{i+1}</td>
                   <td style={td}>
