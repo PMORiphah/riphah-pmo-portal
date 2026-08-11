@@ -792,14 +792,20 @@ function CommandCenter({ T, session, onSelectProject }) {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const [rows, settings, projs] = await Promise.all([
+      const [rows, settings, projs, metrics] = await Promise.all([
         supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token),
         supa("/rest/v1/settings?key=eq.dashboard_kpis&select=value", {}, session.access_token),
         supa("/rest/v1/projects?select=id,code,name,bac,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
+        supa("/rest/v1/project_metrics?select=id,schedule_flag,budget_flag", {}, session.access_token),
       ]);
       setData(rows[0]);
       setKpiOverrides(settings[0]?.value || {});
-      setDashProjects(projs);
+      // schedule_flag / budget_flag here are the EFFECTIVE values (manual override
+      // if set, otherwise computed) — the KPI counts on this page are based on
+      // these, not on manual_schedule_flag/manual_budget_flag alone, so the
+      // project-list drill-down must filter on the same fields to match.
+      const flagById = Object.fromEntries((metrics||[]).map(m => [m.id, m]));
+      setDashProjects(projs.map(p => ({ ...p, ...(flagById[p.id] || {}) })));
     } catch (e) { setErr(e.message); }
     setLoading(false);
   }, [session.access_token]);
@@ -842,9 +848,9 @@ function CommandCenter({ T, session, onSelectProject }) {
     }
     if (activeTab === "execution") {
       if (activeCard === "active_projects") return dashProjects.filter(p => p.workflow_stage === "approved");
-      if (activeCard === "on_schedule")    return dashProjects.filter(p => p.workflow_stage === "approved" && p.manual_schedule_flag === "on_time");
-      if (activeCard === "delayed")        return dashProjects.filter(p => p.workflow_stage === "approved" && p.manual_schedule_flag === "delayed");
-      if (activeCard === "over_budget")    return dashProjects.filter(p => p.workflow_stage === "approved" && p.manual_budget_flag === "over");
+      if (activeCard === "on_schedule")    return dashProjects.filter(p => p.workflow_stage === "approved" && p.schedule_flag === "on_time");
+      if (activeCard === "delayed")        return dashProjects.filter(p => p.workflow_stage === "approved" && p.schedule_flag === "delayed");
+      if (activeCard === "over_budget")    return dashProjects.filter(p => p.workflow_stage === "approved" && p.budget_flag === "over");
       if (activeCard === "scope_change")   return dashProjects.filter(p => p.scope_change === true);
       if (activeCard === "closed")         return dashProjects.filter(p => p.workflow_stage === "closed");
     }
