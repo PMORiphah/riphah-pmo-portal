@@ -1033,8 +1033,8 @@ function CommandCenter({ T, session, onSelectProject }) {
       {/* ── HERO ── */}
       <div className="pmo-card-in" style={{
         background:T.heroGradient, borderRadius:16,
-        padding:"26px 32px", display:"flex", alignItems:"center", gap:0,
-        boxShadow:T.shadow, position:"relative", overflow:"hidden",
+        padding:"24px 32px", display:"flex", alignItems:"center", gap:32,
+        boxShadow:T.shadow, position:"relative", overflow:"hidden", minHeight:104,
       }}>
         {/* Ambient mesh — slow, deliberate drift, not distracting */}
         <div className="pmo-mesh" style={{position:"absolute", inset:0, pointerEvents:"none"}}>
@@ -1046,28 +1046,30 @@ function CommandCenter({ T, session, onSelectProject }) {
           <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill="#fff" opacity="0.045" />
           <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={GOLD} opacity="0.09" />
         </svg>
-        <div style={{position:"relative", borderRight:"1px solid rgba(255,255,255,0.14)", paddingRight:32}}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", textTransform:"uppercase", letterSpacing:1.8, marginBottom:9, fontWeight:600 }}>Portfolio health</div>
+        <div style={{position:"relative"}}>
+          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", textTransform:"uppercase", letterSpacing:1.8, marginBottom:9, fontWeight:600 }}>Portfolio health</div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <div className="pmo-pulse-dot" style={{ width:11, height:11, borderRadius:"50%", background:healthColor, color:healthColor }} />
             <div style={{ fontSize:32, fontWeight:700, color:healthColor, fontFamily:"DM Serif Display,serif" }}>{d.portfolio_health}</div>
           </div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", marginTop:5 }}>CPI ≥ 0.95 · SPI ≥ 0.95 thresholds</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:5 }}>CPI ≥ 0.95 · SPI ≥ 0.95 thresholds</div>
         </div>
-        <div style={{ textAlign:"center", position:"relative", borderRight:"1px solid rgba(255,255,255,0.12)", paddingLeft:32, paddingRight:36 }}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", letterSpacing:1.8, marginBottom:7, fontWeight:600, textTransform:"uppercase" }}>CPI</div>
+        <div style={{ width:1, height:56, background:"rgba(255,255,255,0.16)", flexShrink:0 }} />
+        <div style={{ textAlign:"center", position:"relative" }}>
+          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", letterSpacing:1.8, marginBottom:7, fontWeight:600, textTransform:"uppercase" }}>CPI</div>
           <div style={{ fontSize:32, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtR(d.portfolio_cpi)} /></div>
           <div style={{ fontSize:11, color:d.portfolio_cpi >= 0.95 ? "#6EE7D0" : "#FCA5AF", marginTop:2 }}>Cost performance</div>
         </div>
-        <div style={{ textAlign:"center", position:"relative", borderRight:"1px solid rgba(255,255,255,0.12)", paddingLeft:36, paddingRight:36 }}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", letterSpacing:1.8, marginBottom:7, fontWeight:600, textTransform:"uppercase" }}>SPI</div>
+        <div style={{ width:1, height:56, background:"rgba(255,255,255,0.16)", flexShrink:0 }} />
+        <div style={{ textAlign:"center", position:"relative" }}>
+          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", letterSpacing:1.8, marginBottom:7, fontWeight:600, textTransform:"uppercase" }}>SPI</div>
           <div style={{ fontSize:32, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtR(d.portfolio_spi)} /></div>
           <div style={{ fontSize:11, color:d.portfolio_spi >= 0.95 ? "#6EE7D0" : "#FCA5AF", marginTop:2 }}>Schedule performance</div>
         </div>
-        <div style={{ marginLeft:"auto", textAlign:"right", position:"relative", paddingLeft:36 }}>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginBottom:5 }}>Total CAPEX portfolio</div>
+        <div style={{ marginLeft:"auto", textAlign:"right", position:"relative" }}>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", marginBottom:5 }}>Total CAPEX portfolio</div>
           <div style={{ fontSize:29, fontWeight:700, color:GOLD, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>PKR <AnimatedNumber value={fmtM(d.total_capex)} /></div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)" }}>{d.total_projects} projects · FY 2026-27</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)" }}>{d.total_projects} projects · FY 2026-27</div>
         </div>
       </div>
 
