@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   LayoutDashboard, FolderKanban, TrendingUp, MessageSquare,
   Users, Activity, Settings, LogOut, Search, Eye, EyeOff,
@@ -16,6 +16,68 @@ import * as XLSX from "xlsx";
   document.head.appendChild(l);
 })();
 
+// ─── MOTION SYSTEM ──────────────────────────────────────────────────────────────
+// Shared keyframes for the visual-upgrade pass. Injected once; every component
+// below just references these class names rather than redefining animation.
+(() => {
+  const s = document.createElement("style");
+  s.textContent = `
+    @keyframes pmoCardIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes pmoFadeIn { from { opacity:0; } to { opacity:1; } }
+    @keyframes pmoPulseDot { 0%,100% { box-shadow:0 0 0 0 currentColor; opacity:1; } 70% { box-shadow:0 0 0 7px transparent; opacity:.85; } }
+    @keyframes pmoShimmer { 0% { background-position:-300px 0; } 100% { background-position:300px 0; } }
+    @keyframes pmoArchGlow { 0%,100% { opacity:.5; } 50% { opacity:1; } }
+    .pmo-card-in { animation: pmoCardIn .45s cubic-bezier(.16,1,.3,1) backwards; }
+    .pmo-fade-in { animation: pmoFadeIn .35s ease backwards; }
+    .pmo-lift { transition: transform .18s cubic-bezier(.16,1,.3,1), box-shadow .18s ease, border-color .18s ease; }
+    .pmo-lift:hover { transform: translateY(-3px); }
+    .pmo-pulse-dot { animation: pmoPulseDot 2.2s ease-in-out infinite; }
+    .pmo-skeleton { background-image: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); background-size: 300px 100%; background-repeat: no-repeat; animation: pmoShimmer 1.4s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .pmo-card-in, .pmo-fade-in, .pmo-pulse-dot, .pmo-skeleton { animation: none !important; }
+      .pmo-lift:hover { transform: none !important; }
+    }
+  `;
+  document.head.appendChild(s);
+})();
+
+// Animated count-up for KPI numbers. Parses the leading numeric portion of a
+// string value (handles "1,234", "59.2M", "0.94", "12%", plain integers) and
+// tweens it; any non-numeric value (e.g. "Critical", "—") renders as-is with
+// no animation. Re-triggers whenever `value` changes.
+function useCountUp(value, duration = 900) {
+  const [display, setDisplay] = useState(value);
+  const raf = useRef(null);
+  useEffect(() => {
+    const str = String(value ?? "");
+    const m = str.match(/^(-?[\d,]*\.?\d+)/);
+    if (!m) { setDisplay(str); return; }
+    const prefix = "";
+    const numStr = m[1];
+    const suffix = str.slice(m[1].length);
+    const target = parseFloat(numStr.replace(/,/g, ""));
+    const decimals = (numStr.split(".")[1] || "").length;
+    const hasComma = numStr.includes(",");
+    if (!isFinite(target)) { setDisplay(str); return; }
+    const start = performance.now();
+    const from = 0;
+    if (raf.current) cancelAnimationFrame(raf.current);
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const cur = from + (target - from) * eased;
+      const fixed = decimals > 0 ? cur.toFixed(decimals) : String(Math.round(cur));
+      const formatted = hasComma ? Number(fixed).toLocaleString("en-US", { minimumFractionDigits:decimals, maximumFractionDigits:decimals }) : fixed;
+      setDisplay(prefix + formatted + suffix);
+      if (t < 1) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return display;
+}
+
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPA_URL = "https://prmxkecomqqngvrmytcj.supabase.co";
 const PORTAL_LINK = "https://pmoriphah.github.io/riphah-pmo-portal/";
@@ -32,13 +94,19 @@ const DK = {
   dim:"#4E7E9E",         inputBg:"#091E35", inputBorder:"#224870",
   tableRow:"rgba(255,255,255,0.03)", tableRowHover:"rgba(255,255,255,0.07)",
   scrollbar:"#1E4878",
+  shadow:"0 1px 2px rgba(2,10,20,0.4), 0 8px 24px -8px rgba(2,10,20,0.55)",
+  shadowHover:"0 4px 12px rgba(2,10,20,0.45), 0 16px 40px -12px rgba(2,10,20,0.7)",
+  heroGradient:"linear-gradient(135deg, #123258 0%, #0D2240 60%, #0A1B34 100%)",
 };
 const LT = {
-  sidebarBg:NAVY, mainBg:"#E8EFF7", card:"#FFFFFF", card2:"#F5F8FC",
+  sidebarBg:NAVY, mainBg:"#EEF3F9", card:"#FFFFFF", card2:"#F5F8FC",
   headerBg:"#FFFFFF", border:"#C8D8E8", text:"#0D1929", muted:"#4A7090",
   dim:"#9EC0D8", inputBg:"#F5F9FC", inputBorder:"#C0D4E4",
   tableRow:"rgba(0,0,0,0.01)", tableRowHover:"rgba(0,0,0,0.03)",
   scrollbar:"#C8D8E8",
+  shadow:"0 1px 2px rgba(24,80,120,0.06), 0 8px 20px -8px rgba(24,80,120,0.14)",
+  shadowHover:"0 4px 10px rgba(24,80,120,0.08), 0 18px 36px -12px rgba(24,80,120,0.22)",
+  heroGradient:"linear-gradient(135deg, #1C5C8A 0%, #185078 60%, #123E60 100%)",
 };
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -192,11 +260,23 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout }) {
 }
 
 // ─── KPI CARD ─────────────────────────────────────────────────────────────────
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected }) {
+// Signature accent: faint concentric arcs in the corner of featured cards,
+// echoing the radiating rings behind the campus photo on the login screen.
+// Kept to a handful of high-value cards, not scattered everywhere.
+const ArchMotif = ({ color }) => (
+  <svg width="64" height="64" viewBox="0 0 64 64" style={{ position:"absolute", top:-6, right:-6, pointerEvents:"none", opacity:0.5 }} aria-hidden="true">
+    <circle cx="58" cy="6" r="16" fill="none" stroke={color} strokeWidth="1" opacity="0.35" />
+    <circle cx="58" cy="6" r="26" fill="none" stroke={color} strokeWidth="1" opacity="0.22" />
+    <circle cx="58" cy="6" r="36" fill="none" stroke={color} strokeWidth="1" opacity="0.12" />
+  </svg>
+);
+
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0 }) {
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
   const [eSub,    setESub]    = useState("");
   const [saving,  setSaving]  = useState(false);
+  const displayVal = useCountUp(editing ? null : value);
 
   const startEdit = () => { setEVal(String(value)); setESub(sub||""); setEditing(true); };
   const cancel    = () => setEditing(false);
@@ -207,32 +287,49 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   };
 
   const valFontSize = String(value).length > 8 ? 19 : String(value).length > 5 ? 24 : 28;
+  const shownVal = editing ? value : (displayVal ?? value);
 
   return (
-    <div onClick={()=>{ if(!editing && onCardClick) onCardClick(); }} style={{ flex:1, background:T.card, border:isSelected?"1px solid "+(accent||GOLD):"1px solid "+T.border, borderRadius:10, padding:"15px 18px", borderTop:featured?"3px solid "+(accent||GOLD):"3px solid "+T.border+"60", minWidth:0, position:"relative", cursor:onCardClick&&!editing?"pointer":"default", transition:"border-color .15s", boxShadow:isSelected?"0 0 0 1px "+(accent||GOLD)+"40":"none" }}>
-      {editing ? (
-        <div>
-          <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6, fontWeight:600, opacity:0.6 }}>{label}</div>
-          <input value={eVal} onChange={e=>setEVal(e.target.value)} style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+GOLD, borderRadius:6, padding:"5px 8px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:5 }} />
-          <input value={eSub} onChange={e=>setESub(e.target.value)} placeholder="Sub-label" style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"4px 8px", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:8 }} />
-          <div style={{ display:"flex", gap:5 }}>
-            <button onClick={save} disabled={saving} style={{ flex:1, padding:"4px 0", background:NAVY, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer" }}>{saving?"…":"Save"}</button>
-            <button onClick={async ()=>{ setSaving(true); await onSave(kpiKey,{value:"",sub:eSub}); setSaving(false); setEditing(false); }} style={{ padding:"4px 7px", background:"none", border:"1px solid rgba(45,212,191,0.4)", borderRadius:5, color:"#2DD4BF", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }} title="Reset value to live — keeps your custom sub-label">↺ Live</button>
-            <button onClick={cancel} style={{ padding:"4px 7px", background:"none", border:"1px solid "+T.border, borderRadius:5, color:T.muted, fontSize:11, cursor:"pointer" }}>✕</button>
+    <div
+      className={onCardClick && !editing ? "pmo-card-in pmo-lift" : "pmo-card-in"}
+      style={{ animationDelay: (index*45)+"ms", flex:1, minWidth:0 }}
+      onClick={()=>{ if(!editing && onCardClick) onCardClick(); }}
+    >
+      <div style={{
+        flex:1, background:T.card,
+        border:isSelected?"1px solid "+(accent||GOLD):"1px solid "+T.border,
+        borderRadius:12, padding:"15px 18px",
+        borderTop:featured?"3px solid "+(accent||GOLD):"3px solid "+T.border+"60",
+        minWidth:0, position:"relative", overflow:"hidden",
+        cursor:onCardClick&&!editing?"pointer":"default",
+        boxShadow:isSelected?"0 0 0 1px "+(accent||GOLD)+"40, "+T.shadow:T.shadow,
+        transition:"border-color .18s, box-shadow .18s",
+      }}>
+        {featured && <ArchMotif color={accent||GOLD} />}
+        {editing ? (
+          <div>
+            <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6, fontWeight:600, opacity:0.6 }}>{label}</div>
+            <input value={eVal} onChange={e=>setEVal(e.target.value)} style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+GOLD, borderRadius:6, padding:"5px 8px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:5 }} />
+            <input value={eSub} onChange={e=>setESub(e.target.value)} placeholder="Sub-label" style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"4px 8px", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:8 }} />
+            <div style={{ display:"flex", gap:5 }}>
+              <button onClick={save} disabled={saving} style={{ flex:1, padding:"4px 0", background:NAVY, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer" }}>{saving?"…":"Save"}</button>
+              <button onClick={async ()=>{ setSaving(true); await onSave(kpiKey,{value:"",sub:eSub}); setSaving(false); setEditing(false); }} style={{ padding:"4px 7px", background:"none", border:"1px solid rgba(45,212,191,0.4)", borderRadius:5, color:"#2DD4BF", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }} title="Reset value to live — keeps your custom sub-label">↺ Live</button>
+              <button onClick={cancel} style={{ padding:"4px 7px", background:"none", border:"1px solid "+T.border, borderRadius:5, color:T.muted, fontSize:11, cursor:"pointer" }}>✕</button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-            <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, fontWeight:600, opacity:0.6 }}>{label}</div>
-            {canEdit && (
-              <button onClick={e=>{ e.stopPropagation(); startEdit(); }} style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, padding:"1px 3px", fontSize:10, lineHeight:1, opacity:.55, fontFamily:"Inter,sans-serif" }} title="Edit">✏</button>
-            )}
-          </div>
-          <div style={{ fontSize:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.1 }}>{value}</div>
-          {sub && <div style={{ fontSize:11, color:T.muted, marginTop:5, lineHeight:1.4 }}>{sub}</div>}
-        </>
-      )}
+        ) : (
+          <>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+              <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, fontWeight:600, opacity:0.6 }}>{label}</div>
+              {canEdit && (
+                <button onClick={e=>{ e.stopPropagation(); startEdit(); }} style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, padding:"1px 3px", fontSize:10, lineHeight:1, opacity:.55, fontFamily:"Inter,sans-serif" }} title="Edit">✏</button>
+              )}
+            </div>
+            <div style={{ fontSize:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.1, fontVariantNumeric:"tabular-nums" }}>{shownVal}</div>
+            {sub && <div style={{ fontSize:11, color:T.muted, marginTop:5, lineHeight:1.4 }}>{sub}</div>}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -870,7 +967,19 @@ function CommandCenter({ T, session, onSelectProject }) {
     (activeTab === "budgeting" && activeCard === "carry_forward")
   );
 
-  if (loading) return <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading portfolio data…</div>;
+  if (loading) return (
+    <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20 }}>
+      <div className="pmo-skeleton" style={{ height:104, borderRadius:14, background:T.card, border:"1px solid "+T.border }} />
+      <div style={{ display:"flex", gap:4, borderBottom:"2px solid "+T.border, paddingBottom:2 }}>
+        {[0,1,2,3].map(i => <div key={i} className="pmo-skeleton" style={{ width:120, height:32, borderRadius:6, background:T.card2 }} />)}
+      </div>
+      <div style={{ display:"flex", gap:10 }}>
+        {[0,1,2,3,4].map(i => (
+          <div key={i} className="pmo-skeleton" style={{ flex:1, height:100, borderRadius:12, background:T.card, border:"1px solid "+T.border }} />
+        ))}
+      </div>
+    </div>
+  );
   if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color="#F87171" /><span style={{ color:"#F87171", fontSize:13 }}>{err}</span><button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:6, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
   if (!data) return null;
 
@@ -889,46 +998,57 @@ function CommandCenter({ T, session, onSelectProject }) {
     <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20 }}>
 
       {/* ── HERO ── */}
-      <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"20px 28px", display:"flex", alignItems:"center", gap:32, borderTop:"3px solid "+GOLD }}>
-        <div>
-          <div style={{ fontSize:10, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:8, fontWeight:600 }}>Portfolio Health</div>
+      <div className="pmo-card-in" style={{
+        background:T.heroGradient, border:"1px solid "+T.border, borderRadius:14,
+        padding:"22px 30px", display:"flex", alignItems:"center", gap:32,
+        borderTop:"3px solid "+GOLD, boxShadow:T.shadow, position:"relative", overflow:"hidden",
+      }}>
+        <svg width="180" height="180" viewBox="0 0 180 180" style={{position:"absolute",top:-40,right:-30,pointerEvents:"none"}} aria-hidden="true">
+          <circle cx="90" cy="90" r="50" fill="none" stroke="#fff" strokeWidth="1" opacity="0.05" />
+          <circle cx="90" cy="90" r="72" fill="none" stroke="#fff" strokeWidth="1" opacity="0.04" />
+          <circle cx="90" cy="90" r="94" fill="none" stroke={GOLD} strokeWidth="1" opacity="0.06" />
+        </svg>
+        <div style={{position:"relative"}}>
+          <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", textTransform:"uppercase", letterSpacing:1.5, marginBottom:8, fontWeight:600 }}>Portfolio Health</div>
           <div style={{ display:"flex", alignItems:"center", gap:9 }}>
-            <div style={{ width:10, height:10, borderRadius:"50%", background:healthColor, boxShadow:"0 0 10px "+healthColor }} />
+            <div className="pmo-pulse-dot" style={{ width:10, height:10, borderRadius:"50%", background:healthColor, color:healthColor }} />
             <div style={{ fontSize:30, fontWeight:700, color:healthColor, fontFamily:"DM Serif Display,serif" }}>{d.portfolio_health}</div>
           </div>
-          <div style={{ fontSize:11, color:T.muted, marginTop:4 }}>CPI ≥ 0.95 · SPI ≥ 0.95 thresholds</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginTop:4 }}>CPI ≥ 0.95 · SPI ≥ 0.95 thresholds</div>
         </div>
         <div style={{ width:1, height:56, background:"rgba(255,255,255,0.12)" }} />
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:10, color:T.muted, letterSpacing:1.5, marginBottom:6, fontWeight:600, textTransform:"uppercase" }}>CPI</div>
-          <div style={{ fontSize:30, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif" }}>{fmtR(d.portfolio_cpi)}</div>
+        <div style={{ textAlign:"center", position:"relative" }}>
+          <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, marginBottom:6, fontWeight:600, textTransform:"uppercase" }}>CPI</div>
+          <div style={{ fontSize:30, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>{useCountUp(fmtR(d.portfolio_cpi))}</div>
           <div style={{ fontSize:11, color:d.portfolio_cpi >= 0.95 ? good : bad }}>Cost performance</div>
         </div>
         <div style={{ width:1, height:56, background:"rgba(255,255,255,0.12)" }} />
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:10, color:T.muted, letterSpacing:1.5, marginBottom:6, fontWeight:600, textTransform:"uppercase" }}>SPI</div>
-          <div style={{ fontSize:30, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif" }}>{fmtR(d.portfolio_spi)}</div>
+        <div style={{ textAlign:"center", position:"relative" }}>
+          <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, marginBottom:6, fontWeight:600, textTransform:"uppercase" }}>SPI</div>
+          <div style={{ fontSize:30, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>{useCountUp(fmtR(d.portfolio_spi))}</div>
           <div style={{ fontSize:11, color:d.portfolio_spi >= 0.95 ? good : bad }}>Schedule performance</div>
         </div>
-        <div style={{ marginLeft:"auto", textAlign:"right" }}>
-          <div style={{ fontSize:11, color:T.muted, marginBottom:4 }}>Total CAPEX Portfolio</div>
-          <div style={{ fontSize:26, fontWeight:700, color:GOLD, fontFamily:"DM Serif Display,serif" }}>PKR {fmtM(d.total_capex)}</div>
-          <div style={{ fontSize:11, color:T.muted }}>{d.total_projects} projects · FY 2026-27</div>
+        <div style={{ marginLeft:"auto", textAlign:"right", position:"relative" }}>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginBottom:4 }}>Total CAPEX Portfolio</div>
+          <div style={{ fontSize:26, fontWeight:700, color:GOLD, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>PKR {useCountUp(fmtM(d.total_capex))}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)" }}>{d.total_projects} projects · FY 2026-27</div>
         </div>
       </div>
 
       {/* ── TAB BAR ── */}
-      <div style={{ display:"flex", borderBottom:"2px solid "+T.border, gap:0 }}>
+      <div style={{ display:"flex", borderBottom:"2px solid "+T.border, gap:4 }}>
         {TABS.map((tab, i) => {
           const isActive = activeTab === tab.id;
           return (
             <button key={tab.id} onClick={() => switchTab(tab.id)}
               style={{
-                padding:"12px 28px", border:"none", borderBottom: isActive ? "2px solid "+GOLD : "2px solid transparent",
+                padding:"10px 24px", border:"none", borderBottom: isActive ? "2px solid "+GOLD : "2px solid transparent",
                 marginBottom:"-2px", cursor:"pointer", fontFamily:"Inter,sans-serif",
                 fontSize:13, fontWeight: isActive ? 700 : 500, letterSpacing:0.2,
-                background:"transparent", color: isActive ? GOLD : T.muted,
-                transition:"all .18s", whiteSpace:"nowrap",
+                background: isActive ? T.card2 : "transparent",
+                borderRadius: isActive ? "8px 8px 0 0" : 0,
+                color: isActive ? GOLD : T.muted,
+                transition:"background .18s, color .18s, border-color .18s", whiteSpace:"nowrap",
               }}>
               <span style={{ display:"flex", alignItems:"center", gap:8 }}>
                 {tab.icon && <span style={{ fontSize:14, opacity: isActive ? 1 : 0.6 }}>{tab.icon}</span>}
@@ -947,40 +1067,40 @@ function CommandCenter({ T, session, onSelectProject }) {
       )}
       {activeTab === "budgeting" && (
         <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
-          <EditableKCard T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
-          <EditableKCard T={T} label="Budget Reduction"        canEdit={canEdit} kpiKey="budget_reduction" accent={bad}   onSave={saveKPI} {...kv("budget_reduction", fmtM(d.budget_reduction), "SU to DF variance")} />
-          <EditableKCard T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
-          <EditableKCard T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
+          <EditableKCard index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
+          <EditableKCard index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
+          <EditableKCard index={2} T={T} label="Budget Reduction"        canEdit={canEdit} kpiKey="budget_reduction" accent={bad}   onSave={saveKPI} {...kv("budget_reduction", fmtM(d.budget_reduction), "SU to DF variance")} />
+          <EditableKCard index={3} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
+          <EditableKCard index={4} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
       )}
       {activeTab === "pipeline" && (
         <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
-          <EditableKCard T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
-          <EditableKCard T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
-          <EditableKCard T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
-          <EditableKCard T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Management Team")} />
-          <EditableKCard T={T} label="Approved"       canEdit={canEdit} kpiKey="approved"       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
+          <EditableKCard index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
+          <EditableKCard index={1} T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
+          <EditableKCard index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
+          <EditableKCard index={3} T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
+          <EditableKCard index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Management Team")} />
+          <EditableKCard index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved"       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
         </div>
       )}
       {activeTab === "execution" && (
         <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
-          <EditableKCard T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
-          <EditableKCard T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
-          <EditableKCard T={T} label="Over Budget"             canEdit={canEdit} kpiKey="over_budget"     accent={bad}    onSave={saveKPI} onCardClick={() => toggleCard("over_budget")}     isSelected={activeCard==="over_budget"}     {...kv("over_budget",     d.over_budget_count,    "CPI < 0.95")} />
-          <EditableKCard T={T} label="Change in Scope"         canEdit={canEdit} kpiKey="scope_change"    accent="#A78BFA" onSave={saveKPI} onCardClick={() => toggleCard("scope_change")}    isSelected={activeCard==="scope_change"}    {...kv("scope_change",    d.scope_change_count||0,"Scope revised projects")} />
-          <EditableKCard T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
+          <EditableKCard index={0} T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
+          <EditableKCard index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
+          <EditableKCard index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
+          <EditableKCard index={3} T={T} label="Over Budget"             canEdit={canEdit} kpiKey="over_budget"     accent={bad}    onSave={saveKPI} onCardClick={() => toggleCard("over_budget")}     isSelected={activeCard==="over_budget"}     {...kv("over_budget",     d.over_budget_count,    "CPI < 0.95")} />
+          <EditableKCard index={4} T={T} label="Change in Scope"         canEdit={canEdit} kpiKey="scope_change"    accent="#A78BFA" onSave={saveKPI} onCardClick={() => toggleCard("scope_change")}    isSelected={activeCard==="scope_change"}    {...kv("scope_change",    d.scope_change_count||0,"Scope revised projects")} />
+          <EditableKCard index={5} T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
         </div>
       )}
       {activeTab === "financials" && (
         <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
-          <EditableKCard T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
-          <EditableKCard T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
-          <EditableKCard T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
-          <EditableKCard T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
+          <EditableKCard index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
+          <EditableKCard index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
+          <EditableKCard index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
+          <EditableKCard index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
+          <EditableKCard index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
         </div>
       )}
 
