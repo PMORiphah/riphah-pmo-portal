@@ -1966,6 +1966,37 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const activeFilterCount = [fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage].filter(Boolean).length;
   const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); };
 
+  // The summary strip restates the portfolio for whatever slice is currently
+  // filtered — filter to "MT Review" and you immediately see the money sitting
+  // in that stage. Deliberately NOT run through useCountUp/AnimatedNumber:
+  // these recompute on every keystroke in the filter row, and useCountUp always
+  // tweens from 0, so animating here would flash 0→value on each character.
+  const summary = useMemo(() => {
+    let df = 0, bac = 0, approved = 0, cf = 0, maxBac = 0;
+    for (const p of filtered) {
+      df  += +p.df_recommended_amount || 0;
+      bac += +p.bac || 0;
+      if (p.workflow_stage === "approved") approved++;
+      if (p.is_carry_forward) cf++;
+      if ((+p.bac || 0) > maxBac) maxBac = +p.bac || 0;
+    }
+    return { df, bac, approved, cf, maxBac };
+  }, [filtered]);
+
+  // One removable chip per active filter, so the toolbar says *what* is filtered
+  // rather than just how many filters are on.
+  const chips = [
+    search.trim() && { key:"q",     label:"Search",    val:search,                             clear:()=>setSearch("") },
+    fFY          && { key:"fy",     label:"FY",        val:fFY,                                clear:()=>setFFY("") },
+    fOrg         && { key:"org",    label:"Org",       val:fOrg,                               clear:()=>setFOrg("") },
+    fCode        && { key:"code",   label:"ID",        val:fCode,                              clear:()=>setFCode("") },
+    fName        && { key:"name",   label:"Name",      val:fName,                              clear:()=>setFName("") },
+    fSeg         && { key:"seg",    label:"Segment",   val:fSeg,                               clear:()=>setFSeg("") },
+    fPri         && { key:"pri",    label:"Priority",  val:PRIORITY_LABEL[fPri]||fPri,         clear:()=>setFPri("") },
+    fStrat       && { key:"strat",  label:"Strategic", val:fStrat,                             clear:()=>setFStrat("") },
+    fStage       && { key:"stage",  label:"Stage",     val:STAGE[fStage]?.label||fStage,       clear:()=>setFStage("") },
+  ].filter(Boolean);
+
   const downloadExport = () => {
     const headers = ["Sr #","Fiscal Year","Organization","Project ID","Project Name","DF Recommended (M)","Approved Budget (M)","Segment","Priority","Strategic Priority","Stage","Cost Centre","Campus/Site"];
     const data = filtered.map((p,i) => [
@@ -2057,54 +2088,113 @@ function ProjectsPage({ T, session, onSelectProject }) {
     setDeleting(false);
   };
 
-  const th = {fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",whiteSpace:"nowrap",textAlign:"left",borderBottom:"1px solid "+T.border};
+  const th = {fontSize:10,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1.2,padding:"11px 12px 9px",whiteSpace:"nowrap",textAlign:"left",background:T.card2,boxShadow:"inset 0 -1px 0 "+T.border};
   const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
 
-  if (loading) return <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:13}}>Loading projects…</div>;
+  if (loading) return (
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div className="pmo-skeleton" style={{height:64,flexShrink:0,background:T.card2,borderBottom:"1px solid "+T.border}}/>
+      <div className="pmo-skeleton" style={{height:46,flexShrink:0,background:T.headerBg,borderBottom:"1px solid "+T.border}}/>
+      <div style={{flex:1,padding:"12px 20px",display:"flex",flexDirection:"column",gap:8,overflow:"hidden"}}>
+        {[0,1,2,3,4,5,6,7,8,9,10,11].map(i=>(
+          <div key={i} className="pmo-skeleton" style={{height:26,borderRadius:6,background:T.tableRow,opacity:1-(i*0.06)}}/>
+        ))}
+      </div>
+    </div>
+  );
   if (err)     return <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><AlertCircle color="#F87171"/><span style={{color:"#F87171",fontSize:13}}>{err}</span><button onClick={load} style={{padding:"6px 16px",background:NAVY,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:12}}>Retry</button></div>;
 
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      {/* Toolbar */}
-      <div style={{padding:"12px 20px",display:"flex",alignItems:"center",gap:10,flexShrink:0,borderBottom:"1px solid "+T.border,background:T.headerBg,flexWrap:"wrap"}}>
+      {/* ── LIVE SLICE SUMMARY ── */}
+      {/* Restates the portfolio for the current filter, so the register always
+          answers "how much money is in what I'm looking at right now". */}
+      <div className="pmo-fade-in" style={{
+        flexShrink:0, background:T.heroGradient, padding:"13px 24px",
+        display:"flex", alignItems:"center", gap:26, position:"relative", overflow:"hidden",
+      }}>
+        <div className="pmo-mesh" style={{position:"absolute",inset:0,pointerEvents:"none"}}>
+          <div style={{position:"absolute",top:"-70%",right:"6%",width:260,height:260,borderRadius:"50%",background:`radial-gradient(circle, ${GOLD}1F 0%, transparent 68%)`}}/>
+        </div>
+        <svg width="180" height="80" viewBox="0 0 180 80" style={{position:"absolute",right:0,bottom:0,pointerEvents:"none"}} aria-hidden="true">
+          <path d="M180 80 L180 32 Q180 8 152 3 Q155 17 141 27 Q159 32 159 50 L159 80 Z" fill="#fff" opacity="0.045"/>
+          <path d="M180 80 L180 44 Q180 24 160 20 Q162 31 152 39 Q164 43 164 56 L164 80 Z" fill={GOLD} opacity="0.09"/>
+        </svg>
+        <div style={{position:"relative"}}>
+          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>
+            {activeFilterCount||search.trim() ? "In this view" : "All projects"}
+          </div>
+          <div style={{display:"flex",alignItems:"baseline",gap:7}}>
+            <span style={{fontSize:26,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{filtered.length}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>of {rows.length}</span>
+          </div>
+        </div>
+        <div style={{width:1,height:38,background:"rgba(255,255,255,0.16)",flexShrink:0}}/>
+        <div style={{position:"relative"}}>
+          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>DF Recommended</div>
+          <div style={{fontSize:19,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.df)}</div>
+        </div>
+        <div style={{width:1,height:38,background:"rgba(255,255,255,0.16)",flexShrink:0}}/>
+        <div style={{position:"relative"}}>
+          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>Approved Budget</div>
+          <div style={{fontSize:19,fontWeight:700,color:GOLD,fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.bac)}</div>
+        </div>
+        <div style={{marginLeft:"auto",display:"flex",gap:18,position:"relative"}}>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.6,fontWeight:600,marginBottom:4}}>Approved</div>
+            <div style={{fontSize:17,fontWeight:700,color:"#6EE7D0",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.approved}</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.6,fontWeight:600,marginBottom:4}}>Carry fwd</div>
+            <div style={{fontSize:17,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.cf}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── TOOLBAR ── */}
+      <div style={{padding:"11px 20px",display:"flex",alignItems:"center",gap:10,flexShrink:0,borderBottom:"1px solid "+T.border,background:T.headerBg,flexWrap:"wrap"}}>
         {/* Search */}
-        <div style={{display:"flex",alignItems:"center",gap:8,background:T.card2,border:"1px solid "+T.border,borderRadius:8,padding:"7px 12px",flex:1,maxWidth:260}}>
-          <Search size={13} color={T.muted}/>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Quick search…" style={{background:"none",border:"none",outline:"none",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",flex:1}}/>
-          {search && <button onClick={()=>setSearch("")} style={{background:"none",border:"none",cursor:"pointer",color:T.dim,padding:0,display:"flex"}}><X size={12}/></button>}
+        <div style={{display:"flex",alignItems:"center",gap:8,background:T.inputBg,border:"1px solid "+(search?GOLD+"88":T.inputBorder),borderRadius:8,padding:"7px 12px",flex:1,maxWidth:260,transition:"border-color .15s"}}>
+          <Search size={13} color={search?GOLD:T.muted}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or project ID…" style={{background:"none",border:"none",outline:"none",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",flex:1,minWidth:0}}/>
+          {search && <button onClick={()=>setSearch("")} title="Clear search" style={{background:"none",border:"none",cursor:"pointer",color:T.dim,padding:0,display:"flex"}}><X size={12}/></button>}
         </div>
-        {/* Filter count badge */}
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:12,color:T.muted}}>{filtered.length} / {rows.length} projects</span>
-          {activeFilterCount>0&&(
-            <button onClick={clearAllFilters}
-              style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",background:"rgba(216,152,64,0.12)",border:"1px solid rgba(216,152,64,0.4)",borderRadius:20,color:GOLD,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>
-              ✕ {activeFilterCount} filter{activeFilterCount>1?"s":""} active
-            </button>
-          )}
-        </div>
+
+        {/* Active filter chips */}
+        {chips.length>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",minWidth:0}}>
+            {chips.map(c=>(
+              <span key={c.key} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 6px 4px 10px",background:GOLD+T.washAlpha,border:"1px solid "+GOLD+"55",borderRadius:20,fontSize:11,color:T.text,maxWidth:210,whiteSpace:"nowrap"}}>
+                <span style={{color:GOLD,fontWeight:700}}>{c.label}</span>
+                <span style={{overflow:"hidden",textOverflow:"ellipsis",opacity:.85}}>{c.val}</span>
+                <button onClick={c.clear} title={"Remove "+c.label+" filter"} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:0,lineHeight:0}}><X size={11}/></button>
+              </span>
+            ))}
+            <button onClick={clearAllFilters} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:11,textDecoration:"underline",fontFamily:"Inter,sans-serif",padding:"0 2px"}}>Clear all</button>
+          </div>
+        )}
+
         {/* Right buttons */}
         <div style={{marginLeft:"auto",display:"flex",gap:7,alignItems:"center"}}>
-          {/* Download current view */}
           <button onClick={downloadExport}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"rgba(45,212,191,0.10)",border:"1px solid rgba(45,212,191,0.4)",borderRadius:7,color:"#2DD4BF",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Inter,sans-serif"}}
-            title={activeFilterCount>0?"Download filtered projects":"Download all projects"}>
+            style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:EMERALD+T.washAlpha,border:"1px solid "+EMERALD+"66",borderRadius:8,color:EMERALD,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}
+            title={activeFilterCount>0?"Download the projects currently in view":"Download all projects"}>
             <Download size={13}/>
-            {activeFilterCount>0?"Export Filtered":"Export All"}
+            {activeFilterCount||search.trim()?`Export ${filtered.length}`:"Export all"}
           </button>
           {isPMO&&(
             <>
-              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",background:NAVY,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}><Plus size={13}/>New</button>
-              <button onClick={()=>setShowImport(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:7,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Inter,sans-serif"}}><Upload size={13}/>Import</button>
-              <button onClick={downloadDataTemplate} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:7,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Inter,sans-serif"}}><Download size={13}/>Data Template</button>
+              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",background:NAVY,border:"1px solid "+NAVY,borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif",boxShadow:T.shadow,whiteSpace:"nowrap"}}><Plus size={13}/>New project</button>
+              <button onClick={()=>setShowImport(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}><Upload size={13}/>Import</button>
+              <button onClick={downloadDataTemplate} title="Download every project pre-filled in the import template format" style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}><Download size={13}/>Data template</button>
             </>
           )}
         </div>
       </div>
 
       {/* Table */}
-      <div style={{flex:1,overflow:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse"}}>
+      <div style={{flex:1,overflow:"auto",backgroundImage:T.pageTexture,backgroundAttachment:"local"}}>
+        <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0}}>
           <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
             {/* Column headers */}
             <tr>
@@ -2124,11 +2214,11 @@ function ProjectsPage({ T, session, onSelectProject }) {
             </tr>
             {/* Filter row */}
             {(()=>{
-              const fSel = {width:"100%",background:T.inputBg,border:"1px solid "+(true?T.inputBorder:T.border),borderRadius:5,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:"Inter,sans-serif",outline:"none",cursor:"pointer"};
-              const fInp = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:5,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:"Inter,sans-serif",outline:"none"};
-              const fc   = {padding:"5px 8px",borderBottom:"2px solid "+T.border,background:T.mainBg};
-              const highlight = (val) => val ? {...fSel,border:"1px solid "+GOLD,color:GOLD} : fSel;
-              const highlightI = (val) => val ? {...fInp,border:"1px solid "+GOLD,color:GOLD} : fInp;
+              const fSel = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:"Inter,sans-serif",outline:"none",cursor:"pointer"};
+              const fInp = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:"Inter,sans-serif",outline:"none"};
+              const fc   = {padding:"5px 8px",background:T.card2,boxShadow:`inset 0 -2px 0 ${activeFilterCount>0?GOLD+"99":T.border}`};
+              const highlight = (val) => val ? {...fSel,border:"1px solid "+GOLD,color:GOLD,fontWeight:600} : fSel;
+              const highlightI = (val) => val ? {...fInp,border:"1px solid "+GOLD,color:GOLD,fontWeight:600} : fInp;
               return (
                 <tr>
                   <td style={fc}></td>
@@ -2183,24 +2273,36 @@ function ProjectsPage({ T, session, onSelectProject }) {
             })()}
           </thead>
           <tbody>
-            {filtered.map((p,i)=>(
+            {filtered.map((p,i)=>{
+              const hovered = hoverId===p.id;
+              const pClr    = PRIORITY[p.priority]||T.dim;
+              // Right-anchored proportional fill on Approved Budget — makes the
+              // relative size of 99 budgets scannable at a glance. Painted as a
+              // background gradient so it costs zero row height.
+              const bacPct  = summary.maxBac>0 ? Math.round(((+p.bac||0)/summary.maxBac)*100) : 0;
+              return (
               <tr key={p.id} onClick={()=>onSelectProject&&onSelectProject(p.id)} onMouseEnter={()=>setHoverId(p.id)} onMouseLeave={()=>setHoverId(null)}
-                style={{background:hoverId===p.id?T.card2:i%2===0?"transparent":T.tableRow,cursor:onSelectProject?"pointer":"default",transition:"background .1s"}}>
-                <td style={{...td,color:T.dim,fontSize:12,width:40}}>{i+1}</td>
+                style={{background:hovered?T.tableRowHover:i%2===0?"transparent":T.tableRow,cursor:onSelectProject?"pointer":"default",transition:"background .12s"}}>
+                <td style={{...td,color:T.dim,fontSize:11.5,width:40,fontVariantNumeric:"tabular-nums",boxShadow:hovered?"inset 3px 0 0 "+pClr:"none",transition:"box-shadow .12s"}}>{i+1}</td>
                 <td style={{...td,fontSize:12,color:T.muted,whiteSpace:"nowrap"}}>{p.fiscal_year||"—"}</td>
                 <td style={{...td,fontSize:12,color:T.muted}}>{p.segments?.name||"—"}</td>
-                <td style={{...td,fontFamily:"'JetBrains Mono',monospace",fontSize:11.5,color:T.muted,whiteSpace:"nowrap"}}>
+                <td style={{...td,fontFamily:"'JetBrains Mono',monospace",fontSize:11.5,color:hovered?T.text:T.muted,whiteSpace:"nowrap",transition:"color .12s"}}>
                   <div style={{display:"flex",alignItems:"center",gap:5}}>
-                    {p.is_carry_forward&&<span style={{fontSize:9,fontWeight:700,background:"rgba(216,152,64,0.15)",color:GOLD,padding:"1px 5px",borderRadius:4}}>CF</span>}
+                    {p.is_carry_forward&&<span title="Carry forward from prior FY" style={{fontSize:9,fontWeight:700,background:GOLD+T.badgeAlpha,color:GOLD,padding:"1px 5px",borderRadius:4,letterSpacing:.5}}>CF</span>}
                     {p.code}
                   </div>
                 </td>
-                <td style={{...td,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
+                <td style={{...td,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:hovered?600:400,transition:"font-weight .12s"}} title={p.name}>{p.name}</td>
                 <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:T.muted}}>{fmtM(p.df_recommended_amount)}</td>
-                <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:GOLD}}>{fmtM(p.bac)}</td>
+                <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:GOLD,
+                  backgroundImage: bacPct>0 ? `linear-gradient(to right, transparent ${100-bacPct}%, ${GOLD}1C ${100-bacPct}%)` : "none"}}>{fmtM(p.bac)}</td>
                 <td style={{...td,fontSize:12,color:T.muted}}>{p.sectors?.name||"—"}</td>
-                <td style={td}><span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY[p.priority]||"#aaa"}}/><span style={{fontSize:12,color:T.muted}}>{PRIORITY_LABEL[p.priority]||"—"}</span></span></td>
-                <td style={{...td,fontSize:12,color:T.muted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.strategic_priority||"—"}</td>
+                <td style={td}>
+                  {p.priority
+                    ? <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:20,background:pClr+T.badgeAlpha,color:pClr,fontSize:10.5,fontWeight:700,whiteSpace:"nowrap"}}>{PRIORITY_LABEL[p.priority]||p.priority}</span>
+                    : <span style={{color:T.dim,fontSize:12}}>—</span>}
+                </td>
+                <td style={{...td,fontSize:12,color:T.muted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.strategic_priority||""}>{p.strategic_priority||"—"}</td>
                 <td style={td}><StageBadge stage={p.workflow_stage}/></td>
                 <td style={{...td,fontSize:12,color:T.muted}}>{p.cost_centers?.name||"—"}</td>
                 {isPMO&&(
@@ -2211,17 +2313,41 @@ function ProjectsPage({ T, session, onSelectProject }) {
                         <button onClick={()=>setConfirmDel(null)} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:5,color:T.muted,fontSize:11,cursor:"pointer"}}>No</button>
                       </div>
                     ):(
-                      <div style={{display:"flex",gap:6,justifyContent:"center"}}>
-                        <button onClick={async ()=>{ const full = await supa(`/rest/v1/projects?id=eq.${p.id}&select=*`,{},session.access_token); setEditProject(full[0]||p); setShowForm(true); }} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}} title="Edit"><Edit2 size={13}/></button>
-                        <button onClick={()=>startDelete(p)} style={{background:"none",border:"none",cursor:"pointer",color:"#F87171",display:"flex",padding:2,opacity:.65}} title="Delete"><Trash2 size={13}/></button>
+                      <div style={{display:"flex",gap:6,justifyContent:"center",opacity:hovered?1:0.4,transition:"opacity .12s"}}>
+                        <button onClick={async ()=>{ const full = await supa(`/rest/v1/projects?id=eq.${p.id}&select=*`,{},session.access_token); setEditProject(full[0]||p); setShowForm(true); }} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}} title="Edit project"><Edit2 size={13}/></button>
+                        <button onClick={()=>startDelete(p)} style={{background:"none",border:"none",cursor:"pointer",color:"#F87171",display:"flex",padding:2}} title="Delete project"><Trash2 size={13}/></button>
                       </div>
                     )}
                   </td>
                 )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
+
+        {/* Empty state — previously the table just went blank when filters matched nothing */}
+        {filtered.length===0&&(
+          <div className="pmo-fade-in" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,padding:"64px 20px",textAlign:"center"}}>
+            <div style={{width:46,height:46,borderRadius:14,background:GOLD+T.badgeAlpha,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <Search size={20} color={GOLD}/>
+            </div>
+            <div style={{fontSize:15,fontWeight:600,color:T.text,fontFamily:"DM Serif Display,serif"}}>
+              {rows.length===0 ? "No projects yet" : "No projects match these filters"}
+            </div>
+            <div style={{fontSize:12,color:T.muted,maxWidth:340,lineHeight:1.5}}>
+              {rows.length===0
+                ? (isPMO ? "Add your first project, or import a filled-in template to load the portfolio in bulk." : "Nothing has been added to the portfolio yet.")
+                : "Try removing a filter to widen the search."}
+            </div>
+            {rows.length>0&&chips.length>0&&(
+              <button onClick={clearAllFilters} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>Clear all filters</button>
+            )}
+            {rows.length===0&&isPMO&&(
+              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>New project</button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Delete confirmation banner with comment count */}
