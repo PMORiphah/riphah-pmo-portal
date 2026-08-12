@@ -259,6 +259,13 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout }) {
   );
 }
 
+// Small wrapper so useCountUp's hook calls live in their own component instance
+// rather than being invoked inline inside a parent that has conditional early
+// returns (which would violate the Rules of Hooks and crash the render).
+function AnimatedNumber({ value }) {
+  return useCountUp(value);
+}
+
 // ─── KPI CARD ─────────────────────────────────────────────────────────────────
 // Signature accent: faint concentric arcs in the corner of featured cards,
 // echoing the radiating rings behind the campus photo on the login screen.
@@ -1019,18 +1026,18 @@ function CommandCenter({ T, session, onSelectProject }) {
         <div style={{ width:1, height:56, background:"rgba(255,255,255,0.12)" }} />
         <div style={{ textAlign:"center", position:"relative" }}>
           <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, marginBottom:6, fontWeight:600, textTransform:"uppercase" }}>CPI</div>
-          <div style={{ fontSize:30, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>{useCountUp(fmtR(d.portfolio_cpi))}</div>
+          <div style={{ fontSize:30, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtR(d.portfolio_cpi)} /></div>
           <div style={{ fontSize:11, color:d.portfolio_cpi >= 0.95 ? good : bad }}>Cost performance</div>
         </div>
         <div style={{ width:1, height:56, background:"rgba(255,255,255,0.12)" }} />
         <div style={{ textAlign:"center", position:"relative" }}>
           <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, marginBottom:6, fontWeight:600, textTransform:"uppercase" }}>SPI</div>
-          <div style={{ fontSize:30, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>{useCountUp(fmtR(d.portfolio_spi))}</div>
+          <div style={{ fontSize:30, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtR(d.portfolio_spi)} /></div>
           <div style={{ fontSize:11, color:d.portfolio_spi >= 0.95 ? good : bad }}>Schedule performance</div>
         </div>
         <div style={{ marginLeft:"auto", textAlign:"right", position:"relative" }}>
           <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginBottom:4 }}>Total CAPEX Portfolio</div>
-          <div style={{ fontSize:26, fontWeight:700, color:GOLD, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>PKR {useCountUp(fmtM(d.total_capex))}</div>
+          <div style={{ fontSize:26, fontWeight:700, color:GOLD, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>PKR <AnimatedNumber value={fmtM(d.total_capex)} /></div>
           <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)" }}>{d.total_projects} projects · FY 2026-27</div>
         </div>
       </div>
