@@ -322,16 +322,16 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     >
       <div style={{
         flex:1,
-        background: featured ? `linear-gradient(165deg, ${T.card} 0%, ${T.card} 60%, ${clr}14 100%)` : T.card,
+        background: `linear-gradient(165deg, ${T.card} 0%, ${T.card} 60%, ${clr}14 100%)`,
         border:isSelected?"1px solid "+clr:"1px solid "+T.border,
         borderRadius:12, padding:"16px 18px",
-        borderTop: featured ? "3px solid "+clr : "3px solid "+T.border+"50",
+        borderTop: "3px solid "+clr,
         minWidth:0, position:"relative", overflow:"hidden",
         cursor:onCardClick&&!editing?"pointer":"default",
         boxShadow: isSelected ? `0 0 0 1px ${clr}55, ${T.shadow}` : (hover && onCardClick ? `0 0 0 1px ${clr}30, 0 0 24px -6px ${clr}55, ${T.shadowHover}` : T.shadow),
         transition:"border-color .18s, box-shadow .22s, background .22s",
       }}>
-        {featured && <ArchMotif color={clr} size={76} />}
+        <ArchMotif color={clr} size={76} />
         {editing ? (
           <div>
             <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6, fontWeight:600, opacity:0.6 }}>{label}</div>
@@ -345,14 +345,13 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
           </div>
         ) : (
           <>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:featured?12:8 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                {Icon && featured && (
+                {Icon && (
                   <div style={{ width:26, height:26, borderRadius:8, background:clr+"22", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                     <Icon size={14} color={clr} strokeWidth={2.25} />
                   </div>
                 )}
-                {Icon && !featured && <Icon size={12} color={T.dim} strokeWidth={2} />}
                 <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, fontWeight:600, opacity:0.6 }}>{label}</div>
               </div>
               {canEdit && (
