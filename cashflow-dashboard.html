@@ -1,0 +1,1552 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAPEX Command Center — FY 2026-27</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&amp;family=Inter:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --navy-950:#0A1A30;
+  --navy-900:#0F2547;
+  --navy-800:#153564;
+  --navy-700:#1D4384;
+  --gold:#C9A24B;
+  --gold-soft:#E8D9AE;
+  --teal:#2BB6A8;
+  --coral:#E2725B;
+  --bg:#F4F6F9;
+  --surface:#FFFFFF;
+  --ink:#101E3B;
+  --muted:#66738C;
+  --line:#E4E9F1;
+  --shadow: 0 1px 2px rgba(16,30,59,0.04), 0 8px 24px rgba(16,30,59,0.06);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Inter',sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono',monospace;}
+.display{font-family:'Space Grotesk',sans-serif;}
+
+/* ===== Header ===== */
+.topbar{
+  background:linear-gradient(135deg, var(--navy-950) 0%, var(--navy-800) 100%);
+  color:#fff;
+  padding:22px 32px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:24px;
+  flex-wrap:wrap;
+  position:relative;
+  overflow:hidden;
+}
+.topbar::after{
+  content:"";
+  position:absolute; right:-60px; top:-80px;
+  width:280px; height:280px; border-radius:50%;
+  background:radial-gradient(circle, rgba(201,162,75,0.18) 0%, rgba(201,162,75,0) 70%);
+}
+.brand-eyebrow{
+  font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--gold-soft); font-weight:600; margin-bottom:6px;
+}
+.brand-title{
+  font-family:'Space Grotesk',sans-serif;
+  font-size:26px; font-weight:700; margin:0; line-height:1.15;
+}
+.brand-sub{
+  font-size:13px; color:#B9C6E0; margin-top:6px;
+}
+.topbar-actions{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap; z-index:1;
+}
+.pill{
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.16);
+  border-radius:999px;
+  padding:8px 14px;
+  font-size:12px;
+  color:#DCE4F2;
+  display:flex; align-items:center; gap:8px;
+}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(43,182,168,0.25);}
+.btn{
+  font-family:'Inter',sans-serif;
+  font-weight:600;
+  font-size:13px;
+  border:none;
+  border-radius:9px;
+  padding:10px 16px;
+  cursor:pointer;
+  transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.btn-gold{background:var(--gold); color:var(--navy-950);}
+.btn-gold:hover{transform:translateY(-1px); box-shadow:0 6px 16px rgba(201,162,75,0.35);}
+.btn-ghost{background:rgba(255,255,255,0.06); color:#fff; border:1px solid rgba(255,255,255,0.2);}
+.btn-ghost:hover{background:rgba(255,255,255,0.12);}
+#fileInput{display:none;}
+
+/* ===== Tabs ===== */
+.tabbar{
+  background:var(--surface);
+  border-bottom:1px solid var(--line);
+  padding:0 32px;
+  display:flex; gap:4px;
+  position:sticky; top:0; z-index:30;
+  overflow-x:auto;
+}
+.tab-btn{
+  font-family:'Space Grotesk',sans-serif;
+  font-weight:600; font-size:13.5px;
+  background:none; border:none; cursor:pointer;
+  padding:16px 18px 14px;
+  color:var(--muted);
+  border-bottom:2.5px solid transparent;
+  white-space:nowrap;
+}
+.tab-btn.active{color:var(--navy-900); border-bottom-color:var(--gold);}
+.tab-btn:hover{color:var(--navy-900);}
+
+/* ===== Filter bar ===== */
+.filterbar{
+  background:var(--surface);
+  border-bottom:1px solid var(--line);
+  padding:14px 32px;
+  display:flex; gap:12px; flex-wrap:wrap; align-items:center;
+  position:sticky; top:49px; z-index:29;
+}
+.filterbar label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; display:block; margin-bottom:4px; font-weight:600;}
+.filter-group{display:flex; flex-direction:column;}
+.filterbar select{
+  font-family:'Inter',sans-serif; font-size:13px; color:var(--ink);
+  padding:8px 10px; border-radius:7px; border:1px solid var(--line);
+  background:#FBFCFE; min-width:150px; cursor:pointer;
+}
+.filterbar select:focus{outline:2px solid var(--gold); outline-offset:1px;}
+.reset-link{
+  font-size:12.5px; color:var(--navy-700); font-weight:600; cursor:pointer;
+  border:none; background:none; margin-top:16px; text-decoration:underline;
+}
+.filter-count{
+  margin-left:auto; font-size:12.5px; color:var(--muted); align-self:flex-end; padding-bottom:9px;
+}
+.filter-count b{color:var(--navy-900);}
+
+/* ===== Main ===== */
+main{padding:28px 32px 60px; max-width:1520px; margin:0 auto;}
+.section{display:none;}
+.section.active{display:block; animation:fadein .25s ease;}
+@keyframes fadein{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+.section-head{margin:34px 0 16px;}
+.section-head:first-child{margin-top:0;}
+.section-eyebrow{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--gold); font-weight:700;}
+.section-title{font-family:'Space Grotesk',sans-serif; font-size:20px; font-weight:700; margin:4px 0 2px; color:var(--navy-950);}
+.section-desc{font-size:13px; color:var(--muted);}
+
+/* ===== KPI grid ===== */
+.kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(200px,1fr));
+  gap:14px;
+}
+.kpi-card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:18px 18px 16px;
+  box-shadow:var(--shadow);
+  position:relative;
+  overflow:hidden;
+}
+.kpi-card.accent-gold{border-top:3px solid var(--gold);}
+.kpi-card.accent-teal{border-top:3px solid var(--teal);}
+.kpi-card.accent-navy{border-top:3px solid var(--navy-700);}
+.kpi-card.accent-coral{border-top:3px solid var(--coral);}
+.kpi-label{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; margin-bottom:10px;}
+.kpi-value{font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; color:var(--navy-950); line-height:1.1;}
+.kpi-sub{font-size:11.5px; color:var(--muted); margin-top:7px; line-height:1.4;}
+
+/* ===== Hero chart ===== */
+.hero-card{
+  background:linear-gradient(180deg, var(--navy-950) 0%, var(--navy-800) 100%);
+  border-radius:18px;
+  padding:26px 26px 10px;
+  margin-top:20px;
+  color:#fff;
+  box-shadow:0 14px 40px rgba(15,37,71,0.25);
+}
+.hero-top{display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; margin-bottom:6px;}
+.hero-title{font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:700;}
+.hero-title span{color:var(--gold-soft); font-weight:500; font-size:12.5px; display:block; margin-top:3px; font-family:'Inter',sans-serif;}
+.hero-peak{text-align:right;}
+.hero-peak .big{font-family:'IBM Plex Mono',monospace; font-size:22px; color:var(--gold); font-weight:600;}
+.hero-peak .lbl{font-size:11px; color:#B9C6E0; text-transform:uppercase; letter-spacing:.06em;}
+.hero-chart-wrap{height:260px; margin-top:10px;}
+
+/* ===== Card grid ===== */
+.grid-2{display:grid; grid-template-columns:1.3fr 1fr; gap:16px;}
+.grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+.grid-1{display:grid; grid-template-columns:1fr; gap:16px;}
+@media(max-width:1100px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+
+.card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:18px 20px 16px;
+  box-shadow:var(--shadow);
+}
+.card-title{font-family:'Space Grotesk',sans-serif; font-size:14.5px; font-weight:700; color:var(--navy-950);}
+.card-sub{font-size:11.5px; color:var(--muted); margin-top:2px; margin-bottom:12px;}
+.chart-box{position:relative; width:100%;}
+.chart-box.h240{height:240px;}
+.chart-box.h280{height:280px;}
+.chart-box.h320{height:320px;}
+.chart-box.h420{height:420px;}
+
+.card-controls{display:flex; gap:6px; margin-bottom:10px;}
+.chip-btn{
+  font-size:11.5px; font-weight:600; padding:5px 11px; border-radius:999px;
+  border:1px solid var(--line); background:#FBFCFE; color:var(--muted); cursor:pointer;
+}
+.chip-btn.active{background:var(--navy-900); color:#fff; border-color:var(--navy-900);}
+
+/* ===== Table ===== */
+.table-wrap{overflow-x:auto; border-radius:12px; border:1px solid var(--line);}
+table{width:100%; border-collapse:collapse; font-size:12.5px; background:var(--surface);}
+thead th{
+  background:var(--navy-950); color:#fff; text-align:left; padding:10px 12px;
+  font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+  position:sticky; top:0; cursor:pointer; white-space:nowrap;
+}
+thead th:hover{background:var(--navy-800);}
+tbody td{padding:9px 12px; border-bottom:1px solid var(--line); color:var(--ink); white-space:nowrap;}
+tbody tr:hover{background:#F7F9FC;}
+.num{font-family:'IBM Plex Mono',monospace; text-align:right;}
+.badge{padding:3px 9px; border-radius:999px; font-size:10.5px; font-weight:700;}
+.badge-inprogress{background:#DFF3EE; color:#137A6B;}
+.badge-upcoming{background:#E6EEFC; color:#1D4384;}
+.badge-completed{background:#F0F1F4; color:#5A6478;}
+.badge-unscheduled{background:#FBE8E3; color:#B94A34;}
+
+/* heatmap */
+.heat-table th, .heat-table td{padding:7px 9px; font-size:11px;}
+.heat-cell{text-align:center; font-family:'IBM Plex Mono',monospace; color:#0F2547; font-weight:600; border-radius:4px;}
+.proj-name-cell{max-width:260px; white-space:normal; font-weight:600; font-size:11.5px;}
+.heat-table thead th:first-child{position:sticky; left:0; z-index:3; min-width:250px;}
+.heat-table thead th:last-child{position:sticky; right:0; z-index:3;}
+.heat-table td.proj-name-cell{
+  position:sticky; left:0; z-index:1; background:var(--surface);
+  box-shadow:1px 0 0 var(--line); min-width:250px;
+}
+.heat-table tbody tr:hover td.proj-name-cell{background:#F7F9FC;}
+.heat-total{
+  position:sticky; right:0; z-index:1; background:var(--surface);
+  box-shadow:-1px 0 0 var(--line);
+  text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--navy-900);
+}
+.heat-table tbody tr:hover td.heat-total{background:#F7F9FC;}
+.heat-idx{color:var(--muted); font-weight:600; margin-right:6px;}
+.heat-zero td.proj-name-cell, .heat-zero td.heat-total{color:var(--muted); font-weight:600;}
+
+/* search */
+.search-row{display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;}
+.search-input{
+  flex:1; min-width:220px; padding:9px 12px; border-radius:8px; border:1px solid var(--line);
+  font-family:'Inter'; font-size:13px;
+}
+.search-input:focus{outline:2px solid var(--gold); outline-offset:1px;}
+
+.footnote{font-size:11.5px; color:var(--muted); margin-top:8px; line-height:1.6;}
+.footnote b{color:var(--navy-900);}
+
+.upload-note{
+  background:#FBF8F0; border:1px solid #EEDFB5; border-radius:12px; padding:16px 18px; font-size:12.5px; color:#5A4B22; line-height:1.6;
+}
+.upload-note code{background:#F3E9CE; padding:1px 6px; border-radius:4px; font-family:'IBM Plex Mono';}
+
+footer{
+  text-align:center; padding:26px; font-size:11.5px; color:var(--muted); border-top:1px solid var(--line); margin-top:30px;
+}
+::-webkit-scrollbar{height:8px; width:8px;}
+::-webkit-scrollbar-thumb{background:#CBD5E1; border-radius:4px;}
+
+/* ===== Live editing ===== */
+.pill-dirty{display:none; background:rgba(226,114,91,0.18); border-color:rgba(226,114,91,0.45); color:#FFD9CF;}
+.pill-dirty.show{display:flex;}
+.dot-warn{background:var(--coral) !important; box-shadow:0 0 0 3px rgba(226,114,91,0.25) !important;}
+.editbar{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:12px 14px; margin-bottom:14px;
+  background:linear-gradient(180deg,#fff 0%,#FAFBFD 100%);
+  border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+}
+.editbar .eb-label{font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.04em; text-transform:uppercase; margin-right:2px;}
+.btn-sm{font-size:12.5px; padding:8px 13px; border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--navy-900); font-weight:600; cursor:pointer; font-family:'Inter',sans-serif;}
+.btn-sm:hover{background:#F2F5FA;}
+.btn-sm.primary{background:var(--navy-900); color:#fff; border-color:var(--navy-900);}
+.btn-sm.primary:hover{background:var(--navy-800);}
+.btn-sm.gold{background:var(--gold); color:var(--navy-950); border-color:var(--gold);}
+.btn-sm.gold:hover{filter:brightness(1.05);}
+.btn-sm.danger{color:#B4402B; border-color:#F0CFC7;}
+.btn-sm.danger:hover{background:#FDF2EF;}
+.btn-sm:disabled{opacity:.45; cursor:not-allowed;}
+.eb-note{font-size:12px; color:var(--muted); margin-left:auto;}
+.row-actions{white-space:nowrap;}
+.icon-btn{
+  border:1px solid var(--line); background:#fff; border-radius:7px;
+  padding:3px 8px; font-size:11.5px; font-weight:600; cursor:pointer; color:var(--navy-700);
+  margin-right:4px; font-family:'Inter',sans-serif;
+}
+.icon-btn:hover{background:#EEF2F8;}
+.icon-btn.del{color:#B4402B;}
+.icon-btn.del:hover{background:#FDF2EF;}
+#dataTable tbody tr.editing{background:#FFF9E8 !important;}
+
+/* Modal */
+.modal-back{
+  position:fixed; inset:0; background:rgba(10,26,48,0.55); backdrop-filter:blur(2px);
+  display:none; align-items:flex-start; justify-content:center; z-index:200; padding:34px 16px; overflow-y:auto;
+}
+.modal-back.open{display:flex;}
+.modal{
+  background:var(--surface); border-radius:16px; width:100%; max-width:920px;
+  box-shadow:0 24px 64px rgba(10,26,48,0.35); overflow:hidden;
+}
+.modal-head{
+  background:linear-gradient(135deg,var(--navy-950) 0%,var(--navy-800) 100%);
+  color:#fff; padding:18px 24px;
+}
+.modal-head h3{margin:0; font-family:'Space Grotesk',sans-serif; font-size:18px;}
+.modal-head p{margin:5px 0 0; font-size:12.5px; color:#B9C6E0;}
+.modal-body{padding:22px 24px; max-height:62vh; overflow-y:auto;}
+.form-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px 16px;}
+.form-grid .full{grid-column:1 / -1;}
+.form-grid .half{grid-column:span 2;}
+.fld label{display:block; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:5px;}
+.fld input, .fld select, .fld textarea{
+  width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px;
+  font-family:'Inter',sans-serif; font-size:13px; color:var(--ink); background:#fff;
+}
+.fld input:focus, .fld select:focus, .fld textarea:focus{outline:none; border-color:var(--navy-700); box-shadow:0 0 0 3px rgba(29,67,132,0.12);}
+.fld textarea{min-height:64px; resize:vertical;}
+.fld .hint{font-size:11px; color:var(--muted); margin-top:4px;}
+.fld input.mono-in{font-family:'IBM Plex Mono',monospace;}
+.modal-foot{
+  display:flex; align-items:center; gap:10px; padding:16px 24px;
+  border-top:1px solid var(--line); background:#FAFBFD;
+}
+.modal-foot .spacer{margin-left:auto;}
+@media (max-width:760px){ .form-grid{grid-template-columns:1fr;} .form-grid .half{grid-column:span 1;} }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="brand-eyebrow">Riphah International University &amp; IIMCT &nbsp;·&nbsp; Office of the PMO</div>
+    <h1 class="brand-title">CAPEX Command Center</h1>
+    <div class="brand-sub">Fiscal Year 2026–27 &nbsp;|&nbsp; Prepared for the Chancellor, Management Team &amp; Director Finance</div>
+  </div>
+  <div class="topbar-actions">
+    <div class="pill"><span class="dot"></span> <span id="lastUpdated">151 line items · saved 5 Aug 2026, 09:43</span></div>
+    <div class="pill pill-dirty" id="dirtyPill"><span class="dot dot-warn"></span> <span id="dirtyText">Unsaved edits</span></div>
+    <button class="btn btn-ghost" id="downloadBtn">Export CSV</button>
+    <button class="btn btn-ghost" id="uploadBtn">Import Excel / CSV</button>
+    <button class="btn btn-gold" id="saveHtmlBtn">Save Dashboard</button>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+  </div>
+</div>
+
+<div class="tabbar">
+  <button class="tab-btn" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="cashflow">Cash Flow Analytics</button>
+  <button class="tab-btn active" data-tab="projects">Project Analysis</button>
+  <button class="tab-btn" data-tab="data">Data Explorer</button>
+</div>
+
+<div class="filterbar">
+  <div class="filter-group">
+    <label>Sector</label>
+    <select id="f-sector"><option value="">All Sectors</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Organization</label>
+    <select id="f-org"><option value="">All Organizations</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Campus / Site</label>
+    <select id="f-campus"><option value="">All Sites</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Project Type</label>
+    <select id="f-type"><option value="">All Types</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Priority</label>
+    <select id="f-priority"><option value="">All Priorities</option></select>
+  </div>
+  <button class="reset-link" id="resetFilters">Reset filters</button>
+  <div class="filter-count">Showing <b id="filterCount">151</b> of <b id="filterTotal">151</b> line items</div>
+</div>
+
+<main>
+
+<!-- ============ OVERVIEW ============ -->
+<section class="section" id="tab-overview">
+  <div class="section-head">
+    <div class="section-eyebrow">Executive Summary</div>
+    <div class="section-title">Portfolio at a Glance</div>
+    <div class="section-desc">Key figures update instantly as filters are applied above.</div>
+  </div>
+
+  <div class="kpi-grid" id="kpiGrid"></div>
+
+  <div class="hero-card">
+    <div class="hero-top">
+      <div class="hero-title">Cumulative Planned CAPEX Cash Flow<span>Running total of scheduled expenditure across FY 2026–27</span></div>
+      <div class="hero-peak"><div class="big mono" id="heroPeak">PKR 575.63M</div><div class="lbl">Total scheduled by year-end</div></div>
+    </div>
+    <div class="hero-chart-wrap"><canvas id="heroChart"></canvas></div>
+  </div>
+
+  <div class="grid-2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">Monthly Cash Flow — Trend vs. Average</div>
+      <div class="card-sub">Planned monthly outflow against the FY average run-rate</div>
+      <div class="chart-box h280"><canvas id="miniTrendChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Budget by Site</div>
+      <div class="card-sub">Top contributing campuses / sites</div>
+      <div class="chart-box h280"><canvas id="miniSiteChart"></canvas></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CASH FLOW ANALYTICS ============ -->
+<section class="section" id="tab-cashflow">
+  <div class="section-head">
+    <div class="section-eyebrow">Cash Flow Analytics</div>
+    <div class="section-title">How CAPEX Spend Moves Through the Year</div>
+    <div class="section-desc">Twelve-month view, July 2026 – June 2027.</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Month-wise Cash Flow Trend</div>
+      <div class="card-sub">Planned expenditure by month (PKR)</div>
+      <div class="chart-box h320"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Monthly Cash Flow Comparison</div>
+      <div class="card-sub">Each month vs. FY average run-rate</div>
+      <div class="chart-box h320"><canvas id="comparisonChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">Cumulative Cash Flow Curve</div>
+      <div class="card-sub">Running total of planned expenditure across the fiscal year</div>
+      <div class="chart-box h320"><canvas id="cumulativeChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Cash Flow Distribution by Month</div>
+      <div class="card-sub">Share of total FY26–27 planned spend</div>
+      <div class="chart-box h320"><canvas id="distributionChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">Quarterly Cash Flow Analysis</div>
+      <div class="card-sub">Q1 Jul–Sep · Q2 Oct–Dec · Q3 Jan–Mar · Q4 Apr–Jun</div>
+      <div class="chart-box h320"><canvas id="quarterChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Running Total of Planned Expenditure</div>
+      <div class="card-sub">Month-by-month build-up to full-year commitment</div>
+      <div class="table-wrap" style="max-height:320px; overflow-y:auto;">
+        <table>
+          <thead><tr><th>Month</th><th style="text-align:right;">Planned Amount</th><th style="text-align:right;">Running Total</th><th style="text-align:right;">% of FY Total</th></tr></thead>
+          <tbody id="runningTotalBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PROJECT ANALYSIS ============ -->
+<section class="section active" id="tab-projects">
+  <div class="section-head">
+    <div class="section-eyebrow">Project-Level Analysis</div>
+    <div class="section-title">Where the Budget Is Going</div>
+    <div class="section-desc">102 distinct CAPEX initiatives across Riphah &amp; Trust institutions.</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Top 10 Highest-Budget Projects</div>
+      <div class="card-sub">Total planned budget per project (all months combined)</div>
+      <div class="chart-box h420"><canvas id="top10Chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Lowest-Budget Scheduled Projects</div>
+      <div class="card-sub">Smallest 10 approved &amp; scheduled line items</div>
+      <div class="chart-box h420"><canvas id="bottom10Chart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">Budget Contribution by Project</div>
+      <div class="card-sub">Top 8 projects vs. balance of portfolio</div>
+      <div class="chart-box h320"><canvas id="contributionChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Project Status Mix</div>
+      <div class="card-sub">Derived from planned start/end dates against today's date</div>
+      <div class="chart-box h320"><canvas id="statusChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-controls">
+      <span class="card-title" style="margin-right:auto;">Site / Department Distribution</span>
+      <button class="chip-btn active" data-dim="campus">By Campus</button>
+      <button class="chip-btn" data-dim="org">By Organization</button>
+      <button class="chip-btn" data-dim="sector">By Sector</button>
+      <button class="chip-btn" data-dim="projectType">By Project Type</button>
+    </div>
+    <div class="card-sub">Planned CAPEX budget grouped by the selected dimension</div>
+    <div class="chart-box h320"><canvas id="siteChart"></canvas></div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">Project × Month Cash Flow Heatmap</div>
+    <div class="card-sub"><span id="heatCount">105</span> projects, ranked by total budget · darker cells indicate higher planned spend that month · scroll for the full list</div>
+    <div class="table-wrap" style="max-height:620px; overflow-y:auto;">
+      <table class="heat-table">
+        <thead><tr id="heatHeadRow"></tr></thead>
+        <tbody id="heatBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DATA EXPLORER ============ -->
+<section class="section" id="tab-data">
+  <div class="section-head">
+    <div class="section-eyebrow">Data Explorer</div>
+    <div class="section-title">Full Project Register</div>
+    <div class="section-desc">Sortable, searchable line-item detail behind every chart on this dashboard.</div>
+  </div>
+
+  <div class="upload-note" style="margin-bottom:16px;">
+    <b>How to refresh this dashboard next month:</b> click <b>“Import Excel / CSV”</b> in the header and select the updated CAPEX workbook. The dashboard reads the sheet named
+    <code>Proj.s_Timelines Pending(26-27)</code> with columns <code>Sr # | Sector | Organization | Campus | Profit Center | Cost Centre | Project Type | Project Name | Total Budget | Priority No. | Project Month | Planned Start Date | Planned End Date | Remarks | Priorities Type | Faculty | Common Theme</code>
+    starting at row 4. Every KPI, chart and table above recalculates automatically — no redesign needed.<br><br>
+    <b>Or edit right here.</b> Use <b>+ Add line item</b>, <b>Edit</b>, <b>Copy</b> and <b>Delete</b> in the table below to change budgets, months, priorities or any other field without going back to Excel. When you are happy, click <b>Save dashboard</b> (header or toolbar) to download this same file with your edits written into it — that downloaded copy becomes your new working dashboard. <b>Export register (CSV)</b> gives you the edited data back in workbook column order if you want to update the master file too.
+  </div>
+
+  <div class="editbar">
+    <span class="eb-label">Live edit</span>
+    <button class="btn-sm primary" id="addRowBtn">+ Add line item</button>
+    <button class="btn-sm" id="undoBtn" disabled="">Undo</button>
+    <button class="btn-sm" id="exportRegisterBtn">Export register (CSV)</button>
+    <button class="btn-sm gold" id="saveHtmlBtn2">Save dashboard as HTML</button>
+    <span class="eb-note">Edit any row below — every KPI, chart and table recalculates instantly. Click <b>Save dashboard</b> to download this file with your edits baked in.</span>
+  </div>
+
+  <div class="card">
+    <div class="search-row">
+      <input type="text" class="search-input" id="tableSearch" placeholder="Search by project name, campus, cost centre...">
+    </div>
+    <div class="table-wrap" style="max-height:600px; overflow-y:auto;">
+      <table id="dataTable">
+        <thead>
+          <tr>
+            <th data-key="sr">Sr#</th>
+            <th data-key="projectName">Project Name</th>
+            <th data-key="sector">Sector</th>
+            <th data-key="org">Organization</th>
+            <th data-key="campus">Site</th>
+            <th data-key="projectType">Type</th>
+            <th data-key="priority">Priority</th>
+            <th data-key="month">Month</th>
+            <th data-key="amount" style="text-align:right;">Amount (PKR)</th>
+            <th data-key="status">Status</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="dataTableBody"></tbody>
+      </table>
+    </div>
+    <div class="footnote">Showing <span id="dataRowCount">151</span> line items. Click any column header to sort; double-click a row to edit it. “Status” is derived from planned start/end dates relative to today; it is not sourced from an explicit status field, since the source file does not track one.</div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ Live edit modal ============ -->
+<div class="modal-back" id="editModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Edit line item</h3>
+      <p>All fields map 1:1 to the source workbook columns. Leave a date blank to mark the item unscheduled.</p>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="fld"><label>Sr #</label><input type="number" id="fld-sr" class="mono-in"></div>
+        <div class="fld"><label>Total Budget (PKR)</label><input type="number" step="0.01" id="fld-amount" class="mono-in"></div>
+        <div class="fld"><label>Priority No.</label><input list="dl-priority" id="fld-priority"><datalist id="dl-priority"></datalist></div>
+
+        <div class="fld full"><label>Project Name</label><input type="text" id="fld-projectName"></div>
+
+        <div class="fld"><label>Sector</label><input list="dl-sector" id="fld-sector"><datalist id="dl-sector"></datalist></div>
+        <div class="fld"><label>Organization</label><input list="dl-org" id="fld-org"><datalist id="dl-org"></datalist></div>
+        <div class="fld"><label>Campus / Site</label><input list="dl-campus" id="fld-campus"><datalist id="dl-campus"></datalist></div>
+
+        <div class="fld half"><label>Profit Center</label><input list="dl-profitCenter" id="fld-profitCenter"><datalist id="dl-profitCenter"></datalist></div>
+        <div class="fld"><label>Project Type</label><input list="dl-projectType" id="fld-projectType"><datalist id="dl-projectType"></datalist></div>
+
+        <div class="fld half"><label>Cost Centre</label><input list="dl-costCentre" id="fld-costCentre"><datalist id="dl-costCentre"></datalist></div>
+        <div class="fld"><label>Project Month</label><select id="fld-month"><option value="">— Unscheduled —</option><option value="2026-07-01">Jul '26</option><option value="2026-08-01">Aug '26</option><option value="2026-09-01">Sep '26</option><option value="2026-10-01">Oct '26</option><option value="2026-11-01">Nov '26</option><option value="2026-12-01">Dec '26</option><option value="2027-01-01">Jan '27</option><option value="2027-02-01">Feb '27</option><option value="2027-03-01">Mar '27</option><option value="2027-04-01">Apr '27</option><option value="2027-05-01">May '27</option><option value="2027-06-01">Jun '27</option></select><div class="hint">Drives every cash-flow chart</div></div>
+
+        <div class="fld"><label>Planned Start Date</label><input type="date" id="fld-start"></div>
+        <div class="fld"><label>Planned End Date</label><input type="date" id="fld-end"></div>
+        <div class="fld"><label>Priorities Type</label><input list="dl-priorityType" id="fld-priorityType"><datalist id="dl-priorityType"></datalist></div>
+
+        <div class="fld half"><label>Faculty</label><input list="dl-faculty" id="fld-faculty"><datalist id="dl-faculty"></datalist></div>
+        <div class="fld"><label>Common Theme</label><input list="dl-theme" id="fld-theme"><datalist id="dl-theme"></datalist></div>
+
+        <div class="fld full"><label>Remarks</label><textarea id="fld-remarks"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-sm danger" id="modalDelete">Delete this line item</button>
+      <span class="spacer"></span>
+      <button class="btn-sm" id="modalCancel">Cancel</button>
+      <button class="btn-sm primary" id="modalSave">Save changes</button>
+    </div>
+  </div>
+</div>
+
+
+<footer>
+  Built from <b>Projects' Prioritization &amp; Timelines — CAPEX FY 2026-27</b> (source: Riphah/IIMCT PMO). Figures reflect <i>planned</i> cash flow only — the source workbook contains no actuals-to-date, so “utilization” and “status” metrics on this dashboard are clearly-labelled estimates derived from scheduling and date fields, not spend confirmations.
+</footer>
+
+<script>
+/*__DATA_START__*/const RAW_DATA = [{"sr":1,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"IIEC I-14 Campus (Code:2108)","costCentre":"IIEC I-14 Campus (Code:2108000)","projectType":"Equipment Procurement","projectName":"Establishment of Embedded System Lab","amount":20000000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Engineering & Applied Sciences","theme":"Student / Patient Experience"},{"sr":2,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"IIEC I-14 Campus (Code:2108)","costCentre":"IIEC I-14 Campus (Code:2108000)","projectType":"Equipment Procurement","projectName":"Establishment of Robotics Lab","amount":15000000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Engineering & Applied Sciences","theme":"Student / Patient Experience"},{"sr":3,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"RISE (Code:2106)","costCentre":"RISE (Code:2106000)","projectType":"Civil Works","projectName":"Revamping of Offices (RISE)","amount":3300000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":"2027-02-28","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Faculty of Computing","theme":"Student / Patient Experience"},{"sr":4,"sector":"Trust","org":"IIMCT-Isb","campus":"Central Secretariat","profitCenter":"Max V-Care Hospital (Code:1115)","costCentre":"Max V-Care Hospital (Code:1115000)","projectType":"Software / Licensing","projectName":"Development of Software Application (Patient Data Accessibility)","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"2M, will be incorporated in RHS","priorityType":"Community Impact","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":5,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"RII-Female GG Campus (Code:2112)","costCentre":"RII-Female GG Campus (Code:2112000)","projectType":"Equipment Procurement","projectName":"Development of programming and system labs GGC","amount":300000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-15","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Computing","theme":"Student / Patient Experience"},{"sr":6,"sector":"Trust","org":"IIMCT-Mkd","campus":"Malakand","profitCenter":"FMSD Malakand Campus (Code:1397)","costCentre":"FMSD Malakand Campus (Code:1397000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund For Malakand)","amount":21000000,"priority":"1st Priority","month":"2026-07-01","start":"2026-07-15","end":"2026-09-30","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":7,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"RIPS G-7 Campus (Code:1104)","costCentre":"RIPS G-7 Campus (Code:1104000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund RIPS G7 )(only Lab Equipment)","amount":8700000,"priority":"3rd Priority","month":"2027-04-01","start":"2027-04-01","end":"2027-05-01","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Pharmaceutical Sciences","theme":"Student / Patient Experience"},{"sr":8,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"IIDC (Code:1102)","costCentre":"IIDC (Code:1102000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for IIDC)","amount":15000000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":null,"remarks":"Dr. Salwan to share the item details by Tuesday (Aug 04, 2026)","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":9,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"IIMC Al-Mizan Campus (Code:1101)","costCentre":"IIMC Al-Mizan Campus (Code:1101000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for IIMC)","amount":0,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-09-30","remarks":"20M block fund was approved, however, Brig sb requested that Limit to be enhanced to 25M","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":10,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (July 2026)","amount":1375000,"priority":"1st Priority","month":"2026-07-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":11,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (Aug 2026)","amount":1375000,"priority":"1st Priority","month":"2026-08-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":12,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (Sep 2026)","amount":1375000,"priority":"1st Priority","month":"2026-09-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":13,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (Oct 2026)","amount":1375000,"priority":"1st Priority","month":"2026-10-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":14,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (Nov 2026)","amount":1375000,"priority":"1st Priority","month":"2026-11-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":15,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (Dec 2026)","amount":1375000,"priority":"1st Priority","month":"2026-12-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":16,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (Jan 2027)","amount":1375000,"priority":"1st Priority","month":"2027-01-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":17,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (Feb 2027)","amount":1375000,"priority":"1st Priority","month":"2027-02-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":18,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (Mar 2027)","amount":1375000,"priority":"1st Priority","month":"2027-03-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":19,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (April 2027)","amount":1375000,"priority":"1st Priority","month":"2027-04-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":20,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (May 2026)","amount":1375000,"priority":"1st Priority","month":"2027-05-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":21,"sector":"Trust","org":"IIMCT-Isb","campus":"MHH","profitCenter":"MHH G-8 Markaz Campus (Code:1106)","costCentre":"MHH G-8 Markaz Campus (Code:1106000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for MHH) (June 2026)","amount":1375000,"priority":"1st Priority","month":"2027-06-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":22,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2026-07-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":23,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2026-08-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":24,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2026-09-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":25,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2026-10-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":26,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2026-11-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":27,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2026-12-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":28,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2027-01-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":29,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2027-02-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":30,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2027-03-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":31,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2027-04-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":32,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2027-05-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":33,"sector":"Trust","org":"IIMCT-Isb","campus":"RIH","profitCenter":"RIH Zone-V Campus (Code:1108)","costCentre":"RIH Zone-V Campus (Code:1108000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for RIH)","amount":1458333.33,"priority":"1st Priority","month":"2027-06-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":34,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"IIDH G-7 Campus (Code:1105)","costCentre":"IIDH G-7 Campus (Code:1105000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for the IIDH)","amount":5000000,"priority":"1st Priority","month":"2026-07-01","start":"2026-07-01","end":"2026-10-01","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":35,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2026-07-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":36,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2026-08-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":37,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2026-09-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":38,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2026-10-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":39,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2026-11-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":40,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2026-12-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":41,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2027-01-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":42,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2027-02-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":43,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2027-03-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":44,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2027-04-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":45,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2027-05-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":46,"sector":"Trust","org":"IIMCT-Isb","campus":"PRH","profitCenter":"Pakistan Railways Hospital (Code:1107)","costCentre":"PRH (Code:1107000)","projectType":"Equipment Procurement","projectName":"Upgradation of Facilities & Equipment (Block Fund for the PRH)","amount":5083333.33,"priority":"1st Priority","month":"2027-06-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":47,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"CSD (Code:2001001)","projectType":"Software / Licensing","projectName":"CMMI Certification for MIS, HIMS & IT","amount":7000000,"priority":"3rd Priority","month":"2027-04-01","start":"2027-04-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Validation of Systems & Processes"},{"sr":48,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Civil Works","projectName":"Estb. of Ferozpur Campus LHR (Ph-3)","amount":15000000,"priority":"1st Priority","month":"2026-10-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":49,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Civil Works","projectName":"Estb. of Ferozpur Campus LHR (Ph-3)","amount":15000000,"priority":"1st Priority","month":"2026-11-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":50,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Civil Works","projectName":"Estb. of Ferozpur Campus LHR (Ph-3)","amount":15000000,"priority":"1st Priority","month":"2026-12-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":51,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Civil Works","projectName":"Estb. of Ferozpur Campus LHR (Ph-3)","amount":15000000,"priority":"1st Priority","month":"2027-01-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":52,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Civil Works","projectName":"Estb. of Ferozpur Campus LHR (Ph-3)","amount":8277197,"priority":"1st Priority","month":"2027-02-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":53,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Civil Works","projectName":"Renovation & Upgratdation of QIE Campus","amount":15000000,"priority":"1st Priority","month":"2026-10-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":54,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Civil Works","projectName":"Renovation & Upgratdation of QIE Campus","amount":4598405,"priority":"1st Priority","month":"2026-11-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":55,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Upgradation of FRAHS Labs","amount":7740480,"priority":"1st Priority","month":"2026-09-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":56,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Upgradation of FRAHS Labs","amount":1935120,"priority":"1st Priority","month":"2026-11-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":57,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Block Fund for Other Lahore Projects","amount":1500000,"priority":"1st Priority","month":"2026-08-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":58,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Block Fund for Other Lahore Projects","amount":1500000,"priority":"1st Priority","month":"2026-09-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":59,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Block Fund for Other Lahore Projects","amount":5000000,"priority":"1st Priority","month":"2026-10-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":60,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Block Fund for Other Lahore Projects","amount":5000000,"priority":"1st Priority","month":"2026-11-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":61,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Block Fund for Other Lahore Projects","amount":5000000,"priority":"1st Priority","month":"2026-12-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":62,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Block Fund for Other Lahore Projects","amount":1500000,"priority":"1st Priority","month":"2027-01-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":63,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Block Fund for Other Lahore Projects","amount":1500000,"priority":"1st Priority","month":"2027-02-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":64,"sector":"Trust","org":"IIMCT-Lhr","campus":"Lahore","profitCenter":"Lahore (Code:1200)","costCentre":"Lahore (Code:1200000)","projectType":"Equipment Procurement","projectName":"Block Fund for Other Lahore Projects","amount":1448798,"priority":"1st Priority","month":"2027-03-01","start":"2026-01-01","end":"2027-06-30","remarks":"","priorityType":"Healthcare","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":65,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Civil Works","projectName":"Construction of New Faculty Offices at 1st Floor","amount":10000000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-12-31","remarks":"Total 3 offices, total area: 1k sqft (excluding library), library extension included (550 sqft)","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":66,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Civil Works","projectName":"Construction of New Male cafeteria and Common Room at 1st floor.","amount":5000000,"priority":"1st Priority","month":"2026-08-01","start":"2026-08-01","end":"2026-08-15","remarks":"Urgent","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":67,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"CSD (Code:2001001)","projectType":"Software / Licensing","projectName":"Data Center Tier 3","amount":10000000,"priority":"3rd Priority","month":"2027-04-01","start":"2027-04-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Validation of Systems & Processes"},{"sr":68,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"CSD (Code:2001001)","projectType":"Software / Licensing","projectName":"Deployment of NGF for all the Campuses","amount":30000000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"Ask DDIT about the prioritization of projects of CSD","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Validation of Systems & Processes"},{"sr":69,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"FMSD G-7 Campus (Code:1197)","costCentre":"FMSD G-7 Campus (Code:1197001)","projectType":"Civil Works","projectName":"Renovation of Marketing Office","amount":1000000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-15","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":70,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"FMSD G-7 Campus (Code:1197)","costCentre":"FMSD G-7 Campus (Code:1197001)","projectType":"Civil Works","projectName":"Upgradation of Facilities & Equipment (G-7)","amount":2900000,"priority":"3rd Priority","month":"2027-04-01","start":"2027-05-01","end":null,"remarks":"If any CAPEX Item required","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":71,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"RII-Female GG Campus (Code:2112)","costCentre":"RII-Female GG Campus (Code:2112000)","projectType":"Equipment Procurement","projectName":"Development of AI, CYBER, Hardware, project labs GGC","amount":120000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-15","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Computing","theme":"Student / Patient Experience"},{"sr":72,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"RII-Female GG Campus (Code:2112)","costCentre":"RII-Female GG Campus (Code:2112000)","projectType":"Equipment Procurement","projectName":"Development of All 8 labs GGC (3 x Systems Labs, 3 x Prog. Labs, 1 x Hardware Lab, 1 x FYP Lab)","amount":150000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-15","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Computing","theme":"Student / Patient Experience"},{"sr":73,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"RII-Female GG Campus (Code:2112)","costCentre":"RII-Female GG Campus (Code:2112000)","projectType":"Equipment Procurement","projectName":"Development of Hardware labs GGC","amount":300000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-15","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Computing","theme":"Student / Patient Experience"},{"sr":74,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"University Secretariat (Code:2001)","costCentre":"Student Services (Code:2001012)","projectType":"Civil Works","projectName":"Development of Indoor Sports Area (GGC)","amount":1350000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":"2027-03-01","remarks":"","priorityType":"Community Impact","faculty":"Academics Support","theme":"Student / Patient Experience"},{"sr":75,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"University Secretariat (Code:2001)","costCentre":"Student Services (Code:2001012)","projectType":"Civil Works","projectName":"Development of Outdoor Sports Area (GGC)","amount":3000000,"priority":"1st Priority","month":"2026-10-01","start":"2026-10-01","end":"2026-12-01","remarks":"","priorityType":"Community Impact","faculty":"Academics Support","theme":"Student / Patient Experience"},{"sr":76,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"RII-Female GG Campus (Code:2112)","costCentre":"RII-Female GG Campus (Code:2112000)","projectType":"Equipment Procurement","projectName":"Development of cyber lab GGC","amount":20000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-15","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Computing","theme":"Student / Patient Experience"},{"sr":77,"sector":"Trust","org":"IIMCT-Isb","campus":"GGC","profitCenter":"RIPS Gulberg Green Campus (Code:1126)","costCentre":"RIPS Gulberg Green Campus (Code:1126000)","projectType":"Equipment Procurement","projectName":"Establishment of BS Cosmetic Sciences Laboratory GGC (Phase 1)","amount":3300000,"priority":"2nd Priority","month":"2026-12-01","start":"2026-12-01","end":"2027-02-01","remarks":"Deferred Payment Model","priorityType":"Teaching & Learning","faculty":"Faculty of Pharmaceutical Sciences","theme":"Student / Patient Experience"},{"sr":78,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"FMSD GG Campus (Code:2197)","costCentre":"FMSD GG Campus (Code:2197002)","projectType":"Civil Works","projectName":"Establishment of Central Academic Office / Other Offices","amount":5000000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":"2027-03-31","remarks":"SSD Office, Fin, HR, Exam","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":79,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"CSD (Code:2001001)","projectType":"Software / Licensing","projectName":"ISO27001:2022 Certification for Riphah Sites","amount":1500000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Validation of Systems & Processes"},{"sr":80,"sector":"Trust","org":"IIMCT-Isb","campus":"Hostels","profitCenter":"Hostels (Code:1199)","costCentre":"Hostel-Male (Code:1199000)","projectType":"Equipment Procurement","projectName":"Installation of CCTV Camera (Hostels - Male)","amount":600000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Technology Integration"},{"sr":81,"sector":"Riphah","org":"Riphah","campus":"Central Secretariat","profitCenter":"University Secretariat (Code:2001)","costCentre":"FMSD Central Secretariat (Code:2001000)","projectType":"Equipment Procurement","projectName":"Installation of Car Parking Tensile Structure Shade","amount":3300000,"priority":"3rd Priority","month":"2027-03-01","start":"2027-03-01","end":"2027-05-30","remarks":"","priorityType":"Community Impact","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":82,"sector":"Riphah","org":"IIMCT-Isb","campus":"Central Secretariat","profitCenter":"Max V-Care Hospital (Code:1115)","costCentre":"Max V-Care Hospital (Code:1115000)","projectType":"Equipment Procurement","projectName":"Installation of Telephone Exchange","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"0.8M will be incorporated in RHS","priorityType":"Managerial Services Excellence","faculty":"Healthcare","theme":"Student / Patient Experience"},{"sr":83,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Civil Works","projectName":"Installation of Tensile Canopy for Cafeteria outdoor dining","amount":2500000,"priority":"3rd Priority","month":"2027-03-01","start":"2027-03-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":84,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Civil Works","projectName":"Installation of Tuff Pavers","amount":360000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":"2027-03-20","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":85,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Civil Works","projectName":"Installation of Wire Mesh Fencing for the Boys Sports Area","amount":1347000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Riphah Image Enhancement"},{"sr":86,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Civil Works","projectName":"Internal Distempering of Building for Infrastructure Upgradation","amount":4125000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":87,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"DBS I-14 Campus (Code:2107)","costCentre":"DBS I-14 Campus (Code:2107000)","projectType":"Equipment Procurement","projectName":"Lab Equipment for DBS (I-14)","amount":920000,"priority":"1st Priority","month":"2026-10-01","start":"2026-10-01","end":"2026-12-31","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Engineering & Applied Sciences","theme":"Student / Patient Experience"},{"sr":88,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Equipment Procurement","projectName":"Overhauling of 3 Vehicles","amount":1500000,"priority":"3rd Priority","month":"2027-03-01","start":"2027-03-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":89,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Procurement of 8 x Electric/ Gas geysers (80 gallons)","amount":800000,"priority":"1st Priority","month":"2026-10-01","start":"2026-10-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":90,"sector":"Riphah","org":"Riphah","campus":"Al-Mizan","profitCenter":"FM Radio (Code:2117)","costCentre":"FM Radio  (Code:2117000)","projectType":"Equipment Procurement","projectName":"Procurement of AV Equipment for FM Radio (Al-MIzan)","amount":1905000,"priority":"2nd Priority","month":"2026-12-01","start":"2026-12-01","end":"2027-01-01","remarks":"","priorityType":"Community Impact","faculty":"Management","theme":"Riphah Image Enhancement"},{"sr":91,"sector":"Riphah","org":"Riphah","campus":"Al-Mizan","profitCenter":"Riphah Educational TV","costCentre":"Riphah Educational TV","projectType":"Equipment Procurement","projectName":"Procurement of Audio, Video & Editing Equipment","amount":300000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-01","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Management Sciences","theme":"Student / Patient Experience"},{"sr":92,"sector":"Riphah","org":"Riphah","campus":"Central Secretariat","profitCenter":"University Secretariat (Code:2001)","costCentre":"FMSD Central Secretariat (Code:2001000)","projectType":"Equipment Procurement","projectName":"Procurement of EV Bike / Lawn Cutting Machine","amount":400000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-30","remarks":"EV Bike / Lawn Cutting Machine Approved","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":93,"sector":"Riphah","org":"Riphah","campus":"Al-Mizan","profitCenter":"RARE Al-Mizan (Code:2111)","costCentre":"RARE Al-Mizan (Code:2111000)","projectType":"Equipment Procurement","projectName":"Procurement of Conference Room Chairs","amount":600000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-15","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Validation of Systems & Processes"},{"sr":94,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Procurement of Floor Dryer Blowers","amount":600000,"priority":"3rd Priority","month":"2027-03-01","start":"2027-03-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":95,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"CSD (Code:2001001)","projectType":"Equipment Procurement","projectName":"Procurement of IT Backup Equipment for Data Center & Sites","amount":1500000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Validation of Systems & Processes"},{"sr":96,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"University Secretariat (Code:2001)","costCentre":"INFO Services (Code:2001003)","projectType":"Equipment Procurement","projectName":"Procurement of IT Equipment","amount":10000000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-02-28","end":null,"remarks":"Email, request breakup","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Student / Patient Experience"},{"sr":97,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"RIHCA (Code:2115)","costCentre":"RIHCA (Code:2115000)","projectType":"Equipment Procurement","projectName":"Procurement of IT Equipment for RIHCA","amount":90000,"priority":"3rd Priority","month":"2027-04-01","start":"2027-05-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Faculty of Management Sciences","theme":"Student / Patient Experience"},{"sr":98,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Procurement of Interactive Board for Board Room","amount":700000,"priority":"3rd Priority","month":"2027-05-01","start":"2027-05-01","end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":99,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"RIHCA (Code:2115)","costCentre":"RIHCA (Code:2115000)","projectType":"Equipment Procurement","projectName":"Procurement of Kitchen Equipment for RIHCA","amount":5320000,"priority":"1st Priority","month":"2027-01-01","start":"2027-02-28","end":null,"remarks":"Kisok & Bread cutting machine is on top priority","priorityType":"Managerial Services Excellence","faculty":"Faculty of Management Sciences","theme":"Student / Patient Experience"},{"sr":100,"sector":"Trust","org":"IIMCT-Isb","campus":"GGC","profitCenter":"RCRAHS GGC Islamabad (Code:1103)","costCentre":"RCRAHS GGC Islamabad (Code:1103000)","projectType":"Equipment Procurement","projectName":"Procurement of Lab Equipment for RCRAHS Labs (UG + PG) (Phase 1)","amount":10000000,"priority":"2nd Priority","month":"2026-12-01","start":"2026-12-01","end":"2027-03-30","remarks":"Split into 2 projects, each of 10M PKR (Phase 1 & 2)","priorityType":"Teaching & Learning","faculty":"Faculty of Rehab & Allied Sciences","theme":"Student / Patient Experience"},{"sr":101,"sector":"Trust","org":"IIMCT-Isb","campus":"GGC","profitCenter":"RCRAHS GGC Islamabad (Code:1103)","costCentre":"RCRAHS GGC Islamabad (Code:1103000)","projectType":"Equipment Procurement","projectName":"Procurement of Lab Equipment for RCRAHS Labs (UG + PG) (Phase 2)","amount":10000000,"priority":"3rd Priority","month":"2027-04-01","start":"2027-04-01","end":"2027-06-30","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Rehab & Allied Sciences","theme":"Student / Patient Experience"},{"sr":102,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"RCRAHS Al-Mizan Campus (Code:1103)","costCentre":"RCRAHS Al-Mizan Campus (Code:1103000)","projectType":"Equipment Procurement","projectName":"Procurement of Lab Equipment for RCRAHS Labs (UG)","amount":5000000,"priority":"1st Priority","month":"2026-10-01","start":"2026-10-01","end":"2026-12-31","remarks":"Counter Delay in Proc.","priorityType":"Teaching & Learning","faculty":"Faculty of Rehab & Allied Sciences","theme":"Student / Patient Experience"},{"sr":103,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"Riphah Nursing College (Code:1116)","costCentre":"Riphah Nursing College (Code:1116000)","projectType":"Equipment Procurement","projectName":"Procurement of Newborn Training Mannequin","amount":639100,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":"2027-02-01","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":104,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"CSD (Code:2001001)","projectType":"Software / Licensing","projectName":"Procurement of Patch Management Tools","amount":750000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Validation of Systems & Processes"},{"sr":105,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"Examination Cell (Code:2001010)","projectType":"Equipment Procurement","projectName":"Procurement of Printer for Degree Section","amount":400000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-09-30","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Validation of Systems & Processes"},{"sr":106,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"University Secretariat (Code:2001)","costCentre":"Student Services (Code:2001012)","projectType":"Equipment Procurement","projectName":"Procurement of Printer & Scanner for I-14","amount":150000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-01","remarks":"merged, printer & scanner project, combined amount: 150k","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Student / Patient Experience"},{"sr":107,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Procurement of SMDs for the Auditorium","amount":5500000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":108,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"University Secretariat (Code:2001)","costCentre":"Student Services (Code:2001012)","projectType":"Civil Works","projectName":"Development of Futsal Court (I-14)","amount":5500000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":"2027-03-01","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Student / Patient Experience"},{"sr":109,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"University Secretariat (Code:2001)","costCentre":"Student Services (Code:2001012)","projectType":"Equipment Procurement","projectName":"Procurement of Scanner for I-14","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"merged with the printer project, combined amount: 150k","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Student / Patient Experience"},{"sr":110,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"Examination Cell (Code:2001010)","projectType":"Equipment Procurement","projectName":"Procurement of Shredder for Degree Section","amount":150000,"priority":"2nd Priority","month":"2026-12-01","start":"2026-12-01","end":"2027-01-01","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Validation of Systems & Processes"},{"sr":111,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"RIHCA (Code:2115)","costCentre":"RIHCA (Code:2115000)","projectType":"Equipment Procurement","projectName":"Procurement of Smart LED for Teaching for RIHCA","amount":250000,"priority":"3rd Priority","month":"2027-04-01","start":"2027-05-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Faculty of Management Sciences","theme":"Student / Patient Experience"},{"sr":112,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"Riphah Nursing College (Code:1116)","costCentre":"Riphah Nursing College (Code:1116000)","projectType":"Equipment Procurement","projectName":"Procurement of Specialized Geriatric Simulator","amount":2792900,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-01","remarks":"6 Month Certificate Course Expected Fee: Rs. 25k Expected Students: 25 Visiting Resources will be hired Intl Resource Cost: 40% of revenue. Sep course added in UG, part of curriculum","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":113,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Procurement of Thermal Fogger (Fumigation Machine)","amount":350000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":114,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Procurement of Walk-Behind Scrubber Dryers","amount":1200000,"priority":"3rd Priority","month":"2027-03-01","start":"2027-03-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":115,"sector":"Riphah","org":"Riphah","campus":"Central Secretariat","profitCenter":"University Secretariat (Code:2001)","costCentre":"Riphah International Office (Code:2001022)","projectType":"Equipment Procurement","projectName":"Procurement of Workstations","amount":450000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-30","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Validation of Systems & Processes"},{"sr":116,"sector":"Riphah","org":"Riphah","campus":"Al-Mizan","profitCenter":"RARE Al-Mizan (Code:2111)","costCentre":"RARE Al-Mizan (Code:2111000)","projectType":"Equipment Procurement","projectName":"Procurement of Workstations (ORIC)","amount":180000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-15","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Validation of Systems & Processes"},{"sr":117,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"CSD (Code:2001001)","projectType":"Software / Licensing","projectName":"Procurement of new SAN","amount":24650000,"priority":"1st Priority","month":"2026-10-01","start":"2026-10-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Validation of Systems & Processes"},{"sr":118,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Equipment Procurement","projectName":"Provision of 8 × 40 ft containers for faculty offices.","amount":3200000,"priority":"3rd Priority","month":"2027-03-01","start":"2027-03-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":119,"sector":"Riphah","org":"Riphah","campus":"Al-Mizan","profitCenter":"Riphah Educational TV","costCentre":"Riphah Educational TV","projectType":"Software / Licensing","projectName":"Purchase of Software","amount":200000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-01","remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Management Sciences","theme":"Student / Patient Experience"},{"sr":120,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Civil Works","projectName":"Renovation of Five Male Washrooms and Construction of Two New Washrooms on the First Floor","amount":2250000,"priority":"1st Priority","month":"2026-08-01","start":"2026-08-01","end":"2026-08-15","remarks":"Urgent","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":121,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"RIHCA (Code:2115)","costCentre":"RIHCA (Code:2115000)","projectType":"Civil Works","projectName":"Renovation of RIHCA Café","amount":335000,"priority":"3rd Priority","month":"2027-04-01","start":"2027-05-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Faculty of Management Sciences","theme":"Student / Patient Experience"},{"sr":122,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Replacement of 20 x Non Inverter Air Conditioners","amount":3000000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":"2027-02-27","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":123,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Replacement of Analogue Cameras","amount":3000000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":124,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Equipment Procurement","projectName":"Replacement of Class room Chairs","amount":4480000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-10-01","remarks":"","priorityType":"Teaching & Learning","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":125,"sector":"Trust","org":"IIMCT-Isb","campus":"Hostels","profitCenter":"Hostels (Code:1199)","costCentre":"Hostel-Male (Code:1199000)","projectType":"Equipment Procurement","projectName":"Replacement of Deep Freezer (Hostels - Male)","amount":130000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Student / Patient Experience"},{"sr":126,"sector":"Trust","org":"IIMCT-Isb","campus":"Hostels","profitCenter":"Hostels (Code:1199)","costCentre":"Hostel-Female (Code:1199001)","projectType":"Equipment Procurement","projectName":"Replacement of Electric Water Cooler (Hostels - Female)","amount":160000,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management","theme":"Student / Patient Experience"},{"sr":127,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Equipment Procurement","projectName":"Replacement of Fire Extinguishers","amount":619500,"priority":"1st Priority","month":"2026-08-01","start":"2026-08-15","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":128,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Equipment Procurement","projectName":"Replacement of Old Fiber Sheets in Library, First-Floor Classroom, and Ground-Floor Corridors","amount":1655000,"priority":"3rd Priority","month":"2027-03-01","start":"2027-03-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Riphah Image Enhancement"},{"sr":129,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Civil Works","projectName":"Replacement of Washrooms tiles (2 sets = 2900 sft) and stair granite replacement 272 sft","amount":1903200,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":130,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"FMSD I-14 (Code:2197)","costCentre":"FMSD I-14 (Code:2197000)","projectType":"Civil Works","projectName":"Roof Treatment of Library, Block C, Block  E, Cafeteria & Jinnah Hall","amount":4900000,"priority":"3rd Priority","month":"2027-03-01","start":"2027-03-01","end":null,"remarks":"","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":131,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Civil Works","projectName":"Upgradation & Renovation of Campus (Common Room Boys / Bank Building)","amount":1000000,"priority":"1st Priority","month":"2026-08-01","start":"2026-08-15","end":null,"remarks":"Instead of Renovation of Campus, Upgradation of Common Room Boys & Bank Building to be done","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":132,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"Examination Cell (Code:2001010)","projectType":"Equipment Procurement","projectName":"Upgradation of Assistant Controller Office","amount":130000,"priority":"2nd Priority","month":"2026-12-01","start":"2026-12-01","end":"2027-01-01","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Validation of Systems & Processes"},{"sr":133,"sector":"Riphah","org":"Riphah","campus":"G-7","profitCenter":"University Secretariat (Code:2001)","costCentre":"Examination Cell (Code:2001010)","projectType":"Equipment Procurement","projectName":"Upgradation of Director's Office","amount":350000,"priority":"2nd Priority","month":"2026-12-01","start":"2026-12-01","end":"2027-01-01","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Validation of Systems & Processes"},{"sr":134,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"FMSD Al-Mizan (Code:1197)","costCentre":"FMSD Al-Mizan (Code:1197000)","projectType":"Equipment Procurement","projectName":"Upgradation of IT Lab","amount":5000000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Management (FMSD)","theme":"Student / Patient Experience"},{"sr":135,"sector":"Riphah","org":"Riphah","campus":"Al-Mizan","profitCenter":"RSL Al-Mizan Campus (Code:2103)","costCentre":"RSL Al-Mizan Campus (Code:2103000)","projectType":"Civil Works","projectName":"Upgradation of Riphah School of Leadership","amount":1300000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-09-30","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Faculty of Management Sciences","theme":"Validation of Systems & Processes"},{"sr":136,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"University Secretariat (Code:2001)","costCentre":"Examination Cell (Code:2001010)","projectType":"Equipment Procurement","projectName":"Upgradation of Senior Deputy Controller office","amount":124000,"priority":"2nd Priority","month":"2026-12-01","start":"2026-12-01","end":"2027-01-01","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Academics Support","theme":"Validation of Systems & Processes"},{"sr":137,"sector":"Riphah","org":"Riphah","campus":"I-14","profitCenter":"RII-Male I-14 Campus (Code:2109)","costCentre":"RII-Male I-14 Campus (Code:2109000)","projectType":"Equipment Procurement","projectName":"Upgradation of Computer Labs (Programming Labs)","amount":15128700,"priority":"3rd Priority","month":"2027-02-01","start":"2027-02-01","end":"2027-04-01","remarks":"","priorityType":"Managerial Services Excellence","faculty":"Faculty of Computing","theme":"Student / Patient Experience"},{"sr":138,"sector":"Riphah","org":"Riphah","campus":"GGC","profitCenter":"FMSD GG Campus (Code:2197)","costCentre":"FMSD GG Campus (Code:2197002)","projectType":"Civil Works","projectName":"Waterproofing of Roof","amount":5000000,"priority":"1st Priority","month":"2026-10-01","start":"2026-10-01","end":"2026-12-31","remarks":"Approved","priorityType":"Managerial Services Excellence","faculty":"Management (FMSD)","theme":"Validation of Systems & Processes"},{"sr":139,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"IIDC (Code:1102)","costCentre":"IIDC (Code:1102000)","projectType":"Civil Works","projectName":"Procurement of Lab Equipment for IIDC","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":140,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"IIMC Al-Mizan Campus (Code:1101)","costCentre":"IIMC Al-Mizan Campus (Code:1101000)","projectType":"Civil Works","projectName":"Renovation, Maintenance, and Upgradation of Demo Rooms and Coordination Office in PRH","amount":9740000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-09-30","remarks":"Complete before PMDC Visit submit PDD before 10 Aug","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":141,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"IIMC Al-Mizan Campus (Code:1101)","costCentre":"IIMC Al-Mizan Campus (Code:1101000)","projectType":"Equipment Procurement","projectName":"Operation Theaters Live Streaming for Students in Class Rooms, (Recordings and Online Classes) (PRH)","amount":900000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-11-01","remarks":"Classroom will be identified in PRH Explore ethical dimensions, take consult","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":142,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"IIMC Al-Mizan Campus (Code:1101)","costCentre":"IIMC Al-Mizan Campus (Code:1101000)","projectType":"Civil Works","projectName":"Procurement of Skilllab Items & Instruments (Phase-2)","amount":9360000,"priority":"1st Priority","month":"2026-09-01","start":"2026-09-01","end":"2026-09-30","remarks":"Complete before PMDC Visit","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":143,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"IIMC Al-Mizan Campus (Code:1101)","costCentre":"IIMC Al-Mizan Campus (Code:1101000)","projectType":"Civil Works","projectName":"Procurement of equipment/items for Basic Sciences, IIMC, Al-Mizan","amount":0,"priority":"2nd Priority","month":"2027-01-01","start":"2027-01-01","end":"2027-04-01","remarks":"Only essential equip will be purchased","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":144,"sector":"Trust","org":"IIMCT-Isb","campus":"Al-Mizan","profitCenter":"IIMC Al-Mizan Campus (Code:1101)","costCentre":"IIMC Al-Mizan Campus (Code:1101000)","projectType":"Equipment Procurement","projectName":"Procurement of Digital Learning Tools","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"Dropped","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":145,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"RIPS G-7 Campus (Code:1104)","costCentre":"RIPS G-7 Campus (Code:1104000)","projectType":"Civil Works","projectName":"Renovation and Expansion (RIPS G7)","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":146,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"RIPS G-7 Campus (Code:1104)","costCentre":"RIPS G-7 Campus (Code:1104000)","projectType":"Equipment Procurement","projectName":"Procurement of Lab Equipment for BS Biomedicine Molecular lab","amount":10000000,"priority":"1st Priority","month":"2026-10-01","start":"2026-10-01","end":"2026-11-30","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":147,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"RIPS G-7 Campus (Code:1104)","costCentre":"RIPS G-7 Campus (Code:1104000)","projectType":"Equipment Procurement","projectName":"Procurement of Equipment for MS AI in Pharma Healthcare","amount":3000000,"priority":"2nd Priority","month":"2027-02-01","start":"2027-02-01","end":"2027-05-01","remarks":"","priorityType":"Unspecified","faculty":"Unspecified","theme":"Unspecified"},{"sr":148,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"RIPS G-7 Campus (Code:1104)","costCentre":"RIPS G-7 Campus (Code:1104000)","projectType":"Equipment Procurement","projectName":"Procurement of IT & Administrative & General Item for MS AI in Pharma Healthcare","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":149,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"RIPS G-7 Campus (Code:1104)","costCentre":"RIPS G-7 Campus (Code:1104000)","projectType":"Equipment Procurement","projectName":"Procurement of AV Equipment for MS AI in Pharma Healthcare","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":150,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"RIPS G-7 Campus (Code:1104)","costCentre":"RIPS G-7 Campus (Code:1104000)","projectType":"Equipment Procurement","projectName":"Digitalization of Classrooms and Labs","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"},{"sr":151,"sector":"Trust","org":"IIMCT-Isb","campus":"G-7","profitCenter":"RIPS G-7 Campus (Code:1104)","costCentre":"RIPS G-7 Campus (Code:1104000)","projectType":"Equipment Procurement","projectName":"Procurement of Lab Equipment (RIPS G7)","amount":0,"priority":"Unprioritized","month":null,"start":null,"end":null,"remarks":"","priorityType":"Teaching & Learning","faculty":"Faculty of Health & Medical Sciences","theme":"Student / Patient Experience"}];/*__DATA_END__*/
+
+const MONTHS = ["2026-07-01","2026-08-01","2026-09-01","2026-10-01","2026-11-01","2026-12-01","2027-01-01","2027-02-01","2027-03-01","2027-04-01","2027-05-01","2027-06-01"];
+const MONTH_LABELS = MONTHS.map(m=>{
+  const d = new Date(m+"T00:00:00");
+  return d.toLocaleString('en-US',{month:'short'}) + " '" + String(d.getFullYear()).slice(2);
+});
+const QUARTERS = [
+  {name:"Q1 FY26-27", months:MONTHS.slice(0,3)},
+  {name:"Q2 FY26-27", months:MONTHS.slice(3,6)},
+  {name:"Q3 FY26-27", months:MONTHS.slice(6,9)},
+  {name:"Q4 FY26-27", months:MONTHS.slice(9,12)},
+];
+const PALETTE = ["#0F2547","#C9A24B","#2BB6A8","#E2725B","#1D4384","#8C6FB5","#5A9BD5","#D4A94A","#4E8C7C","#B4573F","#3E6FA8","#8AA6C9"];
+
+let currentData = RAW_DATA.slice();
+let filters = {sector:"", org:"", campus:"", projectType:"", priority:""};
+let charts = {};
+let siteDim = "campus";
+let sortState = {key:"amount", dir:"desc"};
+
+function fmtPKR(n, compact){
+  if(n===null||n===undefined||isNaN(n)) return "&mdash;";
+  const abs = Math.abs(n);
+  if(compact){
+    if(abs>=1e9) return "PKR " + (n/1e9).toFixed(2) + "B";
+    if(abs>=1e6) return "PKR " + (n/1e6).toFixed(2) + "M";
+    if(abs>=1e3) return "PKR " + (n/1e3).toFixed(1) + "K";
+    return "PKR " + n.toFixed(0);
+  }
+  return "PKR " + n.toLocaleString('en-US',{maximumFractionDigits:0});
+}
+function monthLabel(iso){
+  if(!iso) return "Unscheduled";
+  const idx = MONTHS.indexOf(iso);
+  return idx>=0 ? MONTH_LABELS[idx] : iso;
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+function deriveStatus(rec){
+  const today = todayISO();
+  if(!rec.start && !rec.end) return "Unscheduled";
+  if(rec.end && rec.end < today) return "Completed";
+  if(rec.start && rec.start > today) return "Upcoming";
+  if(rec.start && rec.start <= today && (!rec.end || rec.end >= today)) return "In Progress";
+  return "Unscheduled";
+}
+RAW_DATA.forEach(r=>{ r.status = deriveStatus(r); });
+
+function uniqueSorted(arr, key){
+  return [...new Set(arr.map(r=>r[key]).filter(Boolean))].sort();
+}
+
+function populateFilterOptions(){
+  const map = [["f-sector","sector"],["f-org","org"],["f-campus","campus"],["f-type","projectType"],["f-priority","priority"]];
+  map.forEach(([id,key])=>{
+    const sel = document.getElementById(id);
+    uniqueSorted(RAW_DATA, key).forEach(val=>{
+      const opt = document.createElement("option");
+      opt.value = val; opt.textContent = val;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", e=>{ filters[key==="projectType"?"projectType":key] = e.target.value; applyFilters(); });
+  });
+}
+
+function applyFilters(){
+  currentData = RAW_DATA.filter(r=>{
+    if(filters.sector && r.sector!==filters.sector) return false;
+    if(filters.org && r.org!==filters.org) return false;
+    if(filters.campus && r.campus!==filters.campus) return false;
+    if(filters.projectType && r.projectType!==filters.projectType) return false;
+    if(filters.priority && r.priority!==filters.priority) return false;
+    return true;
+  });
+  document.getElementById("filterCount").textContent = currentData.length;
+  document.getElementById("filterTotal").textContent = RAW_DATA.length;
+  renderAll();
+}
+
+document.getElementById("resetFilters").addEventListener("click",()=>{
+  filters = {sector:"", org:"", campus:"", projectType:"", priority:""};
+  ["f-sector","f-org","f-campus","f-type","f-priority"].forEach(id=>document.getElementById(id).value="");
+  applyFilters();
+});
+
+/* ============ Aggregations ============ */
+function monthAgg(data){
+  const map = {}; MONTHS.forEach(m=>map[m]=0);
+  data.forEach(r=>{ if(r.month && map.hasOwnProperty(r.month)) map[r.month]+=r.amount; });
+  return MONTHS.map(m=>map[m]);
+}
+// A single project phased across the year appears as one line item per month.
+// Earlier workbook versions repeated the same Sr # on every phase; the current
+// one numbers each phase separately, so rolling up on Sr # alone would count a
+// 12-month block fund as 12 projects. Group on cost centre + the project name
+// with any trailing month suffix removed, which is stable across both layouts.
+const MONTH_SUFFIX_RE = /\s*\((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*'?\d{2,4}\)\s*$/i;
+function baseName(n){ return String(n||"").replace(MONTH_SUFFIX_RE, "").trim(); }
+function projectKey(r){ return (r.costCentre||"") + "||" + baseName(r.projectName).toLowerCase(); }
+
+function projectAgg(data){
+  const map = {};
+  data.forEach(r=>{
+    const k = projectKey(r);
+    if(!map[k]) map[k] = {key:k, sr:r.sr, name:r.projectName, base:baseName(r.projectName), total:0, lines:0, campus:r.campus, org:r.org, sector:r.sector, type:r.projectType, byMonth:{}};
+    map[k].total += r.amount;
+    map[k].lines += 1;
+    map[k].byMonth[r.month||'unsched'] = (map[k].byMonth[r.month||'unsched']||0) + r.amount;
+  });
+  return Object.values(map);
+}
+function dimAgg(data, dim){
+  const map = {};
+  data.forEach(r=>{ const key = r[dim] || "Unspecified"; map[key]=(map[key]||0)+r.amount; });
+  return map;
+}
+
+/* ============ KPI rendering ============ */
+function renderKPIs(){
+  const scheduled = currentData.filter(r=>r.month);
+  const totalBudget = currentData.reduce((s,r)=>s+r.amount,0);
+  const totalScheduled = scheduled.reduce((s,r)=>s+r.amount,0);
+  const projCount = new Set(currentData.map(projectKey)).size;
+  const months = monthAgg(currentData);
+  const nonZeroMonths = months.filter(v=>v>0);
+  const avgMonthly = nonZeroMonths.length ? totalScheduled/nonZeroMonths.length : 0;
+  const maxIdx = months.indexOf(Math.max(...months));
+  let minIdx = -1, minVal = Infinity;
+  months.forEach((v,i)=>{ if(v>0 && v<minVal){minVal=v; minIdx=i;} });
+  const today = todayISO();
+  let curMonthIdx = MONTHS.findIndex((m,i)=>{
+    const next = MONTHS[i+1];
+    return m<=today && (!next || today<next);
+  });
+  if(curMonthIdx<0) curMonthIdx = 0;
+  const curMonthVal = months[curMonthIdx];
+  const scheduledPct = totalBudget>0 ? (totalScheduled/totalBudget*100) : 0;
+  const unscheduledCount = currentData.filter(r=>!r.month).length;
+
+  const cards = [
+    {label:"Total CAPEX Budget", value:fmtPKR(totalBudget,true), sub:"Sum of all approved &amp; pending line items", accent:"navy"},
+    {label:"Total Number of Projects", value:projCount.toLocaleString(), sub:"Distinct CAPEX initiatives in scope", accent:"gold"},
+    {label:"Total Planned Cash Flow", value:fmtPKR(totalScheduled,true), sub:"Budget assigned to a specific month", accent:"teal"},
+    {label:"Current Month Planned Cash Flow", value:fmtPKR(curMonthVal,true), sub:MONTH_LABELS[curMonthIdx]+" plan", accent:"gold"},
+    {label:"Average Monthly Cash Flow", value:fmtPKR(avgMonthly,true), sub:"Across "+nonZeroMonths.length+" active months", accent:"navy"},
+    {label:"Highest Cash Flow Month", value:MONTH_LABELS[maxIdx], sub:fmtPKR(months[maxIdx],true), accent:"coral"},
+    {label:"Lowest Cash Flow Month", value:minIdx>=0?MONTH_LABELS[minIdx]:"&mdash;", sub:minIdx>=0?fmtPKR(minVal,true):"n/a", accent:"teal"},
+    {label:"Cash Flow Scheduled %", value:scheduledPct.toFixed(1)+"%", sub:"Of budget allocated to a planned month (no actuals in source)", accent:"gold"},
+    {label:"Pending / Unscheduled Items", value:unscheduledCount, sub:"Approved in principle, budget &amp; month not yet finalized", accent:"coral"},
+  ];
+  document.getElementById("kpiGrid").innerHTML = cards.map(c=>`
+    <div class="kpi-card accent-${c.accent}">
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value">${c.value}</div>
+      <div class="kpi-sub">${c.sub}</div>
+    </div>`).join("");
+}
+
+/* ============ Chart helpers ============ */
+function destroy(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+function baseGrid(){ return {color:"#EEF1F6"}; }
+
+function renderHero(){
+  const months = monthAgg(currentData);
+  let running = 0; const cum = months.map(v=>{ running+=v; return running; });
+  document.getElementById("heroPeak").textContent = fmtPKR(running,true);
+  destroy("hero");
+  const ctx = document.getElementById("heroChart");
+  const gradient = ctx.getContext("2d").createLinearGradient(0,0,0,260);
+  gradient.addColorStop(0,"rgba(201,162,75,0.55)");
+  gradient.addColorStop(1,"rgba(201,162,75,0.02)");
+  charts.hero = new Chart(ctx,{
+    type:"line",
+    data:{labels:MONTH_LABELS, datasets:[{
+      data:cum, borderColor:"#E8D9AE", backgroundColor:gradient, fill:true, tension:.35,
+      borderWidth:2.5, pointRadius:3, pointBackgroundColor:"#C9A24B", pointBorderColor:"#0A1A30"
+    }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
+      scales:{
+        x:{ticks:{color:"#B9C6E0", font:{size:11}}, grid:{color:"rgba(255,255,255,0.06)"}},
+        y:{ticks:{color:"#B9C6E0", font:{size:11}, callback:v=>fmtPKR(v,true)}, grid:{color:"rgba(255,255,255,0.06)"}}
+      }
+    }
+  });
+}
+
+function renderMiniTrend(){
+  const months = monthAgg(currentData);
+  const avg = months.filter(v=>v>0).reduce((a,b)=>a+b,0)/(months.filter(v=>v>0).length||1);
+  destroy("miniTrend");
+  charts.miniTrend = new Chart(document.getElementById("miniTrendChart"),{
+    type:"bar",
+    data:{labels:MONTH_LABELS, datasets:[
+      {type:"bar", label:"Planned", data:months, backgroundColor:"#153564", borderRadius:4, maxBarThickness:26},
+      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#C9A24B", borderWidth:2, borderDash:[6,4], pointRadius:0}
+    ]},
+    options:{responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:"bottom", labels:{boxWidth:10,font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+": "+fmtPKR(c.parsed.y,true)}}},
+      scales:{x:{grid:{display:false}, ticks:{font:{size:10}}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true), font:{size:10}}}}
+    }
+  });
+}
+
+function renderMiniSite(){
+  const agg = dimAgg(currentData,"campus");
+  const sorted = Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  destroy("miniSite");
+  charts.miniSite = new Chart(document.getElementById("miniSiteChart"),{
+    type:"bar",
+    data:{labels:sorted.map(s=>s[0]), datasets:[{data:sorted.map(s=>s[1]), backgroundColor:PALETTE, borderRadius:5, maxBarThickness:26}]},
+    options:{indexAxis:"y", responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.x,true)}}},
+      scales:{x:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true), font:{size:10}}}, y:{grid:{display:false}, ticks:{font:{size:11}}}}
+    }
+  });
+}
+
+function renderTrend(){
+  const months = monthAgg(currentData);
+  destroy("trend");
+  charts.trend = new Chart(document.getElementById("trendChart"),{
+    type:"line",
+    data:{labels:MONTH_LABELS, datasets:[{data:months, borderColor:"#1D4384", backgroundColor:"rgba(29,67,132,0.08)", fill:true, tension:.3, pointBackgroundColor:"#1D4384", pointRadius:4, borderWidth:2.5}]},
+    options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
+      scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
+  });
+}
+
+function renderComparison(){
+  const months = monthAgg(currentData);
+  const avg = months.filter(v=>v>0).reduce((a,b)=>a+b,0)/(months.filter(v=>v>0).length||1);
+  destroy("comparison");
+  charts.comparison = new Chart(document.getElementById("comparisonChart"),{
+    type:"bar",
+    data:{labels:MONTH_LABELS, datasets:[
+      {type:"bar", label:"Monthly Planned", data:months, backgroundColor:months.map(v=>v>=avg?"#2BB6A8":"#C9A24B"), borderRadius:5},
+      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#E2725B", borderWidth:2, borderDash:[5,4], pointRadius:0}
+    ]},
+    options:{responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:"bottom", labels:{boxWidth:10,font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+": "+fmtPKR(c.parsed.y,true)}}},
+      scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}
+    }
+  });
+}
+
+function renderCumulative(){
+  const months = monthAgg(currentData);
+  let running=0; const cum = months.map(v=>{running+=v; return running;});
+  destroy("cumulative");
+  charts.cumulative = new Chart(document.getElementById("cumulativeChart"),{
+    type:"line",
+    data:{labels:MONTH_LABELS, datasets:[{data:cum, borderColor:"#2BB6A8", backgroundColor:"rgba(43,182,168,0.12)", fill:true, tension:.35, pointRadius:3, borderWidth:2.5}]},
+    options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
+      scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
+  });
+}
+
+function renderDistribution(){
+  const months = monthAgg(currentData);
+  destroy("distribution");
+  charts.distribution = new Chart(document.getElementById("distributionChart"),{
+    type:"doughnut",
+    data:{labels:MONTH_LABELS, datasets:[{data:months, backgroundColor:PALETTE.concat(PALETTE), borderWidth:2, borderColor:"#fff"}]},
+    options:{responsive:true, maintainAspectRatio:false, cutout:"58%",
+      plugins:{legend:{position:"right", labels:{boxWidth:10, font:{size:10}}}, tooltip:{callbacks:{label:c=>c.label+": "+fmtPKR(c.parsed,true)}}}
+    }
+  });
+}
+
+function renderQuarter(){
+  const months = monthAgg(currentData);
+  const qTotals = QUARTERS.map(q=>q.months.reduce((s,m)=>s+months[MONTHS.indexOf(m)],0));
+  destroy("quarter");
+  charts.quarter = new Chart(document.getElementById("quarterChart"),{
+    type:"bar",
+    data:{labels:QUARTERS.map(q=>q.name), datasets:[{data:qTotals, backgroundColor:["#0F2547","#1D4384","#2BB6A8","#C9A24B"], borderRadius:8, maxBarThickness:70}]},
+    options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
+      scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
+  });
+}
+
+function renderRunningTotalTable(){
+  const months = monthAgg(currentData);
+  const total = months.reduce((a,b)=>a+b,0);
+  let running=0;
+  const rows = months.map((v,i)=>{
+    running+=v;
+    const pct = total>0 ? (running/total*100) : 0;
+    return `<tr><td>${MONTH_LABELS[i]}</td><td class="num">${fmtPKR(v,true)}</td><td class="num">${fmtPKR(running,true)}</td><td class="num">${pct.toFixed(1)}%</td></tr>`;
+  }).join("");
+  document.getElementById("runningTotalBody").innerHTML = rows;
+}
+
+function renderTop10(){
+  const projects = projectAgg(currentData).sort((a,b)=>b.total-a.total).slice(0,10);
+  destroy("top10");
+  charts.top10 = new Chart(document.getElementById("top10Chart"),{
+    type:"bar",
+    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#0F2547", borderRadius:5}]},
+    options:{indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.x,true), title:c=>projects[c[0].dataIndex].name}}},
+      scales:{x:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true), font:{size:10}}}, y:{grid:{display:false}, ticks:{font:{size:10.5}}}}
+    }
+  });
+}
+
+function renderBottom10(){
+  const projects = projectAgg(currentData).filter(p=>p.total>0).sort((a,b)=>a.total-b.total).slice(0,10);
+  destroy("bottom10");
+  charts.bottom10 = new Chart(document.getElementById("bottom10Chart"),{
+    type:"bar",
+    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#E2725B", borderRadius:5}]},
+    options:{indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.x,true), title:c=>projects[c[0].dataIndex].name}}},
+      scales:{x:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true), font:{size:10}}}, y:{grid:{display:false}, ticks:{font:{size:10.5}}}}
+    }
+  });
+}
+
+function renderContribution(){
+  const projects = projectAgg(currentData).sort((a,b)=>b.total-a.total);
+  const top8 = projects.slice(0,8);
+  const rest = projects.slice(8).reduce((s,p)=>s+p.total,0);
+  const labels = top8.map(p=>p.name.length>26?p.name.slice(0,26)+"…":p.name).concat(rest>0?["All Other Projects"]:[]);
+  const values = top8.map(p=>p.total).concat(rest>0?[rest]:[]);
+  destroy("contribution");
+  charts.contribution = new Chart(document.getElementById("contributionChart"),{
+    type:"doughnut",
+    data:{labels, datasets:[{data:values, backgroundColor:PALETTE, borderWidth:2, borderColor:"#fff"}]},
+    options:{responsive:true, maintainAspectRatio:false, cutout:"55%",
+      plugins:{legend:{position:"right", labels:{boxWidth:10, font:{size:10}}}, tooltip:{callbacks:{label:c=>c.label+": "+fmtPKR(c.parsed,true)}}}
+    }
+  });
+}
+
+function renderStatus(){
+  const projects = projectAgg(currentData);
+  const statusMap = {};
+  currentData.forEach(r=>{}); // status is per-record but we want per-project representative status (use latest/most relevant record)
+  const bySr = {};
+  currentData.forEach(r=>{ const k = projectKey(r); bySr[k] = bySr[k] || []; bySr[k].push(r); });
+  const counts = {"In Progress":0,"Upcoming":0,"Completed":0,"Unscheduled":0};
+  Object.values(bySr).forEach(recs=>{
+    const statuses = recs.map(r=>r.status);
+    let s = "Unscheduled";
+    if(statuses.includes("In Progress")) s="In Progress";
+    else if(statuses.includes("Upcoming")) s="Upcoming";
+    else if(statuses.every(x=>x==="Completed")) s="Completed";
+    counts[s] = (counts[s]||0)+1;
+  });
+  destroy("status");
+  charts.status = new Chart(document.getElementById("statusChart"),{
+    type:"doughnut",
+    data:{labels:Object.keys(counts), datasets:[{data:Object.values(counts), backgroundColor:["#2BB6A8","#1D4384","#8C96A8","#E2725B"], borderWidth:2, borderColor:"#fff"}]},
+    options:{responsive:true, maintainAspectRatio:false, cutout:"60%",
+      plugins:{legend:{position:"bottom", labels:{boxWidth:10, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.label+": "+c.parsed+" projects"}}}
+    }
+  });
+}
+
+function renderSite(){
+  const agg = dimAgg(currentData, siteDim);
+  const sorted = Object.entries(agg).sort((a,b)=>b[1]-a[1]);
+  destroy("site");
+  charts.site = new Chart(document.getElementById("siteChart"),{
+    type:"bar",
+    data:{labels:sorted.map(s=>s[0]), datasets:[{data:sorted.map(s=>s[1]), backgroundColor:PALETTE, borderRadius:6, maxBarThickness:46}]},
+    options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
+      scales:{x:{grid:{display:false}, ticks:{font:{size:10.5}}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}
+    }
+  });
+}
+document.querySelectorAll(".chip-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".chip-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    siteDim = btn.dataset.dim;
+    renderSite();
+  });
+});
+
+function renderHeatmap(){
+  const projects = projectAgg(currentData).sort((a,b)=>b.total-a.total);
+  const head = document.getElementById("heatHeadRow");
+  head.innerHTML = "<th>Project</th>"
+    + MONTH_LABELS.map(m=>`<th style="text-align:center;">${m}</th>`).join("")
+    + '<th style="text-align:right;">Total</th>';
+  document.getElementById("heatCount").textContent = projects.length;
+  const maxVal = Math.max(0, ...projects.flatMap(p=>MONTHS.map(m=>p.byMonth[m]||0)));
+  const rows = projects.map((p,i)=>{
+    const cells = MONTHS.map(m=>{
+      const v = p.byMonth[m]||0;
+      const intensity = maxVal>0 ? v/maxVal : 0;
+      const bg = v>0 ? `rgba(15,37,71,${(0.08+intensity*0.75).toFixed(2)})` : "#F4F6F9";
+      const color = intensity>0.5 ? "#fff" : "#0F2547";
+      return `<td class="heat-cell" style="background:${bg}; color:${color};" title="${monthLabel(m)} &mdash; ${fmtPKR(v)}">${v>0?fmtPKR(v,true).replace('PKR ',''):''}</td>`;
+    }).join("");
+    const unsched = p.byMonth['unsched']||0;
+    const totalTxt = p.total>0 ? fmtPKR(p.total,true).replace('PKR ','') : (unsched>0 ? fmtPKR(unsched,true).replace('PKR ','') : "&mdash;");
+    const flag = (p.total===0) ? ' <span class="heat-idx">(no budget yet)</span>'
+               : (unsched>0 && p.total===unsched) ? ' <span class="heat-idx">(unscheduled)</span>' : '';
+    return `<tr class="${p.total>0?'':'heat-zero'}">`
+      + `<td class="proj-name-cell"><span class="heat-idx">${i+1}.</span>${heatName(p)}${flag}</td>`
+      + cells
+      + `<td class="heat-total" title="${fmtPKR(p.total)}">${totalTxt}</td></tr>`;
+  }).join("");
+  document.getElementById("heatBody").innerHTML = rows;
+}
+
+// A project phased across several months carries a month suffix on each of its
+// line items (e.g. "... (July 2026)"); the suffix is meaningless once the rows
+// are rolled up into a single heatmap row, so drop it.
+function heatName(p){
+  return ((p.lines||1) > 1) ? (p.base || p.name) : p.name;
+}
+
+/* ============ Data table ============ */
+function renderDataTable(){
+  let rows = currentData.slice();
+  const q = (document.getElementById("tableSearch").value||"").toLowerCase();
+  if(q){
+    rows = rows.filter(r=> (r.projectName+" "+r.campus+" "+r.costCentre+" "+r.profitCenter).toLowerCase().includes(q));
+  }
+  rows.sort((a,b)=>{
+    let av=a[sortState.key], bv=b[sortState.key];
+    if(sortState.key==="month"){ av = a.month||""; bv = b.month||""; }
+    if(typeof av === "string"){ av=(av||"").toLowerCase(); bv=(bv||"").toLowerCase(); }
+    if(av<bv) return sortState.dir==="asc"?-1:1;
+    if(av>bv) return sortState.dir==="asc"?1:-1;
+    return 0;
+  });
+  document.getElementById("dataRowCount").textContent = rows.length;
+  const badgeClass = {"In Progress":"badge-inprogress","Upcoming":"badge-upcoming","Completed":"badge-completed","Unscheduled":"badge-unscheduled"};
+  document.getElementById("dataTableBody").innerHTML = rows.map(r=>`
+    <tr>
+      <td>${r.sr}</td>
+      <td class="proj-name-cell">${r.projectName}</td>
+      <td>${r.sector}</td>
+      <td>${r.org}</td>
+      <td>${r.campus}</td>
+      <td>${r.projectType}</td>
+      <td>${r.priority}</td>
+      <td>${monthLabel(r.month)}</td>
+      <td class="num">${fmtPKR(r.amount)}</td>
+      <td><span class="badge ${badgeClass[r.status]}">${r.status}</span></td>
+      <td class="row-actions" style="text-align:right;">
+        <button class="icon-btn" data-act="edit" data-id="${r._id}">Edit</button>
+        <button class="icon-btn" data-act="dup" data-id="${r._id}">Copy</button>
+        <button class="icon-btn del" data-act="del" data-id="${r._id}">Delete</button>
+      </td>
+    </tr>
+  `).join("");
+}
+document.getElementById("tableSearch").addEventListener("input", renderDataTable);
+document.querySelectorAll("#dataTable thead th").forEach(th=>{
+  th.addEventListener("click", ()=>{
+    const key = th.dataset.key;
+    if(!key) return;
+    if(sortState.key===key){ sortState.dir = sortState.dir==="asc"?"desc":"asc"; }
+    else { sortState.key = key; sortState.dir="desc"; }
+    renderDataTable();
+  });
+});
+
+/* ============ Tabs ============ */
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("tab-"+btn.dataset.tab).classList.add("active");
+    setTimeout(renderAll, 30); // ensure canvases sized correctly when tab becomes visible
+  });
+});
+
+/* ============ Export ============ */
+document.getElementById("downloadBtn").addEventListener("click",()=>{
+  const months = monthAgg(currentData);
+  let csv = "Month,Planned Amount (PKR)\n";
+  months.forEach((v,i)=>{ csv += MONTH_LABELS[i]+","+v.toFixed(0)+"\n"; });
+  const blob = new Blob([csv], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "capex_monthly_summary.csv";
+  a.click();
+});
+
+/* ============ Upload / refresh data ============ */
+document.getElementById("uploadBtn").addEventListener("click",()=>document.getElementById("fileInput").click());
+document.getElementById("fileInput").addEventListener("change", function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt){
+    try{
+      const isCSV = /\.csv$/i.test(file.name);
+      const wb = isCSV
+        ? XLSX.read(String(evt.target.result).replace(/^\uFEFF/, ""), {type:"string", cellDates:true, raw:false})
+        : XLSX.read(evt.target.result, {type:"array", cellDates:true});
+      let sheetName = wb.SheetNames.find(n=>n.toLowerCase().includes("timelines")) || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:null});
+      // find header row containing "Sr #"
+      const norm = c => String(c==null?"":c).replace(/^\uFEFF/, "").trim();
+      let headerIdx = rows.findIndex(r=> r && r.some(c=>norm(c)==="Sr #"));
+      if(headerIdx<0) headerIdx = 3;
+      const headers = rows[headerIdx].map(norm);
+      const colIdx = name => headers.indexOf(name);
+      const idx = {
+        sr:colIdx("Sr #"), sector:colIdx("Sector"), org:colIdx("Organization"), campus:colIdx("Campus"),
+        pc:colIdx("Profit Center"), cc:colIdx("Cost Centre"), type:colIdx("Project Type"), name:colIdx("Project Name"),
+        amount:colIdx("Total Budget"), priority:colIdx("Priority No."), month:colIdx("Project Month"),
+        start:colIdx("Planned Start Date"), end:colIdx("Planned End Date"), remarks:colIdx("Remarks"),
+        priorityType:colIdx("Priorities Type"), faculty:colIdx("Faculty"), theme:colIdx("Common Theme")
+      };
+      function toISO(v){
+        if(v===null || v===undefined) return null;
+        const s = String(v).trim();
+        if(s==="" || s==="0") return null;
+        const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if(iso) return iso[0];
+        const d = new Date(s);
+        if(isNaN(d.getTime())) return null;
+        return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+      }
+      function toNum(v){
+        if(v===null || v===undefined) return 0;
+        const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
+        return isNaN(n) ? 0 : n;
+      }
+      function toText(v){
+        const s = String(v==null?"":v).replace(/\s*\n\s*/g," ").trim();
+        return (s==="0") ? "" : s;
+      }
+      const newData = [];
+      for(let i=headerIdx+1;i<rows.length;i++){
+        const r = rows[i];
+        if(!r || r[idx.sr]===null || r[idx.sr]===undefined || r[idx.sr]==="" ) continue;
+        if(!r[idx.name]) continue;
+        newData.push({
+          sr: parseInt(r[idx.sr]) || 0,
+          sector: toText(r[idx.sector]) || "Unspecified",
+          org: toText(r[idx.org]) || "Unspecified",
+          campus: toText(r[idx.campus]) || "Unspecified",
+          profitCenter: toText(r[idx.pc]),
+          costCentre: toText(r[idx.cc]),
+          projectType: toText(r[idx.type]) || "Unspecified",
+          projectName: toText(r[idx.name]),
+          amount: toNum(r[idx.amount]),
+          priority: toText(r[idx.priority]) || "Unprioritized",
+          month: toISO(r[idx.month]),
+          start: toISO(r[idx.start]),
+          end: toISO(r[idx.end]),
+          remarks: toText(r[idx.remarks]),
+          priorityType: toText(r[idx.priorityType]) || "Unspecified",
+          faculty: toText(r[idx.faculty]) || "Unspecified",
+          theme: toText(r[idx.theme]) || "Unspecified",
+        });
+      }
+      if(newData.length===0){ alert("No valid project rows were found in this file. Please check it matches the expected template (see Data Explorer tab for the required columns)."); return; }
+      newData.forEach(r=>r.status=deriveStatus(r));
+      RAW_DATA.length = 0; RAW_DATA.push(...newData);
+      ensureIds(); undoStack = []; document.getElementById("undoBtn").disabled = true; markDirty(false);
+      buildDatalists();
+      document.getElementById("lastUpdated").textContent = "Updated " + new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) + " from " + file.name;
+      // refresh filter dropdowns
+      ["f-sector","f-org","f-campus","f-type","f-priority"].forEach(id=>{ document.getElementById(id).innerHTML = document.getElementById(id).options[0].outerHTML; });
+      populateFilterOptions();
+      filters = {sector:"", org:"", campus:"", projectType:"", priority:""};
+      applyFilters();
+      alert("Dashboard refreshed with "+newData.length+" line items from "+file.name+".");
+    }catch(err){
+      console.error(err);
+      alert("Could not read this file. Please make sure it is a .csv or .xlsx file matching the expected CAPEX template (see Data Explorer tab for the required columns).");
+    }
+  };
+  if(/\.csv$/i.test(file.name)) reader.readAsText(file); else reader.readAsArrayBuffer(file);
+});
+
+
+/* ============================================================
+   Live editing — add / edit / duplicate / delete line items,
+   with undo, and "save as HTML" so edits persist in the file.
+   ============================================================ */
+let _uid = 0;
+function ensureIds(){ RAW_DATA.forEach(r=>{ if(r._id===undefined) r._id = ++_uid; }); }
+ensureIds();
+
+let undoStack = [];
+let dirty = false;
+
+function snapshot(){
+  undoStack.push(JSON.stringify(RAW_DATA));
+  if(undoStack.length > 25) undoStack.shift();
+  document.getElementById("undoBtn").disabled = false;
+}
+function markDirty(on){
+  dirty = on;
+  document.getElementById("dirtyPill").classList.toggle("show", on);
+}
+function refreshAfterDataChange(){
+  RAW_DATA.forEach(r=>{ r.status = deriveStatus(r); });
+  ensureIds();
+  ["f-sector","f-org","f-campus","f-type","f-priority"].forEach(id=>{
+    const sel = document.getElementById(id);
+    const keep = sel.value;
+    sel.innerHTML = sel.options[0].outerHTML;
+    populateOne(id);
+    sel.value = [...sel.options].some(o=>o.value===keep) ? keep : "";
+  });
+  filters = {
+    sector: document.getElementById("f-sector").value,
+    org: document.getElementById("f-org").value,
+    campus: document.getElementById("f-campus").value,
+    projectType: document.getElementById("f-type").value,
+    priority: document.getElementById("f-priority").value
+  };
+  buildDatalists();
+  applyFilters();
+}
+function populateOne(id){
+  const keymap = {"f-sector":"sector","f-org":"org","f-campus":"campus","f-type":"projectType","f-priority":"priority"};
+  const sel = document.getElementById(id);
+  uniqueSorted(RAW_DATA, keymap[id]).forEach(val=>{
+    const opt = document.createElement("option");
+    opt.value = val; opt.textContent = val;
+    sel.appendChild(opt);
+  });
+}
+
+/* ---- month dropdown + datalists ---- */
+(function initMonthSelect(){
+  const sel = document.getElementById("fld-month");
+  sel.innerHTML = '<option value="">— Unscheduled —</option>' +
+    MONTHS.map((m,i)=>`<option value="${m}">${MONTH_LABELS[i]}</option>`).join("");
+})();
+
+function buildDatalists(){
+  const map = {"dl-sector":"sector","dl-org":"org","dl-campus":"campus","dl-projectType":"projectType",
+               "dl-priority":"priority","dl-profitCenter":"profitCenter","dl-costCentre":"costCentre",
+               "dl-priorityType":"priorityType","dl-faculty":"faculty","dl-theme":"theme"};
+  Object.entries(map).forEach(([id,key])=>{
+    const dl = document.getElementById(id);
+    if(!dl) return;
+    dl.innerHTML = uniqueSorted(RAW_DATA, key).map(v=>`<option value="${String(v).replace(/"/g,'&quot;')}"></option>`).join("");
+  });
+}
+buildDatalists();
+
+/* ---- modal plumbing ---- */
+const FIELDS = ["sr","projectName","sector","org","campus","profitCenter","costCentre","projectType",
+                "amount","priority","month","start","end","remarks","priorityType","faculty","theme"];
+let editingId = null;
+
+function openEditor(rec, isNew){
+  editingId = isNew ? null : rec._id;
+  document.getElementById("modalTitle").textContent = isNew ? "Add line item" : "Edit line item — Sr #" + rec.sr;
+  FIELDS.forEach(f=>{
+    const el = document.getElementById("fld-"+f);
+    if(!el) return;
+    let v = rec[f];
+    if(v===null || v===undefined) v = "";
+    el.value = v;
+  });
+  document.getElementById("modalDelete").style.display = isNew ? "none" : "";
+  document.getElementById("editModal").classList.add("open");
+  setTimeout(()=>document.getElementById("fld-projectName").focus(), 40);
+}
+function closeEditor(){
+  document.getElementById("editModal").classList.remove("open");
+  editingId = null;
+}
+function readEditor(){
+  const get = f => { const el = document.getElementById("fld-"+f); return el ? el.value : ""; };
+  const txt = f => String(get(f)||"").trim();
+  const dt  = f => { const v = txt(f); return v ? v : null; };
+  return {
+    sr: parseInt(get("sr")) || 0,
+    sector: txt("sector") || "Unspecified",
+    org: txt("org") || "Unspecified",
+    campus: txt("campus") || "Unspecified",
+    profitCenter: txt("profitCenter"),
+    costCentre: txt("costCentre"),
+    projectType: txt("projectType") || "Unspecified",
+    projectName: txt("projectName"),
+    amount: (function(){ const n = parseFloat(String(get("amount")).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; })(),
+    priority: txt("priority") || "Unprioritized",
+    month: dt("month"),
+    start: dt("start"),
+    end: dt("end"),
+    remarks: txt("remarks"),
+    priorityType: txt("priorityType") || "Unspecified",
+    faculty: txt("faculty") || "Unspecified",
+    theme: txt("theme") || "Unspecified"
+  };
+}
+
+document.getElementById("modalCancel").addEventListener("click", closeEditor);
+document.getElementById("editModal").addEventListener("mousedown", e=>{
+  if(e.target.id === "editModal") closeEditor();
+});
+document.addEventListener("keydown", e=>{
+  if(e.key === "Escape" && document.getElementById("editModal").classList.contains("open")) closeEditor();
+});
+
+document.getElementById("modalSave").addEventListener("click", ()=>{
+  const rec = readEditor();
+  if(!rec.projectName){ alert("Project Name is required."); return; }
+  snapshot();
+  if(editingId === null){
+    rec._id = ++_uid;
+    RAW_DATA.push(rec);
+  } else {
+    const target = RAW_DATA.find(r=>r._id===editingId);
+    Object.assign(target, rec);
+  }
+  closeEditor();
+  markDirty(true);
+  refreshAfterDataChange();
+});
+
+document.getElementById("modalDelete").addEventListener("click", ()=>{
+  if(editingId === null) return;
+  if(!confirm("Delete this line item? You can undo this from the Data Explorer toolbar.")) return;
+  snapshot();
+  const i = RAW_DATA.findIndex(r=>r._id===editingId);
+  if(i >= 0) RAW_DATA.splice(i,1);
+  closeEditor();
+  markDirty(true);
+  refreshAfterDataChange();
+});
+
+/* ---- row action buttons ---- */
+document.getElementById("dataTableBody").addEventListener("click", e=>{
+  const btn = e.target.closest(".icon-btn");
+  if(!btn) return;
+  const id = parseInt(btn.dataset.id);
+  const rec = RAW_DATA.find(r=>r._id===id);
+  if(!rec) return;
+  const act = btn.dataset.act;
+  if(act === "edit"){
+    openEditor(rec, false);
+  } else if(act === "dup"){
+    snapshot();
+    const copy = Object.assign({}, rec, {_id: ++_uid});
+    RAW_DATA.splice(RAW_DATA.indexOf(rec)+1, 0, copy);
+    markDirty(true);
+    refreshAfterDataChange();
+    openEditor(copy, false);
+  } else if(act === "del"){
+    if(!confirm("Delete \u201c" + rec.projectName + "\u201d?\n\nYou can undo this from the toolbar.")) return;
+    snapshot();
+    RAW_DATA.splice(RAW_DATA.indexOf(rec), 1);
+    markDirty(true);
+    refreshAfterDataChange();
+  }
+});
+document.getElementById("dataTableBody").addEventListener("dblclick", e=>{
+  const tr = e.target.closest("tr");
+  if(!tr) return;
+  const btn = tr.querySelector('.icon-btn[data-act="edit"]');
+  if(!btn) return;
+  const rec = RAW_DATA.find(r=>r._id===parseInt(btn.dataset.id));
+  if(rec) openEditor(rec, false);
+});
+
+/* ---- add / undo ---- */
+document.getElementById("addRowBtn").addEventListener("click", ()=>{
+  const nextSr = RAW_DATA.reduce((m,r)=>Math.max(m, r.sr||0), 0) + 1;
+  openEditor({sr:nextSr, projectName:"", sector:"", org:"", campus:"", profitCenter:"", costCentre:"",
+              projectType:"", amount:"", priority:"", month:"", start:"", end:"", remarks:"",
+              priorityType:"", faculty:"", theme:""}, true);
+});
+
+document.getElementById("undoBtn").addEventListener("click", ()=>{
+  if(!undoStack.length) return;
+  const prev = JSON.parse(undoStack.pop());
+  RAW_DATA.length = 0;
+  RAW_DATA.push(...prev);
+  document.getElementById("undoBtn").disabled = undoStack.length === 0;
+  markDirty(true);
+  refreshAfterDataChange();
+});
+
+/* ---- export the full register, ready to paste back into the workbook ---- */
+const CSV_COLS = [
+  ["Sr #","sr"],["Sector","sector"],["Organization","org"],["Campus","campus"],
+  ["Profit Center","profitCenter"],["Cost Centre","costCentre"],["Project Type","projectType"],
+  ["Project Name","projectName"],["Total Budget","amount"],["Priority No.","priority"],
+  ["Project Month","month"],["Planned Start Date","start"],["Planned End Date","end"],
+  ["Remarks","remarks"],["Priorities Type","priorityType"],["Faculty","faculty"],["Common Theme","theme"]
+];
+function csvCell(v){
+  const s = (v===null || v===undefined) ? "" : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+document.getElementById("exportRegisterBtn").addEventListener("click", ()=>{
+  let csv = CSV_COLS.map(c=>csvCell(c[0])).join(",") + "\n";
+  RAW_DATA.forEach(r=>{ csv += CSV_COLS.map(c=>csvCell(r[c[1]])).join(",") + "\n"; });
+  downloadBlob("\uFEFF"+csv, "CAPEX_Register_FY26-27.csv", "text/csv;charset=utf-8");
+});
+
+function downloadBlob(content, filename, mime){
+  const blob = new Blob([content], {type:mime});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+
+/* ---- save this dashboard, edits included, as a fresh standalone HTML ---- */
+function buildStandaloneHTML(){
+  const clone = document.documentElement.cloneNode(true);
+
+  // Blank every container that is regenerated on load, so the saved file
+  // does not carry a stale copy of the rendered DOM.
+  ["kpiGrid","dataTableBody","heatBody","runningTotalBody","heatHeadRow"].forEach(id=>{
+    const el = clone.querySelector("#"+id);
+    if(el) el.innerHTML = "";
+  });
+  clone.querySelectorAll("canvas").forEach(c=>{
+    c.removeAttribute("width"); c.removeAttribute("height"); c.removeAttribute("style");
+  });
+  // Reset filter dropdowns to their single placeholder option (they are rebuilt on load).
+  ["f-sector","f-org","f-campus","f-type","f-priority"].forEach(id=>{
+    const sel = clone.querySelector("#"+id);
+    if(sel && sel.options.length) sel.innerHTML = sel.options[0].outerHTML;
+  });
+  clone.querySelectorAll("datalist").forEach(dl=> dl.innerHTML = "");
+  const m = clone.querySelector("#editModal"); if(m) m.classList.remove("open");
+  const dp = clone.querySelector("#dirtyPill"); if(dp) dp.classList.remove("show");
+  const si = clone.querySelector("#tableSearch"); if(si) si.removeAttribute("value");
+
+  const stamp = new Date().toLocaleString("en-GB",{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  const lu = clone.querySelector("#lastUpdated");
+  if(lu) lu.textContent = RAW_DATA.length + " line items \u00b7 saved " + stamp;
+
+  const clean = RAW_DATA.map(r=>{
+    const o = {};
+    ["sr","sector","org","campus","profitCenter","costCentre","projectType","projectName","amount",
+     "priority","month","start","end","remarks","priorityType","faculty","theme"].forEach(k=> o[k] = r[k]);
+    return o;
+  });
+  const payload = JSON.stringify(clean).replace(/</g, "\\u003c");
+
+  let out = "<!DOCTYPE html>\n" + clone.outerHTML;
+  out = out.replace(/\/\*__DATA_START__\*\/[\s\S]*?\/\*__DATA_END__\*\//,
+                    () => "/*__DATA_START__*/const RAW_DATA = " + payload + ";/*__DATA_END__*/");
+  return out;
+}
+
+function saveDashboard(){
+  try{
+    const html = buildStandaloneHTML();
+    const d = new Date();
+    const pad = n => String(n).padStart(2,"0");
+    downloadBlob(html, "CAPEX_Dashboard_FY26-27_" + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) + ".html", "text/html;charset=utf-8");
+    markDirty(false);
+    undoStack = [];
+    document.getElementById("undoBtn").disabled = true;
+  }catch(err){
+    console.error(err);
+    alert("Could not generate the file. If you are viewing this dashboard inside a preview pane, download it first and open it in your browser, then try again.");
+  }
+}
+document.getElementById("saveHtmlBtn").addEventListener("click", saveDashboard);
+document.getElementById("saveHtmlBtn2").addEventListener("click", saveDashboard);
+
+window.addEventListener("beforeunload", e=>{
+  if(dirty){ e.preventDefault(); e.returnValue = ""; }
+});
+
+/* ============ Render orchestrator ============ */
+function renderAll(){
+  renderKPIs();
+  renderHero();
+  renderMiniTrend();
+  renderMiniSite();
+  renderTrend();
+  renderComparison();
+  renderCumulative();
+  renderDistribution();
+  renderQuarter();
+  renderRunningTotalTable();
+  renderTop10();
+  renderBottom10();
+  renderContribution();
+  renderStatus();
+  renderSite();
+  renderHeatmap();
+  renderDataTable();
+}
+
+populateFilterOptions();
+applyFilters();
+</script>
+
+
+</body></html>
