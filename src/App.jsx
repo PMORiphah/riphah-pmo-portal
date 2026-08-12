@@ -171,6 +171,7 @@ const NAV = [
   { id:"proj", Icon:FolderKanban,    label:"Projects" },
   { id:"camp", Icon:Building2,       label:"Campus / Sites" },
   { id:"perf", Icon:TrendingUp,      label:"Performance" },
+  { id:"cashflow", Icon:Wallet,      label:"Project Cashflows & Timelines", pmoOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
   { id:"team", Icon:Users,           label:"Team & About" },
 ];
@@ -181,7 +182,11 @@ const PMO_NAV = [
 ];
 
 function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword }) {
-  const navItems = session?.role === "project_manager" ? NAV.filter(n => n.id !== "cmd" && n.id !== "camp") : NAV;
+  const navItems = NAV.filter(n => {
+    if (n.pmoOnly && session?.role !== "pmo") return false;
+    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp")) return false;
+    return true;
+  });
 
   const NavRow = ({ id, Icon, label, admin }) => {
     const active = page === id;
@@ -2807,6 +2812,26 @@ function SettingsPage({ T, session }) {
 }
 
 // ─── PERFORMANCE / EVM ────────────────────────────────────────────────────────
+// ─── PROJECT CASHFLOWS & TIMELINES ─────────────────────────────────────────────
+// Embeds a separately-authored standalone HTML dashboard (Chart.js + a frozen
+// data snapshot) completely unmodified, via an iframe. This is deliberate: the
+// file has its own <script> tags doing the filtering/charting, and scripts
+// injected into React via dangerouslySetInnerHTML never execute — an iframe is
+// the only way to embed it verbatim and keep it fully interactive. It also
+// keeps its CSS/JS in an isolated browsing context so nothing here can clash
+// with the portal's own styles or globals.
+function CashflowPage() {
+  return (
+    <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
+      <iframe
+        src={PORTAL_LINK + "cashflow-dashboard.html"}
+        title="Project Cashflows & Timelines"
+        style={{ flex:1, border:"none", width:"100%", height:"100%" }}
+      />
+    </div>
+  );
+}
+
 function PerformancePage({ T, session, onSelectProject }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5306,6 +5331,7 @@ const PAGE_TITLES = {
   proj: { title:"Projects",        subtitle:"All capital projects across the portfolio" },
   camp: { title:"Campus / Sites",  subtitle:"Projects and approvals by campus" },
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
+  cashflow: { title:"Project Cashflows & Timelines", subtitle:"Monthly CAPEX cashflow and scheduling view" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
   team: { title:"Team & About",    subtitle:"PMO team and portal information" },
   log:  { title:"Activity Log",    subtitle:"Immutable audit trail" },
@@ -5403,7 +5429,10 @@ export default function App() {
   const T = dark ? DK : LT;
 
   // PMs cannot see Capex Dashboard — redirect to Projects
-  const effectivePage = (session?.role === "project_manager" && (page === "cmd" || page === "camp")) ? "proj" : page;
+  const effectivePage =
+    (session?.role === "project_manager" && (page === "cmd" || page === "camp")) ? "proj" :
+    (page === "cashflow" && session?.role !== "pmo") ? "proj" :
+    page;
 
   if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:"Inter,sans-serif" }}>Loading…</div>;
   if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
@@ -5430,6 +5459,7 @@ export default function App() {
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "perf" && <PerformancePage T={T} session={session} onSelectProject={openProject} />}
+            {effectivePage === "cashflow" && <CashflowPage />}
             {effectivePage === "upd"  && <UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} />}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} />}
