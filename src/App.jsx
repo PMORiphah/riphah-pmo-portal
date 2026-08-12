@@ -32,6 +32,8 @@ import * as XLSX from "xlsx";
     @keyframes pmoArchGlow { 0%,100% { opacity:.5; } 50% { opacity:1; } }
     @keyframes pmoMeshDrift { 0% { transform:translate(0,0) scale(1); } 50% { transform:translate(-2%,1.5%) scale(1.04); } 100% { transform:translate(0,0) scale(1); } }
     .pmo-mesh { animation: pmoMeshDrift 18s ease-in-out infinite; }
+    .pmo-nav-item { transition: background .15s, color .15s; }
+    .pmo-nav-item:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); }
     .pmo-card-in { animation: pmoCardIn .45s cubic-bezier(.16,1,.3,1) backwards; }
     .pmo-fade-in { animation: pmoFadeIn .35s ease backwards; }
     .pmo-lift { transition: transform .18s cubic-bezier(.16,1,.3,1), box-shadow .18s ease, border-color .18s ease; }
@@ -172,77 +174,100 @@ const PMO_NAV = [
 
 function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword }) {
   const navItems = session?.role === "project_manager" ? NAV.filter(n => n.id !== "cmd" && n.id !== "camp") : NAV;
+
+  const NavRow = ({ id, Icon, label, admin }) => {
+    const active = page === id;
+    return (
+      <div key={id} onClick={() => setPage(id)} className="pmo-nav-item" style={{
+        display:"flex", alignItems:"center", gap:11, margin:"2px 12px", padding:"8px 10px", cursor:"pointer",
+        borderRadius:9,
+        ...(active ? {
+          background:`linear-gradient(90deg, ${GOLD}26 0%, ${GOLD}0D 100%)`,
+          boxShadow:`inset 3px 0 0 ${GOLD}`,
+          color:"#fff",
+        } : {
+          color: admin ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.6)",
+        }),
+        fontSize:13.5, fontWeight: active ? 600 : 400,
+      }}>
+        <div style={{
+          width:24, height:24, borderRadius:7, flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          background: active ? GOLD+"2A" : "transparent",
+        }}>
+          <Icon size={15} strokeWidth={active ? 2.1 : 1.6} color={active ? GOLD : "currentColor"} />
+        </div>
+        <span style={{ flex:1 }}>{label}</span>
+        {id==="upd" && unreadCount>0 && (
+          <span style={{ minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:`linear-gradient(135deg, ${ROSE}, #B33A4A)`, color:"#fff", fontSize:10.5, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", boxSizing:"border-box", boxShadow:`0 2px 6px -1px ${ROSE}88` }}>
+            {unreadCount>99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{
-      width:240, flexShrink:0, background:NAVY, display:"flex", flexDirection:"column",
-      backgroundImage:"repeating-linear-gradient(45deg,transparent 0,transparent 22px,rgba(216,152,64,.04) 22px,rgba(216,152,64,.04) 23px),repeating-linear-gradient(-45deg,transparent 0,transparent 22px,rgba(216,152,64,.04) 22px,rgba(216,152,64,.04) 23px)",
+      width:240, flexShrink:0, display:"flex", flexDirection:"column",
+      background:"linear-gradient(180deg, #164668 0%, #0E2C46 55%, #0A2038 100%)",
+      backgroundImage:"linear-gradient(180deg, #164668 0%, #0E2C46 55%, #0A2038 100%), repeating-linear-gradient(45deg,transparent 0,transparent 22px,rgba(224,169,74,.035) 22px,rgba(224,169,74,.035) 23px),repeating-linear-gradient(-45deg,transparent 0,transparent 22px,rgba(224,169,74,.035) 22px,rgba(224,169,74,.035) 23px)",
       borderRight:"1px solid rgba(255,255,255,0.07)",
+      position:"relative", overflow:"hidden",
     }}>
-      <div style={{ padding:"22px 20px 18px", borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
-        <img src={LOGO} alt="Riphah" style={{ width:140, filter:"brightness(0) invert(1)", opacity:.88 }} />
-        <div style={{ marginTop:10, fontSize:10, fontWeight:600, letterSpacing:2, color:"rgba(255,255,255,0.28)", textTransform:"uppercase" }}>
-          PMO Portal · FY 2026-27
+      {/* Signature: faint arch silhouette anchoring the base of the sidebar */}
+      <svg width="200" height="220" viewBox="0 0 200 220" style={{position:"absolute", left:-30, bottom:-20, pointerEvents:"none"}} aria-hidden="true">
+        <path d="M0 220 L0 140 Q0 90 55 78 Q50 100 68 118 Q40 126 40 158 L40 220 Z" fill={GOLD} opacity="0.05" />
+      </svg>
+
+      <div style={{ padding:"22px 20px 18px", borderBottom:"1px solid rgba(255,255,255,0.08)", position:"relative" }}>
+        <img src={LOGO} alt="Riphah" style={{ width:140, filter:"brightness(0) invert(1)", opacity:.92 }} />
+        <div style={{ marginTop:11, display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ width:14, height:1.5, background:GOLD, opacity:0.6 }} />
+          <div style={{ fontSize:10, fontWeight:600, letterSpacing:2, color:"rgba(255,255,255,0.4)", textTransform:"uppercase" }}>
+            PMO Portal · FY 2026-27
+          </div>
         </div>
       </div>
-      <nav style={{ flex:1, padding:"10px 0" }}>
-        {navItems.map(({ id, Icon, label }) => (
-          <div key={id} onClick={() => setPage(id)} style={{
-            display:"flex", alignItems:"center", gap:10, padding:"9px 20px", cursor:"pointer",
-            borderLeft: page===id ? "3px solid "+GOLD : "3px solid transparent",
-            background: page===id ? "rgba(255,255,255,0.09)" : "transparent",
-            color: page===id ? "#fff" : "rgba(255,255,255,0.45)",
-            fontSize:13.5, fontWeight: page===id ? 600 : 400,
-            transition:"all .12s",
-          }}>
-            <Icon size={16} strokeWidth={page===id ? 2 : 1.5} />
-            <span style={{ flex:1 }}>{label}</span>
-            {id==="upd" && unreadCount>0 && (
-              <span style={{ minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:"#F87171", color:"#fff", fontSize:10.5, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", boxSizing:"border-box" }}>
-                {unreadCount>99 ? "99+" : unreadCount}
-              </span>
-            )}
-          </div>
-        ))}
+      <nav style={{ flex:1, padding:"12px 0", position:"relative", overflowY:"auto" }}>
+        {navItems.map((item) => <NavRow key={item.id} {...item} />)}
         {session?.role === "pmo" && (
           <>
-            <div style={{ margin:"14px 20px 6px", fontSize:10, color:"rgba(255,255,255,0.2)", letterSpacing:2, textTransform:"uppercase" }}>Administration</div>
-            {PMO_NAV.map(({ id, Icon, label }) => (
-              <div key={id} onClick={() => setPage(id)} style={{
-                display:"flex", alignItems:"center", gap:10, padding:"9px 20px", cursor:"pointer",
-                borderLeft: page===id ? "3px solid "+GOLD : "3px solid transparent",
-                background: page===id ? "rgba(255,255,255,0.09)" : "transparent",
-                color: page===id ? "#fff" : "rgba(255,255,255,0.35)",
-                fontSize:13.5, fontWeight: page===id ? 600 : 400,
-              }}>
-                <Icon size={16} strokeWidth={1.5} />{label}
-              </div>
-            ))}
+            <div style={{ display:"flex", alignItems:"center", gap:7, margin:"18px 20px 8px" }}>
+              <div style={{ width:4, height:4, borderRadius:"50%", background:GOLD, opacity:0.7 }} />
+              <span style={{ fontSize:10, color:"rgba(255,255,255,0.32)", letterSpacing:2, textTransform:"uppercase", fontWeight:600 }}>Administration</span>
+            </div>
+            {PMO_NAV.map((item) => <NavRow key={item.id} {...item} admin />)}
           </>
         )}
       </nav>
-      <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", padding:"12px 16px" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: session?.role !== "pmo" ? 10 : 0 }}>
+      <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", padding:"14px 16px", position:"relative" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:11, marginBottom: session?.role !== "pmo" ? 12 : 0 }}>
           <div style={{
-            width:34, height:34, borderRadius:"50%", flexShrink:0,
-            background:"linear-gradient(135deg,"+GOLD+",#8A5810)",
+            width:36, height:36, borderRadius:"50%", flexShrink:0,
+            background:`linear-gradient(135deg, ${GOLD}, #9A6E1F)`,
+            boxShadow:`0 0 0 2px rgba(255,255,255,0.1), 0 3px 10px -2px ${GOLD}88`,
             display:"flex", alignItems:"center", justifyContent:"center",
             fontSize:13, fontWeight:700, color:"#fff",
           }}>{(session?.username||"P")[0].toUpperCase()}</div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ color:"#fff", fontSize:12, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+            <div style={{ color:"#fff", fontSize:12.5, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
               {session?.full_name || "PMO"}
             </div>
-            <div style={{ color:"rgba(255,255,255,0.35)", fontSize:11, textTransform:"capitalize" }}>{session?.role?.replace("_"," ") || "—"}</div>
+            <div style={{ display:"inline-flex", alignItems:"center", marginTop:2, fontSize:10, fontWeight:600, color:GOLD, background:GOLD+"1E", padding:"1.5px 8px", borderRadius:20, textTransform:"capitalize", letterSpacing:0.3 }}>
+              {session?.role?.replace("_"," ") || "—"}
+            </div>
           </div>
         </div>
         {session?.role !== "pmo" && (
           <button onClick={onChangePassword} style={{
-            width:"100%", padding:"8px 12px", borderRadius:7, cursor:"pointer",
-            background:"rgba(216,152,64,0.15)", border:"1px solid rgba(216,152,64,0.35)",
+            width:"100%", padding:"8px 12px", borderRadius:9, cursor:"pointer",
+            background:"rgba(224,169,74,0.14)", border:"1px solid rgba(224,169,74,0.35)",
             color:GOLD, fontSize:12, fontWeight:600, fontFamily:"Inter,sans-serif",
             display:"flex", alignItems:"center", justifyContent:"center", gap:7,
+            transition:"background .15s, border-color .15s",
           }}>
-            🔑 Change Password
+            <Lock size={12}/> Change Password
           </button>
         )}
       </div>
