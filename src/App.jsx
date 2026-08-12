@@ -433,23 +433,35 @@ function DonutChart({ slices, T }) {
     const labelR = (outerR + innerR) / 2;
     const lx     = (cx + labelR * Math.cos(midA)).toFixed(1);
     const ly     = (cy + labelR * Math.sin(midA)).toFixed(1);
-    // Outer label line coords
-    const lineR1 = outerR + 6;
-    const lineR2 = outerR + 22;
-    const lx1 = (cx + lineR1 * Math.cos(midA)).toFixed(1);
-    const ly1 = (cy + lineR1 * Math.sin(midA)).toFixed(1);
-    const lx2 = (cx + lineR2 * Math.cos(midA)).toFixed(1);
-    const ly2 = (cy + lineR2 * Math.sin(midA)).toFixed(1);
-    const labelAnchor = Math.cos(midA) >= 0 ? "start" : "end";
-    const lx3 = (cx + (lineR2 + (Math.cos(midA) >= 0 ? 4 : -4)) * Math.cos(midA)).toFixed(1);
-    return { ...seg, path, pct, lx, ly, lx1, ly1, lx2, ly2, lx3, labelAnchor, midA };
+    return { ...seg, path, pct, lx, ly, midA };
   });
 
   return (
     <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ overflow:"visible" }}>
+      <defs>
+        {computed.map(s => (
+          <radialGradient key={s.name+"_g"} id={"donutGrad_"+s.name.replace(/[^a-zA-Z0-9]/g,"")} cx="35%" cy="30%" r="75%">
+            <stop offset="0%" stopColor={s.color} stopOpacity="1" />
+            <stop offset="100%" stopColor={s.color} stopOpacity="0.72" />
+          </radialGradient>
+        ))}
+        <filter id="donutGlow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="8" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      {/* Soft ambient glow behind the ring */}
+      <circle cx={cx} cy={cy} r={outerR+4} fill="none" stroke={computed[0]?.color||GOLD} strokeWidth="14" opacity="0.06" filter="url(#donutGlow)" />
+
       {/* Slices */}
-      {computed.map(s => (
-        <path key={s.name} d={s.path} fill={s.color} opacity={0.9}/>
+      {computed.map((s,i) => (
+        <path key={s.name} d={s.path} fill={`url(#donutGrad_${s.name.replace(/[^a-zA-Z0-9]/g,"")})`}
+          stroke={T.card} strokeWidth="2"
+          style={{ filter:"drop-shadow(0 3px 6px rgba(0,0,0,0.25))" }} />
       ))}
 
       {/* Inner ring % labels */}
@@ -461,7 +473,7 @@ function DonutChart({ slices, T }) {
             {s.pct}%
           </text>
           <text x={s.lx} y={parseFloat(s.ly) + 11} textAnchor="middle"
-            fill="rgba(255,255,255,0.75)" fontSize={10} fontWeight={500}
+            fill="rgba(255,255,255,0.8)" fontSize={10} fontWeight={500}
             fontFamily="Inter,sans-serif" style={{ pointerEvents:"none" }}>
             {s.name}
           </text>
@@ -469,8 +481,9 @@ function DonutChart({ slices, T }) {
       ))}
 
       {/* Centre */}
+      <circle cx={cx} cy={cy} r={innerR-6} fill={T.card2} opacity="0.5" />
       <text x={cx} y={cy - 12} textAnchor="middle" fill={T.text}
-        fontSize={20} fontWeight={700} fontFamily="DM Serif Display,serif">
+        fontSize={22} fontWeight={700} fontFamily="DM Serif Display,serif">
         {fmtM(total)}
       </text>
       <text x={cx} y={cy + 8} textAnchor="middle" fill={T.muted}
@@ -482,33 +495,40 @@ function DonutChart({ slices, T }) {
 }
 
 // ─── BREAKDOWN SECTION ────────────────────────────────────────────────────────
-const ORG_COLORS  = { Riphah:"#D89840", Trust:"#2DD4BF" };
-const SEG_COLORS  = { Academic:"#60A5FA", Healthcare:"#34D399", Management:"#A78BFA", Investment:"#FB923C" };
-const STRAT_PAL   = ["#60A5FA","#A78BFA","#FB923C","#34D399","#F472B6","#2DD4BF","#FBBF24","#F87171","#818CF8","#6EE7B7"];
+const ORG_COLORS  = { Riphah:GOLD, Trust:EMERALD };
+const SEG_COLORS  = { Academic:"#5B9FE8", Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
+const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
 
-function BreakdownBar({ label, count, actual, planned, released, color, T, editing, editVal, onEditChange }) {
+function BreakdownBar({ label, count, actual, planned, released, color, T, editing, editVal, onEditChange, index = 0 }) {
+  const [hover, setHover] = useState(false);
   const plannedAbs = (planned || 0) * 1e6;
   const maxVal     = Math.max(actual, plannedAbs > 0 ? plannedAbs : actual) * 1.08 || 1;
   const actualW    = Math.min(100, (actual / maxVal) * 100);
   const plannedW   = plannedAbs > 0 ? Math.min(100, (plannedAbs / maxVal) * 100) : 0;
   const relW       = Math.min(100, (released / maxVal) * 100);
   const isOver     = plannedAbs > 0 && actual > plannedAbs;
+  const barColor   = isOver ? ROSE : color;
   const pct        = plannedAbs > 0 ? ((actual / plannedAbs) * 100).toFixed(1) : null;
   const relPct     = actual > 0 ? ((released / actual) * 100).toFixed(1) : "0.0";
+  const gradId     = "barGrad_" + label.replace(/[^a-zA-Z0-9]/g,"") + "_" + index;
 
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6, gap:8, flexWrap:"wrap" }}>
+    <div
+      className="pmo-fade-in"
+      style={{ marginBottom:14, padding:"12px 14px", borderRadius:10, background: hover ? T.card2 : "transparent", transition:"background .18s", animationDelay:(index*40)+"ms" }}
+      onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+    >
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, gap:8, flexWrap:"wrap" }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <div style={{ width:9, height:9, borderRadius:"50%", background:color, flexShrink:0 }}/>
+          <div style={{ width:10, height:10, borderRadius:"50%", background:barColor, flexShrink:0, boxShadow:`0 0 0 3px ${barColor}22` }}/>
           <span style={{ fontSize:13, fontWeight:600, color:T.text }}>{label}</span>
           <span style={{ fontSize:11, color:T.dim }}>{count} projects</span>
-          {isOver && <span style={{ fontSize:9, fontWeight:700, background:"rgba(248,113,113,0.12)", color:"#F87171", padding:"2px 8px", borderRadius:20 }}>OVER TARGET</span>}
+          {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"2px 8px", borderRadius:20 }}>OVER TARGET</span>}
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:12, fontSize:12, fontVariantNumeric:"tabular-nums" }}>
-          <span style={{ color, fontWeight:600 }}>{fmtM(actual)}</span>
+          <span style={{ color:barColor, fontWeight:700, fontFamily:"DM Serif Display,serif", fontSize:15 }}>{fmtM(actual)}</span>
           {plannedAbs > 0 && !editing && <span style={{ color:T.dim }}>of {fmtM(plannedAbs)} planned ({pct}%)</span>}
-          <span style={{ color:"#2DD4BF", fontSize:11 }}>↓ {fmtM(released)} released</span>
+          <span style={{ color:EMERALD, fontSize:11 }}>↓ {fmtM(released)} released</span>
           {editing && (
             <div style={{ display:"flex", alignItems:"center", gap:5 }}>
               <span style={{ fontSize:11, color:T.muted }}>Target (M):</span>
@@ -520,21 +540,23 @@ function BreakdownBar({ label, count, actual, planned, released, color, T, editi
         </div>
       </div>
       {/* Bar stack */}
-      <div style={{ position:"relative", height:22 }}>
-        {/* Planned ghost bar */}
-        {plannedW > 0 && <div style={{ position:"absolute", left:0, top:5, height:12, width:plannedW+"%", background:`${color}16`, borderRadius:6, border:`1px dashed ${color}45` }}/>}
-        {/* Actual bar */}
-        <div style={{ position:"absolute", left:0, top:5, height:12, width:actualW+"%", background:isOver?"#F87171":color, borderRadius:6, opacity:0.82, transition:"width .5s" }}/>
-        {/* Released thin bar overlay */}
-        <div style={{ position:"absolute", left:0, top:10, height:4, width:relW+"%", background:"#2DD4BF", borderRadius:2, opacity:0.9 }}/>
-        {/* Planned tick */}
-        {plannedW > 0 && <div style={{ position:"absolute", left:plannedW+"%", top:3, height:16, width:2, background:color, borderRadius:1, opacity:0.65 }}/>}
-      </div>
-      <div style={{ display:"flex", gap:14, marginTop:3, fontSize:10, color:T.dim }}>
-        <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:8, height:4, background:color, borderRadius:2, display:"inline-block", opacity:.7 }}/> Actual BAC</span>
-        <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:8, height:4, background:"#2DD4BF", borderRadius:2, display:"inline-block" }}/> Released ({relPct}%)</span>
-        {plannedW > 0 && <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:2, height:8, background:color, borderRadius:1, display:"inline-block", opacity:.65 }}/> Planned target</span>}
-        {isOver && <span style={{ color:"#F87171" }}>Over by {fmtM(actual - plannedAbs)}</span>}
+      <svg width="100%" height="18" style={{display:"block", overflow:"visible"}}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={barColor} stopOpacity="0.65" />
+            <stop offset="100%" stopColor={barColor} stopOpacity="1" />
+          </linearGradient>
+        </defs>
+        {plannedW > 0 && <rect x="0" y="3" width={plannedW+"%"} height="12" rx="6" fill={barColor} opacity="0.12" stroke={barColor} strokeOpacity="0.3" strokeDasharray="3 3" />}
+        <rect x="0" y="3" width={actualW+"%"} height="12" rx="6" fill={`url(#${gradId})`} style={{transition:"width .6s cubic-bezier(.16,1,.3,1)", filter: hover ? `drop-shadow(0 0 6px ${barColor}66)` : "none"}} />
+        <rect x="0" y="7" width={relW+"%"} height="4" rx="2" fill={EMERALD} opacity="0.95" style={{transition:"width .6s"}} />
+        {plannedW > 0 && <rect x={plannedW+"%"} y="0" width="2" height="18" rx="1" fill={barColor} opacity="0.6" />}
+      </svg>
+      <div style={{ display:"flex", gap:14, marginTop:6, fontSize:10, color:T.dim }}>
+        <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:8, height:4, background:barColor, borderRadius:2, display:"inline-block", opacity:.7 }}/> Actual BAC</span>
+        <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:8, height:4, background:EMERALD, borderRadius:2, display:"inline-block" }}/> Released ({relPct}%)</span>
+        {plannedW > 0 && <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:2, height:8, background:barColor, borderRadius:1, display:"inline-block", opacity:.65 }}/> Planned target</span>}
+        {isOver && <span style={{ color:ROSE }}>Over by {fmtM(actual - plannedAbs)}</span>}
         {!isOver && plannedAbs > 0 && <span>Gap: {fmtM(plannedAbs - actual)}</span>}
       </div>
     </div>
@@ -618,8 +640,8 @@ function BreakdownSection({ T, session }) {
   if (loading) return null;
 
   const SectionCard = ({ title, children, note }) => (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 22px" }}>
-      <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:note?4:16 }}>{title}</div>
+    <div className="pmo-card-in" style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow, position:"relative", overflow:"hidden" }}>
+      <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:note?4:18 }}>{title}</div>
       {note && <div style={{ fontSize:11, color:T.dim, marginBottom:14 }}>{note}</div>}
       {children}
     </div>
@@ -629,27 +651,32 @@ function BreakdownSection({ T, session }) {
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       {/* Header */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"4px 0" }}>
-        <div style={{ fontSize:11, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2, opacity:0.75 }}>Portfolio Breakdown · Planned vs Actual</div>
+        <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+          <div style={{ width:26, height:26, borderRadius:8, background:GOLD+"22", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <BarChart3 size={14} color={GOLD} strokeWidth={2.25} />
+          </div>
+          <div style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2 }}>Portfolio Breakdown · Planned vs Actual</div>
+        </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
           <select value={fy} onChange={e=>setFy(e.target.value)}
-            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:6, padding:"5px 10px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}>
+            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}>
             <option value="__all__">All Fiscal Years</option>
             {allFYs.map(f=><option key={f} value={f}>{f}</option>)}
           </select>
           {isPMO && !editing && (
             <button onClick={startEdit}
-              style={{ padding:"5px 13px", background:"none", border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", display:"flex", alignItems:"center", gap:6 }}>
+              style={{ padding:"6px 14px", background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", display:"flex", alignItems:"center", gap:6, transition:"border-color .15s, color .15s" }}>
               <Edit2 size={11}/> Set Targets
             </button>
           )}
           {isPMO && editing && (
             <div style={{ display:"flex", gap:7 }}>
               <button onClick={saveTargets} disabled={saving}
-                style={{ padding:"5px 14px", background:NAVY, border:"none", borderRadius:6, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
+                style={{ padding:"6px 15px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
                 {saving?"Saving…":"Save Targets"}
               </button>
               <button onClick={()=>setEditing(false)}
-                style={{ padding:"5px 10px", background:"none", border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:12, cursor:"pointer" }}>
+                style={{ padding:"6px 11px", background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, cursor:"pointer" }}>
                 Cancel
               </button>
             </div>
@@ -659,60 +686,84 @@ function BreakdownSection({ T, session }) {
 
       {/* ── Organisation split ── */}
       <div style={{ display:"flex", gap:14 }}>
-        {Object.entries(byOrg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data]) => {
-          const color      = ORG_COLORS[name] || "#60A5FA";
+        {Object.entries(byOrg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], oi) => {
+          const color      = ORG_COLORS[name] || "#5B9FE8";
+          const OrgIcon    = name === "Trust" ? Landmark : Building2;
           const plannedAbs = (orgTgts[name]?.bac || 0) * 1e6;
           const isOver     = plannedAbs > 0 && data.bac > plannedAbs;
+          const barColor   = isOver ? ROSE : color;
           const pct        = plannedAbs > 0 ? Math.min(100,(data.bac/plannedAbs)*100) : 0;
           const relPct     = data.bac > 0 ? (data.released/data.bac)*100 : 0;
+          const gradId     = "orgGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
 
           return (
-            <div key={name} style={{ flex:1, background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 20px", borderTop:`3px solid ${color}`, display:"flex", flexDirection:"column", gap:12 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-                <div>
-                  <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{name}</div>
-                  <div style={{ fontSize:11, color:T.dim }}>{data.count} projects · {fy === "__all__" ? "All FY" : fy}</div>
-                </div>
-                {isOver && <span style={{ fontSize:9, fontWeight:700, background:"rgba(248,113,113,0.12)", color:"#F87171", padding:"3px 9px", borderRadius:20 }}>OVER TARGET</span>}
-              </div>
-
-              <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
-                <div style={{ fontSize:30, fontWeight:700, color, fontFamily:"DM Serif Display,serif" }}>{fmtM(data.bac)}</div>
-                {plannedAbs > 0 && !editing && <div style={{ fontSize:13, color:T.dim }}>/ {fmtM(plannedAbs)} planned</div>}
-              </div>
-
-              {plannedAbs > 0 && !editing && (
-                <div>
-                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.dim, marginBottom:4 }}>
-                    <span>{pct.toFixed(1)}% of target</span>
-                    <span style={{ color:isOver?"#F87171":T.dim }}>{isOver?`+${fmtM(data.bac-plannedAbs)} over`:`${fmtM(plannedAbs-data.bac)} to go`}</span>
+            <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(oi*70)+"ms", flex:1, minWidth:0 }}>
+              <div style={{
+                background:`linear-gradient(165deg, ${T.card} 0%, ${T.card} 55%, ${barColor}12 100%)`,
+                border:`1px solid ${T.border}`, borderRadius:14, padding:"20px 22px",
+                borderTop:`3px solid ${barColor}`, display:"flex", flexDirection:"column", gap:13,
+                position:"relative", overflow:"hidden", boxShadow:T.shadow,
+              }}>
+                <ArchMotif color={barColor} size={80} />
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", position:"relative" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ width:32, height:32, borderRadius:9, background:barColor+"22", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                      <OrgIcon size={16} color={barColor} strokeWidth={2.25} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{name}</div>
+                      <div style={{ fontSize:11, color:T.dim }}>{data.count} projects · {fy === "__all__" ? "All FY" : fy}</div>
+                    </div>
                   </div>
-                  <div style={{ height:6, background:T.border, borderRadius:3, overflow:"hidden" }}>
-                    <div style={{ width:pct+"%", height:"100%", background:isOver?"#F87171":color, borderRadius:3, transition:"width .5s" }}/>
+                  {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"3px 9px", borderRadius:20 }}>OVER TARGET</span>}
+                </div>
+
+                <div style={{ display:"flex", alignItems:"baseline", gap:10, position:"relative" }}>
+                  <div style={{ fontSize:32, fontWeight:700, color:barColor, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></div>
+                  {plannedAbs > 0 && !editing && <div style={{ fontSize:13, color:T.dim }}>/ {fmtM(plannedAbs)} planned</div>}
+                </div>
+
+                {plannedAbs > 0 && !editing && (
+                  <div style={{position:"relative"}}>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.dim, marginBottom:5 }}>
+                      <span>{pct.toFixed(1)}% of target</span>
+                      <span style={{ color:isOver?ROSE:T.dim }}>{isOver?`+${fmtM(data.bac-plannedAbs)} over`:`${fmtM(plannedAbs-data.bac)} to go`}</span>
+                    </div>
+                    <svg width="100%" height="8" style={{display:"block"}}>
+                      <defs>
+                        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0%" stopColor={barColor} stopOpacity="0.6" />
+                          <stop offset="100%" stopColor={barColor} stopOpacity="1" />
+                        </linearGradient>
+                      </defs>
+                      <rect x="0" y="0" width="100%" height="8" rx="4" fill={T.border} />
+                      <rect x="0" y="0" width={pct+"%"} height="8" rx="4" fill={`url(#${gradId})`} style={{transition:"width .6s cubic-bezier(.16,1,.3,1)"}} />
+                    </svg>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div>
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.muted, marginBottom:4 }}>
-                  <span>Amount Released</span><span style={{ color:"#2DD4BF" }}>{fmtM(data.released)} ({relPct.toFixed(1)}%)</span>
+                <div style={{position:"relative"}}>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.muted, marginBottom:5 }}>
+                    <span>Amount Released</span><span style={{ color:EMERALD, fontWeight:600 }}>{fmtM(data.released)} ({relPct.toFixed(1)}%)</span>
+                  </div>
+                  <svg width="100%" height="6" style={{display:"block"}}>
+                    <rect x="0" y="0" width="100%" height="6" rx="3" fill={T.border} />
+                    <rect x="0" y="0" width={Math.min(100,relPct)+"%"} height="6" rx="3" fill={EMERALD} style={{transition:"width .6s"}} />
+                  </svg>
                 </div>
-                <div style={{ height:4, background:T.border, borderRadius:2 }}>
-                  <div style={{ width:Math.min(100,relPct)+"%", height:"100%", background:"#2DD4BF", borderRadius:2 }}/>
-                </div>
+
+                {editing && isPMO && (
+                  <div style={{ paddingTop:12, borderTop:`1px solid ${T.border}`, position:"relative" }}>
+                    <label style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Planned Budget (M)</label>
+                    <input type="number" step="0.1"
+                      value={editBuf.orgs?.[name] || ""}
+                      onChange={e=>setEditBuf(b=>({...b,orgs:{...b.orgs,[name]:e.target.value}}))}
+                      placeholder={`e.g. ${Math.round(data.bac/1e6/10)*10+50}`}
+                      style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:7, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
+                    <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Enter in PKR Millions — e.g. 600 means PKR 600M</div>
+                  </div>
+                )}
               </div>
-
-              {editing && isPMO && (
-                <div style={{ paddingTop:12, borderTop:`1px solid ${T.border}` }}>
-                  <label style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Planned Budget (M)</label>
-                  <input type="number" step="0.1"
-                    value={editBuf.orgs?.[name] || ""}
-                    onChange={e=>setEditBuf(b=>({...b,orgs:{...b.orgs,[name]:e.target.value}}))}
-                    placeholder={`e.g. ${Math.round(data.bac/1e6/10)*10+50}`}
-                    style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${color}`, borderRadius:7, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
-                  <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Enter in PKR Millions — e.g. 600 means PKR 600M</div>
-                </div>
-              )}
             </div>
           );
         })}
@@ -722,65 +773,78 @@ function BreakdownSection({ T, session }) {
       <SectionCard title="By Segment">
         <div style={{ display:"flex", gap:32, alignItems:"center" }}>
           {/* Donut — 280px */}
-          <div style={{ flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div className="pmo-fade-in" style={{ flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
             <DonutChart T={T}
               slices={Object.entries(bySeg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data])=>({
-                name, value:data.bac, color:SEG_COLORS[name]||"#60A5FA"
+                name, value:data.bac, color:SEG_COLORS[name]||"#5B9FE8"
               }))}/>
           </div>
 
           {/* Legend — 2 columns on wide, 1 on narrow */}
-          <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px 32px" }}>
+          <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px 16px" }}>
             {(() => {
               const total = Object.values(bySeg).reduce((s,d)=>s+d.bac,0)||1;
-              return Object.entries(bySeg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data]) => {
-                const color      = SEG_COLORS[name]||"#60A5FA";
+              const SEG_ICONS = { Academic:Layers, Healthcare:Activity, Management:Shield, Investment:Wallet };
+              return Object.entries(bySeg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], si) => {
+                const color      = SEG_COLORS[name]||"#5B9FE8";
+                const SegIcon    = SEG_ICONS[name] || Layers;
                 const pct        = ((data.bac/total)*100).toFixed(1);
                 const plannedAbs = (segTgts[name]?.bac||0)*1e6;
                 const isOver     = plannedAbs>0 && data.bac>plannedAbs;
+                const barColor   = isOver ? ROSE : color;
                 const relPct     = data.bac>0 ? ((data.released/data.bac)*100).toFixed(1) : "0";
+                const gradId     = "segGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
                 return (
-                  <div key={name} style={{ background:T.mainBg+"80", borderRadius:10, padding:"14px 16px", border:`1px solid ${color}30` }}>
+                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background:`linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}14 100%)`, borderRadius:12, padding:"16px 18px", border:`1px solid ${barColor}35`, position:"relative", overflow:"hidden" }}>
                     {/* Header row */}
-                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-                      <div style={{ width:12, height:12, borderRadius:3, background:color }}/>
+                    <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:11, position:"relative" }}>
+                      <div style={{ width:26, height:26, borderRadius:8, background:barColor+"22", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                        <SegIcon size={13} color={barColor} strokeWidth={2.25} />
+                      </div>
                       <span style={{ fontSize:14, fontWeight:700, color:T.text }}>{name}</span>
                       <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{data.count} projects</span>
                     </div>
 
                     {/* Big BAC number */}
-                    <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:6 }}>
-                      <span style={{ fontSize:24, fontWeight:700, color, fontFamily:"DM Serif Display,serif" }}>{fmtM(data.bac)}</span>
+                    <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:7, position:"relative" }}>
+                      <span style={{ fontSize:25, fontWeight:700, color:barColor, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></span>
                       <span style={{ fontSize:14, color:T.muted, fontWeight:600 }}>{pct}%</span>
                     </div>
 
                     {/* Planned row */}
                     {plannedAbs>0 && !editing && (
-                      <div style={{ fontSize:12, color:isOver?"#F87171":T.muted, marginBottom:8 }}>
-                        {isOver ? "⚠ " : ""}Target: {fmtM(plannedAbs)}
-                        {isOver && <span style={{ fontSize:10, fontWeight:700, color:"#F87171", background:"rgba(248,113,113,0.12)", padding:"1px 6px", borderRadius:20, marginLeft:6 }}>OVER</span>}
+                      <div style={{ fontSize:12, color:isOver?ROSE:T.muted, marginBottom:9, position:"relative" }}>
+                        Target: {fmtM(plannedAbs)}
+                        {isOver && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:`${ROSE}20`, padding:"1px 6px", borderRadius:20, marginLeft:6 }}>OVER</span>}
                       </div>
                     )}
 
                     {/* Edit input */}
                     {editing && (
-                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:9, position:"relative" }}>
                         <span style={{ fontSize:11, color:T.muted }}>Target (M):</span>
                         <input type="number" step="0.1"
                           value={editBuf.segs?.[name]||""}
                           onChange={e=>setEditBuf(b=>({...b,segs:{...b.segs,[name]:e.target.value}}))}
                           placeholder="e.g. 320"
-                          style={{ flex:1, background:T.inputBg, border:`1px solid ${color}`, borderRadius:6, padding:"4px 8px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
+                          style={{ flex:1, background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:6, padding:"4px 8px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
                       </div>
                     )}
 
                     {/* Released bar */}
-                    <div style={{ height:6, background:T.border, borderRadius:3 }}>
-                      <div style={{ width:Math.min(100,parseFloat(relPct))+"%" , height:"100%", background:"#2DD4BF", borderRadius:3 }}/>
-                    </div>
-                    <div style={{ display:"flex", justifyContent:"space-between", marginTop:5, fontSize:11 }}>
+                    <svg width="100%" height="7" style={{display:"block", position:"relative"}}>
+                      <defs>
+                        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0%" stopColor={EMERALD} stopOpacity="0.6" />
+                          <stop offset="100%" stopColor={EMERALD} stopOpacity="1" />
+                        </linearGradient>
+                      </defs>
+                      <rect x="0" y="0" width="100%" height="7" rx="3.5" fill={T.border} />
+                      <rect x="0" y="0" width={Math.min(100,parseFloat(relPct))+"%"} height="7" rx="3.5" fill={`url(#${gradId})`} style={{transition:"width .6s"}} />
+                    </svg>
+                    <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:11, position:"relative" }}>
                       <span style={{ color:T.muted }}>Released</span>
-                      <span style={{ color:"#2DD4BF", fontWeight:600 }}>{fmtM(data.released)} ({relPct}%)</span>
+                      <span style={{ color:EMERALD, fontWeight:600 }}>{fmtM(data.released)} ({relPct}%)</span>
                     </div>
                   </div>
                 );
@@ -794,7 +858,7 @@ function BreakdownSection({ T, session }) {
       <SectionCard title="By Strategic Priority"
         note={Object.keys(byStrat).length===0 ? "No strategic priorities in current data — import Excel with the 'Strategic Priority' column filled in to populate this section." : null}>
         {Object.entries(byStrat).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], idx) => (
-          <BreakdownBar key={name} label={name} count={data.count}
+          <BreakdownBar key={name} index={idx} label={name} count={data.count}
             actual={data.bac} planned={stratTgts[name]?.bac || 0} released={data.released}
             color={STRAT_PAL[idx % STRAT_PAL.length]} T={T} editing={editing}
             editVal={editBuf.strat?.[name]||""}
