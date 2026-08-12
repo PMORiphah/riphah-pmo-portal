@@ -110,17 +110,25 @@ const DK = {
   shadowHover:"0 6px 16px rgba(2,8,16,0.5), 0 20px 48px -14px rgba(2,8,16,0.8)",
   heroGradient:"radial-gradient(120% 180% at 100% 0%, #1D507C 0%, #0F2C4C 45%, #081A30 100%)",
   pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.05), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(31,174,142,0.04), transparent 55%)",
+  mode:"dark", washAlpha:"14", badgeAlpha:"22", glowRing:"30", glowBlur:"55",
 };
+// Light mode is a deliberately different mood, not dark-mode-with-colors-flipped:
+// crisp white "institutional ledger" cards on warm ivory, with much stronger
+// shadow definition and higher-alpha accent washes — navy-tuned glow/wash
+// values read as invisible mud against a light background, so every card that
+// consumes washAlpha/badgeAlpha/glowRing/glowBlur automatically gets punchier
+// values here without per-component light/dark branching.
 const LT = {
-  sidebarBg:"#123C5C", mainBg:"#F5F1E8", card:"#FFFFFF", card2:"#FAF7EF",
-  headerBg:"#FFFFFF", border:"#DCD3BE", text:"#20180A", muted:"#6B6350",
-  dim:"#B0A98F", inputBg:"#FBF9F2", inputBorder:"#DCD3BE",
-  tableRow:"rgba(24,80,120,0.015)", tableRowHover:"rgba(24,80,120,0.035)",
+  sidebarBg:"#123C5C", mainBg:"#F3EEE2", card:"#FFFFFF", card2:"#FBF8F1",
+  headerBg:"#FFFFFF", border:"#E2D9C4", text:"#1C1608", muted:"#6B6350",
+  dim:"#AFA88D", inputBg:"#FBF9F2", inputBorder:"#DCD3BE",
+  tableRow:"rgba(24,80,120,0.02)", tableRowHover:"rgba(24,80,120,0.045)",
   scrollbar:"#DCD3BE",
-  shadow:"0 1px 2px rgba(90,70,20,0.06), 0 10px 24px -10px rgba(90,70,20,0.14)",
-  shadowHover:"0 6px 14px rgba(90,70,20,0.08), 0 22px 44px -14px rgba(90,70,20,0.2)",
+  shadow:"0 2px 4px rgba(60,45,10,0.07), 0 14px 32px -12px rgba(60,45,10,0.18)",
+  shadowHover:"0 8px 18px rgba(60,45,10,0.1), 0 26px 52px -16px rgba(60,45,10,0.26)",
   heroGradient:"radial-gradient(120% 180% at 100% 0%, #1D5580 0%, #123C5C 45%, #0D2C46 100%)",
-  pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.07), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(31,174,142,0.05), transparent 55%)",
+  pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.10), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(31,174,142,0.07), transparent 55%)",
+  mode:"light", washAlpha:"2A", badgeAlpha:"33", glowRing:"55", glowBlur:"85",
 };
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -311,12 +319,15 @@ function AnimatedNumber({ value }) {
 // visible behind the campus photo on the login screen — rendered as an actual
 // architectural shape rather than a decorative squiggle. Used sparingly, on
 // featured cards and the hero only.
-const ArchMotif = ({ color, size = 72 }) => (
-  <svg width={size} height={size} viewBox="0 0 72 72" style={{ position:"absolute", top:0, right:0, pointerEvents:"none" }} aria-hidden="true">
-    <path d="M72 72 L72 40 Q72 18 54 12 Q56 22 48 30 Q58 34 58 46 L58 72 Z" fill={color} opacity="0.10" />
-    <path d="M72 72 L72 50 Q72 34 60 30 Q61 38 55 44 Q62 47 62 56 L62 72 Z" fill={color} opacity="0.16" />
-  </svg>
-);
+const ArchMotif = ({ color, size = 72, T }) => {
+  const light = T?.mode === "light";
+  return (
+    <svg width={size} height={size} viewBox="0 0 72 72" style={{ position:"absolute", top:0, right:0, pointerEvents:"none" }} aria-hidden="true">
+      <path d="M72 72 L72 40 Q72 18 54 12 Q56 22 48 30 Q58 34 58 46 L58 72 Z" fill={color} opacity={light ? "0.16" : "0.10"} />
+      <path d="M72 72 L72 50 Q72 34 60 30 Q61 38 55 44 Q62 47 62 56 L62 72 Z" fill={color} opacity={light ? "0.26" : "0.16"} />
+    </svg>
+  );
+};
 
 function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon }) {
   const [editing, setEditing] = useState(false);
@@ -347,16 +358,16 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     >
       <div style={{
         flex:1,
-        background: `linear-gradient(165deg, ${T.card} 0%, ${T.card} 60%, ${clr}14 100%)`,
+        background: `linear-gradient(165deg, ${T.card} 0%, ${T.card} 60%, ${clr}${T.washAlpha} 100%)`,
         border:isSelected?"1px solid "+clr:"1px solid "+T.border,
         borderRadius:12, padding:"16px 18px",
         borderTop: "3px solid "+clr,
         minWidth:0, position:"relative", overflow:"hidden",
         cursor:onCardClick&&!editing?"pointer":"default",
-        boxShadow: isSelected ? `0 0 0 1px ${clr}55, ${T.shadow}` : (hover && onCardClick ? `0 0 0 1px ${clr}30, 0 0 24px -6px ${clr}55, ${T.shadowHover}` : T.shadow),
+        boxShadow: isSelected ? `0 0 0 1px ${clr}${T.glowBlur}, ${T.shadow}` : (hover && onCardClick ? `0 0 0 1px ${clr}${T.glowRing}, 0 0 24px -6px ${clr}${T.glowBlur}, ${T.shadowHover}` : T.shadow),
         transition:"border-color .18s, box-shadow .22s, background .22s",
       }}>
-        <ArchMotif color={clr} size={76} />
+        <ArchMotif T={T} color={clr} size={76} />
         {editing ? (
           <div>
             <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6, fontWeight:600, opacity:0.6 }}>{label}</div>
@@ -373,7 +384,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                 {Icon && (
-                  <div style={{ width:26, height:26, borderRadius:8, background:clr+"22", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <div style={{ width:26, height:26, borderRadius:8, background:clr+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                     <Icon size={14} color={clr} strokeWidth={2.25} />
                   </div>
                 )}
@@ -707,7 +718,7 @@ function BreakdownSection({ T, session }) {
       {/* Header */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"4px 0" }}>
         <div style={{ display:"flex", alignItems:"center", gap:9 }}>
-          <div style={{ width:26, height:26, borderRadius:8, background:GOLD+"22", display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ width:26, height:26, borderRadius:8, background:GOLD+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center" }}>
             <BarChart3 size={14} color={GOLD} strokeWidth={2.25} />
           </div>
           <div style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2 }}>Portfolio Breakdown · Planned vs Actual</div>
@@ -754,15 +765,15 @@ function BreakdownSection({ T, session }) {
           return (
             <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(oi*70)+"ms", flex:1, minWidth:0 }}>
               <div style={{
-                background:`linear-gradient(165deg, ${T.card} 0%, ${T.card} 55%, ${barColor}12 100%)`,
+                background:`linear-gradient(165deg, ${T.card} 0%, ${T.card} 55%, ${barColor}${T.washAlpha} 100%)`,
                 border:`1px solid ${T.border}`, borderRadius:14, padding:"20px 22px",
                 borderTop:`3px solid ${barColor}`, display:"flex", flexDirection:"column", gap:13,
                 position:"relative", overflow:"hidden", boxShadow:T.shadow,
               }}>
-                <ArchMotif color={barColor} size={80} />
+                <ArchMotif T={T} color={barColor} size={80} />
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", position:"relative" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ width:32, height:32, borderRadius:9, background:barColor+"22", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <div style={{ width:32, height:32, borderRadius:9, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                       <OrgIcon size={16} color={barColor} strokeWidth={2.25} />
                     </div>
                     <div>
@@ -850,10 +861,10 @@ function BreakdownSection({ T, session }) {
                 const relPct     = data.bac>0 ? ((data.released/data.bac)*100).toFixed(1) : "0";
                 const gradId     = "segGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
                 return (
-                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background:`linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}14 100%)`, borderRadius:12, padding:"16px 18px", border:`1px solid ${barColor}35`, position:"relative", overflow:"hidden" }}>
+                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background:`linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}${T.washAlpha} 100%)`, borderRadius:12, padding:"16px 18px", border:`1px solid ${barColor}${T.glowRing}`, position:"relative", overflow:"hidden", boxShadow:T.shadow }}>
                     {/* Header row */}
                     <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:11, position:"relative" }}>
-                      <div style={{ width:26, height:26, borderRadius:8, background:barColor+"22", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                      <div style={{ width:26, height:26, borderRadius:8, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                         <SegIcon size={13} color={barColor} strokeWidth={2.25} />
                       </div>
                       <span style={{ fontSize:14, fontWeight:700, color:T.text }}>{name}</span>
