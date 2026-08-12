@@ -499,65 +499,95 @@ const ORG_COLORS  = { Riphah:GOLD, Trust:EMERALD };
 const SEG_COLORS  = { Academic:"#5B9FE8", Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
 const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
 
-function BreakdownBar({ label, count, actual, planned, released, color, T, editing, editVal, onEditChange, index = 0 }) {
+const MEDAL = {
+  1: { bg:"linear-gradient(145deg, #F3D28A, #C9942F)", ring:"#E0A94A", text:"#3A2A08" },
+  2: { bg:"linear-gradient(145deg, #E4E9EF, #A9B4C0)", ring:"#B8C2D0", text:"#252B33" },
+  3: { bg:"linear-gradient(145deg, #E3A57C, #B06A3E)", ring:"#C97A4A", text:"#341C0C" },
+};
+
+function RankedPriorityBar({ rank, label, count, actual, planned, released, color, T, editing, editVal, onEditChange, maxOfAll, index = 0 }) {
   const [hover, setHover] = useState(false);
   const plannedAbs = (planned || 0) * 1e6;
-  const maxVal     = Math.max(actual, plannedAbs > 0 ? plannedAbs : actual) * 1.08 || 1;
-  const actualW    = Math.min(100, (actual / maxVal) * 100);
-  const plannedW   = plannedAbs > 0 ? Math.min(100, (plannedAbs / maxVal) * 100) : 0;
-  const relW       = Math.min(100, (released / maxVal) * 100);
-  const isOver     = plannedAbs > 0 && actual > plannedAbs;
-  const barColor   = isOver ? ROSE : color;
-  const pct        = plannedAbs > 0 ? ((actual / plannedAbs) * 100).toFixed(1) : null;
-  const relPct     = actual > 0 ? ((released / actual) * 100).toFixed(1) : "0.0";
-  const gradId     = "barGrad_" + label.replace(/[^a-zA-Z0-9]/g,"") + "_" + index;
+  const isOver      = plannedAbs > 0 && actual > plannedAbs;
+  const barColor    = isOver ? ROSE : color;
+  const barW        = Math.min(100, (actual / (maxOfAll || 1)) * 100);
+  const targetPos    = plannedAbs > 0 ? Math.min(100, (plannedAbs / (maxOfAll || 1)) * 100) : 0;
+  const pct         = plannedAbs > 0 ? ((actual / plannedAbs) * 100).toFixed(1) : null;
+  const relPct      = actual > 0 ? ((released / actual) * 100).toFixed(1) : "0.0";
+  const gradId      = "rankGrad_" + label.replace(/[^a-zA-Z0-9]/g,"") + "_" + index;
+  const medal       = MEDAL[rank];
 
   return (
     <div
       className="pmo-fade-in"
-      style={{ marginBottom:14, padding:"12px 14px", borderRadius:10, background: hover ? T.card2 : "transparent", transition:"background .18s", animationDelay:(index*40)+"ms" }}
+      style={{ display:"flex", alignItems:"center", gap:16, marginBottom:12, padding:"12px 16px", borderRadius:12,
+        background: hover ? T.card2 : "transparent", transition:"background .18s", animationDelay:(index*50)+"ms" }}
       onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
     >
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, gap:8, flexWrap:"wrap" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <div style={{ width:10, height:10, borderRadius:"50%", background:barColor, flexShrink:0, boxShadow:`0 0 0 3px ${barColor}22` }}/>
-          <span style={{ fontSize:13, fontWeight:600, color:T.text }}>{label}</span>
-          <span style={{ fontSize:11, color:T.dim }}>{count} projects</span>
-          {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"2px 8px", borderRadius:20 }}>OVER TARGET</span>}
-        </div>
-        <div style={{ display:"flex", alignItems:"center", gap:12, fontSize:12, fontVariantNumeric:"tabular-nums" }}>
-          <span style={{ color:barColor, fontWeight:700, fontFamily:"DM Serif Display,serif", fontSize:15 }}>{fmtM(actual)}</span>
-          {plannedAbs > 0 && !editing && <span style={{ color:T.dim }}>of {fmtM(plannedAbs)} planned ({pct}%)</span>}
-          <span style={{ color:EMERALD, fontSize:11 }}>↓ {fmtM(released)} released</span>
-          {editing && (
-            <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-              <span style={{ fontSize:11, color:T.muted }}>Target (M):</span>
-              <input type="number" step="0.1" value={editVal} onChange={e=>onEditChange(e.target.value)}
-                placeholder="e.g. 600"
-                style={{ width:90, background:T.inputBg, border:`1px solid ${color}`, borderRadius:6, padding:"3px 8px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
-            </div>
-          )}
-        </div>
+      {/* Rank badge */}
+      <div style={{
+        width:34, height:34, borderRadius:"50%", flexShrink:0,
+        background: medal ? medal.bg : T.card2,
+        border: medal ? "none" : `1px solid ${T.border}`,
+        boxShadow: medal ? `0 0 0 2px ${medal.ring}55, 0 3px 8px -2px ${medal.ring}77` : "none",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontSize:14, fontWeight:800, fontFamily:"DM Serif Display,serif",
+        color: medal ? medal.text : T.muted,
+      }}>
+        {rank}
       </div>
-      {/* Bar stack */}
-      <svg width="100%" height="18" style={{display:"block", overflow:"visible"}}>
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={barColor} stopOpacity="0.65" />
-            <stop offset="100%" stopColor={barColor} stopOpacity="1" />
-          </linearGradient>
-        </defs>
-        {plannedW > 0 && <rect x="0" y="3" width={plannedW+"%"} height="12" rx="6" fill={barColor} opacity="0.12" stroke={barColor} strokeOpacity="0.3" strokeDasharray="3 3" />}
-        <rect x="0" y="3" width={actualW+"%"} height="12" rx="6" fill={`url(#${gradId})`} style={{transition:"width .6s cubic-bezier(.16,1,.3,1)", filter: hover ? `drop-shadow(0 0 6px ${barColor}66)` : "none"}} />
-        <rect x="0" y="7" width={relW+"%"} height="4" rx="2" fill={EMERALD} opacity="0.95" style={{transition:"width .6s"}} />
-        {plannedW > 0 && <rect x={plannedW+"%"} y="0" width="2" height="18" rx="1" fill={barColor} opacity="0.6" />}
-      </svg>
-      <div style={{ display:"flex", gap:14, marginTop:6, fontSize:10, color:T.dim }}>
-        <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:8, height:4, background:barColor, borderRadius:2, display:"inline-block", opacity:.7 }}/> Actual BAC</span>
-        <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:8, height:4, background:EMERALD, borderRadius:2, display:"inline-block" }}/> Released ({relPct}%)</span>
-        {plannedW > 0 && <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:2, height:8, background:barColor, borderRadius:1, display:"inline-block", opacity:.65 }}/> Planned target</span>}
-        {isOver && <span style={{ color:ROSE }}>Over by {fmtM(actual - plannedAbs)}</span>}
-        {!isOver && plannedAbs > 0 && <span>Gap: {fmtM(plannedAbs - actual)}</span>}
+
+      {/* Content */}
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:6, gap:10, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", alignItems:"baseline", gap:9, minWidth:0 }}>
+            <span style={{ fontSize:14, fontWeight:700, color:T.text }}>{label}</span>
+            <span style={{ fontSize:11, color:T.dim, whiteSpace:"nowrap" }}>{count} projects</span>
+            {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"2px 8px", borderRadius:20, whiteSpace:"nowrap" }}>OVER TARGET</span>}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, fontSize:12, fontVariantNumeric:"tabular-nums", flexShrink:0 }}>
+            {editing ? (
+              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                <span style={{ fontSize:11, color:T.muted }}>Target (M):</span>
+                <input type="number" step="0.1" value={editVal} onChange={e=>onEditChange(e.target.value)}
+                  placeholder="e.g. 600"
+                  style={{ width:90, background:T.inputBg, border:`1px solid ${color}`, borderRadius:6, padding:"3px 8px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
+              </div>
+            ) : (
+              <>
+                {plannedAbs > 0 && <span style={{ color:T.dim }}>{pct}% of {fmtM(plannedAbs)}</span>}
+                <span style={{ color:barColor, fontWeight:700, fontFamily:"DM Serif Display,serif", fontSize:18 }}><AnimatedNumber value={fmtM(actual)} /></span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Leaderboard bar — length relative to the top-ranked priority */}
+        <svg width="100%" height="16" style={{display:"block", overflow:"visible"}}>
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor={barColor} stopOpacity="0.7" />
+              <stop offset="100%" stopColor={barColor} stopOpacity="1" />
+            </linearGradient>
+            <linearGradient id={gradId+"_sheen"} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#fff" stopOpacity="0.22" />
+              <stop offset="45%" stopColor="#fff" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <rect x="0" y="2" width="100%" height="12" rx="6" fill={T.border} opacity="0.5" />
+          <rect x="0" y="2" width={barW+"%"} height="12" rx="6" fill={`url(#${gradId})`}
+            style={{transition:"width .7s cubic-bezier(.16,1,.3,1)", filter: hover ? `drop-shadow(0 0 8px ${barColor}77)` : "none"}} />
+          <rect x="0" y="2" width={barW+"%"} height="12" rx="6" fill={`url(#${gradId}_sheen)`} style={{transition:"width .7s cubic-bezier(.16,1,.3,1)"}} />
+          {targetPos > 0 && (
+            <line x1={targetPos+"%"} y1="-2" x2={targetPos+"%"} y2="18" stroke={T.text} strokeWidth="2" strokeOpacity="0.55" strokeLinecap="round" />
+          )}
+        </svg>
+        <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:11, color:T.dim }}>
+          <span>↓ <span style={{color:EMERALD, fontWeight:600}}>{fmtM(released)}</span> released ({relPct}%)</span>
+          {isOver ? <span style={{color:ROSE}}>Over by {fmtM(actual - plannedAbs)}</span>
+                  : plannedAbs > 0 ? <span>Gap: {fmtM(plannedAbs - actual)}</span>
+                  : null}
+        </div>
       </div>
     </div>
   );
@@ -857,13 +887,17 @@ function BreakdownSection({ T, session }) {
       {/* ── Strategic Priority breakdown ── */}
       <SectionCard title="By Strategic Priority"
         note={Object.keys(byStrat).length===0 ? "No strategic priorities in current data — import Excel with the 'Strategic Priority' column filled in to populate this section." : null}>
-        {Object.entries(byStrat).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], idx) => (
-          <BreakdownBar key={name} index={idx} label={name} count={data.count}
-            actual={data.bac} planned={stratTgts[name]?.bac || 0} released={data.released}
-            color={STRAT_PAL[idx % STRAT_PAL.length]} T={T} editing={editing}
-            editVal={editBuf.strat?.[name]||""}
-            onEditChange={v=>setEditBuf(b=>({...b,strat:{...b.strat,[name]:v}}))}/>
-        ))}
+        {(() => {
+          const sorted = Object.entries(byStrat).sort(([,a],[,b])=>b.bac-a.bac);
+          const maxOfAll = Math.max(...sorted.map(([,d])=>d.bac), 1);
+          return sorted.map(([name, data], idx) => (
+            <RankedPriorityBar key={name} index={idx} rank={idx+1} label={name} count={data.count}
+              actual={data.bac} planned={stratTgts[name]?.bac || 0} released={data.released}
+              color={STRAT_PAL[idx % STRAT_PAL.length]} T={T} editing={editing} maxOfAll={maxOfAll}
+              editVal={editBuf.strat?.[name]||""}
+              onEditChange={v=>setEditBuf(b=>({...b,strat:{...b.strat,[name]:v}}))}/>
+          ));
+        })()}
       </SectionCard>
     </div>
   );
