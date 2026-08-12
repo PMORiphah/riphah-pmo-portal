@@ -4757,7 +4757,7 @@ function Login({ T, dark, onLogin }) {
 
         {/* Description */}
         <p style={{ fontSize:15, color:"rgba(255,255,255,0.62)", lineHeight:1.85, maxWidth:360, marginBottom:56, textShadow:"0 1px 12px rgba(0,0,0,0.5)" }}>
-          CAPEX portfolio monitoring, control, and execution across Riphah International University campuses.
+          CAPEX portfolio monitoring, control, and execution across Riphah International University campuses / hospitals.
         </p>
 
         {/* Feature icons */}
