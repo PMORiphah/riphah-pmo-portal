@@ -326,11 +326,13 @@ function AnimatedNumber({ value }) {
 // architectural shape rather than a decorative squiggle. Used sparingly, on
 // featured cards and the hero only.
 const ArchMotif = ({ color, size = 72, T }) => {
-  const light = T?.mode === "light";
+  // Cashflow tab's cards are plain flat white with no decorative watermark —
+  // light mode now matches that exactly, so this renders nothing there.
+  if (T?.mode === "light") return null;
   return (
     <svg width={size} height={size} viewBox="0 0 72 72" style={{ position:"absolute", top:0, right:0, pointerEvents:"none" }} aria-hidden="true">
-      <path d="M72 72 L72 40 Q72 18 54 12 Q56 22 48 30 Q58 34 58 46 L58 72 Z" fill={color} opacity={light ? "0.16" : "0.10"} />
-      <path d="M72 72 L72 50 Q72 34 60 30 Q61 38 55 44 Q62 47 62 56 L62 72 Z" fill={color} opacity={light ? "0.26" : "0.16"} />
+      <path d="M72 72 L72 40 Q72 18 54 12 Q56 22 48 30 Q58 34 58 46 L58 72 Z" fill={color} opacity="0.10" />
+      <path d="M72 72 L72 50 Q72 34 60 30 Q61 38 55 44 Q62 47 62 56 L62 72 Z" fill={color} opacity="0.16" />
     </svg>
   );
 };
@@ -354,6 +356,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   const valFontSize = String(value).length > 8 ? 19 : String(value).length > 5 ? 24 : 28;
   const shownVal = editing ? value : (displayVal ?? value);
   const clr = accent || GOLD;
+  const light = T.mode === "light";
 
   return (
     <div
@@ -364,13 +367,13 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     >
       <div style={{
         flex:1,
-        background: `linear-gradient(165deg, ${T.card} 0%, ${T.card} 60%, ${clr}${T.washAlpha} 100%)`,
-        border:isSelected?"1px solid "+clr:"1px solid "+T.border,
+        background: light ? T.card : `linear-gradient(165deg, ${T.card} 0%, ${T.card} 60%, ${clr}${T.washAlpha} 100%)`,
+        border: isSelected ? "1px solid "+clr : "1px solid "+T.border,
         borderRadius:12, padding:"16px 18px",
-        borderTop: "3px solid "+clr,
+        borderTop: light ? "1px solid "+T.border : "3px solid "+clr,
         minWidth:0, position:"relative", overflow:"hidden",
         cursor:onCardClick&&!editing?"pointer":"default",
-        boxShadow: isSelected ? `0 0 0 1px ${clr}${T.glowBlur}, ${T.shadow}` : (hover && onCardClick ? `0 0 0 1px ${clr}${T.glowRing}, 0 0 24px -6px ${clr}${T.glowBlur}, ${T.shadowHover}` : T.shadow),
+        boxShadow: isSelected ? `0 0 0 1px ${clr}${T.glowBlur}, ${T.shadow}` : (hover && onCardClick ? (light ? T.shadowHover : `0 0 0 1px ${clr}${T.glowRing}, 0 0 24px -6px ${clr}${T.glowBlur}, ${T.shadowHover}`) : T.shadow),
         transition:"border-color .18s, box-shadow .22s, background .22s",
       }}>
         <ArchMotif T={T} color={clr} size={76} />
@@ -767,13 +770,14 @@ function BreakdownSection({ T, session }) {
           const pct        = plannedAbs > 0 ? Math.min(100,(data.bac/plannedAbs)*100) : 0;
           const relPct     = data.bac > 0 ? (data.released/data.bac)*100 : 0;
           const gradId     = "orgGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
+          const lightMode  = T.mode === "light";
 
           return (
             <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(oi*70)+"ms", flex:1, minWidth:0 }}>
               <div style={{
-                background:`linear-gradient(165deg, ${T.card} 0%, ${T.card} 55%, ${barColor}${T.washAlpha} 100%)`,
+                background: lightMode ? T.card : `linear-gradient(165deg, ${T.card} 0%, ${T.card} 55%, ${barColor}${T.washAlpha} 100%)`,
                 border:`1px solid ${T.border}`, borderRadius:14, padding:"20px 22px",
-                borderTop:`3px solid ${barColor}`, display:"flex", flexDirection:"column", gap:13,
+                borderTop: lightMode ? `1px solid ${T.border}` : `3px solid ${barColor}`, display:"flex", flexDirection:"column", gap:13,
                 position:"relative", overflow:"hidden", boxShadow:T.shadow,
               }}>
                 <ArchMotif T={T} color={barColor} size={80} />
@@ -866,8 +870,9 @@ function BreakdownSection({ T, session }) {
                 const barColor   = isOver ? ROSE : color;
                 const relPct     = data.bac>0 ? ((data.released/data.bac)*100).toFixed(1) : "0";
                 const gradId     = "segGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
+                const lightMode  = T.mode === "light";
                 return (
-                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background:`linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}${T.washAlpha} 100%)`, borderRadius:12, padding:"16px 18px", border:`1px solid ${barColor}${T.glowRing}`, position:"relative", overflow:"hidden", boxShadow:T.shadow }}>
+                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background: lightMode ? T.card2 : `linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}${T.washAlpha} 100%)`, borderRadius:12, padding:"16px 18px", border: lightMode ? `1px solid ${T.border}` : `1px solid ${barColor}${T.glowRing}`, position:"relative", overflow:"hidden", boxShadow:T.shadow }}>
                     {/* Header row */}
                     <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:11, position:"relative" }}>
                       <div style={{ width:26, height:26, borderRadius:8, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
