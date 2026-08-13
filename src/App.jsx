@@ -535,7 +535,7 @@ const chartBaseOptions = (T) => ({
 // with a huge budget and almost nothing released reads as a long pale bar
 // with a tiny sliver of color, which is far more legible than two numbers
 // side by side.
-function StrategicPriorityStackedBar({ T, byStrat, height = 300 }) {
+function StrategicPriorityStackedBar({ T, byStrat, height = 340 }) {
   const sorted = useMemo(() => Object.entries(byStrat).sort(([,a],[,b])=>b.bac-a.bac), [byStrat]);
   const releasedColor = (i) => STRAT_PAL[i % STRAT_PAL.length];
   const remainingColor = T.mode === "light" ? "#E4E9F1" : "rgba(255,255,255,0.08)";
@@ -547,20 +547,20 @@ function StrategicPriorityStackedBar({ T, byStrat, height = 300 }) {
         label: "Released",
         data: sorted.map(([,d]) => d.released/1e6),
         backgroundColor: sorted.map((_,i) => releasedColor(i)),
-        borderRadius: { topLeft:4, bottomLeft:4, topRight:0, bottomRight:0 },
-        borderSkipped: false, stack: "s", barThickness: 26,
+        borderRadius: { topLeft:0, topRight:0, bottomLeft:4, bottomRight:4 },
+        borderSkipped: false, stack: "s", maxBarThickness: 64,
       },
       {
         label: "Remaining",
         data: sorted.map(([,d]) => Math.max(0, d.bac - d.released)/1e6),
         backgroundColor: remainingColor,
-        borderRadius: { topRight:4, bottomRight:4, topLeft:0, bottomLeft:0 },
-        borderSkipped: false, stack: "s", barThickness: 26,
+        borderRadius: { topLeft:4, topRight:4, bottomLeft:0, bottomRight:0 },
+        borderSkipped: false, stack: "s", maxBarThickness: 64,
       },
     ],
   };
   const options = {
-    ...chartBaseOptions(T), indexAxis: "y",
+    ...chartBaseOptions(T),
     plugins: {
       ...chartBaseOptions(T).plugins,
       tooltip: { ...chartBaseOptions(T).plugins.tooltip, callbacks: {
@@ -575,14 +575,16 @@ function StrategicPriorityStackedBar({ T, byStrat, height = 300 }) {
       } },
     },
     scales: {
-      x: { ...chartBaseOptions(T).scales.x, stacked:true, ticks:{ ...chartBaseOptions(T).scales.x.ticks, callback:(v)=>v+"M" } },
-      y: { ...chartBaseOptions(T).scales.y, stacked:true, grid:{ display:false }, ticks:{ ...chartBaseOptions(T).scales.y.ticks, font:{ family:"Inter", size:12, weight:"600" } } },
+      x: { ...chartBaseOptions(T).scales.x, stacked:true, grid:{ display:false },
+        ticks:{ ...chartBaseOptions(T).scales.x.ticks, font:{ family:"Inter", size:11, weight:"600" }, maxRotation:28, minRotation:0, autoSkip:false,
+          callback: function(val) { const label = this.getLabelForValue(val); return label.length > 18 ? label.slice(0,16)+"…" : label; } } },
+      y: { ...chartBaseOptions(T).scales.y, stacked:true, ticks:{ ...chartBaseOptions(T).scales.y.ticks, callback:(v)=>v+"M" } },
     },
   };
   if (sorted.length === 0) return null;
   return (
     <div>
-      <div style={{height: Math.max(height, sorted.length*46)}}><Bar data={data} options={options} /></div>
+      <div style={{height}}><Bar data={data} options={options} /></div>
       <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:12, fontSize:11, color:T.muted }}>
         <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:3,background:GOLD,display:"inline-block"}}/>Released</span>
         <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:3,background:remainingColor,border:"1px solid "+T.border,display:"inline-block"}}/>Remaining of approved budget</span>
