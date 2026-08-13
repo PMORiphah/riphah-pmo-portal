@@ -7,7 +7,7 @@ import {
   Shield, BarChart3, Building2, Lock,
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
-  Sparkles
+  Sparkles, Sun, Moon
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -34,6 +34,8 @@ import * as XLSX from "xlsx";
     .pmo-mesh { animation: pmoMeshDrift 18s ease-in-out infinite; }
     .pmo-nav-item { transition: background .15s, color .15s; }
     .pmo-nav-item:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); }
+    .pmo-topbar-toggle:hover { background: rgba(224,169,74,0.14) !important; color: #E0A94A !important; }
+    .pmo-topbar-signout:hover { border-color: #E0A94A !important; color: #E0A94A !important; }
     .pmo-card-in { animation: pmoCardIn .45s cubic-bezier(.16,1,.3,1) backwards; }
     .pmo-fade-in { animation: pmoFadeIn .35s ease backwards; }
     .pmo-lift { transition: transform .18s cubic-bezier(.16,1,.3,1), box-shadow .18s ease, border-color .18s ease; }
@@ -292,19 +294,40 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword }) 
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
 function TopBar({ T, title, subtitle, dark, setDark, onLogout }) {
   return (
-    <div style={{ height:60, flexShrink:0, display:"flex", alignItems:"center", padding:"0 24px", gap:16, background:T.headerBg, borderBottom:"1px solid "+T.border }}>
-      <div style={{ flex:1 }}>
-        <div style={{ fontSize:17, fontWeight:700, color:T.text }}>{title}</div>
-        {subtitle && <div style={{ fontSize:11, color:T.muted, marginTop:1 }}>{subtitle}</div>}
+    <div style={{
+      height:68, flexShrink:0, display:"flex", alignItems:"center", padding:"0 28px", gap:18,
+      background:T.headerBg, borderBottom:"1px solid "+T.border,
+      boxShadow: T.mode === "light" ? "0 1px 2px rgba(16,30,59,0.04)" : "none",
+    }}>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:19, fontWeight:700, color:T.text, letterSpacing:-0.2, lineHeight:1.2 }}>{title}</div>
+        {subtitle && (
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginTop:2 }}>
+            <div style={{ width:12, height:1.5, background:GOLD, opacity:0.65, flexShrink:0 }} />
+            <div style={{ fontSize:11.5, color:T.muted }}>{subtitle}</div>
+          </div>
+        )}
       </div>
-      <button onClick={() => setDark(d => !d)} style={{ background:"none", border:"none", cursor:"pointer", padding:6, borderRadius:6, color:T.muted }}>
-        <span style={{ fontSize:16 }}>{dark ? "☀️" : "🌙"}</span>
+      <button
+        onClick={() => setDark(d => !d)}
+        className="pmo-topbar-toggle"
+        title={dark ? "Switch to light mode" : "Switch to dark mode"}
+        style={{
+          display:"flex", alignItems:"center", justifyContent:"center",
+          width:34, height:34, background:T.inputBg, border:"1px solid "+T.border,
+          borderRadius:9, cursor:"pointer", color:T.muted, transition:"background .15s, color .15s, border-color .15s",
+        }}>
+        {dark ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
       </button>
-      <button onClick={onLogout} style={{
-        display:"flex", alignItems:"center", gap:6, background:"none", border:"1px solid "+T.border,
-        borderRadius:7, padding:"6px 12px", cursor:"pointer", color:T.muted, fontSize:12, fontFamily:"Inter,sans-serif",
-      }}>
-        <LogOut size={13} /> Sign out
+      <button
+        onClick={onLogout}
+        className="pmo-topbar-signout"
+        style={{
+          display:"flex", alignItems:"center", gap:7, background:"none", border:"1px solid "+T.border,
+          borderRadius:9, padding:"8px 15px", cursor:"pointer", color:T.muted, fontSize:12.5, fontWeight:600,
+          fontFamily:"Inter,sans-serif", transition:"border-color .15s, color .15s",
+        }}>
+        <LogOut size={13.5} /> Sign out
       </button>
     </div>
   );
