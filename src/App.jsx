@@ -1161,6 +1161,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
               <th style={th}>Organization</th>
               <th style={th}>Segment</th>
               <th style={{ ...th, textAlign:"right" }}>BAC</th>
+              {tab === "budgeting" && activeCard === "df_recommended" && <th style={{ ...th, textAlign:"right" }}>DF Recommended</th>}
               <th style={th}>Stage</th>
               {tab === "execution" && <th style={th}>Schedule</th>}
               {tab === "execution" && <th style={th}>Budget</th>}
@@ -1183,6 +1184,9 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.segments?.name||"—"}</td>
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.sectors?.name||"—"}</td>
                 <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600 }}>{fmtM(p.bac)}</td>
+                {tab === "budgeting" && activeCard === "df_recommended" && (
+                  <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600 }}>{fmtM(p.df_recommended_amount)}</td>
+                )}
                 <td style={td}><StageBadge stage={p.workflow_stage}/></td>
                 {tab === "execution" && (
                   <td style={td}>
