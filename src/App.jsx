@@ -1127,7 +1127,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
     pipeline: { pdd_not_submitted:"PDD Not Submitted", pdds_submitted:"PDD Submitted", in_df:"DF Review", in_ed:"ED Review", in_mt:"MT Review", approved:"Approved" },
     execution: { active_projects:"Active Projects", on_schedule:"On Schedule", delayed:"Delayed", over_budget:"Over Budget", scope_change:"Change in Scope", closed:"Closed" },
     financials: { payments_pending:"Payments Pending" },
-    budgeting: { su_requested:"SU Requested", df_recommended:"DF Recommended", approved_projects:"Approved Projects", budgeted_projects:"Budgeted Projects", non_budgeted_projects:"Non-Budgeted Projects", carry_forward:"Carry Forward", total_projects:"Total Projects" },
+    budgeting: { df_recommended:"DF Recommended", approved_projects:"Approved Projects", budgeted_projects:"Budgeted Projects", non_budgeted_projects:"Non-Budgeted Projects", carry_forward:"Carry Forward", total_projects:"Total Projects" },
   };
   const filterLabel = activeCard ? (cardLabels[tab]?.[activeCard] || "All") : "All";
 
@@ -1317,7 +1317,6 @@ function CommandCenter({ T, session, onSelectProject }) {
       return dashProjects.filter(p => p.payments_pending);
     }
     if (activeTab === "budgeting") {
-      if (activeCard === "su_requested")       return dashProjects.filter(p => (p.su_requested_amount||0) > 0);
       if (activeCard === "df_recommended")     return dashProjects.filter(p => (p.df_recommended_amount||0) > 0);
       if (activeCard === "approved_projects")  return dashProjects.filter(isApprovedOrReleased);
       if (activeCard === "budgeted_projects")  return dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedOrReleased(p));
@@ -1457,7 +1456,7 @@ function CommandCenter({ T, session, onSelectProject }) {
       )}
       {activeTab === "budgeting" && (
         <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} onCardClick={() => toggleCard("su_requested")} isSelected={activeCard==="su_requested"} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
+          <EditableKCard Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
           <EditableKCard Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
           <EditableKCard Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
