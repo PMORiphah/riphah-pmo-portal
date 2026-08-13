@@ -1204,16 +1204,23 @@ function CommandCenter({ T, session, onSelectProject }) {
         padding:"24px 32px", display:"flex", alignItems:"center", gap:32,
         boxShadow:T.shadow, position:"relative", overflow:"hidden", minHeight:104,
       }}>
-        {/* Ambient mesh — slow, deliberate drift, not distracting */}
-        <div className="pmo-mesh" style={{position:"absolute", inset:0, pointerEvents:"none"}}>
-          <div style={{position:"absolute", top:"-30%", right:"-6%", width:340, height:340, borderRadius:"50%", background:`radial-gradient(circle, ${GOLD}22 0%, transparent 68%)`}} />
-          <div style={{position:"absolute", bottom:"-40%", left:"20%", width:280, height:280, borderRadius:"50%", background:`radial-gradient(circle, ${EMERALD}14 0%, transparent 70%)`}} />
-        </div>
-        {/* Signature: a real double-arch silhouette, echoing the login hero's architecture */}
-        <svg width="230" height="140" viewBox="0 0 230 140" style={{position:"absolute", right:0, bottom:0, pointerEvents:"none"}} aria-hidden="true">
-          <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill="#fff" opacity="0.045" />
-          <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={GOLD} opacity="0.09" />
-        </svg>
+        {/* Ambient decoration — dark mode keeps the richer drifting mesh + arch
+            silhouette; light mode matches cashflow-dashboard.html's header
+            exactly: one static gold radial glow, top-right, nothing else. */}
+        {T.mode === "light" ? (
+          <div style={{position:"absolute", right:-60, top:-80, width:280, height:280, borderRadius:"50%", background:`radial-gradient(circle, ${GOLD}2E 0%, transparent 70%)`, pointerEvents:"none"}} />
+        ) : (
+          <>
+            <div className="pmo-mesh" style={{position:"absolute", inset:0, pointerEvents:"none"}}>
+              <div style={{position:"absolute", top:"-30%", right:"-6%", width:340, height:340, borderRadius:"50%", background:`radial-gradient(circle, ${GOLD}22 0%, transparent 68%)`}} />
+              <div style={{position:"absolute", bottom:"-40%", left:"20%", width:280, height:280, borderRadius:"50%", background:`radial-gradient(circle, ${EMERALD}14 0%, transparent 70%)`}} />
+            </div>
+            <svg width="230" height="140" viewBox="0 0 230 140" style={{position:"absolute", right:0, bottom:0, pointerEvents:"none"}} aria-hidden="true">
+              <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill="#fff" opacity="0.045" />
+              <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={GOLD} opacity="0.09" />
+            </svg>
+          </>
+        )}
         <div style={{position:"relative"}}>
           <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", textTransform:"uppercase", letterSpacing:1.8, marginBottom:9, fontWeight:600 }}>Portfolio health</div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
