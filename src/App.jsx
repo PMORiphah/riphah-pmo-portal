@@ -112,23 +112,23 @@ const DK = {
   pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.05), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(31,174,142,0.04), transparent 55%)",
   mode:"dark", washAlpha:"14", badgeAlpha:"22", glowRing:"30", glowBlur:"55",
 };
-// Light mode: "Daylight Sky" — a deliberately different mood from dark mode,
-// but a COHESIVE one. Previously LT used a warm ivory/parchment base while the
-// hero stayed solid navy, which read as two unrelated palettes glued together
-// (a dark rectangle dropped into a warm page). Here everything — page, cards,
-// shadows, borders — stays in the same blue family as the hero, so the hero
-// now reads as a deeper shade of the same sky rather than a clashing accent.
-// Gold is kept as the one warm note, so it still pops with full contrast.
+// Light mode — matched directly against the CSS custom properties inside
+// cashflow-dashboard.html (the standalone tab embedded via iframe), so the
+// two tabs read as one consistent product rather than two different apps.
+// Values below are taken verbatim from that file's :root block:
+//   --bg:#F4F6F9  --surface:#FFFFFF  --ink:#101E3B  --muted:#66738C
+//   --line:#E4E9F1  --shadow: 0 1px 2px rgba(16,30,59,.04), 0 8px 24px rgba(16,30,59,.06)
+//   header gradient: linear-gradient(135deg, #0A1A30 0%, #153564 100%)
 const LT = {
-  sidebarBg:"#123C5C", mainBg:"#E9F1FB", card:"#FFFFFF", card2:"#F3F8FD",
-  headerBg:"#FFFFFF", border:"#D3E2F2", text:"#101B2D", muted:"#56718F",
-  dim:"#A0B8D4", inputBg:"#F6F9FD", inputBorder:"#D3E2F2",
-  tableRow:"rgba(24,80,120,0.025)", tableRowHover:"rgba(24,80,120,0.05)",
-  scrollbar:"#D3E2F2",
-  shadow:"0 2px 4px rgba(20,50,90,0.08), 0 14px 32px -12px rgba(20,50,90,0.16)",
-  shadowHover:"0 8px 18px rgba(20,50,90,0.12), 0 26px 52px -16px rgba(20,50,90,0.24)",
-  heroGradient:"radial-gradient(120% 180% at 100% 0%, #1D5580 0%, #123C5C 45%, #0D2C46 100%)",
-  pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.09), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(29,85,128,0.08), transparent 55%)",
+  sidebarBg:"#123C5C", mainBg:"#F4F6F9", card:"#FFFFFF", card2:"#FBFCFE",
+  headerBg:"#FFFFFF", border:"#E4E9F1", text:"#101E3B", muted:"#66738C",
+  dim:"#A6B0C3", inputBg:"#FBFCFE", inputBorder:"#E4E9F1",
+  tableRow:"rgba(16,30,59,0.02)", tableRowHover:"rgba(16,30,59,0.045)",
+  scrollbar:"#E4E9F1",
+  shadow:"0 1px 2px rgba(16,30,59,0.04), 0 8px 24px rgba(16,30,59,0.06)",
+  shadowHover:"0 4px 10px rgba(16,30,59,0.07), 0 16px 36px rgba(16,30,59,0.12)",
+  heroGradient:"linear-gradient(135deg, #0A1A30 0%, #153564 100%)",
+  pageTexture:"radial-gradient(ellipse 1000px 500px at 15% -10%, rgba(201,162,75,0.05), transparent 60%)",
   mode:"light", washAlpha:"2A", badgeAlpha:"33", glowRing:"55", glowBlur:"85",
 };
 
