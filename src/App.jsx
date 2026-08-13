@@ -158,6 +158,16 @@ const supa = async (path, opts = {}, token = null) => {
 
 // ─── FORMATTERS ───────────────────────────────────────────────────────────────
 const fmtM = (n) => n == null ? "—" : (n / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";
+// Duration is always derived from start/end dates, never typed manually —
+// uses the same 30.4375-day average-month formula as the one-time database
+// backfill, so a project edited in the UI always agrees with one computed
+// directly in SQL.
+const calcDurationMonths = (start, end) => {
+  if (!start || !end) return null;
+  const ms = new Date(end) - new Date(start);
+  if (isNaN(ms) || ms < 0) return null;
+  return Math.round(ms / (1000*60*60*24*30.4375));
+};
 const fmtR = (n) => n == null ? "—" : parseFloat(n).toFixed(3);
 const fmtP = (n) => n == null ? "—" : parseFloat(n).toFixed(1) + "%";
 
@@ -1594,7 +1604,6 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
 
   const save = async () => {
-    if (!form.code.trim()) return setErr("Project code is required.");
     if (!form.name.trim()) return setErr("Project name is required.");
     setErr(null); setSaving(true);
     try {
@@ -1608,7 +1617,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         end_date:form.end_date||null,
         actual_start_date:form.actual_start_date||null, actual_end_date:form.actual_end_date||null,
         notes:form.notes||null,
-        duration_months:form.duration_months?parseInt(form.duration_months):null,
+        duration_months:calcDurationMonths(form.start_date, form.end_date),
         manual_schedule_flag:form.manual_schedule_flag||null, manual_budget_flag:form.manual_budget_flag||null,
         su_requested_amount:parseFloat(form.su_requested_amount)||0,
         df_recommended_amount:parseFloat(form.df_recommended_amount)||0,
@@ -1693,7 +1702,12 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         <Row>
           <Col><label style={lbl}>Planned Start Date</label><input type="date" value={form.start_date} onChange={e=>set("start_date",e.target.value)} style={inp}/></Col>
           <Col><label style={lbl}>Planned End Date</label><input type="date" value={form.end_date} onChange={e=>set("end_date",e.target.value)} style={inp}/></Col>
-          <Col><label style={lbl}>Duration (months)</label><input type="number" value={form.duration_months} onChange={e=>set("duration_months",e.target.value)} style={inp}/></Col>
+          <Col>
+            <label style={lbl}>Duration (months)</label>
+            <div style={{...inp, display:"flex", alignItems:"center", color:T.muted, cursor:"not-allowed", background:T.mainBg}} title="Calculated automatically from Planned Start and Planned End">
+              {(() => { const d = calcDurationMonths(form.start_date, form.end_date); return d != null ? `${d} months (auto)` : "— (set both dates)"; })()}
+            </div>
+          </Col>
           <Col><label style={lbl}>Actual Start Date</label><input type="date" value={form.actual_start_date} onChange={e=>set("actual_start_date",e.target.value)} style={inp}/></Col>
           <Col><label style={lbl}>Actual End Date <span style={{fontSize:10,color:T.dim}}>(closed only)</span></label><input type="date" value={form.actual_end_date} onChange={e=>set("actual_end_date",e.target.value)} style={inp}/></Col>
         </Row>
@@ -2031,7 +2045,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
         end_date:            r.end_date            ||null,
         actual_start_date:   r.actual_start_date    ||null,
         actual_end_date:     r.actual_end_date      ||null,
-        duration_months:     r.duration_months?parseInt(r.duration_months):null,
+        duration_months:     calcDurationMonths(r.start_date||null, r.end_date||null),
         pct_complete:        Math.min(100,Math.max(0,parseFloat(r.pct_complete)||0)),
         manual_schedule_flag:["not_started","on_time","delayed"].includes(r.manual_schedule_flag)?r.manual_schedule_flag:null,
         manual_budget_flag:  ["not_started","within","over"].includes(r.manual_budget_flag)?r.manual_budget_flag:null,
