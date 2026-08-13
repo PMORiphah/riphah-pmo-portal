@@ -1160,7 +1160,7 @@ function CommandCenter({ T, session, onSelectProject }) {
   const healthColor = d.portfolio_health === "Good" ? good : d.portfolio_health === "At Risk" ? warn : bad;
 
   const TABS = [
-    { id:"budgeting",  label:"CAPEX Budget",     icon:"📋" },
+    { id:"budgeting",  label:"CAPEX Portfolio Overview",     icon:"📋" },
     { id:"pipeline",   label:"PDD Status",        icon:"🔁" },
     { id:"execution",  label:"Project Health",    icon:"⚡" },
     { id:"financials", label:"Payments Status",   icon:"💰" },
