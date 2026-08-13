@@ -528,6 +528,69 @@ const chartBaseOptions = (T) => ({
 
 // Horizontal "Top N by amount" bar — used for both the Overview tab's
 // Top 10 DF Recommended chart and the Payments tab's Top 10 Pending chart.
+// Strategic Priority — 100% stacked horizontal bar (Released vs Remaining).
+// Bar length is each priority's actual approved budget (BAC); the colored
+// segment is what's released, the pale segment is what's left. This tells
+// the "how much is actually out the door" story at a glance — a priority
+// with a huge budget and almost nothing released reads as a long pale bar
+// with a tiny sliver of color, which is far more legible than two numbers
+// side by side.
+function StrategicPriorityStackedBar({ T, byStrat, height = 300 }) {
+  const sorted = useMemo(() => Object.entries(byStrat).sort(([,a],[,b])=>b.bac-a.bac), [byStrat]);
+  const releasedColor = (i) => STRAT_PAL[i % STRAT_PAL.length];
+  const remainingColor = T.mode === "light" ? "#E4E9F1" : "rgba(255,255,255,0.08)";
+
+  const data = {
+    labels: sorted.map(([name]) => name),
+    datasets: [
+      {
+        label: "Released",
+        data: sorted.map(([,d]) => d.released/1e6),
+        backgroundColor: sorted.map((_,i) => releasedColor(i)),
+        borderRadius: { topLeft:4, bottomLeft:4, topRight:0, bottomRight:0 },
+        borderSkipped: false, stack: "s", barThickness: 26,
+      },
+      {
+        label: "Remaining",
+        data: sorted.map(([,d]) => Math.max(0, d.bac - d.released)/1e6),
+        backgroundColor: remainingColor,
+        borderRadius: { topRight:4, bottomRight:4, topLeft:0, bottomLeft:0 },
+        borderSkipped: false, stack: "s", barThickness: 26,
+      },
+    ],
+  };
+  const options = {
+    ...chartBaseOptions(T), indexAxis: "y",
+    plugins: {
+      ...chartBaseOptions(T).plugins,
+      tooltip: { ...chartBaseOptions(T).plugins.tooltip, callbacks: {
+        title: (items) => items[0]?.label || "",
+        label: (ctx) => {
+          const [, d] = sorted[ctx.dataIndex];
+          const pct = d.bac > 0 ? ((d.released/d.bac)*100).toFixed(1) : "0.0";
+          return ctx.datasetIndex === 0
+            ? `Released: PKR ${fmtM(d.released)} (${pct}%)`
+            : `Remaining: PKR ${fmtM(Math.max(0, d.bac - d.released))} of ${fmtM(d.bac)}`;
+        },
+      } },
+    },
+    scales: {
+      x: { ...chartBaseOptions(T).scales.x, stacked:true, ticks:{ ...chartBaseOptions(T).scales.x.ticks, callback:(v)=>v+"M" } },
+      y: { ...chartBaseOptions(T).scales.y, stacked:true, grid:{ display:false }, ticks:{ ...chartBaseOptions(T).scales.y.ticks, font:{ family:"Inter", size:12, weight:"600" } } },
+    },
+  };
+  if (sorted.length === 0) return null;
+  return (
+    <div>
+      <div style={{height: Math.max(height, sorted.length*46)}}><Bar data={data} options={options} /></div>
+      <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:12, fontSize:11, color:T.muted }}>
+        <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:3,background:GOLD,display:"inline-block"}}/>Released</span>
+        <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:3,background:remainingColor,border:"1px solid "+T.border,display:"inline-block"}}/>Remaining of approved budget</span>
+      </div>
+    </div>
+  );
+}
+
 function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320 }) {
   const sorted = useMemo(() => [...rows].filter(r => (r[field]||0) > 0).sort((a,b)=>(b[field]||0)-(a[field]||0)).slice(0,10).reverse(), [rows, field]);
   const data = {
@@ -741,100 +804,6 @@ function DonutChart({ slices, T }) {
 const ORG_COLORS  = { Riphah:GOLD, Trust:EMERALD };
 const SEG_COLORS  = { Academic:"#5B9FE8", Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
 const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
-
-const MEDAL = {
-  1: { bg:"linear-gradient(145deg, #F3D28A, #C9942F)", ring:"#E0A94A", text:"#3A2A08" },
-  2: { bg:"linear-gradient(145deg, #E4E9EF, #A9B4C0)", ring:"#B8C2D0", text:"#252B33" },
-  3: { bg:"linear-gradient(145deg, #E3A57C, #B06A3E)", ring:"#C97A4A", text:"#341C0C" },
-};
-
-function RankedPriorityBar({ rank, label, count, actual, planned, released, color, T, editing, editVal, onEditChange, maxOfAll, index = 0 }) {
-  const [hover, setHover] = useState(false);
-  const plannedAbs = (planned || 0) * 1e6;
-  const isOver      = plannedAbs > 0 && actual > plannedAbs;
-  const barColor    = isOver ? ROSE : color;
-  const barW        = Math.min(100, (actual / (maxOfAll || 1)) * 100);
-  const targetPos    = plannedAbs > 0 ? Math.min(100, (plannedAbs / (maxOfAll || 1)) * 100) : 0;
-  const pct         = plannedAbs > 0 ? ((actual / plannedAbs) * 100).toFixed(1) : null;
-  const relPct      = actual > 0 ? ((released / actual) * 100).toFixed(1) : "0.0";
-  const gradId      = "rankGrad_" + label.replace(/[^a-zA-Z0-9]/g,"") + "_" + index;
-  const medal       = MEDAL[rank];
-
-  return (
-    <div
-      className="pmo-fade-in"
-      style={{ display:"flex", alignItems:"center", gap:16, marginBottom:12, padding:"12px 16px", borderRadius:12,
-        background: hover ? T.card2 : "transparent", transition:"background .18s", animationDelay:(index*50)+"ms" }}
-      onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
-    >
-      {/* Rank badge */}
-      <div style={{
-        width:34, height:34, borderRadius:"50%", flexShrink:0,
-        background: medal ? medal.bg : T.card2,
-        border: medal ? "none" : `1px solid ${T.border}`,
-        boxShadow: medal ? `0 0 0 2px ${medal.ring}55, 0 3px 8px -2px ${medal.ring}77` : "none",
-        display:"flex", alignItems:"center", justifyContent:"center",
-        fontSize:14, fontWeight:800, fontFamily:"DM Serif Display,serif",
-        color: medal ? medal.text : T.muted,
-      }}>
-        {rank}
-      </div>
-
-      {/* Content */}
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:6, gap:10, flexWrap:"wrap" }}>
-          <div style={{ display:"flex", alignItems:"baseline", gap:9, minWidth:0 }}>
-            <span style={{ fontSize:14, fontWeight:700, color:T.text }}>{label}</span>
-            <span style={{ fontSize:11, color:T.dim, whiteSpace:"nowrap" }}>{count} projects</span>
-            {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"2px 8px", borderRadius:20, whiteSpace:"nowrap" }}>OVER TARGET</span>}
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:10, fontSize:12, fontVariantNumeric:"tabular-nums", flexShrink:0 }}>
-            {editing ? (
-              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <span style={{ fontSize:11, color:T.muted }}>Target (M):</span>
-                <input type="number" step="0.1" value={editVal} onChange={e=>onEditChange(e.target.value)}
-                  placeholder="e.g. 600"
-                  style={{ width:90, background:T.inputBg, border:`1px solid ${color}`, borderRadius:6, padding:"3px 8px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
-              </div>
-            ) : (
-              <>
-                {plannedAbs > 0 && <span style={{ color:T.dim }}>{pct}% of {fmtM(plannedAbs)}</span>}
-                <span style={{ color:barColor, fontWeight:700, fontFamily:"DM Serif Display,serif", fontSize:18 }}><AnimatedNumber value={fmtM(actual)} /></span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Leaderboard bar — length relative to the top-ranked priority */}
-        <svg width="100%" height="16" style={{display:"block", overflow:"visible"}}>
-          <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor={barColor} stopOpacity="0.7" />
-              <stop offset="100%" stopColor={barColor} stopOpacity="1" />
-            </linearGradient>
-            <linearGradient id={gradId+"_sheen"} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#fff" stopOpacity="0.22" />
-              <stop offset="45%" stopColor="#fff" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <rect x="0" y="2" width="100%" height="12" rx="6" fill={T.border} opacity="0.5" />
-          <rect x="0" y="2" width={barW+"%"} height="12" rx="6" fill={`url(#${gradId})`}
-            style={{transition:"width .7s cubic-bezier(.16,1,.3,1)", filter: hover ? `drop-shadow(0 0 8px ${barColor}77)` : "none"}} />
-          <rect x="0" y="2" width={barW+"%"} height="12" rx="6" fill={`url(#${gradId}_sheen)`} style={{transition:"width .7s cubic-bezier(.16,1,.3,1)"}} />
-          {targetPos > 0 && (
-            <line x1={targetPos+"%"} y1="-2" x2={targetPos+"%"} y2="18" stroke={T.text} strokeWidth="2" strokeOpacity="0.55" strokeLinecap="round" />
-          )}
-        </svg>
-        <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:11, color:T.dim }}>
-          <span>↓ <span style={{color:EMERALD, fontWeight:600}}>{fmtM(released)}</span> released ({relPct}%)</span>
-          {isOver ? <span style={{color:ROSE}}>Over by {fmtM(actual - plannedAbs)}</span>
-                  : plannedAbs > 0 ? <span>Gap: {fmtM(plannedAbs - actual)}</span>
-                  : null}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function BreakdownSection({ T, session }) {
   const [projects, setProjects] = useState([]);
@@ -1132,17 +1101,9 @@ function BreakdownSection({ T, session }) {
       {/* ── Strategic Priority breakdown ── */}
       <SectionCard title="By Strategic Priority"
         note={Object.keys(byStrat).length===0 ? "No strategic priorities in current data — import Excel with the 'Strategic Priority' column filled in to populate this section." : null}>
-        {(() => {
-          const sorted = Object.entries(byStrat).sort(([,a],[,b])=>b.bac-a.bac);
-          const maxOfAll = Math.max(...sorted.map(([,d])=>d.bac), 1);
-          return sorted.map(([name, data], idx) => (
-            <RankedPriorityBar key={name} index={idx} rank={idx+1} label={name} count={data.count}
-              actual={data.bac} planned={stratTgts[name]?.bac || 0} released={data.released}
-              color={STRAT_PAL[idx % STRAT_PAL.length]} T={T} editing={editing} maxOfAll={maxOfAll}
-              editVal={editBuf.strat?.[name]||""}
-              onEditChange={v=>setEditBuf(b=>({...b,strat:{...b.strat,[name]:v}}))}/>
-          ));
-        })()}
+        <ChartErrorBoundary T={T}>
+          <StrategicPriorityStackedBar T={T} byStrat={byStrat} />
+        </ChartErrorBoundary>
       </SectionCard>
     </div>
   );
