@@ -1178,7 +1178,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 <td style={{ ...td, color:T.dim }}>{i+1}</td>
                 <td style={{ ...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted, whiteSpace:"nowrap" }}>
                   {p.is_carry_forward && <span style={{ fontSize:8, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 4px", borderRadius:3, marginRight:5 }}>CF</span>}
-                  {p.code}
+                  {p.code || "-"}
                 </td>
                 <td style={{ ...td, maxWidth:260, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:500 }}>{p.name}</td>
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.segments?.name||"—"}</td>
@@ -1640,7 +1640,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:700,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:"DM Serif Display,serif"}}>{isEdit?`Edit — ${project.code}`:"New Project"}</div>
+          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:"DM Serif Display,serif"}}>{isEdit?`Edit — ${project.code || "-"}`:"New Project"}</div>
           <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
         </div>
         {err&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:7,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#F87171",fontSize:13,display:"flex",gap:8}}><span>⚠</span>{err}</div>}
@@ -2332,7 +2332,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
     setDeleting(true);
     try {
       await supa(`/rest/v1/projects?id=eq.${confirmDel.id}`,{method:"DELETE",headers:{"Prefer":"return=minimal"}},session.access_token);
-      await supa("/rest/v1/activity_log",{method:"POST",body:JSON.stringify({actor_id:session.user_id,actor_name:session.full_name||session.username,actor_role:session.role,action:"deleted",entity_type:"projects",entity_id:confirmDel.id,summary:`Deleted project ${confirmDel.code}: ${confirmDel.name}`,details:{comments_deleted:confirmDel.comments}}),headers:{"Prefer":"return=minimal"}},session.access_token);
+      await supa("/rest/v1/activity_log",{method:"POST",body:JSON.stringify({actor_id:session.user_id,actor_name:session.full_name||session.username,actor_role:session.role,action:"deleted",entity_type:"projects",entity_id:confirmDel.id,summary:`Deleted project ${confirmDel.code || "-"}: ${confirmDel.name}`,details:{comments_deleted:confirmDel.comments}}),headers:{"Prefer":"return=minimal"}},session.access_token);
       setConfirmDel(null); load();
     } catch(_) {}
     setDeleting(false);
@@ -2539,7 +2539,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                 <td style={{...td,fontFamily:"'JetBrains Mono',monospace",fontSize:11.5,color:hovered?T.text:T.muted,whiteSpace:"nowrap",transition:"color .12s"}}>
                   <div style={{display:"flex",alignItems:"center",gap:5}}>
                     {p.is_carry_forward&&<span title="Carry forward from prior FY" style={{fontSize:9,fontWeight:700,background:GOLD+T.badgeAlpha,color:GOLD,padding:"1px 5px",borderRadius:4,letterSpacing:.5}}>CF</span>}
-                    {p.code}
+                    {p.code || "-"}
                   </div>
                 </td>
                 <td style={{...td,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:hovered?600:400,transition:"font-weight .12s"}} title={p.name}>{p.name}</td>
@@ -2603,7 +2603,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
       {/* Delete confirmation banner with comment count */}
       {confirmDel&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.card,border:"1px solid rgba(248,113,113,0.4)",borderRadius:10,padding:"12px 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"center",gap:14,fontSize:13,whiteSpace:"nowrap"}}>
-          <span style={{color:"#F87171"}}>⚠ Delete <strong>{confirmDel.code}</strong>?</span>
+          <span style={{color:"#F87171"}}>⚠ Delete <strong>{confirmDel.code || "-"}</strong>?</span>
           {confirmDel.comments>0&&<span style={{color:T.muted}}>({confirmDel.comments} comment{confirmDel.comments!==1?"s":""} will also be deleted)</span>}
           <button onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:"#F87171",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
           <button onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:6,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
@@ -2807,7 +2807,7 @@ function CampusPage({ T, session, onSelectProject }) {
                 <tr key={p.id}>
                   <td style={{...td,color:T.dim}}>{i+1}</td>
                   <td style={td}>
-                    <button onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:GOLD,fontSize:12.5,fontFamily:"monospace"}}>{p.code}</button>
+                    <button onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:GOLD,fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
                   </td>
                   <td style={{...td,minWidth:220}}>{p.name}</td>
                   <td style={{...td,color:T.muted}}>{p.campus || "—"}</td>
@@ -3263,7 +3263,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                           <span style={{ fontSize:9, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 5px", borderRadius:4, flexShrink:0 }}>CF</span>
                         )}
                         <div>
-                          <div style={{ fontSize:10.5, color:T.dim, fontFamily:"monospace" }}>{r.code}</div>
+                          <div style={{ fontSize:10.5, color:T.dim, fontFamily:"monospace" }}>{r.code || "-"}</div>
                           <div style={{ fontSize:12.5, color:T.text, lineHeight:1.3 }}>{r.name}</div>
                         </div>
                       </div>
@@ -3689,7 +3689,7 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
                   {checked && <span style={{ color:"#000", fontSize:10, fontWeight:900 }}>✓</span>}
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:10, color:T.dim, fontFamily:"monospace" }}>{p.code}</div>
+                  <div style={{ fontSize:10, color:T.dim, fontFamily:"monospace" }}>{p.code || "-"}</div>
                   <div style={{ fontSize:12.5, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</div>
                 </div>
                 <span style={{ fontSize:10, color:T.dim, flexShrink:0 }}>{(p.workflow_stage||"").replace("_"," ")}</span>
@@ -4641,7 +4641,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
               }}>
                 <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                   {cm.unread > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"#F87171", flexShrink:0 }} />}
-                  <span style={{ fontSize:10, color:T.dim, fontFamily:"monospace", flexShrink:0 }}>{p.code}</span>
+                  <span style={{ fontSize:10, color:T.dim, fontFamily:"monospace", flexShrink:0 }}>{p.code || "-"}</span>
                   {cm.unread > 0 && (
                     <span style={{ marginLeft:"auto", fontSize:10, fontWeight:700, color:"#F87171", background:"rgba(248,113,113,0.12)", padding:"1px 6px", borderRadius:20 }}>
                       {cm.unread} new
@@ -4672,7 +4672,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
           <>
             {/* Thread header */}
             <div style={{ padding:"12px 20px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, flexShrink:0 }}>
-              <div style={{ fontSize:10, color:T.dim, fontFamily:"monospace" }}>{selProject?.code}</div>
+              <div style={{ fontSize:10, color:T.dim, fontFamily:"monospace" }}>{selProject?.code || "-"}</div>
               <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{selProject?.name}</div>
             </div>
 
@@ -4701,7 +4701,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
               const proj = projects.find(p => p.id === selId);
               const pmsWithPhone = threadPMs.filter(pm => pm.phone && pm.phone.trim());
               if (!proj || pmsWithPhone.length === 0) return null;
-              const msg = `PMO Update — ${proj.code}: ${proj.name}\n\nThere is a new update for you on the PMO Portal. Please review and respond:\n${PORTAL_LINK}`;
+              const msg = `PMO Update — ${proj.code || "-"}: ${proj.name}\n\nThere is a new update for you on the PMO Portal. Please review and respond:\n${PORTAL_LINK}`;
               return (
                 <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", padding:"0 0 10px" }}>
                   <span style={{ fontSize:11, color:T.dim }}>Nudge on WhatsApp:</span>
