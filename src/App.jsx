@@ -1227,9 +1227,14 @@ function CommandCenter({ T, session, onSelectProject }) {
   // client-side from dashProjects since these aren't in the portfolio_dashboard
   // view. Placed here (before any early return below) since it's a hook.
   const overviewKpis = useMemo(() => {
-    const approved = dashProjects.filter(p => p.workflow_stage === "approved" || (p.amount_released||0) > 0);
-    const budgeted = dashProjects.filter(p => (p.df_recommended_amount||0) > 0);
-    const nonBudgeted = dashProjects.filter(p => !((p.df_recommended_amount||0) > 0));
+    const isApprovedOrReleased = (p) => p.workflow_stage === "approved" || (p.amount_released||0) > 0;
+    const approved = dashProjects.filter(isApprovedOrReleased);
+    // "Budgeted" / "Non-Budgeted" is the project_type field (a real category on
+    // each project, distinct from whether it has a budget figure), further
+    // restricted to only projects that are approved or have released funds —
+    // matching the same condition as the Approved Projects card above.
+    const budgeted = dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedOrReleased(p));
+    const nonBudgeted = dashProjects.filter(p => p.project_type !== "Budgeted" && isApprovedOrReleased(p));
     const sum = (arr) => arr.reduce((s,p) => s + (p.df_recommended_amount||0), 0);
     return {
       approvedAmt: sum(approved), approvedCount: approved.length,
@@ -1246,7 +1251,7 @@ function CommandCenter({ T, session, onSelectProject }) {
       const [rows, settings, projs, metrics] = await Promise.all([
         supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token),
         supa("/rest/v1/settings?key=eq.dashboard_kpis&select=value", {}, session.access_token),
-        supa("/rest/v1/projects?select=id,code,name,bac,df_recommended_amount,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
+        supa("/rest/v1/projects?select=id,code,name,bac,df_recommended_amount,amount_released,project_type,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
         supa("/rest/v1/project_metrics?select=id,schedule_flag,budget_flag,cpi,spi", {}, session.access_token),
       ]);
       setData(rows[0]);
