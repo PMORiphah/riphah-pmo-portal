@@ -1199,10 +1199,20 @@ function CommandCenter({ T, session, onSelectProject }) {
     <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture, backgroundAttachment:"local" }}>
 
       {/* ── HERO ── */}
+      {/* Light mode: full-bleed masthead flush to the page edges, matching
+          cashflow-dashboard.html exactly — negative margin cancels the
+          container's own padding so the hero reaches the true viewport edge,
+          square corners, no shadow (it's part of the page structure, not a
+          floating card). Dark mode keeps its original rounded floating card
+          completely unchanged. */}
       <div className="pmo-card-in" style={{
-        background:T.heroGradient, borderRadius:16,
-        padding:"24px 32px", display:"flex", alignItems:"center", gap:32,
-        boxShadow:T.shadow, position:"relative", overflow:"hidden", minHeight:104,
+        background:T.heroGradient,
+        borderRadius: T.mode==="light" ? 0 : 16,
+        margin: T.mode==="light" ? "-20px -24px 0" : 0,
+        padding: T.mode==="light" ? "24px 48px 24px 56px" : "24px 32px",
+        display:"flex", alignItems:"center", gap:32,
+        boxShadow: T.mode==="light" ? "none" : T.shadow,
+        position:"relative", overflow:"hidden", minHeight:104,
       }}>
         {/* Ambient decoration — dark mode keeps the richer drifting mesh + arch
             silhouette; light mode matches cashflow-dashboard.html's header
