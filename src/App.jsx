@@ -112,22 +112,23 @@ const DK = {
   pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.05), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(31,174,142,0.04), transparent 55%)",
   mode:"dark", washAlpha:"14", badgeAlpha:"22", glowRing:"30", glowBlur:"55",
 };
-// Light mode is a deliberately different mood, not dark-mode-with-colors-flipped:
-// crisp white "institutional ledger" cards on warm ivory, with much stronger
-// shadow definition and higher-alpha accent washes — navy-tuned glow/wash
-// values read as invisible mud against a light background, so every card that
-// consumes washAlpha/badgeAlpha/glowRing/glowBlur automatically gets punchier
-// values here without per-component light/dark branching.
+// Light mode: "Daylight Sky" — a deliberately different mood from dark mode,
+// but a COHESIVE one. Previously LT used a warm ivory/parchment base while the
+// hero stayed solid navy, which read as two unrelated palettes glued together
+// (a dark rectangle dropped into a warm page). Here everything — page, cards,
+// shadows, borders — stays in the same blue family as the hero, so the hero
+// now reads as a deeper shade of the same sky rather than a clashing accent.
+// Gold is kept as the one warm note, so it still pops with full contrast.
 const LT = {
-  sidebarBg:"#123C5C", mainBg:"#F3EEE2", card:"#FFFFFF", card2:"#FBF8F1",
-  headerBg:"#FFFFFF", border:"#E2D9C4", text:"#1C1608", muted:"#6B6350",
-  dim:"#AFA88D", inputBg:"#FBF9F2", inputBorder:"#DCD3BE",
-  tableRow:"rgba(24,80,120,0.02)", tableRowHover:"rgba(24,80,120,0.045)",
-  scrollbar:"#DCD3BE",
-  shadow:"0 2px 4px rgba(60,45,10,0.07), 0 14px 32px -12px rgba(60,45,10,0.18)",
-  shadowHover:"0 8px 18px rgba(60,45,10,0.1), 0 26px 52px -16px rgba(60,45,10,0.26)",
+  sidebarBg:"#123C5C", mainBg:"#E9F1FB", card:"#FFFFFF", card2:"#F3F8FD",
+  headerBg:"#FFFFFF", border:"#D3E2F2", text:"#101B2D", muted:"#56718F",
+  dim:"#A0B8D4", inputBg:"#F6F9FD", inputBorder:"#D3E2F2",
+  tableRow:"rgba(24,80,120,0.025)", tableRowHover:"rgba(24,80,120,0.05)",
+  scrollbar:"#D3E2F2",
+  shadow:"0 2px 4px rgba(20,50,90,0.08), 0 14px 32px -12px rgba(20,50,90,0.16)",
+  shadowHover:"0 8px 18px rgba(20,50,90,0.12), 0 26px 52px -16px rgba(20,50,90,0.24)",
   heroGradient:"radial-gradient(120% 180% at 100% 0%, #1D5580 0%, #123C5C 45%, #0D2C46 100%)",
-  pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.10), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(31,174,142,0.07), transparent 55%)",
+  pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.09), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(29,85,128,0.08), transparent 55%)",
   mode:"light", washAlpha:"2A", badgeAlpha:"33", glowRing:"55", glowBlur:"85",
 };
 
