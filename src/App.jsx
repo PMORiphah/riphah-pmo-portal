@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Component } from "react";
 import {
   LayoutDashboard, FolderKanban, TrendingUp, MessageSquare,
   Users, Activity, Settings, LogOut, Search, Eye, EyeOff,
@@ -484,6 +484,28 @@ function Funnel({ T, title, children }) {
 // fonts/colors from the current theme instead of Chart.js defaults — keeps
 // them visually consistent with the rest of the redesign (and with each
 // other) rather than looking like a bolted-on third-party widget.
+// Error boundary for the chart cards specifically. Before this, an uncaught
+// render error ANYWHERE in the tree (including inside a third-party chart
+// library) blanked the entire app with no way back short of a hard refresh —
+// that happened twice already this session. This scopes the blast radius: if
+// one chart throws, only its own card shows a fallback message, the rest of
+// the Dashboard keeps working.
+class ChartErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error) { console.error("Chart render error:", error); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding:40, textAlign:"center", color:this.props.T.dim, fontSize:12 }}>
+          This chart couldn't render. The rest of the dashboard is unaffected.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const chartBaseOptions = (T) => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -570,17 +592,35 @@ function CpiSpiScatterChart({ T, rows, height = 340 }) {
     return AMBER;
   };
   const data = {
-    datasets: [
-      {
-        label: "Projects",
-        data: points.map(r => ({ x:r.spi, y:r.cpi, code:r.code, name:r.name })),
-        backgroundColor: points.map(colorFor),
-        pointRadius: 6, pointHoverRadius: 8,
-      },
-      { label:"CPI 0.95", type:"line", data:[{x:0,y:0.95},{x:2,y:0.95}], borderColor:T.border, borderWidth:1, borderDash:[5,4], pointRadius:0, order:2 },
-    ],
+    datasets: [{
+      label: "Projects",
+      data: points.map(r => ({ x:r.spi, y:r.cpi, code:r.code, name:r.name })),
+      backgroundColor: points.map(colorFor),
+      pointRadius: 6, pointHoverRadius: 8,
+    }],
   };
   const maxAxis = Math.max(1.3, ...points.map(r=>Math.max(r.cpi,r.spi)), 0) + 0.15;
+  // Draws the 0.95 CPI/SPI threshold lines directly on the canvas, scoped to
+  // this one chart instance — mixing a "line" dataset into react-chartjs-2's
+  // dedicated <Scatter> wrapper isn't a safe combination (it can throw during
+  // chart construction and, with no error boundary in this app, that takes
+  // down the whole page). A draw-time plugin avoids the dataset-type mixing
+  // entirely and, as a bonus, correctly draws both axes' threshold lines
+  // instead of just one.
+  const thresholdLines = {
+    id: "cpiSpiThresholds",
+    afterDraw: (chart) => {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea) return;
+      const xPix = scales.x.getPixelForValue(0.95);
+      const yPix = scales.y.getPixelForValue(0.95);
+      ctx.save();
+      ctx.strokeStyle = T.border; ctx.lineWidth = 1; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(xPix, chartArea.top); ctx.lineTo(xPix, chartArea.bottom); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(chartArea.left, yPix); ctx.lineTo(chartArea.right, yPix); ctx.stroke();
+      ctx.restore();
+    },
+  };
   const options = {
     ...chartBaseOptions(T),
     plugins: {
@@ -598,7 +638,7 @@ function CpiSpiScatterChart({ T, rows, height = 340 }) {
   if (points.length === 0) return <div style={{padding:40, textAlign:"center", color:T.dim, fontSize:12}}>No projects have both CPI and SPI yet — fill in % Complete, Amount Released and dates to populate this.</div>;
   return (
     <div>
-      <div style={{height}}><Scatter data={data} options={options} /></div>
+      <div style={{height}}><Scatter data={data} options={options} plugins={[thresholdLines]} /></div>
       <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:10, fontSize:11, color:T.muted }}>
         <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:"50%",background:EMERALD,display:"inline-block"}}/>On track</span>
         <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:"50%",background:AMBER,display:"inline-block"}}/>Behind on one measure</span>
@@ -1435,7 +1475,7 @@ function CommandCenter({ T, session, onSelectProject }) {
       {activeTab === "budgeting" && (
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · DF Recommended Budget</div>
-          <TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} />
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} /></ChartErrorBoundary>
         </div>
       )}
       {activeTab === "pipeline" && (
@@ -1452,7 +1492,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:4 }}>Approvals Pipeline</div>
           <div style={{ fontSize:11, color:T.dim, marginBottom:16 }}>Where every project sits, PDD submission through to Approved</div>
-          <PipelineFunnelChart T={T} d={d} />
+          <ChartErrorBoundary T={T}><PipelineFunnelChart T={T} d={d} /></ChartErrorBoundary>
         </div>
       )}
       {activeTab === "execution" && (
@@ -1469,7 +1509,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:4 }}>Cost vs Schedule Performance</div>
           <div style={{ fontSize:11, color:T.dim, marginBottom:16 }}>Every project plotted by CPI and SPI — top-right quadrant is on track</div>
-          <CpiSpiScatterChart T={T} rows={dashProjects} />
+          <ChartErrorBoundary T={T}><CpiSpiScatterChart T={T} rows={dashProjects} /></ChartErrorBoundary>
         </div>
       )}
       {activeTab === "financials" && (
@@ -1484,7 +1524,7 @@ function CommandCenter({ T, session, onSelectProject }) {
       {activeTab === "financials" && (
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · Payments Pending</div>
-          <TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} />
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} /></ChartErrorBoundary>
         </div>
       )}
 
