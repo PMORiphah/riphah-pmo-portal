@@ -10,6 +10,12 @@ import {
   Sparkles, Sun, Moon
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import {
+  Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement,
+  LineElement, Tooltip, Legend,
+} from "chart.js";
+import { Bar, Scatter } from "react-chartjs-2";
+ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
 // ─── FONTS ─────────────────────────────────────────────────────────────────────
 (() => {
@@ -473,6 +479,135 @@ function Funnel({ T, title, children }) {
 }
 
 // ─── DONUT CHART ──────────────────────────────────────────────────────────────
+// ─── CHART.JS THEMING ───────────────────────────────────────────────────────
+// One shared options builder so every Chart.js chart in the portal reads
+// fonts/colors from the current theme instead of Chart.js defaults — keeps
+// them visually consistent with the rest of the redesign (and with each
+// other) rather than looking like a bolted-on third-party widget.
+const chartBaseOptions = (T) => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: T.mode === "light" ? "#101E3B" : T.card2,
+      titleColor: "#fff", bodyColor: T.mode === "light" ? "#DCE4F2" : T.text,
+      titleFont: { family: "Inter", weight: "700", size: 12 },
+      bodyFont: { family: "Inter", size: 12 },
+      padding: 10, cornerRadius: 8, displayColors: false,
+      borderColor: T.border, borderWidth: 1,
+    },
+  },
+  scales: {
+    x: { grid: { color: T.border, drawBorder: false }, ticks: { color: T.muted, font: { family: "Inter", size: 11 } } },
+    y: { grid: { color: T.border, drawBorder: false }, ticks: { color: T.muted, font: { family: "Inter", size: 11 } } },
+  },
+});
+
+// Horizontal "Top N by amount" bar — used for both the Overview tab's
+// Top 10 DF Recommended chart and the Payments tab's Top 10 Pending chart.
+function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320 }) {
+  const sorted = useMemo(() => [...rows].filter(r => (r[field]||0) > 0).sort((a,b)=>(b[field]||0)-(a[field]||0)).slice(0,10).reverse(), [rows, field]);
+  const data = {
+    labels: sorted.map(r => r.name.length > 42 ? r.name.slice(0,40)+"…" : r.name),
+    datasets: [{
+      data: sorted.map(r => (r[field]||0)/1e6),
+      backgroundColor: color, borderRadius: 5, borderSkipped: false,
+      barThickness: 18,
+    }],
+  };
+  const options = {
+    ...chartBaseOptions(T), indexAxis: "y",
+    plugins: {
+      ...chartBaseOptions(T).plugins,
+      tooltip: { ...chartBaseOptions(T).plugins.tooltip, callbacks: { label: (ctx) => `PKR ${valueFmt(ctx.parsed.x*1e6)}` } },
+    },
+    scales: {
+      x: { ...chartBaseOptions(T).scales.x, ticks: { ...chartBaseOptions(T).scales.x.ticks, callback: (v) => v+"M" } },
+      y: { ...chartBaseOptions(T).scales.y, grid: { display:false } },
+    },
+  };
+  if (sorted.length === 0) return <div style={{padding:40, textAlign:"center", color:T.dim, fontSize:12}}>No projects with this figure yet.</div>;
+  return <div style={{height}}><Bar data={data} options={options} /></div>;
+}
+
+// Approvals pipeline funnel — rendered as a horizontal bar in fixed stage
+// order (not sorted by value), which reads as a funnel since a healthy
+// pipeline naturally narrows stage to stage.
+function PipelineFunnelChart({ T, d, height = 300 }) {
+  const stages = [
+    { label:"PDD Not Submitted", value:d.pdd_not_submitted_count||0, color:T.muted },
+    { label:"PDD Submitted",     value:d.pdds_submitted||0,          color:"#5B9FE8" },
+    { label:"DF Review",         value:d.in_df||0,                   color:GOLD },
+    { label:"ED Review",         value:d.in_ed||0,                   color:GOLD_DEEP },
+    { label:"MT Review",         value:d.in_mt||0,                   color:VIOLET },
+    { label:"Approved",          value:d.approved_count||0,          color:EMERALD },
+  ];
+  const data = {
+    labels: stages.map(s=>s.label),
+    datasets: [{ data: stages.map(s=>s.value), backgroundColor: stages.map(s=>s.color), borderRadius:6, borderSkipped:false, barThickness:30 }],
+  };
+  const options = {
+    ...chartBaseOptions(T), indexAxis:"y",
+    plugins: { ...chartBaseOptions(T).plugins, tooltip:{ ...chartBaseOptions(T).plugins.tooltip, callbacks:{ label:(ctx)=>`${ctx.parsed.x} project${ctx.parsed.x===1?"":"s"}` } } },
+    scales: {
+      x: { ...chartBaseOptions(T).scales.x, ticks:{ ...chartBaseOptions(T).scales.x.ticks, precision:0 } },
+      y: { ...chartBaseOptions(T).scales.y, grid:{ display:false }, ticks:{ ...chartBaseOptions(T).scales.y.ticks, font:{ family:"Inter", size:12, weight:"600" } } },
+    },
+  };
+  return <div style={{height}}><Bar data={data} options={options} /></div>;
+}
+
+// CPI vs SPI quadrant scatter — the standard EVM visualization. A dashed
+// reference line at the 0.95 CPI threshold is drawn as a constant-value line
+// dataset rather than an annotation plugin, to avoid adding another
+// dependency for one straight line.
+function CpiSpiScatterChart({ T, rows, height = 340 }) {
+  const points = useMemo(() => rows.filter(r => r.cpi != null && r.spi != null), [rows]);
+  const colorFor = (r) => {
+    if (r.cpi >= 0.95 && r.spi >= 0.95) return EMERALD;
+    if (r.cpi < 0.95 && r.spi < 0.95) return ROSE;
+    return AMBER;
+  };
+  const data = {
+    datasets: [
+      {
+        label: "Projects",
+        data: points.map(r => ({ x:r.spi, y:r.cpi, code:r.code, name:r.name })),
+        backgroundColor: points.map(colorFor),
+        pointRadius: 6, pointHoverRadius: 8,
+      },
+      { label:"CPI 0.95", type:"line", data:[{x:0,y:0.95},{x:2,y:0.95}], borderColor:T.border, borderWidth:1, borderDash:[5,4], pointRadius:0, order:2 },
+    ],
+  };
+  const maxAxis = Math.max(1.3, ...points.map(r=>Math.max(r.cpi,r.spi)), 0) + 0.15;
+  const options = {
+    ...chartBaseOptions(T),
+    plugins: {
+      ...chartBaseOptions(T).plugins,
+      tooltip: { ...chartBaseOptions(T).plugins.tooltip, callbacks: {
+        title: (items) => items[0]?.raw?.code ? `${items[0].raw.code}` : "",
+        label: (ctx) => ctx.raw?.name ? [ctx.raw.name, `SPI ${ctx.raw.x?.toFixed(2)} · CPI ${ctx.raw.y?.toFixed(2)}`] : "",
+      } },
+    },
+    scales: {
+      x: { ...chartBaseOptions(T).scales.x, min:0, max:maxAxis, title:{ display:true, text:"SPI (Schedule)", color:T.muted, font:{family:"Inter",size:11,weight:"600"} } },
+      y: { ...chartBaseOptions(T).scales.y, min:0, max:maxAxis, title:{ display:true, text:"CPI (Cost)", color:T.muted, font:{family:"Inter",size:11,weight:"600"} } },
+    },
+  };
+  if (points.length === 0) return <div style={{padding:40, textAlign:"center", color:T.dim, fontSize:12}}>No projects have both CPI and SPI yet — fill in % Complete, Amount Released and dates to populate this.</div>;
+  return (
+    <div>
+      <div style={{height}}><Scatter data={data} options={options} /></div>
+      <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:10, fontSize:11, color:T.muted }}>
+        <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:"50%",background:EMERALD,display:"inline-block"}}/>On track</span>
+        <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:"50%",background:AMBER,display:"inline-block"}}/>Behind on one measure</span>
+        <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:"50%",background:ROSE,display:"inline-block"}}/>Over budget & behind schedule</span>
+      </div>
+    </div>
+  );
+}
+
 function DonutChart({ slices, T }) {
   const SIZE = 280, cx = 140, cy = 140, outerR = 118, innerR = 70;
   const total = slices.reduce((s, d) => s + d.value, 0);
@@ -1093,8 +1228,8 @@ function CommandCenter({ T, session, onSelectProject }) {
       const [rows, settings, projs, metrics] = await Promise.all([
         supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token),
         supa("/rest/v1/settings?key=eq.dashboard_kpis&select=value", {}, session.access_token),
-        supa("/rest/v1/projects?select=id,code,name,bac,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
-        supa("/rest/v1/project_metrics?select=id,schedule_flag,budget_flag", {}, session.access_token),
+        supa("/rest/v1/projects?select=id,code,name,bac,df_recommended_amount,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
+        supa("/rest/v1/project_metrics?select=id,schedule_flag,budget_flag,cpi,spi", {}, session.access_token),
       ]);
       setData(rows[0]);
       setKpiOverrides(settings[0]?.value || {});
@@ -1297,6 +1432,12 @@ function CommandCenter({ T, session, onSelectProject }) {
           <EditableKCard Icon={Sparkles} index={4} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
       )}
+      {activeTab === "budgeting" && (
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
+          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · DF Recommended Budget</div>
+          <TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} />
+        </div>
+      )}
       {activeTab === "pipeline" && (
         <div style={{ display:"flex", gap:10 }}>
           <EditableKCard Icon={FileText} index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
@@ -1305,6 +1446,13 @@ function CommandCenter({ T, session, onSelectProject }) {
           <EditableKCard Icon={Shield} index={3} T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
           <EditableKCard Icon={Users} index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Management Team")} />
           <EditableKCard Icon={CheckCircle} index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved"       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
+        </div>
+      )}
+      {activeTab === "pipeline" && (
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
+          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:4 }}>Approvals Pipeline</div>
+          <div style={{ fontSize:11, color:T.dim, marginBottom:16 }}>Where every project sits, PDD submission through to Approved</div>
+          <PipelineFunnelChart T={T} d={d} />
         </div>
       )}
       {activeTab === "execution" && (
@@ -1317,6 +1465,13 @@ function CommandCenter({ T, session, onSelectProject }) {
           <EditableKCard Icon={PauseCircle} index={5} T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
         </div>
       )}
+      {activeTab === "execution" && (
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
+          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:4 }}>Cost vs Schedule Performance</div>
+          <div style={{ fontSize:11, color:T.dim, marginBottom:16 }}>Every project plotted by CPI and SPI — top-right quadrant is on track</div>
+          <CpiSpiScatterChart T={T} rows={dashProjects} />
+        </div>
+      )}
       {activeTab === "financials" && (
         <div style={{ display:"flex", gap:10 }}>
           <EditableKCard Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
@@ -1324,6 +1479,12 @@ function CommandCenter({ T, session, onSelectProject }) {
           <EditableKCard Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
           <EditableKCard Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
           <EditableKCard Icon={Clock} index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
+        </div>
+      )}
+      {activeTab === "financials" && (
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
+          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · Payments Pending</div>
+          <TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} />
         </div>
       )}
 
