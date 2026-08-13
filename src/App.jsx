@@ -3247,7 +3247,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                 const rowBg = i % 2 === 0 ? "transparent" : T.tableRow;
                 const stickyBg = i % 2 === 0 ? T.mainBg : T.card;
                 return (
-                  <tr key={r.code}
+                  <tr key={r.id}
                     onClick={() => onSelectProject && onSelectProject(r.id)}
                     onMouseEnter={() => setHoverId(r.id)}
                     onMouseLeave={() => setHoverId(null)}
@@ -3673,7 +3673,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
 function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search, onSearch, saving, onSave, onClose }) {
   const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
   const q = search.toLowerCase();
-  const filtered = q ? projects.filter(p => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) : projects;
+  const filtered = q ? projects.filter(p => p.name.toLowerCase().includes(q) || (p.code||"").toLowerCase().includes(q)) : projects;
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:460, maxHeight:"85vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
