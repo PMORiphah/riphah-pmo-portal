@@ -273,10 +273,10 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword }) 
             fontSize:13, fontWeight:700, color:"#fff",
           }}>{(session?.username||"P")[0].toUpperCase()}</div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ color:"#fff", fontSize:12.5, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+            <div style={{ color:"#fff", fontSize:12.5, fontWeight:600, lineHeight:1.3, wordBreak:"break-word" }}>
               {session?.full_name || "PMO"}
             </div>
-            <div style={{ display:"inline-flex", alignItems:"center", marginTop:2, fontSize:10, fontWeight:600, color:GOLD, background:GOLD+"1E", padding:"1.5px 8px", borderRadius:20, textTransform:"capitalize", letterSpacing:0.3 }}>
+            <div style={{ display:"inline-flex", alignItems:"center", marginTop:4, fontSize:10, fontWeight:600, color:GOLD, background:GOLD+"1E", padding:"1.5px 8px", borderRadius:20, letterSpacing:0.3, textTransform: session?.role === "pmo" ? "uppercase" : "capitalize" }}>
               {session?.role?.replace("_"," ") || "—"}
             </div>
           </div>
@@ -1472,12 +1472,6 @@ function CommandCenter({ T, session, onSelectProject }) {
           <EditableKCard Icon={Sparkles} index={4} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
       )}
-      {activeTab === "budgeting" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
-          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · DF Recommended Budget</div>
-          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} /></ChartErrorBoundary>
-        </div>
-      )}
       {activeTab === "pipeline" && (
         <div style={{ display:"flex", gap:10 }}>
           <EditableKCard Icon={FileText} index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
@@ -1537,6 +1531,13 @@ function CommandCenter({ T, session, onSelectProject }) {
 
       {/* ── BREAKDOWN: Planned vs Actual — Overview tab only ── */}
       {activeTab === "budgeting" && <BreakdownSection T={T} session={session} />}
+
+      {activeTab === "budgeting" && (
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
+          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · DF Recommended Budget</div>
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} /></ChartErrorBoundary>
+        </div>
+      )}
 
     </div>
   );
