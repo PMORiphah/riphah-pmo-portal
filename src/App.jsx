@@ -1535,8 +1535,8 @@ function CommandCenter({ T, session, onSelectProject }) {
         )}
       </div>
 
-      {/* ── BREAKDOWN: Planned vs Actual ── */}
-      <BreakdownSection T={T} session={session} />
+      {/* ── BREAKDOWN: Planned vs Actual — Overview tab only ── */}
+      {activeTab === "budgeting" && <BreakdownSection T={T} session={session} />}
 
     </div>
   );
