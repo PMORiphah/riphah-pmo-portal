@@ -181,7 +181,7 @@ const STAGE = {
   approved:  { label:"Approved",    light:"#2DD4BF", dark:"rgba(45,212,191,0.15)" },
   closed:    { label:"Closed",      light:"#6B7280", dark:"rgba(107,114,128,0.15)" },
 };
-const PRIORITY = { top_priority:"#F87171", first_priority:"#F59E0B", second_priority:"#60A5FA", third_priority:"#94A3B8", carry_forward:"#A855F7" };
+const PRIORITY = { top_priority:"#F87171", first_priority:"#F59E0B", second_priority:"#60A5FA", third_priority:"#2DD4BF", carry_forward:"#A855F7" };
 const PRIORITY_LABEL = { top_priority:"1st Priority", first_priority:"First Priority", second_priority:"2nd Priority", third_priority:"3rd Priority", carry_forward:"Carry Forward" };
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
