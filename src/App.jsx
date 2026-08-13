@@ -1223,6 +1223,21 @@ function CommandCenter({ T, session, onSelectProject }) {
   const [activeCard,   setActiveCard]   = useState(null);
   const [dashProjects, setDashProjects] = useState([]);
 
+  // Approved / Budgeted / Non-Budgeted figures for the Overview tab. Computed
+  // client-side from dashProjects since these aren't in the portfolio_dashboard
+  // view. Placed here (before any early return below) since it's a hook.
+  const overviewKpis = useMemo(() => {
+    const approved = dashProjects.filter(p => p.workflow_stage === "approved" || (p.amount_released||0) > 0);
+    const budgeted = dashProjects.filter(p => (p.df_recommended_amount||0) > 0);
+    const nonBudgeted = dashProjects.filter(p => !((p.df_recommended_amount||0) > 0));
+    const sum = (arr) => arr.reduce((s,p) => s + (p.df_recommended_amount||0), 0);
+    return {
+      approvedAmt: sum(approved), approvedCount: approved.length,
+      budgetedAmt: sum(budgeted), budgetedCount: budgeted.length,
+      nonBudgetedAmt: sum(nonBudgeted), nonBudgetedCount: nonBudgeted.length,
+    };
+  }, [dashProjects]);
+
   const canEdit = session?.role === "pmo";
 
   const load = useCallback(async () => {
@@ -1430,9 +1445,11 @@ function CommandCenter({ T, session, onSelectProject }) {
         <div style={{ display:"flex", gap:10 }}>
           <EditableKCard Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
           <EditableKCard Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
-          <EditableKCard Icon={TrendingDown} index={2} T={T} label="Budget Reduction"        canEdit={canEdit} kpiKey="budget_reduction" accent={bad}   onSave={saveKPI} {...kv("budget_reduction", fmtM(d.budget_reduction), "SU to DF variance")} />
-          <EditableKCard Icon={Layers} index={3} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
-          <EditableKCard Icon={Sparkles} index={4} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
+          <EditableKCard Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
+          <EditableKCard Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
       )}
       {activeTab === "pipeline" && (
