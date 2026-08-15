@@ -3327,6 +3327,140 @@ function PerformancePage({ T, session, onSelectProject }) {
 }
 
 // ─── PROJECT DETAIL ───────────────────────────────────────────────────────────
+// ─── PROJECT ATTACHMENTS ────────────────────────────────────────────────────
+// PMO: upload + view + delete. Assigned PM: view only, only their project.
+// Guest: view only, every project. Real enforcement lives in Postgres RLS
+// (both on project_attachments and storage.objects) — the role checks here
+// only control what buttons render, they aren't the actual security boundary.
+const fmtBytes = (n) => {
+  if (n == null) return "—";
+  if (n < 1024) return n + " B";
+  if (n < 1024*1024) return (n/1024).toFixed(1) + " KB";
+  return (n/(1024*1024)).toFixed(1) + " MB";
+};
+
+function ProjectAttachments({ T, session, projectId }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState(null);
+  const fileInputRef = useRef(null);
+  const canManage = session?.role === "pmo";
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await supa(`/rest/v1/project_attachments?project_id=eq.${projectId}&select=*&order=uploaded_at.desc`, {}, session.access_token);
+      setItems(rows);
+    } catch (e) { setErr(e.message); }
+    setLoading(false);
+  }, [projectId, session.access_token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    setUploading(true); setErr(null);
+    try {
+      for (const file of files) {
+        const path = `${projectId}/${crypto.randomUUID()}-${file.name}`;
+        const upRes = await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeURIComponent(path)}`, {
+          method: "POST",
+          headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token, "Content-Type": file.type || "application/octet-stream" },
+          body: file,
+        });
+        if (!upRes.ok) { const e = await upRes.json().catch(()=>({})); throw new Error(e.message || `Upload failed for ${file.name}`); }
+        await supa("/rest/v1/project_attachments", {
+          method: "POST", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({
+            project_id: projectId, file_name: file.name, file_path: path,
+            file_size: file.size, mime_type: file.type || null,
+            uploaded_by: session.user_id, uploaded_by_name: session.full_name || session.username || null,
+          }),
+        }, session.access_token);
+      }
+      await load();
+    } catch (e) { setErr(e.message); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleDownload = async (att) => {
+    try {
+      const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeURIComponent(att.file_path)}`, {
+        method: "POST", body: JSON.stringify({ expiresIn: 60 }),
+      }, session.access_token);
+      if (res.signedURL) window.open(SUPA_URL + res.signedURL, "_blank");
+      else throw new Error("Could not generate a download link");
+    } catch (e) { setErr(e.message); }
+  };
+
+  const handleDelete = async (att) => {
+    if (!window.confirm(`Delete "${att.file_name}"? This can't be undone.`)) return;
+    try {
+      await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeURIComponent(att.file_path)}`, {
+        method: "DELETE", headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token },
+      });
+      await supa(`/rest/v1/project_attachments?id=eq.${att.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }, session.access_token);
+      await load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  return (
+    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"20px 22px" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
+        <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>
+          Attachments {items.length > 0 && <span style={{opacity:.6}}>({items.length})</span>}
+        </div>
+        {canManage && (
+          <>
+            <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)} />
+            <button onClick={()=>fileInputRef.current?.click()} disabled={uploading}
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", background:uploading?T.muted:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:11.5, fontWeight:700, cursor:uploading?"default":"pointer", fontFamily:"Inter,sans-serif" }}>
+              <Upload size={12}/> {uploading ? "Uploading…" : "Upload"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {err && <div style={{ fontSize:11.5, color:"#F87171", marginBottom:10 }}>{err}</div>}
+
+      {loading ? (
+        <div style={{ fontSize:12, color:T.dim, padding:"8px 0" }}>Loading…</div>
+      ) : items.length === 0 ? (
+        <div style={{ fontSize:12, color:T.dim, padding:"8px 0" }}>
+          No attachments yet{canManage ? " — click Upload to add one." : "."}
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+          {items.map(att => (
+            <div key={att.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 4px", borderRadius:7, cursor:"pointer" }}
+              onMouseEnter={e=>e.currentTarget.style.background=T.card2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+              onClick={()=>handleDownload(att)}>
+              <FileText size={15} color={T.muted} style={{flexShrink:0}}/>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:12.5, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{att.file_name}</div>
+                <div style={{ fontSize:10.5, color:T.dim }}>
+                  {fmtBytes(att.file_size)} · {att.uploaded_by_name || "Unknown"} · {new Date(att.uploaded_at).toLocaleDateString()}
+                </div>
+              </div>
+              <Download size={13} color={T.dim} style={{flexShrink:0}}/>
+              {canManage && (
+                <button onClick={e=>{e.stopPropagation(); handleDelete(att);}}
+                  style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:4, flexShrink:0 }}
+                  title="Delete">
+                  <Trash2 size={13}/>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToDiscussion }) {
   const [evm,          setEvm]          = useState(null);
   const [details,      setDetails]      = useState(null);
@@ -3618,6 +3752,8 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             </div>
           )}
         </Card>
+
+        <ProjectAttachments T={T} session={session} projectId={projectId} />
 
       </div>
     </div>
