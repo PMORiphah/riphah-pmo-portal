@@ -3344,8 +3344,10 @@ function ProjectAttachments({ T, session, projectId }) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState(null);
+  const [globalBytes, setGlobalBytes] = useState(null);
   const fileInputRef = useRef(null);
   const canManage = session?.role === "pmo";
+  const STORAGE_CAP_BYTES = 1024 * 1024 * 1024; // Supabase Free tier: 1GB total, portal-wide
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3356,7 +3358,17 @@ function ProjectAttachments({ T, session, projectId }) {
     setLoading(false);
   }, [projectId, session.access_token]);
 
-  useEffect(() => { load(); }, [load]);
+  // PMO only: total storage used across ALL projects, not just this one —
+  // the 1GB cap is portal-wide, so a per-project figure would be misleading.
+  const loadGlobalTotal = useCallback(async () => {
+    if (session?.role !== "pmo") return;
+    try {
+      const rows = await supa("/rest/v1/project_attachments?select=file_size", {}, session.access_token);
+      setGlobalBytes(rows.reduce((s,r) => s + (r.file_size||0), 0));
+    } catch { /* non-critical — just don't show the total */ }
+  }, [session.access_token, session.role]);
+
+  useEffect(() => { load(); loadGlobalTotal(); }, [load, loadGlobalTotal]);
 
   const handleFiles = async (fileList) => {
     const files = Array.from(fileList || []);
@@ -3380,7 +3392,7 @@ function ProjectAttachments({ T, session, projectId }) {
           }),
         }, session.access_token);
       }
-      await load();
+      await load(); await loadGlobalTotal();
     } catch (e) { setErr(e.message); }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -3403,7 +3415,7 @@ function ProjectAttachments({ T, session, projectId }) {
         method: "DELETE", headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token },
       });
       await supa(`/rest/v1/project_attachments?id=eq.${att.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }, session.access_token);
-      await load();
+      await load(); await loadGlobalTotal();
     } catch (e) { setErr(e.message); }
   };
 
@@ -3423,6 +3435,27 @@ function ProjectAttachments({ T, session, projectId }) {
           </>
         )}
       </div>
+
+      {canManage && globalBytes !== null && (() => {
+        const pct = Math.min(100, (globalBytes / STORAGE_CAP_BYTES) * 100);
+        const barColor = pct >= 90 ? "#F87171" : pct >= 70 ? "#F59E0B" : "#2DD4BF";
+        return (
+          <div style={{ marginBottom:14 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:T.dim, marginBottom:5 }}>
+              <span>Portal storage (all projects)</span>
+              <span>{fmtBytes(globalBytes)} of 1.0 GB used ({pct.toFixed(1)}%)</span>
+            </div>
+            <div style={{ height:5, background:T.border, borderRadius:3, overflow:"hidden" }}>
+              <div style={{ width:pct+"%", height:"100%", background:barColor, borderRadius:3, transition:"width .4s" }}/>
+            </div>
+            {pct >= 80 && (
+              <div style={{ fontSize:10.5, color:"#F59E0B", marginTop:5 }}>
+                Approaching the Free-tier storage limit — consider upgrading to Supabase Pro before this fills up.
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {err && <div style={{ fontSize:11.5, color:"#F87171", marginBottom:10 }}>{err}</div>}
 
