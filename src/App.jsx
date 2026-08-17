@@ -368,7 +368,8 @@ function AnimatedNumber({ value }) {
 // visible behind the campus photo on the login screen — rendered as an actual
 // architectural shape rather than a decorative squiggle. Used sparingly, on
 // featured cards and the hero only.
-const ArchMotif = ({ color, size = 72, T }) => {
+const ArchMotif = () => null;   // retired: the arch signature is hero-only now
+const ArchMotifLegacy = ({ color, size = 72, T }) => {
   // Cashflow tab's cards are plain flat white with no decorative watermark —
   // light mode now matches that exactly, so this renders nothing there.
   if (T?.mode === "light") return null;
@@ -520,8 +521,9 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
                     <Icon size={14} color={clr} strokeWidth={2} />
                   </div>
                 )}
-                <div style={{ ...TYPE.label, color:T.muted, minWidth:0,
-                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={label}>{label}</div>
+                <div style={{ ...TYPE.label, color:T.muted, minWidth:0, lineHeight:1.3,
+                  display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical",
+                  overflow:"hidden" }} title={label}>{label}</div>
               </div>
               {canEdit && (
                 <button onClick={e => { e.stopPropagation(); startEdit(); }}
