@@ -3638,8 +3638,11 @@ function CampusPage({ T, session, onSelectProject }) {
     return filtered.filter(CARD_FILTERS[activeCard].fn);
   }, [filtered, activeCard]);
 
-  const th = {fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",whiteSpace:"nowrap",textAlign:"left",borderBottom:"1px solid "+T.border};
-  const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
+  const th = {...TYPE.label, color:T.muted, padding:"10px 12px 8px", whiteSpace:"nowrap",
+    textAlign:"left", background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
+    position:"sticky", top:0, zIndex:2};
+  const td = {...TYPE.bodySm, color:T.text, padding:"10px 12px",
+    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle", whiteSpace:"nowrap"};
   const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:R.sm,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
 
   if (loading) return <div style={{color:T.muted,fontSize:13,padding:20}}>Loading campuses…</div>;
@@ -3726,12 +3729,12 @@ function CampusPage({ T, session, onSelectProject }) {
             <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
               <tr>
                 <th style={{...th,width:44}}>#</th>
-                <th style={th}>Project ID</th>
+                <th style={{...th, minWidth:118}}>Project ID</th>
                 <th style={th}>Project Name</th>
                 <th style={th}>Campus / Site</th>
                 <th style={{...th,textAlign:"right"}}>DF Rec Budget</th>
                 <th style={{...th,textAlign:"right"}}>Approved Budget</th>
-                <th style={th}>Priority</th>
+                <th style={{...th, minWidth:104}}>Priority</th>
                 <th style={th}>Stage</th>
               </tr>
             </thead>
