@@ -3925,11 +3925,26 @@ function SettingsPage({ T, session }) {
 // the only way to embed it verbatim and keep it fully interactive. It also
 // keeps its CSS/JS in an isolated browsing context so nothing here can clash
 // with the portal's own styles or globals.
-function CashflowPage() {
+function CashflowPage({ T, dark }) {
+  const frame = useRef(null);
+  // The src was hardcoded to the production URL, so the preview build loaded
+  // production's copy of this file. A relative path keeps each deployment
+  // self-contained.
+  const src = `cashflow-dashboard.html?theme=${dark ? "dark" : "light"}`;
+
+  // Push theme changes to the frame so the tab flips with the rest of the app
+  // instead of only picking up the theme it was first loaded with.
+  useEffect(() => {
+    try {
+      frame.current?.contentWindow?.postMessage({ pmoTheme: dark ? "dark" : "light" }, "*");
+    } catch (_) {}
+  }, [dark]);
+
   return (
-    <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
+    <div style={{ flex:1, display:"flex", overflow:"hidden", background:T?.page }}>
       <iframe
-        src={PORTAL_LINK + "cashflow-dashboard.html"}
+        ref={frame}
+        src={src}
         title="Project Cashflows & Timelines"
         style={{ flex:1, border:"none", width:"100%", height:"100%" }}
       />
@@ -6987,7 +7002,7 @@ export default function App() {
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "perf" && <PerformancePage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "cashflow" && <CashflowPage />}
+            {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} />}
             {effectivePage === "upd"  && <UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} />}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} />}
