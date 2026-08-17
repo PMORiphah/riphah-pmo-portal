@@ -5926,6 +5926,16 @@ export default function App() {
     setPage(returnPage);
   }, [returnPage]);
 
+  // Sidebar nav must work instantly no matter what's open — a project detail
+  // view was silently swallowing every nav click until "Back to Projects"
+  // was clicked, because selectedProjectId took priority over the page state
+  // regardless of what page was requested. Clearing it here fixes that for
+  // every nav item at once, rather than only the current page's back button.
+  const navigateToPage = useCallback((pageId) => {
+    setSelectedProjectId(null);
+    setPage(pageId);
+  }, []);
+
   // Session restore + invite/recovery token detection
   useEffect(() => {
     // 1. Check for Supabase auth token in URL hash (invite or password recovery)
@@ -5975,7 +5985,7 @@ export default function App() {
 
   return (
     <div style={{ display:"flex", height:"100vh", fontFamily:"Inter,sans-serif", background:T.mainBg }}>
-      <Sidebar page={effectivePage} setPage={setPage} session={session} unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)} />
+      <Sidebar page={effectivePage} setPage={navigateToPage} session={session} unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)} />
       <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
         <TopBar T={T} title={pageInfo.title} subtitle={pageInfo.subtitle} dark={dark} setDark={setDark} onLogout={handleLogout} />
         {selectedProjectId ? (
