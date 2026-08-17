@@ -2484,6 +2484,7 @@ function downloadTemplate() {
 }
 
 function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
+  const [dragging, setDragging] = useState(false);
   const [step,     setStep]     = useState("pick"); // pick | preview | done
   const [parsed,   setParsed]   = useState([]);
   const [errors,   setErrors]   = useState([]);
@@ -2677,30 +2678,58 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
   if (step==="done") return (
     <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease"}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:R.lg,padding:"44px 40px",width:420,textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
-        <div style={{fontSize:40,marginBottom:16}}>✅</div>
-        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily,marginBottom:8}}>Import Complete</div>
-        <div style={{fontSize:14,color:T.muted,lineHeight:1.8,marginBottom:28}}>{parsed.length} projects loaded successfully.<br/>Dashboard KPIs updated automatically.</div>
-        <button onClick={onImported} style={{width:"100%",padding:"12px",background:NAVY,border:"none",borderRadius:R.md,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>View Projects</button>
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:R.xl,padding:"40px 36px",width:420,textAlign:"center",boxShadow:T.shadowLg,animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)"}}>
+        <div style={{width:52,height:52,borderRadius:"50%",margin:"0 auto 16px",
+          background:T.positive+T.badge,border:`1px solid ${T.positive}44`,
+          display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <CheckCircle2 size={24} color={T.positive} strokeWidth={2} />
+        </div>
+        <div style={{...TYPE.h2, color:T.text, marginBottom:8}}>Import complete</div>
+        <div style={{...TYPE.bodySm, color:T.muted, lineHeight:1.7, marginBottom:SP.xl}}>
+          {parsed.length} project{parsed.length === 1 ? "" : "s"} loaded. Dashboard figures have been updated.
+        </div>
+        <Button T={T} variant="primary" size="lg" full onClick={onImported}>View projects</Button>
       </div>
     </div>
   );
 
   return (
-    <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease",padding:20}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:R.lg,padding:"26px 28px",width:620,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily}}>{step==="pick"?"Import Projects from Excel":`Preview — ${fileName}`}</div>
-          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
-        </div>
+    <Modal T={T} onClose={onClose} width={660} icon={Upload}
+      title={step === "pick" ? "Import projects from Excel" : `Preview — ${fileName}`}
+      sub={step === "pick"
+        ? "Bulk-load or update the portfolio from a spreadsheet"
+        : "Check what will be created and updated before committing"}>
+      <div>
 
         {step==="pick" && (
           <>
-            <label style={{display:"block",border:`2px dashed ${T.border}`,borderRadius:R.md,padding:"44px 30px",textAlign:"center",cursor:"pointer",marginBottom:18}}>
-              <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
-              <div style={{fontSize:36,marginBottom:12}}>📂</div>
-              <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Click to select an Excel file</div>
-              <div style={{fontSize:12,color:T.muted}}>Accepts .xlsx · .xls · .csv — first row must be column headers</div>
+            <label
+              onDragOver={e => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={e => { e.preventDefault(); setDragging(false);
+                const f = e.dataTransfer?.files?.[0]; if (f) handleFile(f); }}
+              style={{
+                display:"block", textAlign:"center", cursor:"pointer", marginBottom:SP.lg,
+                border:`2px dashed ${dragging ? T.blueBright : T.borderStrong}`,
+                borderRadius:R.lg, padding:"38px 30px",
+                background: dragging ? `${T.blue}${T.wash}` : T.pageAlt,
+                transition:`border-color ${MOTION.fast}, background ${MOTION.fast}`,
+              }}>
+              <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}}
+                onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
+              <div style={{
+                width:46, height:46, borderRadius:R.lg, margin:"0 auto 12px",
+                background:T.blue+T.badge, border:`1px solid ${T.blue}33`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+              }}>
+                <Upload size={20} color={T.blueBright} strokeWidth={1.8} />
+              </div>
+              <div style={{...TYPE.h3, color:T.text, marginBottom:5}}>
+                {dragging ? "Drop the file to continue" : "Drop a spreadsheet here, or click to browse"}
+              </div>
+              <div style={{...TYPE.caption, color:T.muted}}>
+                Accepts .xlsx · .xls · .csv — the first row must be column headers
+              </div>
             </label>
             <div style={{display:"flex",gap:10}}>
               <button onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
@@ -2752,16 +2781,17 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             {/* Progress */}
             {progress&&<div style={{background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.3)",borderRadius:R.md,padding:"9px 14px",marginBottom:12,fontSize:13,color:EMERALD}}>⏳ {progress}</div>}
 
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={onClose} disabled={importing} style={{flex:1,padding:"11px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
-              <button onClick={executeImport} disabled={importing||parsed.length===0} style={{flex:2,padding:"11px",background:importing||parsed.length===0?"#555":NAVY,border:"none",borderRadius:R.md,color:"#fff",cursor:importing?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:TYPE.body.fontFamily}}>
-                {importing?"Importing…":`Confirm — Import ${parsed.length} Projects`}
-              </button>
+            <div style={{display:"flex", gap:SP.sm, justifyContent:"flex-end"}}>
+              <Button T={T} variant="ghost" onClick={onClose} disabled={importing}>Cancel</Button>
+              <Button T={T} variant="primary" onClick={executeImport}
+                loading={importing} disabled={parsed.length === 0}>
+                {`Import ${parsed.length} project${parsed.length === 1 ? "" : "s"}`}
+              </Button>
             </div>
           </>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -3617,32 +3647,40 @@ function CampusPage({ T, session, onSelectProject }) {
 
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",padding:"16px 20px 24px"}}>
+      <div className="pmo-scroll" style={{flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",
+        padding:`${SP.lg}px ${SP.xl}px ${SP.xxl}px`, backgroundImage:T.ambient}}>
 
-      {/* Campus selector */}
-      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
-        <select value={sel} onChange={e=>setSel(e.target.value)} style={{...ctl,cursor:"pointer",minWidth:230,...(sel?{border:"1px solid "+GOLD,color:GOLD}:{})}}>
-          <option value="">All Campuses ({rows.length})</option>
-          {campusOptions.map(name => (
-            <option key={name} value={name}>{name} ({countByCampus[name]||0})</option>
-          ))}
-        </select>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Quick search…" style={{...ctl,flex:"0 1 400px",minWidth:180}}/>
-        <div style={{flex:1,display:"flex",gap:26,alignItems:"baseline",justifyContent:"flex-end",flexWrap:"wrap",minWidth:0}}>
-          {[
-            {label:"Projects",  value:String(filtered.length), color:T.text},
-            {label:"DF Rec",    value:fmtM(k.dfBudget),        color:T.text},
-            {label:"Approved",  value:fmtM(k.budget),          color:GOLD},
-            {label:"Released",  value:fmtM(k.released),        color:EMERALD},
-            {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:DATA.info},
-          ].map(s => (
-            <div key={s.label} style={{textAlign:"right",whiteSpace:"nowrap"}}>
-              <div style={{fontSize:9,color:T.muted,letterSpacing:1.2,textTransform:"uppercase",marginBottom:2}}>{s.label}</div>
-              <div style={{fontSize:14,fontWeight:700,color:s.color,fontVariantNumeric:"tabular-nums"}}>{s.value}</div>
-            </div>
-          ))}
+      {/* Campus selector + slice summary. Same pattern as Projects: the figures
+          restate the portfolio for whichever campus is selected. */}
+      <Surface T={T} pad={SP.md} style={{marginBottom:SP.lg, flexShrink:0}}>
+        <div style={{display:"flex", gap:SP.sm, alignItems:"center", flexWrap:"wrap"}}>
+          <Select T={T} value={sel} active={!!sel} onChange={e=>setSel(e.target.value)}
+            style={{minWidth:230}}>
+            <option value="">All campuses ({rows.length})</option>
+            {campusOptions.map(name => (
+              <option key={name} value={name}>{name} ({countByCampus[name]||0})</option>
+            ))}
+          </Select>
+          <Input T={T} icon={Search} value={q} onChange={e=>setQ(e.target.value)}
+            onClear={()=>setQ("")} placeholder="Search projects…"
+            style={{flex:"0 1 340px", minWidth:180}} />
+          <div style={{flex:1, display:"flex", gap:SP.xl, alignItems:"baseline",
+            justifyContent:"flex-end", flexWrap:"wrap", minWidth:0}}>
+            {[
+              {label:"Projects",  value:String(filtered.length),     color:T.text},
+              {label:"DF Rec",    value:fmtM(k.dfBudget),            color:T.textSoft},
+              {label:"Approved",  value:fmtM(k.budget),              color:BRAND.gold},
+              {label:"Released",  value:fmtM(k.released),            color:T.positive},
+              {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:T.info},
+            ].map(x => (
+              <div key={x.label} style={{textAlign:"right", whiteSpace:"nowrap"}}>
+                <div style={{...TYPE.label, color:T.muted, marginBottom:3}}>{x.label}</div>
+                <div style={{...TYPE.metricSm, fontSize:15, color:x.color}}>{x.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </Surface>
 
       {/* Approvals */}
       <div style={{marginBottom:16}}>
@@ -4077,9 +4115,13 @@ function PerformancePage({ T, session, onSelectProject }) {
     <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
 
       {/* ── Portfolio EVM strip ── */}
+      {/* Fixed-width cells with dividers broke below ~1200px; a wrapping grid
+          keeps every figure legible at every width. */}
       <div style={{
-        padding:"14px 24px", borderBottom:`1px solid ${T.border}`,
-        background:T.headerBg, display:"flex", gap:0, flexShrink:0, flexWrap:"wrap",
+        padding:`${SP.md}px ${SP.xl}px`, borderBottom:`1px solid ${T.border}`,
+        background:T.surface, flexShrink:0,
+        display:"grid", gap:SP.md,
+        gridTemplateColumns:"repeat(auto-fit, minmax(118px, 1fr))",
       }}>
         {[
           { label:"CPI",           value: portCPI ? fmtR(portCPI) : "—",  color: portCPI ? cpiClr(portCPI) : T.dim },
@@ -4090,16 +4132,13 @@ function PerformancePage({ T, session, onSelectProject }) {
           { label:"Cost Variance", value: fmtMv(portCV),   color: varClr(portCV) },
           { label:"Sched Variance",value: fmtMv(portSV),   color: varClr(portSV) },
         ].map(({ label, value, color }, i) => (
-          <div key={label} style={{
-            textAlign:"center", padding:"0 20px",
-            borderRight: i < 6 ? `1px solid ${T.border}` : "none",
-          }}>
-            <div style={{ fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1.5, marginBottom:3 }}>{label}</div>
-            <div style={{ fontSize:22, fontWeight:700, color, fontFamily:TYPE.display.fontFamily, lineHeight:1 }}>{value}</div>
+          <div key={label}>
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:4 }}>{label}</div>
+            <div style={{ ...TYPE.metricSm, fontSize:19, color, whiteSpace:"nowrap" }}>{value}</div>
           </div>
         ))}
-        <div style={{ marginLeft:"auto", alignSelf:"center", fontSize:11, color:T.dim, paddingLeft:16 }}>
-          {executing.length} projects actively executing
+        <div style={{ alignSelf:"center", ...TYPE.caption, color:T.muted }}>
+          {executing.length} project{executing.length === 1 ? "" : "s"} actively executing
         </div>
       </div>
 
