@@ -6736,7 +6736,7 @@ function Login({ T, dark, onLogin }) {
         <div style={{
           width:"100%", maxWidth:400,
           background:"rgba(8,16,36,0.72)", backdropFilter:"blur(30px)", WebkitBackdropFilter:"blur(30px)",
-          border:"1px solid rgba(255,255,255,0.14)", borderRadius:R.pill,
+          border:"1px solid rgba(255,255,255,0.14)", borderRadius:R.xl,
           padding:"38px 34px",
           boxShadow:"0 32px 90px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.05)",
           position:"relative",
