@@ -84,7 +84,7 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
         <XAxis dataKey="label" tick={axisStyle(T)} tickLine={false}
           axisLine={{ stroke:T.border }} interval={isMobile ? 1 : 0} dy={4} />
         <YAxis tick={axisStyle(T)} tickLine={false} axisLine={false}
-          tickFormatter={fmt} width={isMobile ? 42 : 54} />
+          tickFormatter={fmt} width={isMobile ? 52 : 60} />
 
         <Tooltip
           cursor={{ stroke:T.borderStrong, strokeWidth:1, strokeDasharray:"3 3" }}
