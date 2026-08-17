@@ -3506,6 +3506,12 @@ function PerformancePage({ T, session, onSelectProject }) {
 // Guest: view only, every project. Real enforcement lives in Postgres RLS
 // (both on project_attachments and storage.objects) — the role checks here
 // only control what buttons render, they aren't the actual security boundary.
+// Supabase Storage paths are folder/filename — encodeURIComponent on the
+// whole string turns the separating "/" into "%2F", which the sign endpoint
+// rejects outright ("requested path is invalid"). Encode each segment on
+// its own instead, so slashes stay real path separators.
+const encodeStoragePath = (path) => path.split("/").map(encodeURIComponent).join("/");
+
 const fmtBytes = (n) => {
   if (n == null) return "—";
   if (n < 1024) return n + " B";
@@ -3551,7 +3557,7 @@ function ProjectAttachments({ T, session, projectId }) {
     try {
       for (const file of files) {
         const path = `${projectId}/${crypto.randomUUID()}-${file.name}`;
-        const upRes = await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeURIComponent(path)}`, {
+        const upRes = await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeStoragePath(path)}`, {
           method: "POST",
           headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token, "Content-Type": file.type || "application/octet-stream" },
           body: file,
@@ -3574,7 +3580,7 @@ function ProjectAttachments({ T, session, projectId }) {
 
   const handleDownload = async (att) => {
     try {
-      const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeURIComponent(att.file_path)}`, {
+      const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeStoragePath(att.file_path)}`, {
         method: "POST", body: JSON.stringify({ expiresIn: 60 }),
       }, session.access_token);
       if (res.signedURL) window.open(SUPA_URL + res.signedURL, "_blank");
@@ -3585,7 +3591,7 @@ function ProjectAttachments({ T, session, projectId }) {
   const handleDelete = async (att) => {
     if (!window.confirm(`Delete "${att.file_name}"? This can't be undone.`)) return;
     try {
-      await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeURIComponent(att.file_path)}`, {
+      await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeStoragePath(att.file_path)}`, {
         method: "DELETE", headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token },
       });
       await supa(`/rest/v1/project_attachments?id=eq.${att.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }, session.access_token);
