@@ -383,7 +383,7 @@ const ArchMotif = ({ color, size = 72, T }) => {
   );
 };
 
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon }) {
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false }) {
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
   const [eSub,    setESub]    = useState("");
@@ -395,7 +395,9 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   const cancel    = () => setEditing(false);
   const save      = async () => {
     setSaving(true);
-    await onSave(kpiKey, { value: eVal, sub: eSub });
+    // lockSub cards (live counts, not editable labels) never persist a sub
+    // override — only the number can be manually corrected.
+    await onSave(kpiKey, { value: eVal, sub: lockSub ? "" : eSub });
     setSaving(false); setEditing(false);
   };
 
@@ -427,10 +429,11 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
           <div>
             <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6, fontWeight:600, opacity:0.6 }}>{label}</div>
             <input value={eVal} onChange={e=>setEVal(e.target.value)} style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+GOLD, borderRadius:6, padding:"5px 8px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:5 }} />
-            <input value={eSub} onChange={e=>setESub(e.target.value)} placeholder="Sub-label" style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"4px 8px", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:8 }} />
+            {!lockSub && <input value={eSub} onChange={e=>setESub(e.target.value)} placeholder="Sub-label" style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"4px 8px", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:8 }} />}
+            {lockSub && <div style={{ fontSize:10, color:T.dim, marginBottom:8, fontStyle:"italic" }}>Subtitle always stays live — only the number above can be corrected.</div>}
             <div style={{ display:"flex", gap:5 }}>
               <button onClick={save} disabled={saving} style={{ flex:1, padding:"4px 0", background:NAVY, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer" }}>{saving?"…":"Save"}</button>
-              <button onClick={async ()=>{ setSaving(true); await onSave(kpiKey,{value:"",sub:eSub}); setSaving(false); setEditing(false); }} style={{ padding:"4px 7px", background:"none", border:"1px solid rgba(45,212,191,0.4)", borderRadius:5, color:"#2DD4BF", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }} title="Reset value to live — keeps your custom sub-label">↺ Live</button>
+              <button onClick={async ()=>{ setSaving(true); await onSave(kpiKey,{value:"",sub: lockSub ? "" : eSub}); setSaving(false); setEditing(false); }} style={{ padding:"4px 7px", background:"none", border:"1px solid rgba(45,212,191,0.4)", borderRadius:5, color:"#2DD4BF", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }} title={lockSub ? "Reset to fully live — number and subtitle both recompute" : "Reset value to live — keeps your custom sub-label"}>↺ Live</button>
               <button onClick={cancel} style={{ padding:"4px 7px", background:"none", border:"1px solid "+T.border, borderRadius:5, color:T.muted, fontSize:11, cursor:"pointer" }}>✕</button>
             </div>
           </div>
@@ -1576,9 +1579,9 @@ function CommandCenter({ T, session, onSelectProject }) {
         <div style={{ display:"flex", gap:10 }}>
           <EditableKCard Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
           <EditableKCard Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
-          <EditableKCard Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} value={fmtM(overviewKpis.approvedAmt)} sub={overviewKpis.approvedCount+" of "+d.total_projects+" projects"} />
-          <EditableKCard Icon={Wallet} index={3} T={T} label="Budgeted Projects" onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} value={fmtM(overviewKpis.budgetedAmt)} sub={overviewKpis.budgetedCount+" of "+d.total_projects+" projects"} />
-          <EditableKCard Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} value={fmtM(overviewKpis.nonBudgetedAmt)} sub={overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects"} />
+          <EditableKCard Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
           <EditableKCard Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} onCardClick={() => toggleCard("total_projects")} isSelected={activeCard==="total_projects"} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
