@@ -2325,6 +2325,10 @@ function ProjectsPage({ T, session, onSelectProject }) {
     if (fPri)   r = r.filter(p=>p.priority === fPri);
     if (fStrat) { const q=fStrat.toLowerCase(); r=r.filter(p=>(p.strategic_priority||"").toLowerCase().includes(q)); }
     if (fStage) r = r.filter(p=>p.workflow_stage === fStage);
+    // Real project codes (IT./RU.) surface first; the 102 blank ("-") ones
+    // follow. A plain code.asc DB sort put them last, since '-' sorts before
+    // letters alphabetically — this reorders without touching that query.
+    r = [...r].sort((a,b) => (b.code && b.code !== "-" ? 1 : 0) - (a.code && a.code !== "-" ? 1 : 0));
     return r;
   }, [rows,search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage]);
 
