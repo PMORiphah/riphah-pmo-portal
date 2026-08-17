@@ -108,7 +108,14 @@ const DARK = {
   surface:       "#0E1A2E",
   surfaceRaised: "#132339",
   surfaceHi:     "#1A2C46",
-  sidebar:       "#0A1425",
+  sidebar:       "linear-gradient(180deg, #14395C 0%, #0D2440 52%, #081A2E 100%)",
+  sidebarFg:     "rgba(255,255,255,0.66)",
+  sidebarFgSoft: "rgba(255,255,255,0.5)",
+  sidebarFgOn:   "#FFFFFF",
+  sidebarBorder: "rgba(255,255,255,0.08)",
+  sidebarHover:  "rgba(255,255,255,0.055)",
+  sidebarName:   "#FFFFFF",
+  sidebarLogoFilter:"brightness(0) invert(1)",
   header:        "rgba(10,20,37,0.82)",
 
   // Hairlines — translucent so they sit on any surface
@@ -161,7 +168,16 @@ const LIGHT = {
   surface:       "#FFFFFF",
   surfaceRaised: "#FFFFFF",
   surfaceHi:     "#FFFFFF",
-  sidebar:       "#0E2743",
+  // Light mode gets a genuinely light sidebar — a navy rail beside cool-white
+  // content reads as an un-themed leftover rather than a decision (§33).
+  sidebar:       "linear-gradient(180deg, #FFFFFF 0%, #F7FAFD 100%)",
+  sidebarFg:     "#4B6076",
+  sidebarFgSoft: "#7B8EA3",
+  sidebarFgOn:   "#0C1E33",
+  sidebarBorder: "#E3EAF3",
+  sidebarHover:  "rgba(44,123,196,0.07)",
+  sidebarName:   "#0C1E33",
+  sidebarLogoFilter:"none",
   header:        "rgba(255,255,255,0.86)",
 
   border:        "#E3EAF3",
