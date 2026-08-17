@@ -4346,6 +4346,137 @@ function ProjectAttachments({ T, session, projectId }) {
   );
 }
 
+// ─── PROJECT TIMELINE ────────────────────────────────────────────────────────
+// §15 listed ten milestones through PR, PO, Execution and Completion. The
+// schema records none of those, so this builds the part that is real: the
+// approval journey, derived from the project's current workflow_stage and the
+// dates actually stored (start, budget release, end, actuals). Steps beyond
+// approval are omitted rather than drawn as permanently-pending placeholders,
+// which would make every project look stalled.
+function ProjectTimeline({ T, p, evm, isCompact }) {
+  const stageIdx = STAGE_ORDER.indexOf(p.workflow_stage);
+  const fmtDate = (d) => d
+    ? new Date(d).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" })
+    : null;
+
+  const today = new Date();
+  const overdue = p.end_date && new Date(p.end_date) < today && p.workflow_stage !== "closed";
+
+  const steps = STAGE_ORDER.map((key, i) => {
+    const meta = STAGE_META[key];
+    const done    = stageIdx > i;
+    const current = stageIdx === i;
+    // Only two of these stages have a date the schema can vouch for.
+    const date = key === "approved" ? fmtDate(p.budget_release_date) : null;
+    return {
+      key, label:meta.label, color:meta.color, done, current, date,
+      state: done ? "Complete" : current ? "In progress" : "Pending",
+    };
+  });
+
+  // Execution dates, shown separately because they are project schedule rather
+  // than approval workflow.
+  const schedule = [
+    { label:"Planned start",  value:fmtDate(p.start_date) },
+    { label:"Planned finish", value:fmtDate(p.end_date), warn:overdue },
+    { label:"Actual start",   value:fmtDate(p.actual_start_date) },
+    { label:"Actual finish",  value:fmtDate(p.actual_end_date) },
+  ];
+  const hasSchedule = schedule.some(x => x.value);
+
+  return (
+    <Stack gap={SP.lg}>
+      <Surface T={T} pad={SP.lg}>
+        <SectionTitle T={T} icon={ClipboardList} title="Approval journey"
+          sub="Where this project has reached in the PDD-to-approval workflow" />
+
+        <div style={{ position:"relative", paddingLeft:isCompact ? 0 : 4 }}>
+          {steps.map((st, i) => {
+            const last = i === steps.length - 1;
+            const tone = st.done ? T.positive : st.current ? st.color : T.dim;
+            return (
+              <div key={st.key} style={{ display:"flex", gap:SP.md, position:"relative" }}>
+                {/* Rail */}
+                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0 }}>
+                  <div style={{
+                    width:22, height:22, borderRadius:"50%", flexShrink:0,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    background: st.done ? T.positive + T.badge : st.current ? st.color + T.badge : "transparent",
+                    border:`2px solid ${st.done || st.current ? tone : T.border}`,
+                    boxShadow: st.current ? `0 0 0 4px ${st.color}1F` : "none",
+                  }}>
+                    {st.done
+                      ? <CheckCircle2 size={12} color={T.positive} strokeWidth={2.5} />
+                      : st.current
+                        ? <span className="pmo-pulse" style={{ width:7, height:7, borderRadius:"50%",
+                            background:st.color, color:st.color }} />
+                        : null}
+                  </div>
+                  {!last && (
+                    <div style={{ width:2, flex:1, minHeight:34,
+                      background: st.done ? T.positive + "66" : T.border }} />
+                  )}
+                </div>
+                {/* Content */}
+                <div style={{ paddingBottom: last ? 0 : SP.lg, minWidth:0, flex:1 }}>
+                  <div style={{ display:"flex", alignItems:"baseline", gap:SP.sm, flexWrap:"wrap" }}>
+                    <span style={{ ...TYPE.h3, color: st.done || st.current ? T.text : T.muted }}>{st.label}</span>
+                    <Badge T={T} size="sm"
+                      color={st.done ? T.positive : st.current ? st.color : T.neutral}>{st.state}</Badge>
+                    {st.date && <span style={{ ...TYPE.caption, color:T.muted }}>{st.date}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display:"flex", alignItems:"flex-start", gap:9, marginTop:SP.md,
+          padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+          background:T.pageAlt, border:`1px solid ${T.border}` }}>
+          <AlertCircle size={13} color={T.muted} style={{ marginTop:1, flexShrink:0 }} />
+          <span style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.55 }}>
+            Procurement steps (PR, PO) and execution milestones aren't recorded in the
+            portal yet, so the journey ends at approval.
+          </span>
+        </div>
+      </Surface>
+
+      <Surface T={T} pad={SP.lg}>
+        <SectionTitle T={T} icon={Clock} title="Schedule"
+          sub="Planned against actual dates for delivery" />
+        {hasSchedule ? (
+          <div style={{ display:"grid",
+            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(4, 1fr)", gap:SP.md }}>
+            {schedule.map(x => (
+              <div key={x.label}>
+                <div style={{ ...TYPE.label, color:T.muted, marginBottom:4 }}>{x.label}</div>
+                <div style={{ ...TYPE.h3, color: x.value ? (x.warn ? T.danger : T.text) : T.dim }}>
+                  {x.value || "Not set"}
+                </div>
+                {x.warn && <div style={{ ...TYPE.caption, color:T.danger, marginTop:2 }}>Past due</div>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState T={T} icon={Clock} compact
+            title="No schedule recorded"
+            message="Planned start and finish dates haven't been entered for this project yet." />
+        )}
+        {evm && +evm.pct_complete > 0 && (
+          <div style={{ marginTop:SP.lg }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+              <span style={{ ...TYPE.label, color:T.muted }}>Progress</span>
+              <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.text }}>{fmtP(evm.pct_complete)}</span>
+            </div>
+            <Progress T={T} value={+evm.pct_complete} max={100} color={T.info} height={8} />
+          </div>
+        )}
+      </Surface>
+    </Stack>
+  );
+}
+
 function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToDiscussion }) {
   const [evm,          setEvm]          = useState(null);
   const [details,      setDetails]      = useState(null);
@@ -4357,6 +4488,8 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const [assigningPM,  setAssigningPM]  = useState(false);
   const [selectedPM,   setSelectedPM]   = useState("");
   const [savingPM,     setSavingPM]     = useState(false);
+  const [tab,          setTab]          = useState("overview");
+  const vpD = useViewport();
 
   const loadDetail = async () => {
     setLoading(true); setErr(null);
@@ -4451,55 +4584,130 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const budgetColor    = evm.budget_flag   === "within"  ? "#2DD4BF"    : evm.budget_flag   === "over"    ? "#F87171" : T.dim;
 
   return (
-    <div style={{flex:1, overflow:"auto"}}>
+    <div className="pmo-scroll" style={{ flex:1, overflow:"auto", background:T.page }}>
 
-      {/* ── Header ── */}
-      <div style={{padding:"14px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg}}>
-        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:5, background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:12, marginBottom:10, padding:0}}>
-          <ChevronRight size={13} style={{transform:"rotate(180deg)"}} />
+      {/* ── COMMAND-CENTRE HEADER ── */}
+      {/* Everything an officer needs to identify and situate the project,
+          without scrolling: who it is, where it sits, and what it's worth. */}
+      <div style={{
+        background:T.hero, padding: vpD.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.lg}px ${SP.xxl}px`,
+        position:"relative", overflow:"hidden", flexShrink:0,
+      }}>
+        <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
+          <div style={{ position:"absolute", top:"-60%", right:"4%", width:320, height:320, borderRadius:"50%",
+            background:`radial-gradient(circle, ${BRAND.blueBright}22 0%, transparent 68%)` }} />
+        </div>
+
+        <button onClick={onBack} className="pmo-focusable" style={{
+          display:"inline-flex", alignItems:"center", gap:5, background:"none", border:"none",
+          cursor:"pointer", color:"rgba(255,255,255,0.62)", ...TYPE.caption,
+          marginBottom:SP.md, padding:0, position:"relative",
+        }}>
+          <ChevronRight size={13} style={{ transform:"rotate(180deg)" }} />
           Back to {returnLabel || "Projects"}
         </button>
-        <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16}}>
-          <div>
-            <div style={{fontSize:11, color:T.dim, fontFamily:"monospace", marginBottom:3}}>{evm.code}</div>
-            <div style={{fontSize:21, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, lineHeight:1.2}}>{evm.name}</div>
+
+        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
+          gap:SP.lg, flexWrap:"wrap", position:"relative" }}>
+          <div style={{ minWidth:0, flex:"1 1 320px" }}>
+            <div style={{ ...TYPE.mono, color:"rgba(255,255,255,0.55)", marginBottom:5 }}>
+              {evm.code || "No project ID"}
+            </div>
+            <h2 style={{ ...TYPE.display, fontSize: vpD.isCompact ? 21 : 27, color:"#fff",
+              margin:0, lineHeight:1.2 }}>{evm.name}</h2>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:SP.md, flexWrap:"wrap" }}>
+              <Badge T={T} color={STAGE_META[evm.workflow_stage]?.color || T.neutral}>
+                {STAGE_META[evm.workflow_stage]?.label || evm.workflow_stage || "—"}
+              </Badge>
+              {evm.priority && (
+                <Badge T={T} color={PRIORITY_META[evm.priority]?.color || T.neutral} dot>
+                  {PRIORITY_META[evm.priority]?.label || evm.priority}
+                </Badge>
+              )}
+              {evm.is_carry_forward && <Badge T={T} color={T.violet}>Carry forward</Badge>}
+              {details.fiscal_year && (
+                <span style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)" }}>{details.fiscal_year}</span>
+              )}
+              {details.segments?.name && (
+                <span style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)" }}>· {details.segments.name}</span>
+              )}
+            </div>
           </div>
-          <div style={{display:"flex", gap:8, alignItems:"center", flexShrink:0, flexWrap:"wrap", justifyContent:"flex-end"}}>
+
+          <div style={{ display:"flex", gap:SP.xl, alignItems:"flex-start", flexWrap:"wrap" }}>
+            <div>
+              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.6)", marginBottom:4 }}>DF Recommended</div>
+              <div style={{ ...TYPE.metricSm, color:"#fff" }}>{fmtM(details.df_recommended_amount)}</div>
+            </div>
+            <div>
+              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.6)", marginBottom:4 }}>Approved budget</div>
+              <div style={{ ...TYPE.metricSm, color: +evm.bac > 0 ? BRAND.gold : "rgba(255,255,255,0.4)" }}>
+                {fmtM(evm.bac)}
+              </div>
+            </div>
             {onGoToDiscussion && (
-              <button onClick={()=>onGoToDiscussion(projectId)} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 13px",borderRadius:20,background:commentCount>0?"rgba(248,113,113,0.1)":T.card2,border:`1px solid ${commentCount>0?"rgba(248,113,113,0.4)":T.border}`,color:commentCount>0?"#F87171":T.muted,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:TYPE.body.fontFamily}}>
-                💬 {commentCount>0?`Discussion (${commentCount})`:"Start Discussion"}
-              </button>
+              <Button T={T} variant={commentCount > 0 ? "accent" : "ghost"}
+                tone={commentCount > 0 ? T.warning : undefined}
+                icon={MessageSquare} onClick={() => onGoToDiscussion(projectId)}
+                style={commentCount > 0 ? undefined : { color:"rgba(255,255,255,0.75)", borderColor:"rgba(255,255,255,0.2)" }}>
+                {commentCount > 0 ? `Discussion (${commentCount})` : "Start discussion"}
+              </Button>
             )}
-            {evm.is_carry_forward && <span style={{fontSize:9, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"3px 8px", borderRadius:6}}>CARRY FORWARD</span>}
-            <span style={{fontSize:12, fontWeight:600, color:stc, background:`${stc}20`, padding:"4px 12px", borderRadius:20}}>{stLabel}</span>
-            {evm.priority && <span style={{fontSize:12, color:T.muted}}>{PRIORITY_LABEL[evm.priority]||evm.priority}</span>}
           </div>
         </div>
       </div>
 
-      {/* ── KPI strip ── */}
-      <div style={{padding:"12px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:0, flexWrap:"wrap"}}>
+      {/* ── PERFORMANCE STRIP ── */}
+      <div style={{
+        padding: vpD.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.md}px ${SP.xxl}px`,
+        borderBottom:`1px solid ${T.border}`, background:T.surface,
+        display:"grid", gap:SP.md,
+        gridTemplateColumns: vpD.isCompact ? "repeat(2, 1fr)" : "repeat(auto-fit, minmax(112px, 1fr))",
+      }}>
         {[
-          {label:"BAC",       value:fmtM(evm.bac),            c:GOLD},
-          {label:"Released",  value:fmtM(evm.amount_released), c:T.text},
-          {label:"Progress",  value:fmtP(evm.pct_complete),   c:T.text},
-          {label:"CPI",       value:fmtR(evm.cpi),            c:cpiClr(evm.cpi)},
-          {label:"SPI",       value:fmtR(evm.spi),            c:cpiClr(evm.spi)},
-          {label:"EAC",       value:fmtM(evm.eac),            c:T.text},
-          {label:"Schedule",  value:scheduleStatus,            c:scheduleColor},
-          {label:"Budget",    value:budgetStatus,              c:budgetColor},
-        ].map(({label,value,c},i) => (
-          <div key={label} style={{textAlign:"center", padding:"0 16px", borderRight:i<7?`1px solid ${T.border}`:"none"}}>
-            <div style={{fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1.5, marginBottom:3}}>{label}</div>
-            <div style={{fontSize:18, fontWeight:700, color:c, fontFamily:TYPE.display.fontFamily, lineHeight:1, whiteSpace:"nowrap"}}>{value}</div>
+          { label:"Released",  value:fmtM(evm.amount_released), c:T.text },
+          { label:"Progress",  value:fmtP(evm.pct_complete),    c:T.text },
+          { label:"CPI",       value:fmtR(evm.cpi),             c:cpiClr(evm.cpi) },
+          { label:"SPI",       value:fmtR(evm.spi),             c:cpiClr(evm.spi) },
+          { label:"EAC",       value:fmtM(evm.eac),             c:T.text },
+          { label:"Schedule",  value:scheduleStatus,            c:scheduleColor },
+          { label:"Budget",    value:budgetStatus,              c:budgetColor },
+        ].map(({ label, value, c }) => (
+          <div key={label}>
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:4 }}>{label}</div>
+            <div style={{ ...TYPE.metricSm, fontSize:17, color:c, whiteSpace:"nowrap" }}>{value}</div>
           </div>
         ))}
       </div>
 
+      {/* ── SECTION TABS ── */}
+      <div style={{ padding: vpD.isCompact ? `0 ${SP.lg}px` : `0 ${SP.xxl}px`, background:T.surface }}>
+        <TabsUI T={T} active={tab} onChange={setTab} isMobile={vpD.isCompact}
+          tabs={[
+            { id:"overview",   label:"Overview",   Icon:FileText },
+            { id:"financials", label:"Financials", Icon:Wallet },
+            { id:"timeline",   label:"Timeline",   Icon:Clock },
+            { id:"documents",  label:"Documents",  Icon:ClipboardList },
+          ]} />
+      </div>
+
+      {tab === "timeline" && (
+        <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
+          <ProjectTimeline T={T} p={details} evm={evm} isCompact={vpD.isCompact} />
+        </div>
+      )}
+
       {/* ── Content grid ── */}
-      <div style={{padding:"20px 24px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:16}}>
+      {/* Overview and Financials share the grid; each card opts into a tab so
+          the same markup serves both without duplication. */}
+      <div style={{
+        padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px`,
+        display: tab === "timeline" ? "none" : "grid",
+        gridTemplateColumns: vpD.isCompact ? "1fr" : "1fr 1fr", gap:SP.lg, alignItems:"start",
+      }}>
 
         {/* Overview */}
+        <div style={{ display: tab === "overview" ? "block" : "none" }}>
         <Card title="Project Overview">
           <Row label="Sector"       value={details.sectors?.name    || "—"} />
           <Row label="Region"       value={details.regions?.name    || "—"} />
@@ -4530,8 +4738,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             </div>
           )}
         </Card>
+        </div>
 
         {/* Financial */}
+        <div style={{ display: tab === "financials" ? "block" : "none" }}>
         <Card title="Financial Summary (PKR)">
           <Row label="SU Requested"     value={fmtM(details.su_requested_amount)} />
           <Row label="DF Recommended"   value={fmtM(details.df_recommended_amount)} />
@@ -4554,7 +4764,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <Row label="Change in Scope"  value={details.scope_change ? "Yes — scope revised" : "No"} vc={details.scope_change ? "#A78BFA" : T.muted} />
         </Card>
 
+        </div>
+
         {/* EVM Analysis */}
+        <div style={{ display: tab === "financials" ? "block" : "none" }}>
         <Card title="EVM Analysis">
           {parseFloat(evm.pct_complete) > 0 ? (
             <>
@@ -4588,6 +4801,9 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         </Card>
 
         {/* Person Responsible */}
+        </div>
+
+        <div style={{ display: tab === "overview" ? "block" : "none" }}>
         <Card title="Person Responsible">
           {pm ? (
             <>
@@ -4638,7 +4854,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           )}
         </Card>
 
-        <ProjectAttachments T={T} session={session} projectId={projectId} />
+        </div>
+
+        <div style={{ display: tab === "documents" ? "block" : "none", gridColumn:"1 / -1" }}>
+          <ProjectAttachments T={T} session={session} projectId={projectId} />
+        </div>
 
       </div>
     </div>
