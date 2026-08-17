@@ -1124,6 +1124,78 @@ function BreakdownSection({ T, session }) {
 // ─── DASHBOARD PROJECT LIST ───────────────────────────────────────────────────
 const STAGE_LABEL = { pdd_not_submitted:"PDD Not Submitted", identified:"PDD Submitted", df_review:"DF Review", ed_review:"ED Review", mt_review:"MT Review", approved:"Approved", closed:"Closed" };
 
+// ─── CARRY FORWARD LIST ─────────────────────────────────────────────────────
+// Reads from the standalone carry_forward_projects table, deliberately
+// separate from `projects` — these 167 prior-FY items only ever show up
+// here, on the Carry Forward card's drill-down, never in the main Projects
+// list, Campus/Sites, exports, or anywhere else in the portal.
+function CarryForwardList({ T, session }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await supa("/rest/v1/carry_forward_projects?select=*&order=amount.desc", {}, session.access_token);
+        if (!cancelled) setRows(data);
+      } catch { if (!cancelled) setRows([]); }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [session.access_token]);
+
+  const th = { padding:"9px 12px", fontSize:10, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1.5, textAlign:"left", borderBottom:"1px solid "+T.border, whiteSpace:"nowrap", opacity:0.65 };
+  const td = { padding:"11px 12px", fontSize:12.5, color:T.text, borderBottom:"1px solid "+T.border+"80", verticalAlign:"middle" };
+
+  if (loading) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>Loading…</div>;
+  if (rows.length === 0) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No carry-forward projects on record.</div>;
+
+  const total = rows.reduce((s,r) => s + (r.amount||0), 0);
+
+  return (
+    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, overflow:"hidden" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid "+T.border }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:3, height:14, background:GOLD, borderRadius:2 }} />
+          <span style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1 }}>
+            Carry Forward — Prior FY
+          </span>
+          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:20 }}>
+            {rows.length} projects
+          </span>
+        </div>
+        <span style={{ fontSize:11, color:GOLD, fontWeight:700 }}>PKR {fmtM(total)} total</span>
+      </div>
+      <div style={{ overflowX:"auto", maxHeight:480, overflowY:"auto" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <thead>
+            <tr>
+              <th style={th}>#</th>
+              <th style={th}>Project ID</th>
+              <th style={th}>Project Name</th>
+              <th style={th}>Region</th>
+              <th style={{...th, textAlign:"right"}}>Carry F Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r,i) => (
+              <tr key={r.id}>
+                <td style={{...td, color:T.dim}}>{i+1}</td>
+                <td style={{...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted}}>{r.code || "-"}</td>
+                <td style={{...td, fontWeight:500}}>{r.name}</td>
+                <td style={{...td, color:T.muted}}>{r.region || "—"}</td>
+                <td style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600}}>{fmtM(r.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
   if (!projects || projects.length === 0) {
     return (
@@ -1531,7 +1603,10 @@ function CommandCenter({ T, session, onSelectProject }) {
 
       {/* ── PROJECT LIST ── */}
       <div id="dash-project-list">
-        {showList && (
+        {showList && activeTab === "budgeting" && activeCard === "carry_forward" && (
+          <CarryForwardList T={T} session={session} />
+        )}
+        {showList && !(activeTab === "budgeting" && activeCard === "carry_forward") && (
           <DashProjectList T={T} projects={filteredProjects} tab={activeTab} activeCard={activeCard} onSelectProject={onSelectProject} />
         )}
       </div>
