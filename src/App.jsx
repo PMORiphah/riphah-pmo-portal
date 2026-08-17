@@ -316,7 +316,8 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
 // Glass header that reads as part of the page rather than a detached bar.
 function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu,
-                 unreadCount = 0, onBellClick, actions }) {
+                 unreadCount = 0, onBellClick, actions, onSearch }) {
+  const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
   return (
     <div style={{
       minHeight:62, flexShrink:0, display:"flex", alignItems:"center",
@@ -340,6 +341,24 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
         )}
       </div>
       {actions}
+      {/* Search affordance. Shown as a field on desktop so the shortcut is
+          discoverable rather than hidden behind a keystroke nobody guesses. */}
+      {onSearch && (isCompact ? (
+        <IconButton T={T} icon={Search} onClick={onSearch} title="Search projects" />
+      ) : (
+        <button onClick={onSearch} className="pmo-focusable" title="Search projects"
+          style={{
+            display:"flex", alignItems:"center", gap:SP.sm, padding:"7px 10px 7px 11px",
+            background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+            color:T.muted, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontSize:12.5,
+            minWidth:210, transition:`border-color ${MOTION.fast}`,
+          }}>
+          <Search size={13} />
+          <span style={{ flex:1, textAlign:"left" }}>Search projects…</span>
+          <kbd style={{ ...TYPE.caption, border:`1px solid ${T.border}`, borderRadius:4,
+            padding:"1px 5px", color:T.dim, background:T.pageAlt }}>{mac ? "⌘K" : "Ctrl K"}</kbd>
+        </button>
+      ))}
       <IconButton T={T} icon={Bell} onClick={onBellClick} badge={unreadCount}
         title={unreadCount > 0 ? `${unreadCount} unread update${unreadCount === 1 ? "" : "s"}` : "Updates"} />
       <IconButton T={T} icon={dark ? Sun : Moon} onClick={() => setDark(d => !d)}
@@ -6851,6 +6870,181 @@ const PAGE_TITLES = {
   set:  { title:"Settings",        subtitle:"Portal configuration" },
 };
 
+// ─── GLOBAL SEARCH ───────────────────────────────────────────────────────────
+// §25. A command palette over the whole portfolio: name, project ID,
+// organisation, segment, stage and priority, all matched at once. Opens on
+// ⌘K / Ctrl+K from anywhere, so finding a project never costs a page change.
+//
+// The project list is fetched once on first open and cached for the session —
+// 106 rows is small enough that filtering client-side is instant, and it means
+// no request between keystrokes.
+function GlobalSearch({ T, session, open, onClose, onSelect }) {
+  const [q, setQ]         = useState("");
+  const [rows, setRows]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [cursor, setCursor]   = useState(0);
+  const inputRef = useRef(null);
+  const listRef  = useRef(null);
+
+  useEffect(() => {
+    if (!open || rows) return;
+    setLoading(true);
+    supa("/rest/v1/projects?select=id,code,name,workflow_stage,priority,bac,df_recommended_amount,fiscal_year,segments(name),sectors(name)&order=code.asc",
+      {}, session.access_token)
+      .then(setRows).catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [open, rows, session.access_token]);
+
+  useEffect(() => {
+    if (open) { setQ(""); setCursor(0); setTimeout(() => inputRef.current?.focus(), 40); }
+  }, [open]);
+
+  const results = useMemo(() => {
+    if (!rows) return [];
+    const term = q.trim().toLowerCase();
+    if (!term) return rows.slice(0, 12);
+    const words = term.split(/\s+/);
+    const scored = [];
+    for (const p of rows) {
+      const stage = STAGE_META[p.workflow_stage]?.label || "";
+      const prio  = PRIORITY_META[p.priority]?.label || "";
+      const hay = [p.code, p.name, p.segments?.name, p.sectors?.name, stage, prio, p.fiscal_year]
+        .filter(Boolean).join(" ").toLowerCase();
+      // Every word must appear somewhere, so "riphah approved" narrows rather
+      // than widening the way a plain OR match would.
+      if (!words.every(w => hay.includes(w))) continue;
+      // Rank exact-ish ID and name-prefix matches above incidental mentions.
+      let score = 0;
+      const code = (p.code || "").toLowerCase();
+      const name = (p.name || "").toLowerCase();
+      if (code === term) score += 100;
+      else if (code.startsWith(term)) score += 60;
+      if (name.startsWith(term)) score += 40;
+      else if (name.includes(term)) score += 20;
+      scored.push({ p, score });
+    }
+    scored.sort((a, b) => b.score - a.score || (a.p.code || "").localeCompare(b.p.code || ""));
+    return scored.slice(0, 40).map(x => x.p);
+  }, [rows, q]);
+
+  useEffect(() => { setCursor(0); }, [q]);
+
+  const choose = useCallback((p) => { if (p) { onSelect(p.id); onClose(); } }, [onSelect, onClose]);
+
+  const onKey = (e) => {
+    if (e.key === "ArrowDown")      { e.preventDefault(); setCursor(c => Math.min(results.length - 1, c + 1)); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
+    else if (e.key === "Enter")     { e.preventDefault(); choose(results[cursor]); }
+    else if (e.key === "Escape")    { e.preventDefault(); onClose(); }
+  };
+
+  // Keep the highlighted row in view when navigating by keyboard.
+  useEffect(() => {
+    const el = listRef.current?.querySelector(`[data-idx="${cursor}"]`);
+    el?.scrollIntoView({ block:"nearest" });
+  }, [cursor]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position:"fixed", inset:0, zIndex:1200,
+        background: T.mode === "dark" ? "rgba(3,8,16,0.7)" : "rgba(12,30,51,0.4)",
+        backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)",
+        display:"flex", alignItems:"flex-start", justifyContent:"center",
+        padding:"12vh 16px 16px", animation:"pmoFade .16s ease",
+      }}>
+      <div className="pmo-scale" role="dialog" aria-modal="true" aria-label="Search projects"
+        style={{
+          width:"100%", maxWidth:660, background:T.surface,
+          border:`1px solid ${T.borderStrong}`, borderRadius:R.xl,
+          boxShadow:T.shadowLg, overflow:"hidden", display:"flex", flexDirection:"column",
+          maxHeight:"70vh",
+        }}>
+        {/* Query */}
+        <div style={{ display:"flex", alignItems:"center", gap:SP.md,
+          padding:`${SP.md}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}` }}>
+          <Search size={17} color={T.muted} style={{ flexShrink:0 }} />
+          <input
+            ref={inputRef} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
+            placeholder="Search projects by name, ID, organisation, segment, stage…"
+            style={{
+              flex:1, minWidth:0, background:"none", border:"none", outline:"none",
+              fontFamily:TYPE.body.fontFamily, fontSize:15, color:T.text,
+            }} />
+          <kbd style={{
+            ...TYPE.caption, color:T.dim, border:`1px solid ${T.border}`,
+            borderRadius:R.sm, padding:"2px 6px", background:T.pageAlt, flexShrink:0,
+          }}>Esc</kbd>
+        </div>
+
+        {/* Results */}
+        <div ref={listRef} className="pmo-scroll" style={{ overflowY:"auto", flex:1 }}>
+          {loading && (
+            <div style={{ padding:SP.lg, display:"flex", flexDirection:"column", gap:SP.sm }}>
+              {[0,1,2,3,4].map(i => <Skeleton key={i} T={T} h={38} />)}
+            </div>
+          )}
+
+          {!loading && results.length === 0 && (
+            <EmptyState T={T} icon={Search} compact
+              title={q.trim() ? "No projects match that" : "No projects to search"}
+              message={q.trim()
+                ? "Try a shorter term, a project ID, or an organisation name."
+                : "The portfolio is empty."} />
+          )}
+
+          {!loading && results.map((p, i) => {
+            const on = i === cursor;
+            const st = STAGE_META[p.workflow_stage];
+            const pClr = PRIORITY_META[p.priority]?.color;
+            return (
+              <div key={p.id} data-idx={i}
+                onMouseEnter={() => setCursor(i)} onClick={() => choose(p)}
+                style={{
+                  display:"flex", alignItems:"center", gap:SP.md,
+                  padding:`${SP.sm}px ${SP.lg}px`, cursor:"pointer",
+                  background: on ? T.rowActive : "transparent",
+                  borderLeft:`2px solid ${on ? (pClr || T.blue) : "transparent"}`,
+                  transition:`background ${MOTION.fast}`,
+                }}>
+                <div style={{ minWidth:0, flex:1 }}>
+                  <div style={{ ...TYPE.bodySm, color:T.text, fontWeight: on ? 600 : 450,
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginTop:2 }}>
+                    <span style={{ ...TYPE.mono, color:T.muted }}>
+                      {p.code && p.code !== "-" ? p.code : "No ID"}
+                    </span>
+                    <span style={{ ...TYPE.caption, color:T.dim }}>
+                      {[p.segments?.name, p.sectors?.name].filter(Boolean).join(" · ") || "—"}
+                    </span>
+                  </div>
+                </div>
+                {st && <Badge T={T} color={st.color} size="sm">{st.label}</Badge>}
+                <span style={{ ...TYPE.bodySm, fontWeight:700, minWidth:66, textAlign:"right",
+                  color: +p.bac > 0 ? BRAND.gold : T.dim, fontVariantNumeric:"tabular-nums" }}>
+                  {fmtM(p.bac || p.df_recommended_amount)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer hints */}
+        <div style={{ display:"flex", alignItems:"center", gap:SP.lg,
+          padding:`${SP.sm}px ${SP.lg}px`, borderTop:`1px solid ${T.border}`,
+          background:T.pageAlt, ...TYPE.caption, color:T.muted }}>
+          <span>↑ ↓ to navigate</span>
+          <span>↵ to open</span>
+          {rows && <span style={{ marginLeft:"auto" }}>{results.length} of {rows.length}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [dark, setDark] = useState(true);
   const [session, setSession] = useState(null);
@@ -6953,6 +7147,18 @@ export default function App() {
   const vp = useViewport();
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [navMobileOpen, setNavMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // ⌘K / Ctrl+K from anywhere. Bound at the document so it works regardless of
+  // which page or control currently holds focus.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault(); setSearchOpen(o => !o);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   // Close the mobile drawer whenever the viewport grows back to desktop.
   useEffect(() => { if (!vp.isCompact) setNavMobileOpen(false); }, [vp.isCompact]);
 
@@ -6973,6 +7179,11 @@ export default function App() {
   return (
     <>
       <DeadlineAlertPopups T={T} session={session} />
+      <GlobalSearch
+        T={T} session={session} open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelect={(id) => openProject(id)}
+      />
     <div style={{ display:"flex", height:"100vh", fontFamily:TYPE.body.fontFamily, background:T.page, color:T.text }}>
       <Sidebar
         T={T} page={effectivePage} setPage={navigateToPage} session={session}
@@ -6987,6 +7198,7 @@ export default function App() {
           dark={dark} setDark={setDark} onLogout={handleLogout}
           isCompact={vp.isCompact} onMenu={() => setNavMobileOpen(true)}
           unreadCount={unreadCount} onBellClick={() => navigateToPage("upd")}
+          onSearch={() => setSearchOpen(true)}
         />
         {selectedProjectId ? (
           <ProjectDetailPage
