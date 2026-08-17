@@ -2983,9 +2983,26 @@ function ProjectsPage({ T, session, onSelectProject }) {
     { key:"stage",       label:"Stage",       sort:"stage",       min:132 },
     { key:"cc",          label:"Cost Centre", sort:"cc",          min:112 },
   ];
-  // Narrow screens drop the lowest-value columns rather than forcing a
-  // sideways scroll the reader has to discover (§13, §26).
-  const autoHidden = vpP.width < 1500 ? ["strategic","cc"] : vpP.width < 1700 ? ["strategic"] : [];
+  // Rather than guessing breakpoints, measure: add up what the columns actually
+  // need and drop the lowest-value ones until the table fits the space it has.
+  // Hidden columns stay reachable through the Columns menu and the export, so
+  // nothing is lost — the reader just isn't forced to discover a sideways
+  // scroll to find the approval stage (§13, §26).
+  const DROP_ORDER = ["strategic", "cc", "fiscal_year", "segment", "org"];
+  const autoHidden = useMemo(() => {
+    const sidebar = vpP.width >= BP.tablet ? 244 : 0;
+    const avail = vpP.width - sidebar - 24;          // page gutters
+    const fixed = 44 + (isPMO ? 78 : 0);             // row number + actions
+    const drop = [];
+    const width = () => COLS
+      .filter(c => !hiddenCols.includes(c.key) && !drop.includes(c.key))
+      .reduce((sum, c) => sum + c.min, fixed);
+    for (const key of DROP_ORDER) {
+      if (width() <= avail) break;
+      drop.push(key);
+    }
+    return drop;
+  }, [vpP.width, hiddenCols, isPMO]);
   const visible = COLS.filter(c => !hiddenCols.includes(c.key) && !autoHidden.includes(c.key));
 
   const maxBac = summary.maxBac;
