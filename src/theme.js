@@ -127,7 +127,7 @@ const DARK = {
   text:          "#E8F0FA",
   textSoft:      "#A9BED4",
   muted:         "#7C95AF",
-  dim:           "#54708C",
+  dim:           "#7089A6",
   onAccent:      "#FFFFFF",
 
   // Inputs
@@ -187,7 +187,7 @@ const LIGHT = {
   text:          "#0C1E33",
   textSoft:      "#41576F",
   muted:         "#64798F",
-  dim:           "#94A7BC",
+  dim:           "#7B8EA3",
   onAccent:      "#FFFFFF",
 
   inputBg:       "#F7FAFD",
