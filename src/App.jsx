@@ -2355,6 +2355,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const [fPri,    setFPri]    = useState("");
   const [fStrat,  setFStrat]  = useState("");
   const [fStage,  setFStage]  = useState("");
+  const [fCC,     setFCC]     = useState("");
   const [showForm,     setShowForm]     = useState(false);
   const [editProject,  setEditProject]  = useState(null);
   const [showImport,   setShowImport]   = useState(false);
@@ -2398,11 +2399,12 @@ function ProjectsPage({ T, session, onSelectProject }) {
     if (fPri)   r = r.filter(p=>p.priority === fPri);
     if (fStrat) { const q=fStrat.toLowerCase(); r=r.filter(p=>(p.strategic_priority||"").toLowerCase().includes(q)); }
     if (fStage) r = r.filter(p=>p.workflow_stage === fStage);
+    if (fCC)    r = r.filter(p=>(p.cost_centers?.name||"")=== fCC);
     return sortRealCodeFirst(r);
-  }, [rows,search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage]);
+  }, [rows,search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC]);
 
-  const activeFilterCount = [fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage].filter(Boolean).length;
-  const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); };
+  const activeFilterCount = [fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC].filter(Boolean).length;
+  const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); setFCC(""); };
 
   // The summary strip restates the portfolio for whatever slice is currently
   // filtered — filter to "MT Review" and you immediately see the money sitting
@@ -2433,6 +2435,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
     fPri         && { key:"pri",    label:"Priority",  val:PRIORITY_LABEL[fPri]||fPri,         clear:()=>setFPri("") },
     fStrat       && { key:"strat",  label:"Strategic", val:fStrat,                             clear:()=>setFStrat("") },
     fStage       && { key:"stage",  label:"Stage",     val:STAGE[fStage]?.label||fStage,       clear:()=>setFStage("") },
+    fCC          && { key:"cc",     label:"Cost Ctr",  val:fCC,                                clear:()=>setFCC("") },
   ].filter(Boolean);
 
   const downloadExport = () => {
@@ -2704,7 +2707,12 @@ function ProjectsPage({ T, session, onSelectProject }) {
                       {Object.entries(STAGE).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                     </select>
                   </td>
-                  <td style={fc}></td>
+                  <td style={fc}>
+                    <select value={fCC} onChange={e=>setFCC(e.target.value)} style={highlight(fCC)}>
+                      <option value="">All Cost Centres</option>
+                      {lookups.cost_centers.map(cc=><option key={cc.id} value={cc.name}>{cc.name}</option>)}
+                    </select>
+                  </td>
                   {isPMO&&<td style={fc}></td>}
                 </tr>
               );
