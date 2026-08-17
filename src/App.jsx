@@ -1153,6 +1153,12 @@ function CarryForwardList({ T, session }) {
   if (rows.length === 0) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No carry-forward projects on record.</div>;
 
   const total = rows.reduce((s,r) => s + (r.amount||0), 0);
+  // Fixed inputs from Finance's FY2026 carry-forward reconciliation — not
+  // derived from the project list itself, so kept as named constants here.
+  const SAVINGS = 106839048;
+  const PAYMENTS = 285011804;
+  const afterSavings = total - SAVINGS;
+  const carryForward2026 = afterSavings - PAYMENTS;
 
   return (
     <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, overflow:"hidden" }}>
@@ -1191,6 +1197,25 @@ function CarryForwardList({ T, session }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Reconciliation footer — how the 572M figure on the KPI card is derived */}
+      <div style={{ padding:"16px 18px", borderTop:"2px solid "+T.border, background:T.card2 }}>
+        {[
+          { label:"Total Projects", value:total },
+          { label:"Savings", value:SAVINGS },
+          { label:"After Subtracting Savings", value:afterSavings },
+          { label:"Payments", value:PAYMENTS },
+        ].map(row => (
+          <div key={row.label} style={{ display:"flex", justifyContent:"space-between", padding:"5px 0", fontSize:12.5 }}>
+            <span style={{ color:T.muted }}>{row.label}</span>
+            <span style={{ color:T.text, fontVariantNumeric:"tabular-nums", fontWeight:500 }}>{Math.round(row.value).toLocaleString()}</span>
+          </div>
+        ))}
+        <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0 2px", marginTop:6, borderTop:"1px solid "+T.border, fontSize:14.5 }}>
+          <span style={{ color:T.text, fontWeight:700 }}>Carry Forward 2026</span>
+          <span style={{ color:GOLD, fontWeight:800, fontVariantNumeric:"tabular-nums" }}>{Math.round(carryForward2026).toLocaleString()}</span>
+        </div>
       </div>
     </div>
   );
