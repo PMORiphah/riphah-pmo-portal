@@ -150,9 +150,9 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
           justifyContent: mini ? "center" : "flex-start",
           cursor:"pointer", borderRadius:R.md, position:"relative",
           background: active
-            ? `linear-gradient(90deg, ${BRAND.blue}2E 0%, ${BRAND.blue}0A 100%)`
-            : hover ? "rgba(255,255,255,0.055)" : "transparent",
-          color: active ? "#fff" : admin ? "rgba(255,255,255,0.52)" : "rgba(255,255,255,0.66)",
+            ? `linear-gradient(90deg, ${BRAND.blue}${T.mode === "dark" ? "2E" : "1A"} 0%, ${BRAND.blue}0A 100%)`
+            : hover ? T.sidebarHover : "transparent",
+          color: active ? T.sidebarFgOn : admin ? T.sidebarFgSoft : T.sidebarFg,
           fontFamily:TYPE.body.fontFamily, fontSize:13, fontWeight: active ? 600 : 450,
           transition:`background ${MOTION.fast}, color ${MOTION.fast}`,
         }}>
@@ -167,7 +167,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
         <div style={{
           width:26, height:26, borderRadius:R.sm, flexShrink:0,
           display:"flex", alignItems:"center", justifyContent:"center",
-          background: active ? BRAND.blue+"33" : "transparent",
+          background: active ? BRAND.blue+T.badge : "transparent",
           transition:`background ${MOTION.fast}`,
         }}>
           <Icon size={15} strokeWidth={active ? 2.1 : 1.7}
@@ -191,8 +191,8 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
   const panel = (
     <div style={{
       width:W, flexShrink:0, display:"flex", flexDirection:"column",
-      background:"linear-gradient(180deg, #14395C 0%, #0D2440 52%, #081A2E 100%)",
-      borderRight:"1px solid rgba(255,255,255,0.07)",
+      background:T.sidebar,
+      borderRight:`1px solid ${T.sidebarBorder}`,
       position:"relative", overflow:"hidden",
       transition:`width ${MOTION.base}`,
       height:"100%",
@@ -200,23 +200,24 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
       {/* Institutional arch, anchored at the base — deliberately almost invisible */}
       <svg width="220" height="240" viewBox="0 0 200 220" aria-hidden="true"
         style={{ position:"absolute", left:-34, bottom:-24, pointerEvents:"none" }}>
-        <path d="M0 220 L0 140 Q0 90 55 78 Q50 100 68 118 Q40 126 40 158 L40 220 Z" fill={BRAND.gold} opacity="0.05" />
+        <path d="M0 220 L0 140 Q0 90 55 78 Q50 100 68 118 Q40 126 40 158 L40 220 Z"
+          fill={BRAND.gold} opacity={T.mode === "dark" ? 0.05 : 0.09} />
       </svg>
 
       {/* Brand */}
       <div style={{
         padding: mini ? "18px 10px 14px" : "20px 18px 16px",
-        borderBottom:"1px solid rgba(255,255,255,0.08)", position:"relative",
+        borderBottom:`1px solid ${T.sidebarBorder}`, position:"relative",
         display:"flex", alignItems:"center", justifyContent: mini ? "center" : "space-between", gap:8,
       }}>
         {mini ? (
-          <img src={CREST_LOGO} alt="Riphah" style={{ width:30, filter:"brightness(0) invert(1)", opacity:.9 }} />
+          <img src={CREST_LOGO} alt="Riphah" style={{ width:30, filter:T.sidebarLogoFilter, opacity:.92 }} />
         ) : (
           <div style={{ minWidth:0 }}>
-            <img src={LOGO} alt="Riphah International University" style={{ width:136, filter:"brightness(0) invert(1)", opacity:.93 }} />
+            <img src={LOGO} alt="Riphah International University" style={{ width:136, filter:T.sidebarLogoFilter, opacity:.95 }} />
             <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:8 }}>
               <div style={{ width:13, height:1.5, background:BRAND.gold, opacity:0.65 }} />
-              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.42)" }}>PMO · FY 2026-27</div>
+              <div style={{ ...TYPE.label, color:T.sidebarFgSoft }}>PMO · FY 2026-27</div>
             </div>
           </div>
         )}
@@ -227,11 +228,11 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
         {session?.role === "pmo" && (
           <>
             {mini ? (
-              <div style={{ height:1, background:"rgba(255,255,255,0.09)", margin:"14px 16px" }} />
+              <div style={{ height:1, background:T.sidebarBorder, margin:"14px 16px" }} />
             ) : (
               <div style={{ display:"flex", alignItems:"center", gap:8, margin:"18px 20px 8px" }}>
-                <span style={{ ...TYPE.label, color:"rgba(255,255,255,0.3)" }}>Administration</span>
-                <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.09)" }} />
+                <span style={{ ...TYPE.label, color:T.sidebarFgSoft }}>Administration</span>
+                <div style={{ flex:1, height:1, background:T.sidebarBorder }} />
               </div>
             )}
             {PMO_NAV.map((item) => <NavRow key={item.id} {...item} admin />)}
@@ -240,18 +241,18 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
       </nav>
 
       {/* User */}
-      <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", padding: mini ? "12px 10px" : "13px 15px", position:"relative" }}>
+      <div style={{ borderTop:`1px solid ${T.sidebarBorder}`, padding: mini ? "12px 10px" : "13px 15px", position:"relative" }}>
         <div style={{ display:"flex", alignItems:"center", gap:11, justifyContent: mini ? "center" : "flex-start" }}>
           <div style={{
             width:34, height:34, borderRadius:"50%", flexShrink:0,
             background:`linear-gradient(135deg, ${BRAND.gold}, ${BRAND.goldDeep})`,
-            boxShadow:`0 0 0 2px rgba(255,255,255,0.1)`,
+            boxShadow:`0 0 0 2px ${T.mode === "dark" ? "rgba(255,255,255,0.1)" : "rgba(16,42,71,0.08)"}`,
             display:"flex", alignItems:"center", justifyContent:"center",
             fontFamily:TYPE.display.fontFamily, fontSize:13, fontWeight:700, color:"#20160A",
           }}>{(session?.username || "P")[0].toUpperCase()}</div>
           {!mini && (
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ color:"#fff", fontSize:12.5, fontWeight:600, lineHeight:1.3,
+              <div style={{ color:T.sidebarName, fontSize:12.5, fontWeight:600, lineHeight:1.3,
                 whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                 {session?.full_name || "PMO"}
               </div>
@@ -266,8 +267,8 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
         {session?.role !== "pmo" && !mini && (
           <button onClick={onChangePassword} className="pmo-focusable" style={{
             width:"100%", marginTop:11, padding:"8px 12px", borderRadius:R.sm, cursor:"pointer",
-            background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.13)",
-            color:"rgba(255,255,255,0.8)", fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+            background:T.sidebarHover, border:`1px solid ${T.sidebarBorder}`,
+            color:T.sidebarFg, fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
             display:"flex", alignItems:"center", justifyContent:"center", gap:7,
           }}><Lock size={12} /> Change password</button>
         )}
@@ -280,9 +281,11 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           style={{
             position:"absolute", top:24, right:-11, width:22, height:22, borderRadius:"50%",
-            background:"#14395C", border:"1px solid rgba(255,255,255,0.18)", color:"rgba(255,255,255,0.75)",
+            background: T.mode === "dark" ? "#14395C" : "#FFFFFF",
+            border:`1px solid ${T.mode === "dark" ? "rgba(255,255,255,0.18)" : T.borderStrong}`,
+            color:T.sidebarFg,
             cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", zIndex:5,
-            boxShadow:"0 2px 8px rgba(0,0,0,0.4)",
+            boxShadow:T.shadow,
           }}>
           <ChevronRight size={13} style={{ transform: collapsed ? "none" : "rotate(180deg)", transition:`transform ${MOTION.base}` }} />
         </button>
