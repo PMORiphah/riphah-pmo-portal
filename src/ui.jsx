@@ -57,8 +57,17 @@ export const injectGlobals = () => {
     .pmo-scroll::-webkit-scrollbar-thumb { background:rgba(124,149,175,.28); border-radius:99px; border:2px solid transparent; background-clip:content-box; }
     .pmo-scroll::-webkit-scrollbar-thumb:hover { background:rgba(124,149,175,.5); border:2px solid transparent; background-clip:content-box; }
 
+    /* Legacy class aliases — un-migrated pages still reference these. This
+       block disappears as each page is moved onto the new names. */
+    .pmo-card-in { animation: pmoIn .34s ${MOTION.ease} backwards; }
+    .pmo-fade-in { animation: pmoFade .28s ease backwards; }
+    .pmo-pulse-dot { animation: pmoPulse 2.4s ease-in-out infinite; }
+    .pmo-mesh { animation: pmoDrift 20s ease-in-out infinite; }
+    .pmo-skeleton { background-repeat:no-repeat; animation: pmoShimmer 1.5s ease-in-out infinite; }
+
     @media (prefers-reduced-motion: reduce) {
-      .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton { animation:none !important; }
+      .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,
+      .pmo-card-in,.pmo-fade-in,.pmo-pulse-dot,.pmo-mesh { animation:none !important; }
       .pmo-lift:hover { transform:none !important; }
       * { transition-duration:.01ms !important; }
     }
