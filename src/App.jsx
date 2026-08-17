@@ -1616,6 +1616,9 @@ function CommandCenter({ T, session, onSelectProject }) {
         return (
           <div className="pmo-in" style={{
             background:T.hero, borderRadius:R.xl,
+            // The dashboard body is a column flex with overflow:auto — without
+            // flexShrink:0 the browser crushes this block instead of scrolling.
+            flexShrink:0,
             padding: vp.isCompact ? `${SP.lg}px ${SP.lg}px` : `${SP.xl}px ${SP.xxl}px`,
             display:"flex", alignItems:"center", flexWrap:"wrap",
             gap: vp.isCompact ? SP.lg : SP.xxl,
