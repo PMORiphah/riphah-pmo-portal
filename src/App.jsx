@@ -3032,7 +3032,8 @@ function ProjectsPage({ T, session, onSelectProject }) {
   };
 
   const td = { ...TYPE.bodySm, color:T.text, padding:"10px 12px",
-    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" };
+    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle",
+    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" };
 
   // ── Cell renderers, shared by the table and the mobile card ───────────────
   const cell = (p, key, hovered) => {
@@ -3051,7 +3052,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
         </span>
       );
       case "name": return (
-        <span title={p.name} style={{ display:"block", maxWidth:330, overflow:"hidden",
+        <span title={p.name} style={{ display:"block", overflow:"hidden",
           textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight: hovered ? 600 : 450,
           color:T.text, transition:`font-weight ${MOTION.fast}` }}>{p.name}</span>
       );
@@ -3085,7 +3086,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
         ? <Badge T={T} color={pClr} size="sm" dot>{PRIORITY_META[p.priority]?.label || p.priority}</Badge>
         : <span style={{ color:T.dim }}>—</span>;
       case "strategic": return (
-        <span title={p.strategic_priority || ""} style={{ color:T.muted, display:"block", maxWidth:210,
+        <span title={p.strategic_priority || ""} style={{ color:T.muted, display:"block",
           overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.strategic_priority || "—"}</span>
       );
       case "stage": {
@@ -3296,7 +3297,22 @@ function ProjectsPage({ T, session, onSelectProject }) {
       ) : (
         /* ── DESKTOP TABLE ── */
         <div className="pmo-scroll" style={{ flex:1, overflow:"auto", backgroundImage:T.ambient, backgroundAttachment:"local" }}>
-          <table style={{ width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"auto" }}>
+          {/* tableLayout:"fixed" with an explicit colgroup is what actually
+              guarantees no horizontal overflow — with "auto", a long project
+              name silently overrides every min-width and pushes Stage and
+              Actions off the right edge, which is the bug this page shipped
+              with. Widths are proportional to each column's declared minimum. */}
+          <table style={{ width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"fixed" }}>
+            <colgroup>
+              <col style={{ width:44 }} />
+              {(() => {
+                const totalMin = visible.reduce((a, c) => a + c.min, 0) || 1;
+                return visible.map(c => (
+                  <col key={c.key} style={{ width:`${(c.min / totalMin) * 100}%` }} />
+                ));
+              })()}
+              {isPMO && <col style={{ width:78 }} />}
+            </colgroup>
             <thead>
               <tr>
                 <th style={{ ...TYPE.label, color:T.muted, padding:"10px 12px 8px", width:44,
