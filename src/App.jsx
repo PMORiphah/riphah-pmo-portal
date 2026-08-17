@@ -2016,10 +2016,11 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
     dataRows.forEach((row,i) => {
       const obj={};
       hdrs.forEach((h,j)=>{ const f=EXCEL_COL_LOOKUP[String(h||"").toLowerCase().trim()]; if(f){ let v=row[j]; if(v instanceof Date) v=v.toISOString().split("T")[0]; obj[f]=v!==undefined&&v!==null?String(v).trim():""; }});
-      // Auto-generate code if missing rather than blocking the row
-      if (!obj.code) obj.code = `ROW-${String(i+1).padStart(3,"0")}`;
-      // Use a default name if missing
-      if (!obj.name) obj.name = obj.code || `Project ${i+1}`;
+      // Blank code stays blank ("-") instead of being auto-generated — a
+      // ROW-xxx placeholder looked like a real code and PMO didn't want it.
+      if (!obj.code) obj.code = "-";
+      // Use a default name if missing (not the code, which is now just "-")
+      if (!obj.name) obj.name = `Project ${i+1}`;
       if (obj.sector_name && !existN.sectors.has(obj.sector_name.toLowerCase()))           newSets.sectors.add(obj.sector_name);
       if (obj.region_name && !existN.regions.has(obj.region_name.toLowerCase()))           newSets.regions.add(obj.region_name);
       if (obj.segment_name && !existN.segments.has(obj.segment_name.toLowerCase()))        newSets.segments.add(obj.segment_name);
