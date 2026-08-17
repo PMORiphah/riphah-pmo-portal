@@ -2759,7 +2759,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
             {/* Deletion warning */}
             <div style={{background:"rgba(248,113,113,0.07)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:ROSE,lineHeight:1.8}}>
-              <strong>⚠ This will permanently replace all existing data:</strong><br/>
+              <strong>This will permanently replace all existing data:</strong><br/>
               • {counts.projects} existing projects will be deleted<br/>
               • <strong>{counts.comments} discussion comments</strong> will be deleted<br/>
               A full snapshot is saved first — restore from Activity Log at any time.
@@ -2786,7 +2786,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             )}
 
             {/* Progress */}
-            {progress&&<div style={{background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.3)",borderRadius:R.md,padding:"9px 14px",marginBottom:12,fontSize:13,color:EMERALD}}>⏳ {progress}</div>}
+            {progress&&<div style={{background:`${T.positive}${T.wash}`,border:`1px solid ${T.positive}44`,borderRadius:R.md,padding:`${SP.sm}px ${SP.md}px`,marginBottom:SP.md,...TYPE.bodySm,color:T.positive,display:"flex",alignItems:"center",gap:7}}><Spinner size={13} color={T.positive} />{progress}</div>}
 
             <div style={{display:"flex", gap:SP.sm, justifyContent:"flex-end"}}>
               <Button T={T} variant="ghost" onClick={onClose} disabled={importing}>Cancel</Button>
@@ -3537,7 +3537,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
       {/* Delete confirmation banner with comment count */}
       {confirmDel&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.card,border:"1px solid rgba(248,113,113,0.4)",borderRadius:R.md,padding:"12px 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"center",gap:14,fontSize:13,whiteSpace:"nowrap"}}>
-          <span style={{color:ROSE}}>⚠ Delete <strong>{confirmDel.code || "-"}</strong>?</span>
+          <span style={{color:T.danger, display:"flex", alignItems:"center", gap:6}}><AlertTriangle size={14}/>Delete <strong>{confirmDel.code && confirmDel.code !== "-" ? confirmDel.code : "this project"}</strong>?</span>
           {confirmDel.comments>0&&<span style={{color:T.muted}}>({confirmDel.comments} comment{confirmDel.comments!==1?"s":""} will also be deleted)</span>}
           <button onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:ROSE,border:"none",borderRadius:R.sm,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
           <button onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
@@ -3790,7 +3790,7 @@ function SettingsPage({ T, session }) {
         border: `1px solid ${ok ? "rgba(45,212,191,0.3)" : "rgba(248,113,113,0.3)"}`,
         color: ok ? EMERALD : ROSE, fontSize:13,
       }}>
-        <span>{ok ? "✓" : "⚠"}</span>{status.msg}
+        {ok ? <CheckCircle2 size={14} style={{flexShrink:0}} /> : <AlertCircle size={14} style={{flexShrink:0}} />}{status.msg}
       </div>
     );
   };
@@ -5004,7 +5004,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
         </div>
         {status && (
           <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", alignItems:"flex-start", gap:8, background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, color:status.ok?"#2DD4BF":ROSE }}>
-            <span>{status.ok?"✓":"⚠"}</span><span style={{ lineHeight:1.5 }}>{status.msg}</span>
+            {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{ lineHeight:1.5 }}>{status.msg}</span>
           </div>
         )}
         {inviteLink && (
@@ -5468,7 +5468,7 @@ function RestoreSnapshotButton({ T, session, entry }) {
           <button onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
         </div>
       ) : state === "restoring" ? (
-        <div style={{fontSize:11,color:EMERALD}}>⏳ {msg}</div>
+        <div style={{...TYPE.caption, color:T.positive, display:"flex", alignItems:"center", gap:5}}><Spinner size={11} color={T.positive} />{msg}</div>
       ) : (
         <button onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:R.sm,color:GOLD,fontSize:11,cursor:"pointer"}}>
           📦 Restore this version ({entry.details.imported} projects)
@@ -5992,7 +5992,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
           {displayProjects.length === 0 ? (
             <div style={{ padding:"24px 16px", textAlign:"center", color:T.dim, fontSize:12, lineHeight:1.7 }}>
               {view==="inbox"
-                ? "No unread PM updates."
+                ? "No unread updates from project managers."
                 : session.role === "project_manager"
                   ? "No projects assigned to you yet.\nContact the PMO to get access."
                   : "No projects with comments yet."}
@@ -6032,8 +6032,12 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         {!selId ? (
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8, color:T.dim }}>
-            <div style={{ fontSize:28 }}>💬</div>
-            <div style={{ fontSize:14, fontWeight:600, color:T.text }}>Select a project to view updates</div>
+            <div style={{ width:44, height:44, borderRadius:R.lg, background:T.info+T.badge,
+              border:`1px solid ${T.info}26`, display:"flex", alignItems:"center",
+              justifyContent:"center", marginBottom:2 }}>
+              <MessageSquare size={19} color={T.info} strokeWidth={1.75} />
+            </div>
+            <div style={{ ...TYPE.h3, color:T.text }}>Select a project to view updates</div>
             <div style={{ fontSize:12, color:T.dim }}>Comments and progress updates appear here.</div>
           </div>
         ) : (
@@ -6504,7 +6508,7 @@ function ChangePasswordModal({ T, session, onClose }) {
             background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)",
             border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`,
             color:status.ok?"#2DD4BF":ROSE }}>
-            <span>{status.ok?"✓":"⚠"}</span><span style={{lineHeight:1.5}}>{status.msg}</span>
+            {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{lineHeight:1.5}}>{status.msg}</span>
           </div>
         )}
         <div style={{ marginBottom:14 }}>
@@ -6629,7 +6633,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
 
           {status && (
             <div style={{ background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, borderRadius:R.md, padding:"10px 14px", marginBottom:18, fontSize:13, color:status.ok?"#2DD4BF":ROSE, display:"flex", alignItems:"center", gap:8 }}>
-              <span>{status.ok?"✓":"⚠"}</span><span style={{ lineHeight:1.5 }}>{status.msg}</span>
+              {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{ lineHeight:1.5 }}>{status.msg}</span>
             </div>
           )}
 
@@ -6746,7 +6750,7 @@ function Login({ T, dark, onLogin }) {
           </div>
         ) : resetStatus === "error" ? (
           <div style={{ padding:"14px", background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:R.md, color:ROSE, fontSize:13, textAlign:"center", marginBottom:20 }}>
-            ⚠ Username not found. Contact the PMO.
+            Username not found. Contact the PMO.
           </div>
         ) : null}
         {resetStatus !== "sent" && (
@@ -6878,7 +6882,7 @@ function Login({ T, dark, onLogin }) {
           {/* Error message */}
           {err && (
             <div style={{ marginBottom:16, padding:"10px 14px", borderRadius:R.md, background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.35)", color:"#FCA5A5", fontSize:13, display:"flex", alignItems:"center", gap:8 }}>
-              <span>⚠</span><span>{err}</span>
+              <AlertCircle size={14} style={{flexShrink:0, marginTop:1}} /><span>{err}</span>
             </div>
           )}
 
