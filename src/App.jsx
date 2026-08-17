@@ -434,7 +434,7 @@ function DeadlineAlertPopups({ T, session }) {
         </div>
         <div style={{ padding:"14px 22px", borderTop:"1px solid "+T.border, display:"flex", justifyContent:"flex-end" }}>
           <button onClick={() => setIdx(i => i + 1)}
-            style={{ padding:"8px 18px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
+            style={{ padding:"8px 18px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
             {idx + 1 < queue.length ? "Next" : "Dismiss"}
           </button>
         </div>
@@ -461,59 +461,99 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     setSaving(false); setEditing(false);
   };
 
-  const valFontSize = String(value).length > 8 ? 19 : String(value).length > 5 ? 24 : 28;
   const shownVal = editing ? value : (displayVal ?? value);
-  const clr = accent || GOLD;
-  const light = T.mode === "light";
+  const clr = accent || BRAND.blue;
+  const long = String(shownVal ?? "").length;
+  const valSize = long > 9 ? "metricSm" : long > 6 ? "metric" : "metricXL";
 
   return (
     <div
-      className={onCardClick && !editing ? "pmo-card-in pmo-lift" : "pmo-card-in"}
-      style={{ animationDelay: (index*45)+"ms", flex:featured?1.25:1, minWidth:0 }}
-      onClick={()=>{ if(!editing && onCardClick) onCardClick(); }}
-      onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      className={onCardClick && !editing ? "pmo-in pmo-lift" : "pmo-in"}
+      style={{ animationDelay:(index*50)+"ms", flex: featured ? 1.22 : 1, minWidth:0, display:"flex" }}
+      onClick={() => { if (!editing && onCardClick) onCardClick(); }}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
     >
       <div style={{
-        flex:1,
-        background: light ? T.card : `linear-gradient(165deg, ${T.card} 0%, ${T.card} 60%, ${clr}${T.washAlpha} 100%)`,
-        border: isSelected ? "1px solid "+clr : "1px solid "+T.border,
-        borderRadius:12, padding:"16px 18px",
-        borderTop: light ? "1px solid "+T.border : "3px solid "+clr,
-        minWidth:0, position:"relative", overflow:"hidden",
-        cursor:onCardClick&&!editing?"pointer":"default",
-        boxShadow: isSelected ? `0 0 0 1px ${clr}${T.glowBlur}, ${T.shadow}` : (hover && onCardClick ? (light ? T.shadowHover : `0 0 0 1px ${clr}${T.glowRing}, 0 0 24px -6px ${clr}${T.glowBlur}, ${T.shadowHover}`) : T.shadow),
-        transition:"border-color .18s, box-shadow .22s, background .22s",
+        flex:1, minWidth:0, position:"relative", overflow:"hidden",
+        background: `linear-gradient(158deg, ${T.surfaceRaised} 0%, ${T.surface} 55%, ${clr}${T.wash} 100%)`,
+        border:`1px solid ${isSelected ? clr : hover && onCardClick ? T.borderStrong : T.border}`,
+        borderRadius:R.lg, padding:`${SP.lg}px ${SP.lg}px ${SP.md}px`,
+        cursor: onCardClick && !editing ? "pointer" : "default",
+        boxShadow: isSelected ? `0 0 0 1px ${clr}${T.ring}, ${T.shadow}`
+                 : hover && onCardClick ? T.shadowLg : T.shadow,
+        transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, background ${MOTION.base}`,
       }}>
-        <ArchMotif T={T} color={clr} size={76} />
+        {/* Accent hairline across the top — the card's status colour, stated once */}
+        <div style={{
+          position:"absolute", top:0, left:0, right:0, height:2,
+          background:`linear-gradient(90deg, ${clr}, ${clr}44 70%, transparent)`,
+          opacity: isSelected || hover ? 1 : 0.6,
+          transition:`opacity ${MOTION.base}`,
+        }} />
+
         {editing ? (
           <div>
-            <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6, fontWeight:600, opacity:0.6 }}>{label}</div>
-            <input value={eVal} onChange={e=>setEVal(e.target.value)} style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+GOLD, borderRadius:6, padding:"5px 8px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:5 }} />
-            {!lockSub && <input value={eSub} onChange={e=>setESub(e.target.value)} placeholder="Sub-label" style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"4px 8px", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:8 }} />}
-            {lockSub && <div style={{ fontSize:10, color:T.dim, marginBottom:8, fontStyle:"italic" }}>Subtitle always stays live — only the number above can be corrected.</div>}
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>{label}</div>
+            <Input T={T} size="sm" full value={eVal} onChange={e => setEVal(e.target.value)} style={{ marginBottom:6 }} />
+            {!lockSub && (
+              <Input T={T} size="sm" full value={eSub} onChange={e => setESub(e.target.value)}
+                placeholder="Sub-label" style={{ marginBottom:SP.sm }} />
+            )}
             <div style={{ display:"flex", gap:5 }}>
-              <button onClick={save} disabled={saving} style={{ flex:1, padding:"4px 0", background:NAVY, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer" }}>{saving?"…":"Save"}</button>
-              <button onClick={async ()=>{ setSaving(true); await onSave(kpiKey,{value:"",sub: lockSub ? "" : eSub}); setSaving(false); setEditing(false); }} style={{ padding:"4px 7px", background:"none", border:"1px solid rgba(45,212,191,0.4)", borderRadius:5, color:"#2DD4BF", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }} title={lockSub ? "Reset to fully live — number and subtitle both recompute" : "Reset value to live — keeps your custom sub-label"}>↺ Live</button>
-              <button onClick={cancel} style={{ padding:"4px 7px", background:"none", border:"1px solid "+T.border, borderRadius:5, color:T.muted, fontSize:11, cursor:"pointer" }}>✕</button>
+              <Button T={T} variant="primary" size="sm" onClick={save} loading={saving} full>Save</Button>
+              <Button T={T} variant="accent" tone={T.positive} size="sm"
+                onClick={async () => { setSaving(true); await onSave(kpiKey, { value:"", sub: lockSub ? "" : eSub }); setSaving(false); setEditing(false); }}
+                title="Reset to the live calculated value — keeps your sub-label">Live</Button>
+              <Button T={T} variant="ghost" size="sm" onClick={cancel} title="Cancel">✕</Button>
             </div>
           </div>
         ) : (
           <>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:SP.sm, marginBottom:SP.md }}>
+              <div style={{ display:"flex", alignItems:"center", gap:SP.sm, minWidth:0 }}>
                 {Icon && (
-                  <div style={{ width:26, height:26, borderRadius:8, background:clr+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                    <Icon size={14} color={clr} strokeWidth={2.25} />
+                  <div style={{
+                    width:28, height:28, borderRadius:R.sm, flexShrink:0,
+                    background:`${clr}${T.badge}`, border:`1px solid ${clr}26`,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                  }}>
+                    <Icon size={14} color={clr} strokeWidth={2} />
                   </div>
                 )}
-                <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, fontWeight:600, opacity:0.6 }}>{label}</div>
+                <div style={{ ...TYPE.label, color:T.muted, minWidth:0,
+                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={label}>{label}</div>
               </div>
               {canEdit && (
-                <button onClick={e=>{ e.stopPropagation(); startEdit(); }} style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, padding:"1px 3px", fontSize:10, lineHeight:1, opacity:.55, fontFamily:"Inter,sans-serif" }} title="Edit">✏</button>
+                <button onClick={e => { e.stopPropagation(); startEdit(); }}
+                  className="pmo-focusable" title="Edit this value"
+                  style={{ background:"none", border:"none", cursor:"pointer", color:T.dim,
+                    padding:2, display:"flex", opacity: hover ? 1 : 0.35,
+                    transition:`opacity ${MOTION.fast}` }}>
+                  <Edit2 size={12} />
+                </button>
               )}
             </div>
-            <div style={{ fontSize:featured?valFontSize+3:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.1, fontVariantNumeric:"tabular-nums" }}>{shownVal}</div>
-            {sub && <div style={{ fontSize:11, color:T.muted, marginTop:6, lineHeight:1.4 }}>{sub}</div>}
+
+            <div style={{ ...TYPE[valSize], color: accent || T.text, whiteSpace:"nowrap",
+              overflow:"hidden", textOverflow:"ellipsis" }}>{shownVal}</div>
+
+            {sub && (
+              <div style={{ ...TYPE.caption, color:T.muted, marginTop:6, lineHeight:1.4 }}>{sub}</div>
+            )}
+
+            {onCardClick && (
+              <div style={{
+                display:"flex", alignItems:"center", gap:4, marginTop:SP.sm,
+                ...TYPE.caption, color: isSelected ? clr : T.dim, fontWeight:600,
+                opacity: hover || isSelected ? 1 : 0.55, transition:`opacity ${MOTION.fast}`,
+              }}>
+                {isSelected ? "Showing projects" : "View projects"}
+                <ChevronRight size={11} style={{
+                  transform: isSelected ? "rotate(90deg)" : "none",
+                  transition:`transform ${MOTION.base}`,
+                }} />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -539,7 +579,7 @@ function KCard({ T, label, value, sub, accent, featured, onClick, isSelected }) 
         transition:"border-color .15s, box-shadow .15s",
       }}>
       <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:8, fontWeight:600, opacity:0.6 }}>{label}</div>
-      <div style={{ fontSize:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.1 }}>{value}</div>
+      <div style={{ fontSize:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:TYPE.display.fontFamily, lineHeight:1.1 }}>{value}</div>
       {sub && <div style={{ fontSize:11, color:T.muted, marginTop:5, lineHeight:1.4 }}>{sub}</div>}
     </div>
   );
@@ -871,7 +911,7 @@ function DonutChart({ slices, T }) {
       {/* Centre */}
       <circle cx={cx} cy={cy} r={innerR-6} fill={T.card2} opacity="0.5" />
       <text x={cx} y={cy - 12} textAnchor="middle" fill={T.text}
-        fontSize={22} fontWeight={700} fontFamily="DM Serif Display,serif">
+        fontSize={22} fontWeight={700} fontFamily={TYPE.display.fontFamily}>
         {fmtM(total)}
       </text>
       <text x={cx} y={cy + 8} textAnchor="middle" fill={T.muted}
@@ -983,20 +1023,20 @@ function BreakdownSection({ T, session }) {
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
           <select value={fy} onChange={e=>setFy(e.target.value)}
-            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}>
+            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}>
             <option value="__all__">All Fiscal Years</option>
             {allFYs.map(f=><option key={f} value={f}>{f}</option>)}
           </select>
           {isPMO && !editing && (
             <button onClick={startEdit}
-              style={{ padding:"6px 14px", background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", display:"flex", alignItems:"center", gap:6, transition:"border-color .15s, color .15s" }}>
+              style={{ padding:"6px 14px", background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, display:"flex", alignItems:"center", gap:6, transition:"border-color .15s, color .15s" }}>
               <Edit2 size={11}/> Set Targets
             </button>
           )}
           {isPMO && editing && (
             <div style={{ display:"flex", gap:7 }}>
               <button onClick={saveTargets} disabled={saving}
-                style={{ padding:"6px 15px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
+                style={{ padding:"6px 15px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                 {saving?"Saving…":"Save Targets"}
               </button>
               <button onClick={()=>setEditing(false)}
@@ -1044,7 +1084,7 @@ function BreakdownSection({ T, session }) {
                 </div>
 
                 <div style={{ display:"flex", alignItems:"baseline", gap:10, position:"relative" }}>
-                  <div style={{ fontSize:32, fontWeight:700, color:barColor, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></div>
+                  <div style={{ fontSize:32, fontWeight:700, color:barColor, fontFamily:TYPE.display.fontFamily, fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></div>
                   {plannedAbs > 0 && !editing && <div style={{ fontSize:13, color:T.dim }}>/ {fmtM(plannedAbs)} planned</div>}
                 </div>
 
@@ -1084,7 +1124,7 @@ function BreakdownSection({ T, session }) {
                       value={editBuf.orgs?.[name] || ""}
                       onChange={e=>setEditBuf(b=>({...b,orgs:{...b.orgs,[name]:e.target.value}}))}
                       placeholder={`e.g. ${Math.round(data.bac/1e6/10)*10+50}`}
-                      style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:7, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
+                      style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:7, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}/>
                     <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Enter in PKR Millions — e.g. 600 means PKR 600M</div>
                   </div>
                 )}
@@ -1133,7 +1173,7 @@ function BreakdownSection({ T, session }) {
 
                     {/* Big BAC number */}
                     <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:7, position:"relative" }}>
-                      <span style={{ fontSize:25, fontWeight:700, color:barColor, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></span>
+                      <span style={{ fontSize:25, fontWeight:700, color:barColor, fontFamily:TYPE.display.fontFamily, fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></span>
                       <span style={{ fontSize:14, color:T.muted, fontWeight:600 }}>{pct}%</span>
                     </div>
 
@@ -1153,7 +1193,7 @@ function BreakdownSection({ T, session }) {
                           value={editBuf.segs?.[name]||""}
                           onChange={e=>setEditBuf(b=>({...b,segs:{...b.segs,[name]:e.target.value}}))}
                           placeholder="e.g. 320"
-                          style={{ flex:1, background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:6, padding:"4px 8px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
+                          style={{ flex:1, background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:6, padding:"4px 8px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}/>
                       </div>
                     )}
 
@@ -1398,6 +1438,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
 
 // ─── COMMAND CENTER ───────────────────────────────────────────────────────────
 function CommandCenter({ T, session, onSelectProject }) {
+  const vp = useViewport();
   const [data,         setData]         = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
@@ -1545,65 +1586,87 @@ function CommandCenter({ T, session, onSelectProject }) {
   return (
     <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture, backgroundAttachment:"local" }}>
 
-      {/* ── HERO ── */}
-      {/* Light mode: full-bleed masthead flush to the page edges, matching
-          cashflow-dashboard.html exactly — negative margin cancels the
-          container's own padding so the hero reaches the true viewport edge,
-          square corners, no shadow (it's part of the page structure, not a
-          floating card). Dark mode keeps its original rounded floating card
-          completely unchanged. */}
-      <div className="pmo-card-in" style={{
-        background:T.heroGradient,
-        borderRadius: T.mode==="light" ? 0 : 16,
-        margin: T.mode==="light" ? "-20px -24px 0" : 0,
-        padding: T.mode==="light" ? "24px 48px 24px 56px" : "24px 32px",
-        display:"flex", alignItems:"center", gap:32,
-        boxShadow: T.mode==="light" ? "none" : T.shadow,
-        position:"relative", overflow:"hidden", minHeight:104,
-      }}>
-        {/* Ambient decoration — dark mode keeps the richer drifting mesh + arch
-            silhouette; light mode matches cashflow-dashboard.html's header
-            exactly: one static gold radial glow, top-right, nothing else. */}
-        {T.mode === "light" ? (
-          <div style={{position:"absolute", right:-60, top:-80, width:280, height:280, borderRadius:"50%", background:`radial-gradient(circle, ${GOLD}2E 0%, transparent 70%)`, pointerEvents:"none"}} />
-        ) : (
-          <>
-            <div className="pmo-mesh" style={{position:"absolute", inset:0, pointerEvents:"none"}}>
-              <div style={{position:"absolute", top:"-30%", right:"-6%", width:340, height:340, borderRadius:"50%", background:`radial-gradient(circle, ${GOLD}22 0%, transparent 68%)`}} />
-              <div style={{position:"absolute", bottom:"-40%", left:"20%", width:280, height:280, borderRadius:"50%", background:`radial-gradient(circle, ${EMERALD}14 0%, transparent 70%)`}} />
+      {/* ── EXECUTIVE HEADER ── */}
+      {/* Top of the visual hierarchy (§30). States the portfolio's position in
+          one glance: health verdict with an explanation, the two performance
+          indices with contextual status, and total CAPEX. When the indices
+          can't be computed it says WHY rather than printing a bare
+          "Insufficient Data" that reads as a broken dashboard (§8). */}
+      {(() => {
+        const health = healthOf(d.portfolio_cpi, d.portfolio_spi);
+        const cpi = perfStatus(d.portfolio_cpi);
+        const spi = perfStatus(d.portfolio_spi);
+        const noData = health.key === "nodata";
+
+        const Index = ({ label, value, status, hint }) => (
+          <div style={{ position:"relative", minWidth:96 }}>
+            <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:6 }}>{label}</div>
+            <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
+              <span style={{ ...TYPE.metricXL, color: value == null ? "rgba(255,255,255,0.35)" : "#fff" }}>
+                {value == null ? "—" : <AnimatedNumber value={fmtR(value)} />}
+              </span>
+              {value != null && (
+                <span style={{ ...TYPE.caption, fontWeight:700, color:status.color }}>{status.label}</span>
+              )}
             </div>
-            <svg width="230" height="140" viewBox="0 0 230 140" style={{position:"absolute", right:0, bottom:0, pointerEvents:"none"}} aria-hidden="true">
-              <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill="#fff" opacity="0.045" />
-              <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={GOLD} opacity="0.09" />
-            </svg>
-          </>
-        )}
-        <div style={{position:"relative"}}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", textTransform:"uppercase", letterSpacing:1.8, marginBottom:9, fontWeight:600 }}>Portfolio health</div>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div className="pmo-pulse-dot" style={{ width:11, height:11, borderRadius:"50%", background:healthColor, color:healthColor }} />
-            <div style={{ fontSize:32, fontWeight:700, color:healthColor, fontFamily:"DM Serif Display,serif" }}>{d.portfolio_health}</div>
+            <div style={{ ...TYPE.caption, color:"rgba(255,255,255,0.5)", marginTop:3 }}>{hint}</div>
           </div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:5 }}>CPI ≥ 0.95 · SPI ≥ 0.95 thresholds</div>
-        </div>
-        <div style={{ width:1, height:56, background:"rgba(255,255,255,0.16)", flexShrink:0 }} />
-        <div style={{ textAlign:"center", position:"relative" }}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", letterSpacing:1.8, marginBottom:7, fontWeight:600, textTransform:"uppercase" }}>CPI</div>
-          <div style={{ fontSize:32, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtR(d.portfolio_cpi)} /></div>
-          <div style={{ fontSize:11, color:d.portfolio_cpi >= 0.95 ? "#6EE7D0" : "#FCA5AF", marginTop:2 }}>Cost performance</div>
-        </div>
-        <div style={{ width:1, height:56, background:"rgba(255,255,255,0.16)", flexShrink:0 }} />
-        <div style={{ textAlign:"center", position:"relative" }}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", letterSpacing:1.8, marginBottom:7, fontWeight:600, textTransform:"uppercase" }}>SPI</div>
-          <div style={{ fontSize:32, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtR(d.portfolio_spi)} /></div>
-          <div style={{ fontSize:11, color:d.portfolio_spi >= 0.95 ? "#6EE7D0" : "#FCA5AF", marginTop:2 }}>Schedule performance</div>
-        </div>
-        <div style={{ marginLeft:"auto", textAlign:"right", position:"relative" }}>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", marginBottom:5 }}>Total CAPEX portfolio</div>
-          <div style={{ fontSize:29, fontWeight:700, color:GOLD, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>PKR <AnimatedNumber value={fmtM(d.total_capex)} /></div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)" }}>{d.total_projects} projects · FY 2026-27</div>
-        </div>
-      </div>
+        );
+
+        return (
+          <div className="pmo-in" style={{
+            background:T.hero, borderRadius:R.xl,
+            padding: vp.isCompact ? `${SP.lg}px ${SP.lg}px` : `${SP.xl}px ${SP.xxl}px`,
+            display:"flex", alignItems:"center", flexWrap:"wrap",
+            gap: vp.isCompact ? SP.lg : SP.xxl,
+            boxShadow:T.shadowLg, position:"relative", overflow:"hidden",
+            border:"1px solid rgba(255,255,255,0.08)",
+          }}>
+            {/* Ambient depth — barely visible, never competes with the figures */}
+            <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
+              <div style={{ position:"absolute", top:"-45%", right:"-4%", width:360, height:360, borderRadius:"50%",
+                background:`radial-gradient(circle, ${BRAND.blueBright}26 0%, transparent 68%)` }} />
+              <div style={{ position:"absolute", bottom:"-55%", left:"22%", width:300, height:300, borderRadius:"50%",
+                background:`radial-gradient(circle, ${DATA.positive}18 0%, transparent 70%)` }} />
+            </div>
+            {/* Institutional signature — the one decorative element in the header */}
+            <svg width="240" height="150" viewBox="0 0 230 140" aria-hidden="true"
+              style={{ position:"absolute", right:0, bottom:0, pointerEvents:"none" }}>
+              <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill="#fff" opacity="0.035" />
+              <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={BRAND.gold} opacity="0.075" />
+            </svg>
+
+            {/* Health verdict */}
+            <div style={{ position:"relative", minWidth:230, flex:"1 1 240px" }}>
+              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:7 }}>Portfolio health</div>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <StatusDot color={health.color} size={10} pulse={!noData} />
+                <span style={{ ...TYPE.display, fontSize: vp.isCompact ? 24 : 30, color:health.color }}>{health.label}</span>
+              </div>
+              <div style={{ ...TYPE.bodySm, color:"rgba(255,255,255,0.6)", marginTop:6, maxWidth:330, lineHeight:1.45 }}>
+                {health.note}
+              </div>
+            </div>
+
+            {!vp.isCompact && <div style={{ width:1, alignSelf:"stretch", background:"rgba(255,255,255,0.14)" }} />}
+
+            <Index label="CPI" value={d.portfolio_cpi > 0 ? d.portfolio_cpi : null} status={cpi} hint="Cost performance" />
+            <Index label="SPI" value={d.portfolio_spi > 0 ? d.portfolio_spi : null} status={spi} hint="Schedule performance" />
+
+            {/* Financial position */}
+            <div style={{ marginLeft: vp.isCompact ? 0 : "auto", textAlign: vp.isCompact ? "left" : "right", position:"relative" }}>
+              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:6 }}>Total CAPEX portfolio</div>
+              <div style={{ ...TYPE.metricXL, fontSize: vp.isCompact ? 26 : 32, color:BRAND.gold }}>
+                <span style={{ ...TYPE.caption, fontWeight:600, color:"rgba(255,255,255,0.55)", marginRight:6 }}>PKR</span>
+                <AnimatedNumber value={fmtM(d.total_capex)} />
+              </div>
+              <div style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)", marginTop:4 }}>
+                {d.total_projects} projects · FY 2026-27
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── TAB BAR ── */}
       <div style={{ display:"flex", borderBottom:"2px solid "+T.border, gap:4 }}>
@@ -1613,7 +1676,7 @@ function CommandCenter({ T, session, onSelectProject }) {
             <button key={tab.id} onClick={() => switchTab(tab.id)}
               style={{
                 padding:"10px 24px", border:"none", borderBottom: isActive ? "2px solid "+GOLD : "2px solid transparent",
-                marginBottom:"-2px", cursor:"pointer", fontFamily:"Inter,sans-serif",
+                marginBottom:"-2px", cursor:"pointer", fontFamily:TYPE.body.fontFamily,
                 fontSize:13, fontWeight: isActive ? 700 : 500, letterSpacing:0.2,
                 background: isActive ? T.card2 : "transparent",
                 borderRadius: isActive ? "8px 8px 0 0" : 0,
@@ -1811,7 +1874,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     setSaving(false);
   };
 
-  const inp = {background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",outline:"none",width:"100%",boxSizing:"border-box"};
+  const inp = {background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none",width:"100%",boxSizing:"border-box"};
   const sel = {...inp,cursor:"pointer"};
   const lbl = {display:"block",fontSize:10,fontWeight:700,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:5};
 
@@ -1819,7 +1882,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:700,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:"DM Serif Display,serif"}}>{isEdit?`Edit — ${project.code || "-"}`:"New Project"}</div>
+          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily}}>{isEdit?`Edit — ${project.code || "-"}`:"New Project"}</div>
           <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
         </div>
         {err&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:7,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#F87171",fontSize:13,display:"flex",gap:8}}><span>⚠</span>{err}</div>}
@@ -1896,8 +1959,8 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         <textarea value={form.notes} onChange={e=>set("notes",e.target.value)} rows={3} placeholder="Additional notes…" style={{...inp,resize:"vertical",lineHeight:1.6,marginBottom:18}}/>
 
         <div style={{display:"flex",gap:10}}>
-          <button onClick={onClose} style={{flex:1,padding:"10px",borderRadius:8,border:`1px solid ${T.border}`,background:"none",color:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Inter,sans-serif"}}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{flex:2,padding:"10px",borderRadius:8,border:"none",background:saving?T.muted:NAVY,color:"#fff",cursor:saving?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:"Inter,sans-serif"}}>{saving?"Saving…":isEdit?"Save Changes":"Create Project"}</button>
+          <button onClick={onClose} style={{flex:1,padding:"10px",borderRadius:8,border:`1px solid ${T.border}`,background:"none",color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{flex:2,padding:"10px",borderRadius:8,border:"none",background:saving?T.muted:NAVY,color:"#fff",cursor:saving?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:TYPE.body.fontFamily}}>{saving?"Saving…":isEdit?"Save Changes":"Create Project"}</button>
         </div>
       </div>
     </div>
@@ -2248,9 +2311,9 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"44px 40px",width:420,textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{fontSize:40,marginBottom:16}}>✅</div>
-        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"DM Serif Display,serif",marginBottom:8}}>Import Complete</div>
+        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily,marginBottom:8}}>Import Complete</div>
         <div style={{fontSize:14,color:T.muted,lineHeight:1.8,marginBottom:28}}>{parsed.length} projects loaded successfully.<br/>Dashboard KPIs updated automatically.</div>
-        <button onClick={onImported} style={{width:"100%",padding:"12px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>View Projects</button>
+        <button onClick={onImported} style={{width:"100%",padding:"12px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>View Projects</button>
       </div>
     </div>
   );
@@ -2259,7 +2322,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:620,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:"DM Serif Display,serif"}}>{step==="pick"?"Import Projects from Excel":`Preview — ${fileName}`}</div>
+          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily}}>{step==="pick"?"Import Projects from Excel":`Preview — ${fileName}`}</div>
           <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
         </div>
 
@@ -2272,8 +2335,8 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
               <div style={{fontSize:12,color:T.muted}}>Accepts .xlsx · .xls · .csv — first row must be column headers</div>
             </label>
             <div style={{display:"flex",gap:10}}>
-              <button onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Inter,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
-              <button onClick={onClose} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Inter,sans-serif"}}>Cancel</button>
+              <button onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
+              <button onClick={onClose} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
             </div>
           </>
         )}
@@ -2284,7 +2347,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             <div style={{display:"flex",gap:10,marginBottom:16}}>
               {[{l:"To Import",v:parsed.length,c:"#2DD4BF"},{l:"Parse Errors",v:errors.length,c:errors.length?"#F87171":T.dim},{l:"New Lookups",v:totalNew,c:totalNew?GOLD:T.dim}].map((s,i)=>(
                 <div key={i} style={{flex:1,background:T.card2,border:`1px solid ${T.border}`,borderRadius:8,padding:"12px",textAlign:"center"}}>
-                  <div style={{fontSize:24,fontWeight:700,color:s.c,fontFamily:"DM Serif Display,serif"}}>{s.v}</div>
+                  <div style={{fontSize:24,fontWeight:700,color:s.c,fontFamily:TYPE.display.fontFamily}}>{s.v}</div>
                   <div style={{fontSize:11,color:T.muted,marginTop:3}}>{s.l}</div>
                 </div>
               ))}
@@ -2322,8 +2385,8 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             {progress&&<div style={{background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.3)",borderRadius:8,padding:"9px 14px",marginBottom:12,fontSize:13,color:"#2DD4BF"}}>⏳ {progress}</div>}
 
             <div style={{display:"flex",gap:10}}>
-              <button onClick={onClose} disabled={importing} style={{flex:1,padding:"11px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Inter,sans-serif"}}>Cancel</button>
-              <button onClick={executeImport} disabled={importing||parsed.length===0} style={{flex:2,padding:"11px",background:importing||parsed.length===0?"#555":NAVY,border:"none",borderRadius:8,color:"#fff",cursor:importing?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:"Inter,sans-serif"}}>
+              <button onClick={onClose} disabled={importing} style={{flex:1,padding:"11px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
+              <button onClick={executeImport} disabled={importing||parsed.length===0} style={{flex:2,padding:"11px",background:importing||parsed.length===0?"#555":NAVY,border:"none",borderRadius:8,color:"#fff",cursor:importing?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:TYPE.body.fontFamily}}>
                 {importing?"Importing…":`Confirm — Import ${parsed.length} Projects`}
               </button>
             </div>
@@ -2563,28 +2626,28 @@ function ProjectsPage({ T, session, onSelectProject }) {
             {activeFilterCount||search.trim() ? "In this view" : "All projects"}
           </div>
           <div style={{display:"flex",alignItems:"baseline",gap:7}}>
-            <span style={{fontSize:26,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{filtered.length}</span>
+            <span style={{fontSize:26,fontWeight:700,color:"#fff",fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{filtered.length}</span>
             <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>of {rows.length}</span>
           </div>
         </div>
         <div style={{width:1,height:38,background:"rgba(255,255,255,0.16)",flexShrink:0}}/>
         <div style={{position:"relative"}}>
           <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>DF Recommended</div>
-          <div style={{fontSize:19,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.df)}</div>
+          <div style={{fontSize:19,fontWeight:700,color:"#fff",fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.df)}</div>
         </div>
         <div style={{width:1,height:38,background:"rgba(255,255,255,0.16)",flexShrink:0}}/>
         <div style={{position:"relative"}}>
           <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>Approved Budget</div>
-          <div style={{fontSize:19,fontWeight:700,color:GOLD,fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.bac)}</div>
+          <div style={{fontSize:19,fontWeight:700,color:GOLD,fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.bac)}</div>
         </div>
         <div style={{marginLeft:"auto",display:"flex",gap:18,position:"relative"}}>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.6,fontWeight:600,marginBottom:4}}>Approved</div>
-            <div style={{fontSize:17,fontWeight:700,color:"#6EE7D0",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.approved}</div>
+            <div style={{fontSize:17,fontWeight:700,color:"#6EE7D0",fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.approved}</div>
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.6,fontWeight:600,marginBottom:4}}>Carry fwd</div>
-            <div style={{fontSize:17,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.cf}</div>
+            <div style={{fontSize:17,fontWeight:700,color:"#fff",fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.cf}</div>
           </div>
         </div>
       </div>
@@ -2594,7 +2657,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
         {/* Search */}
         <div style={{display:"flex",alignItems:"center",gap:8,background:T.inputBg,border:"1px solid "+(search?GOLD+"88":T.inputBorder),borderRadius:8,padding:"7px 12px",flex:1,maxWidth:260,transition:"border-color .15s"}}>
           <Search size={13} color={search?GOLD:T.muted}/>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or project ID…" style={{background:"none",border:"none",outline:"none",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",flex:1,minWidth:0}}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or project ID…" style={{background:"none",border:"none",outline:"none",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,flex:1,minWidth:0}}/>
           {search && <button onClick={()=>setSearch("")} title="Clear search" style={{background:"none",border:"none",cursor:"pointer",color:T.dim,padding:0,display:"flex"}}><X size={12}/></button>}
         </div>
 
@@ -2608,23 +2671,23 @@ function ProjectsPage({ T, session, onSelectProject }) {
                 <button onClick={c.clear} title={"Remove "+c.label+" filter"} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:0,lineHeight:0}}><X size={11}/></button>
               </span>
             ))}
-            <button onClick={clearAllFilters} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:11,textDecoration:"underline",fontFamily:"Inter,sans-serif",padding:"0 2px"}}>Clear all</button>
+            <button onClick={clearAllFilters} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:11,textDecoration:"underline",fontFamily:TYPE.body.fontFamily,padding:"0 2px"}}>Clear all</button>
           </div>
         )}
 
         {/* Right buttons */}
         <div style={{marginLeft:"auto",display:"flex",gap:7,alignItems:"center"}}>
           <button onClick={downloadExport}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:EMERALD+T.washAlpha,border:"1px solid "+EMERALD+"66",borderRadius:8,color:EMERALD,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}
+            style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:EMERALD+T.washAlpha,border:"1px solid "+EMERALD+"66",borderRadius:8,color:EMERALD,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:TYPE.body.fontFamily,whiteSpace:"nowrap"}}
             title={activeFilterCount>0?"Download the projects currently in view":"Download all projects"}>
             <Download size={13}/>
             {activeFilterCount||search.trim()?`Export ${filtered.length}`:"Export all"}
           </button>
           {isPMO&&(
             <>
-              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",background:NAVY,border:"1px solid "+NAVY,borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif",boxShadow:T.shadow,whiteSpace:"nowrap"}}><Plus size={13}/>New project</button>
-              <button onClick={()=>setShowImport(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}><Upload size={13}/>Import</button>
-              <button onClick={downloadDataTemplate} title="Download every project pre-filled in the import template format" style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}><Download size={13}/>Data template</button>
+              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",background:NAVY,border:"1px solid "+NAVY,borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily,boxShadow:T.shadow,whiteSpace:"nowrap"}}><Plus size={13}/>New project</button>
+              <button onClick={()=>setShowImport(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:TYPE.body.fontFamily,whiteSpace:"nowrap"}}><Upload size={13}/>Import</button>
+              <button onClick={downloadDataTemplate} title="Download every project pre-filled in the import template format" style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:TYPE.body.fontFamily,whiteSpace:"nowrap"}}><Download size={13}/>Data template</button>
             </>
           )}
         </div>
@@ -2652,8 +2715,8 @@ function ProjectsPage({ T, session, onSelectProject }) {
             </tr>
             {/* Filter row */}
             {(()=>{
-              const fSel = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:"Inter,sans-serif",outline:"none",cursor:"pointer"};
-              const fInp = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:"Inter,sans-serif",outline:"none"};
+              const fSel = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none",cursor:"pointer"};
+              const fInp = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
               const fc   = {padding:"5px 8px",background:T.card2,boxShadow:`inset 0 -2px 0 ${activeFilterCount>0?GOLD+"99":T.border}`};
               const highlight = (val) => val ? {...fSel,border:"1px solid "+GOLD,color:GOLD,fontWeight:600} : fSel;
               const highlightI = (val) => val ? {...fInp,border:"1px solid "+GOLD,color:GOLD,fontWeight:600} : fInp;
@@ -2775,7 +2838,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
             <div style={{width:46,height:46,borderRadius:14,background:GOLD+T.badgeAlpha,display:"flex",alignItems:"center",justifyContent:"center"}}>
               <Search size={20} color={GOLD}/>
             </div>
-            <div style={{fontSize:15,fontWeight:600,color:T.text,fontFamily:"DM Serif Display,serif"}}>
+            <div style={{fontSize:15,fontWeight:600,color:T.text,fontFamily:TYPE.display.fontFamily}}>
               {rows.length===0 ? "No projects yet" : "No projects match these filters"}
             </div>
             <div style={{fontSize:12,color:T.muted,maxWidth:340,lineHeight:1.5}}>
@@ -2784,10 +2847,10 @@ function ProjectsPage({ T, session, onSelectProject }) {
                 : "Try removing a filter to widen the search."}
             </div>
             {rows.length>0&&chips.length>0&&(
-              <button onClick={clearAllFilters} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>Clear all filters</button>
+              <button onClick={clearAllFilters} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>Clear all filters</button>
             )}
             {rows.length===0&&isPMO&&(
-              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>New project</button>
+              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>New project</button>
             )}
           </div>
         )}
@@ -2906,7 +2969,7 @@ function CampusPage({ T, session, onSelectProject }) {
 
   const th = {fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",whiteSpace:"nowrap",textAlign:"left",borderBottom:"1px solid "+T.border};
   const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
-  const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",outline:"none"};
+  const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
 
   if (loading) return <div style={{color:T.muted,fontSize:13,padding:20}}>Loading campuses…</div>;
   if (err)     return <div style={{color:"#F87171",fontSize:13,padding:20}}>{err}</div>;
@@ -2974,7 +3037,7 @@ function CampusPage({ T, session, onSelectProject }) {
               {sel ? ` in ${sel}` : ""}
             </span>
             <button onClick={()=>setActiveCard(null)}
-              style={{marginLeft:"auto",background:"none",border:"1px solid "+T.border,borderRadius:6,color:T.muted,fontSize:11,padding:"4px 10px",cursor:"pointer",fontFamily:"Inter,sans-serif"}}>
+              style={{marginLeft:"auto",background:"none",border:"1px solid "+T.border,borderRadius:6,color:T.muted,fontSize:11,padding:"4px 10px",cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>
               ✕ Clear
             </button>
           </div>
@@ -3061,14 +3124,14 @@ function SettingsPage({ T, session }) {
 
   const inp = {
     background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8,
-    padding:"10px 14px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif",
+    padding:"10px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", width:"100%", boxSizing:"border-box",
   };
 
   const Btn = ({ onClick, loading, disabled, children, variant="primary" }) => (
     <button onClick={onClick} disabled={loading || disabled} style={{
       padding:"10px 22px", borderRadius:8, border:"none", cursor: loading||disabled ? "default" : "pointer",
-      fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif",
+      fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
       background: loading||disabled ? T.muted : variant==="primary" ? NAVY : "transparent",
       color: variant==="primary" ? "#fff" : T.muted,
       border: variant==="primary" ? "none" : `1px solid ${T.border}`,
@@ -3376,7 +3439,7 @@ function PerformancePage({ T, session, onSelectProject }) {
             borderRight: i < 6 ? `1px solid ${T.border}` : "none",
           }}>
             <div style={{ fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1.5, marginBottom:3 }}>{label}</div>
-            <div style={{ fontSize:22, fontWeight:700, color, fontFamily:"DM Serif Display,serif", lineHeight:1 }}>{value}</div>
+            <div style={{ fontSize:22, fontWeight:700, color, fontFamily:TYPE.display.fontFamily, lineHeight:1 }}>{value}</div>
           </div>
         ))}
         <div style={{ marginLeft:"auto", alignSelf:"center", fontSize:11, color:T.dim, paddingLeft:16 }}>
@@ -3392,7 +3455,7 @@ function PerformancePage({ T, session, onSelectProject }) {
             background: filter===f.id ? "rgba(216,152,64,0.12)" : T.card2,
             color: filter===f.id ? GOLD : T.muted,
             fontSize:11.5, fontWeight:filter===f.id ? 700 : 400,
-            cursor:"pointer", fontFamily:"Inter,sans-serif",
+            cursor:"pointer", fontFamily:TYPE.body.fontFamily,
           }}>
             {f.label} <span style={{ opacity:0.55 }}>({f.count})</span>
           </button>
@@ -3614,7 +3677,7 @@ function ProjectAttachments({ T, session, projectId }) {
           <>
             <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)} />
             <button onClick={()=>fileInputRef.current?.click()} disabled={uploading}
-              style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", background:uploading?T.muted:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:11.5, fontWeight:700, cursor:uploading?"default":"pointer", fontFamily:"Inter,sans-serif" }}>
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", background:uploading?T.muted:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:11.5, fontWeight:700, cursor:uploading?"default":"pointer", fontFamily:TYPE.body.fontFamily }}>
               <Upload size={12}/> {uploading ? "Uploading…" : "Upload"}
             </button>
           </>
@@ -3795,11 +3858,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16}}>
           <div>
             <div style={{fontSize:11, color:T.dim, fontFamily:"monospace", marginBottom:3}}>{evm.code}</div>
-            <div style={{fontSize:21, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.2}}>{evm.name}</div>
+            <div style={{fontSize:21, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, lineHeight:1.2}}>{evm.name}</div>
           </div>
           <div style={{display:"flex", gap:8, alignItems:"center", flexShrink:0, flexWrap:"wrap", justifyContent:"flex-end"}}>
             {onGoToDiscussion && (
-              <button onClick={()=>onGoToDiscussion(projectId)} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 13px",borderRadius:20,background:commentCount>0?"rgba(248,113,113,0.1)":T.card2,border:`1px solid ${commentCount>0?"rgba(248,113,113,0.4)":T.border}`,color:commentCount>0?"#F87171":T.muted,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"Inter,sans-serif"}}>
+              <button onClick={()=>onGoToDiscussion(projectId)} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 13px",borderRadius:20,background:commentCount>0?"rgba(248,113,113,0.1)":T.card2,border:`1px solid ${commentCount>0?"rgba(248,113,113,0.4)":T.border}`,color:commentCount>0?"#F87171":T.muted,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:TYPE.body.fontFamily}}>
                 💬 {commentCount>0?`Discussion (${commentCount})`:"Start Discussion"}
               </button>
             )}
@@ -3824,7 +3887,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         ].map(({label,value,c},i) => (
           <div key={label} style={{textAlign:"center", padding:"0 16px", borderRight:i<7?`1px solid ${T.border}`:"none"}}>
             <div style={{fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1.5, marginBottom:3}}>{label}</div>
-            <div style={{fontSize:18, fontWeight:700, color:c, fontFamily:"DM Serif Display,serif", lineHeight:1, whiteSpace:"nowrap"}}>{value}</div>
+            <div style={{fontSize:18, fontWeight:700, color:c, fontFamily:TYPE.display.fontFamily, lineHeight:1, whiteSpace:"nowrap"}}>{value}</div>
           </div>
         ))}
       </div>
@@ -3899,7 +3962,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                 ].map(({label,value,sub}) => (
                   <div key={label} style={{background:T.card2, borderRadius:8, padding:"10px", textAlign:"center"}}>
                     <div style={{fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1, marginBottom:4}}>{label}</div>
-                    <div style={{fontSize:17, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif"}}>{value}</div>
+                    <div style={{fontSize:17, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily}}>{value}</div>
                     <div style={{fontSize:9, color:T.dim, marginTop:3}}>{sub}</div>
                   </div>
                 ))}
@@ -3935,7 +3998,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                 </div>
               </div>
               {session?.role==="pmo" && !assigningPM && (
-                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:7, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif"}}>
+                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:7, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Change PM
                 </button>
               )}
@@ -3944,7 +4007,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             <>
               <div style={{textAlign:"center", color:T.dim, fontSize:13, padding:"20px 0 14px"}}>No project manager assigned yet.</div>
               {session?.role==="pmo" && !assigningPM && (
-                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif"}}>
+                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Assign Project Manager
                 </button>
               )}
@@ -3953,14 +4016,14 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           {session?.role==="pmo" && assigningPM && (
             <div style={{marginTop:10, padding:14, background:T.card2, borderRadius:8, border:"1px solid "+T.border}}>
               <label style={{fontSize:11, color:T.muted, fontWeight:700, letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:7}}>Select Project Manager</label>
-              <select value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:10, boxSizing:"border-box"}}>
+              <select value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", marginBottom:10, boxSizing:"border-box"}}>
                 <option value="">— Select PM —</option>
                 {allPMs.map(p=>(
                   <option key={p.id} value={p.id}>{p.full_name||p.username} (@{p.username})</option>
                 ))}
               </select>
               <div style={{display:"flex", gap:8}}>
-                <button onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:6, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif"}}>
+                <button onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:6, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   {savingPM?"Saving…":"Assign"}
                 </button>
                 <button onClick={()=>{setAssigningPM(false);setSelectedPM("");}} style={{flex:1, padding:"8px", background:"none", border:"1px solid "+T.border, borderRadius:6, color:T.muted, fontSize:12, cursor:"pointer"}}>
@@ -3982,12 +4045,12 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
 function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClose, inviteLink }) {
   const [copied, setCopied] = useState(false);
   const copyLink = () => { navigator.clipboard.writeText(inviteLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); }); };
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:480, maxHeight:"90vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif", marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Create New User</div>
+        <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Create New User</div>
         <div style={{ marginBottom:14 }}>
           <label style={lbl}>Full Name</label>
           <input value={form.full_name} onChange={e => onChange("full_name", e.target.value)} placeholder="e.g. Ahmed Khan" style={inp} />
@@ -4021,7 +4084,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
               <div style={{ flex:1, fontSize:11, color:T.dim, wordBreak:"break-all", lineHeight:1.5, fontFamily:"monospace", background:T.inputBg, padding:"6px 10px", borderRadius:6, border:`1px solid ${T.inputBorder}` }}>
                 {inviteLink.length > 90 ? inviteLink.slice(0,90)+"…" : inviteLink}
               </div>
-              <button onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:7, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?"#2DD4BF":T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
+              <button onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:7, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?"#2DD4BF":T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
                 {copied?"✓ Copied":"Copy"}
               </button>
             </div>
@@ -4029,8 +4092,8 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
           </div>
         )}
         <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>{inviteLink?"Close":"Cancel"}</button>
-          {!inviteLink && <button onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>{creating?"Creating user…":"Send Invite"}</button>}
+          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{inviteLink?"Close":"Cancel"}</button>
+          {!inviteLink && <button onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{creating?"Creating user…":"Send Invite"}</button>}
         </div>
         {!inviteLink && <div style={{ marginTop:14, fontSize:11, color:T.dim, lineHeight:1.6 }}>You'll get the invite link regardless of whether the email arrives.</div>}
       </div>
@@ -4039,13 +4102,13 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
 }
 
 function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search, onSearch, saving, onSave, onClose }) {
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const q = search.toLowerCase();
   const filtered = sortRealCodeFirst(q ? projects.filter(p => p.name.toLowerCase().includes(q) || (p.code||"").toLowerCase().includes(q)) : projects);
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:460, maxHeight:"85vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif", marginBottom:4, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Assign Projects — {user.username}</div>
+        <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:4, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Assign Projects — {user.username}</div>
         <div style={{ fontSize:12, color:T.muted, marginBottom:12, paddingTop:10 }}>{selectedIds.size} project{selectedIds.size !== 1 ? "s" : ""} selected</div>
         <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Search by name or code…" style={{ ...inp, marginBottom:12 }} />
         <div style={{ maxHeight:300, overflow:"auto", border:`1px solid ${T.border}`, borderRadius:8 }}>
@@ -4067,8 +4130,8 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
           {filtered.length === 0 && <div style={{ padding:"20px", textAlign:"center", color:T.dim, fontSize:13 }}>No projects match.</div>}
         </div>
         <div style={{ display:"flex", gap:10, marginTop:18 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>Cancel</button>
-          <button onClick={onSave} disabled={saving} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:saving?T.muted:NAVY, color:"#fff", cursor:saving?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>
+          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
+          <button onClick={onSave} disabled={saving} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:saving?T.muted:NAVY, color:"#fff", cursor:saving?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>
             {saving ? "Saving…" : `Save ${selectedIds.size} Assignment${selectedIds.size !== 1 ? "s" : ""}`}
           </button>
         </div>
@@ -4232,7 +4295,7 @@ function UserManagementPage({ T, session }) {
   };
 
   // ── Shared table styles ────────────────────────────────────────────────────
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const th  = { fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 16px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" };
   const td  = { padding:"12px 16px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" };
 
@@ -4245,7 +4308,7 @@ function UserManagementPage({ T, session }) {
         <div style={{ marginLeft:"auto" }}>
           <button onClick={() => { setShowCreate(true); setCreateStatus(null); }} style={{
             display:"flex", alignItems:"center", gap:7, padding:"8px 18px", background:NAVY, color:"#fff",
-            border:"none", borderRadius:8, cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif",
+            border:"none", borderRadius:8, cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
             boxShadow:"0 3px 12px rgba(24,80,120,0.3)",
           }}>+ Create User</button>
         </div>
@@ -4298,7 +4361,7 @@ function UserManagementPage({ T, session }) {
                           onBlur={()=>savePhone(u.id)}
                           onKeyDown={e=>{ if(e.key==="Enter") savePhone(u.id); if(e.key==="Escape") setEditPhoneId(null); }}
                           placeholder="+923001234567"
-                          style={{ width:150, background:T.inputBg, border:"1px solid "+GOLD, borderRadius:5, padding:"4px 7px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}
+                          style={{ width:150, background:T.inputBg, border:"1px solid "+GOLD, borderRadius:5, padding:"4px 7px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}
                         />
                       ) : (
                         <span
@@ -4326,13 +4389,13 @@ function UserManagementPage({ T, session }) {
                       {!me && (
                         <div style={{ display:"flex", gap:8, justifyContent:"flex-end", alignItems:"center" }}>
                           {u.role === "project_manager" && (
-                            <button onClick={() => openAssign(u)} style={{ padding:"5px 12px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
+                            <button onClick={() => openAssign(u)} style={{ padding:"5px 12px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                               Assign Projects
                             </button>
                           )}
                           {u.role !== "pmo" && (
                             <button onClick={() => toggleActive(u)} style={{
-                              padding:"5px 12px", borderRadius:7, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif",
+                              padding:"5px 12px", borderRadius:7, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily,
                               border:`1px solid ${u.is_active?"rgba(248,113,113,0.4)":"rgba(45,212,191,0.4)"}`,
                               background:"none", color:u.is_active?"#F87171":"#2DD4BF",
                             }}>
@@ -4343,15 +4406,15 @@ function UserManagementPage({ T, session }) {
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                                 <span style={{ fontSize:11, color:T.muted }}>Sure?</span>
-                                <button onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:7, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:"#F87171", fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", fontWeight:700 }}>
+                                <button onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:7, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:"#F87171", fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
                                   {deleting === u.id ? "Deleting…" : "Yes, Delete"}
                                 </button>
-                                <button onClick={() => setConfirmDelete(null)} style={{ padding:"5px 8px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
+                                <button onClick={() => setConfirmDelete(null)} style={{ padding:"5px 8px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                                   Cancel
                                 </button>
                               </div>
                             ) : (
-                              <button onClick={() => setConfirmDelete(u.id)} style={{ padding:"5px 12px", borderRadius:7, border:"1px solid rgba(248,113,113,0.3)", background:"none", color:"#F87171", fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", opacity:0.7 }}>
+                              <button onClick={() => setConfirmDelete(u.id)} style={{ padding:"5px 12px", borderRadius:7, border:"1px solid rgba(248,113,113,0.3)", background:"none", color:"#F87171", fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, opacity:0.7 }}>
                                 Delete
                               </button>
                             )
@@ -4563,7 +4626,7 @@ function ActivityLogPage({ T, session }) {
 
   const sel = {
     background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:7,
-    padding:"7px 10px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif",
+    padding:"7px 10px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", cursor:"pointer",
   };
   const dateInp = {
@@ -4594,7 +4657,7 @@ function ActivityLogPage({ T, session }) {
         </div>
 
         {hasFilters && (
-          <button onClick={clearFilters} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif" }}>
+          <button onClick={clearFilters} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>
             Clear filters
           </button>
         )}
@@ -4626,7 +4689,7 @@ function ActivityLogPage({ T, session }) {
               : "Actions taken in the portal — project updates, user management, comments — will appear here automatically."}
           </div>
           {hasFilters && (
-            <button onClick={clearFilters} style={{ marginTop:4, padding:"7px 18px", background:NAVY, color:"#fff", border:"none", borderRadius:7, cursor:"pointer", fontSize:12, fontFamily:"Inter,sans-serif" }}>
+            <button onClick={clearFilters} style={{ marginTop:4, padding:"7px 18px", background:NAVY, color:"#fff", border:"none", borderRadius:7, cursor:"pointer", fontSize:12, fontFamily:TYPE.body.fontFamily }}>
               Clear filters
             </button>
           )}
@@ -4732,7 +4795,7 @@ function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
         </div>
         <div style={{ fontSize:13.5, color:T.text, lineHeight:1.65, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{comment.body}</div>
         {!depth && onReply && (
-          <button onClick={() => onReply(comment)} style={{ marginTop:7, background:"none", border:"none", cursor:"pointer", fontSize:11, color:T.muted, padding:0, fontFamily:"Inter,sans-serif" }}>
+          <button onClick={() => onReply(comment)} style={{ marginTop:7, background:"none", border:"none", cursor:"pointer", fontSize:11, color:T.muted, padding:0, fontFamily:TYPE.body.fontFamily }}>
             ↩ Reply
           </button>
         )}
@@ -4762,14 +4825,14 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
         placeholder="Write a comment… (Ctrl+Enter to post)"
         rows={3}
         onKeyDown={e => { if (e.key==="Enter" && (e.ctrlKey||e.metaKey)) onPost(); }}
-        style={{ width:"100%", background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", resize:"vertical", boxSizing:"border-box" }}
+        style={{ width:"100%", background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", resize:"vertical", boxSizing:"border-box" }}
       />
       <div style={{ display:"flex", justifyContent:"flex-end", marginTop:8 }}>
         <button onClick={onPost} disabled={posting || !value.trim()} style={{
           padding:"7px 20px", borderRadius:7, border:"none",
           background: posting||!value.trim() ? T.muted : NAVY,
           color:"#fff", cursor:posting||!value.trim()?"default":"pointer",
-          fontSize:12, fontWeight:700, fontFamily:"Inter,sans-serif",
+          fontSize:12, fontWeight:700, fontFamily:TYPE.body.fontFamily,
           boxShadow: posting||!value.trim() ? "none" : "0 3px 10px rgba(24,80,120,0.3)",
         }}>{posting ? "Posting…" : "Post Comment"}</button>
       </div>
@@ -4975,7 +5038,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
             <button key={tab.id} onClick={() => setView(tab.id)} style={{
               flex:1, padding:"11px 0", background:"none", border:"none", borderBottom:`2px solid ${view===tab.id?GOLD:"transparent"}`,
               color:view===tab.id?GOLD:T.muted, fontSize:12.5, fontWeight:view===tab.id?700:400,
-              cursor:"pointer", fontFamily:"Inter,sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+              cursor:"pointer", fontFamily:TYPE.body.fontFamily, display:"flex", alignItems:"center", justifyContent:"center", gap:6,
             }}>
               {tab.label}
               {tab.badge > 0 && (
@@ -5201,7 +5264,7 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
 
 function MemberEditModal({ T, roleId, data, onSave, onClose }) {
   const [form, setForm] = useState({ name:data?.name||"", desc:data?.desc||"", photo:data?.photo||"" });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -5221,8 +5284,8 @@ function MemberEditModal({ T, roleId, data, onSave, onClose }) {
           <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Paste a direct image link. Leave blank to use initials avatar.</div>
         </div>
         <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>Save</button>
+          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
+          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>Save</button>
         </div>
       </div>
     </div>
@@ -5231,7 +5294,7 @@ function MemberEditModal({ T, roleId, data, onSave, onClose }) {
 
 function AboutEditModal({ T, data, onSave, onClose }) {
   const [form, setForm] = useState({ heading:data?.heading||"", body:data?.body||"" });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -5246,8 +5309,8 @@ function AboutEditModal({ T, data, onSave, onClose }) {
           <textarea value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} rows={9} placeholder="Write your About Us content here..." style={{...inp,resize:"vertical"}} />
         </div>
         <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>Save</button>
+          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
+          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>Save</button>
         </div>
       </div>
     </div>
@@ -5259,7 +5322,7 @@ function ContactEditModal({ T, data, onSave, onClose }) {
     email:data?.email||"", phone:data?.phone||"", address:data?.address||"",
     office:data?.office||"", hours:data?.hours||"", website:data?.website||"",
   });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   const FIELDS = [["email","Email"],["phone","Phone"],["address","Address"],["office","Office Location"],["hours","Office Hours"],["website","Website"]];
   return (
@@ -5273,8 +5336,8 @@ function ContactEditModal({ T, data, onSave, onClose }) {
           </div>
         ))}
         <div style={{ display:"flex", gap:10, marginTop:6 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>Save</button>
+          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
+          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>Save</button>
         </div>
       </div>
     </div>
@@ -5332,12 +5395,12 @@ function TeamPage({ T, session }) {
         <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"22px 26px", borderTop:`3px solid ${GOLD}` }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>About Us</div>
-            {isPMO && <button onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif" }}>✏ Edit</button>}
+            {isPMO && <button onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
           </div>
           <div style={{ display:"flex", gap:24, alignItems:"flex-start" }}>
             <img src={LOGO} alt="Riphah" style={{ width:90, flexShrink:0, opacity:.8, filter:T===DK?"brightness(0) invert(1)":"none" }} />
             <div>
-              <div style={{ fontFamily:"DM Serif Display,serif", fontSize:21, color:T.text, marginBottom:10, lineHeight:1.25 }}>
+              <div style={{ fontFamily:TYPE.display.fontFamily, fontSize:21, color:T.text, marginBottom:10, lineHeight:1.25 }}>
                 {about?.heading || "About the Project Management Office"}
               </div>
               <div style={{ fontSize:13.5, color:T.muted, lineHeight:1.8, whiteSpace:"pre-wrap" }}>
@@ -5414,7 +5477,7 @@ function TeamPage({ T, session }) {
         <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"22px 26px", marginBottom:8 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>Contact Us</div>
-            {isPMO && <button onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif" }}>✏ Edit</button>}
+            {isPMO && <button onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 32px" }}>
             {Object.entries(CONTACT_LABELS).map(([key, label]) => {
@@ -5493,13 +5556,13 @@ function ChangePasswordModal({ T, session, onClose }) {
     setLoading(false);
   };
 
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"10px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"10px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:400, boxShadow:"0 24px 60px rgba(0,0,0,0.45)" }}>
-        <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Change Password</div>
+        <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Change Password</div>
         {status && (
           <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:13, display:"flex", gap:8,
             background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)",
@@ -5523,8 +5586,8 @@ function ChangePasswordModal({ T, session, onClose }) {
           </div>
         </div>
         <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>{status?.ok?"Close":"Cancel"}</button>
-          {!status?.ok && <button onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>{loading?"Changing…":"Change Password"}</button>}
+          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{status?.ok?"Close":"Cancel"}</button>
+          {!status?.ok && <button onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{loading?"Changing…":"Change Password"}</button>}
         </div>
       </div>
     </div>
@@ -5537,11 +5600,11 @@ function SessionExpiredModal({ T, onSignIn }) {
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:16, padding:"44px 40px", width:380, textAlign:"center", boxShadow:"0 24px 80px rgba(0,0,0,0.6)" }}>
         <div style={{ fontSize:36, marginBottom:16 }}>⏱</div>
-        <div style={{ fontSize:22, fontWeight:700, color:T.text, marginBottom:10, fontFamily:"DM Serif Display,serif" }}>Session Expired</div>
+        <div style={{ fontSize:22, fontWeight:700, color:T.text, marginBottom:10, fontFamily:TYPE.display.fontFamily }}>Session Expired</div>
         <div style={{ fontSize:14, color:T.muted, lineHeight:1.8, marginBottom:30 }}>
           Your session expired after 1 hour.<br/>Please sign in again to continue.
         </div>
-        <button onClick={onSignIn} style={{ width:"100%", padding:"13px", background:NAVY, color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:700, fontFamily:"Inter,sans-serif", boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
+        <button onClick={onSignIn} style={{ width:"100%", padding:"13px", background:NAVY, color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
           Sign In Again
         </button>
       </div>
@@ -5595,7 +5658,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
     setLoading(false);
   };
 
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"11px 14px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"11px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
 
   return (
     <div style={{ display:"flex", height:"100vh", background:T.mainBg }}>
@@ -5605,7 +5668,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
         display:"flex", flexDirection:"column", justifyContent:"center", padding:"60px 50px" }}>
         <img src={LOGO} alt="Riphah" style={{ width:160, filter:"brightness(0) invert(1)", opacity:.88, marginBottom:40 }} />
         <div style={{ fontSize:10, color:"rgba(255,255,255,0.25)", letterSpacing:3, textTransform:"uppercase", marginBottom:12 }}>Capital Project Monitoring</div>
-        <div style={{ fontFamily:"DM Serif Display,serif", fontSize:32, color:"#fff", lineHeight:1.3, marginBottom:20 }}>
+        <div style={{ fontFamily:TYPE.display.fontFamily, fontSize:32, color:"#fff", lineHeight:1.3, marginBottom:20 }}>
           {type==="invite" ? "Welcome to\nthe Portal" : "Reset\nPassword"}
         </div>
         <div style={{ width:40, height:2, background:GOLD, marginBottom:22 }} />
@@ -5621,7 +5684,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
       <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
         <div style={{ width:380, background:T.card, border:`1px solid ${T.border}`, borderRadius:16, padding:"40px 42px",
           boxShadow:dark?"0 24px 80px rgba(0,0,0,0.45)":"0 8px 40px rgba(24,80,120,0.1)" }}>
-          <div style={{ fontSize:23, fontWeight:700, color:T.text, marginBottom:6, fontFamily:"DM Serif Display,serif" }}>
+          <div style={{ fontSize:23, fontWeight:700, color:T.text, marginBottom:6, fontFamily:TYPE.display.fontFamily }}>
             {type==="invite" ? "Set your password" : "Choose a new password"}
           </div>
           <div style={{ fontSize:13, color:T.muted, marginBottom:24 }}>
@@ -5648,7 +5711,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
               <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
-          <button onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:8, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:"Inter,sans-serif", letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
+          <button onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:8, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
             {loading ? "Setting password…" : type==="invite" ? "Set Password & Enter Portal" : "Set New Password"}
           </button>
         </div>
@@ -5732,12 +5795,12 @@ function Login({ T, dark, onLogin }) {
   const fieldStyle = {
     width:"100%", boxSizing:"border-box", padding:"12px 14px 12px 42px",
     background:"rgba(255,255,255,0.06)", border:"1px solid rgba(100,160,255,0.2)",
-    borderRadius:10, color:"#fff", fontSize:14, fontFamily:"Inter,sans-serif", outline:"none",
+    borderRadius:10, color:"#fff", fontSize:14, fontFamily:TYPE.body.fontFamily, outline:"none",
   };
 
   // ── Reset password screen ──────────────────────────────────────────────────
   if (mode === "reset") return (
-    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:BG, fontFamily:"Inter,sans-serif" }}>
+    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:BG, fontFamily:TYPE.body.fontFamily }}>
       <div style={{ background:CARD, border:"1px solid rgba(100,160,255,0.2)", borderRadius:24, padding:"40px 36px", width:400, boxShadow:"0 0 60px rgba(30,100,255,0.15)" }}>
         <div style={{ fontSize:20, fontWeight:700, color:"#fff", marginBottom:6 }}>Reset Password</div>
         <div style={{ fontSize:13, color:"rgba(255,255,255,0.4)", marginBottom:24 }}>Enter your username and we'll send a reset link.</div>
@@ -5770,7 +5833,7 @@ function Login({ T, dark, onLogin }) {
 
   // ── Main login screen ──────────────────────────────────────────────────────
   return (
-    <div style={{ height:"100vh", display:"flex", position:"relative", overflow:"hidden", fontFamily:"Inter,sans-serif" }}>
+    <div style={{ height:"100vh", display:"flex", position:"relative", overflow:"hidden", fontFamily:TYPE.body.fontFamily }}>
 
       {/* Campus photo background */}
       <div style={{
@@ -5871,7 +5934,7 @@ function Login({ T, dark, onLogin }) {
             }}>
               <img src={CREST_LOGO} alt="" style={{ width:"84%", height:"84%", objectFit:"contain" }} />
             </div>
-            <div style={{ fontSize:23, fontWeight:800, color:"#fff", letterSpacing:-0.5, fontFamily:"DM Serif Display,serif" }}>Welcome Back</div>
+            <div style={{ fontSize:23, fontWeight:800, color:"#fff", letterSpacing:-0.5, fontFamily:TYPE.display.fontFamily }}>Welcome Back</div>
             <div style={{ fontSize:12.5, color:"rgba(255,255,255,0.5)", marginTop:5 }}>Sign in to continue to PMO Portal</div>
             <div style={{ width:40, height:2, background:GOLD, margin:"13px auto 0", borderRadius:1 }} />
           </div>
@@ -5916,7 +5979,7 @@ function Login({ T, dark, onLogin }) {
             background: loading ? "rgba(216,152,64,0.4)" : "linear-gradient(135deg,#E8A828,#C47818)",
             border:"none", borderRadius:10, color:"#fff",
             fontSize:14.5, fontWeight:700, cursor:loading?"default":"pointer",
-            fontFamily:"Inter,sans-serif",
+            fontFamily:TYPE.body.fontFamily,
             display:"flex", alignItems:"center", justifyContent:"center", gap:11,
             boxShadow: loading ? "none" : "0 6px 24px rgba(216,152,64,0.45)",
             transition:"all .2s",
@@ -6062,7 +6125,7 @@ export default function App() {
     (page === "cashflow" && session?.role !== "pmo") ? "proj" :
     page;
 
-  if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:"Inter,sans-serif" }}>Loading…</div>;
+  if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:TYPE.body.fontFamily }}>Loading…</div>;
   if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
   if (!session) return <Login T={T} dark={dark} onLogin={setSession} />;
 
