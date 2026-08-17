@@ -6931,6 +6931,189 @@ const PAGE_TITLES = {
   set:  { title:"Settings",        subtitle:"Portal configuration" },
 };
 
+// ─── NOTIFICATIONS DRAWER ────────────────────────────────────────────────────
+// §23 asked for PDD-overdue, PO-pending and payment events. The schema records
+// none of those as events — `notifications_log` only stores email send
+// attempts. So this surfaces what the data can actually vouch for:
+//
+//   · projects past their planned finish date        (from projects.end_date)
+//   · comments addressed to you that you haven't read (comments + comment_reads)
+//   · recent portfolio changes                        (activity_log)
+//
+// Each section is fetched independently and simply doesn't render if the role
+// can't see it — a Project Manager and a Guest get a narrower feed than the
+// PMO rather than a wall of permission errors.
+function NotificationsDrawer({ T, session, open, onClose, onSelectProject, onGoToUpdates, isCompact }) {
+  const [loading, setLoading] = useState(false);
+  const [overdue, setOverdue] = useState([]);
+  const [unread, setUnread]   = useState([]);
+  const [activity, setActivity] = useState([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setLoading(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const safe = (pr) => pr.then(r => r).catch(() => []);
+    Promise.all([
+      safe(supa(`/rest/v1/projects?select=id,code,name,end_date,workflow_stage&end_date=lt.${today}&workflow_stage=neq.closed&order=end_date.asc&limit=20`, {}, session.access_token)),
+      safe(supa("/rest/v1/comments?select=id,project_id,author_id,author_name,body,created_at&order=created_at.desc&limit=40", {}, session.access_token)),
+      safe(supa("/rest/v1/comment_reads?select=comment_id", {}, session.access_token)),
+      safe(supa("/rest/v1/activity_log?select=id,action,entity_type,summary,actor_name,created_at&order=created_at.desc&limit=15", {}, session.access_token)),
+    ]).then(([od, cm, rd, act]) => {
+      if (!alive) return;
+      const readSet = new Set((rd || []).map(r => r.comment_id));
+      setOverdue(od || []);
+      setUnread((cm || []).filter(c => c.author_id !== session.user_id && !readSet.has(c.id)).slice(0, 12));
+      setActivity(act || []);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [open, session.access_token, session.user_id]);
+
+  const ago = (iso) => {
+    if (!iso) return "";
+    const mins = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+    if (mins < 1)    return "just now";
+    if (mins < 60)   return `${mins}m ago`;
+    const h = Math.round(mins / 60);
+    if (h < 24)      return `${h}h ago`;
+    const d = Math.round(h / 24);
+    return d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-GB", { day:"numeric", month:"short" });
+  };
+
+  const daysLate = (d) => Math.round((Date.now() - new Date(d)) / 86400000);
+  const total = overdue.length + unread.length;
+
+  const Item = ({ tone, icon:Icon, title, meta, note, onClick }) => (
+    <div onClick={onClick} className={onClick ? "pmo-focusable" : ""}
+      role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => { if (onClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(); } }}
+      style={{
+        display:"flex", gap:SP.md, padding:`${SP.md}px ${SP.lg}px`,
+        borderBottom:`1px solid ${T.border}`, cursor: onClick ? "pointer" : "default",
+        transition:`background ${MOTION.fast}`,
+      }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = T.rowHover; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+      <div style={{
+        width:28, height:28, borderRadius:R.sm, flexShrink:0, marginTop:1,
+        background:`${tone}${T.badge}`, border:`1px solid ${tone}33`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+      }}>
+        <Icon size={14} color={tone} strokeWidth={2} />
+      </div>
+      <div style={{ minWidth:0, flex:1 }}>
+        <div style={{ ...TYPE.bodySm, color:T.text, fontWeight:600, lineHeight:1.4 }}>{title}</div>
+        {note && <div style={{ ...TYPE.caption, color:T.textSoft, marginTop:2,
+          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{note}</div>}
+        <div style={{ ...TYPE.caption, color:T.dim, marginTop:3 }}>{meta}</div>
+      </div>
+    </div>
+  );
+
+  const Section = ({ label, count, children }) => (
+    <>
+      <div style={{
+        display:"flex", alignItems:"center", gap:SP.sm,
+        padding:`${SP.md}px ${SP.lg}px ${SP.sm}px`, background:T.pageAlt,
+        borderBottom:`1px solid ${T.border}`, position:"sticky", top:0, zIndex:2,
+      }}>
+        <span style={{ ...TYPE.label, color:T.muted }}>{label}</span>
+        <span style={{ ...TYPE.caption, color:T.dim }}>{count}</span>
+      </div>
+      {children}
+    </>
+  );
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div onClick={onClose} className="pmo-fade" style={{
+        position:"fixed", inset:0, zIndex:1100,
+        background: T.mode === "dark" ? "rgba(3,8,16,0.6)" : "rgba(12,30,51,0.35)",
+        backdropFilter:"blur(4px)", WebkitBackdropFilter:"blur(4px)",
+      }} />
+      <aside className="pmo-slide-r" aria-label="Notifications" style={{
+        position:"fixed", top:0, right:0, bottom:0, zIndex:1101,
+        width: isCompact ? "100%" : 420, maxWidth:"100%",
+        background:T.surface, borderLeft:`1px solid ${T.border}`,
+        boxShadow:T.shadowLg, display:"flex", flexDirection:"column",
+      }}>
+        <div style={{
+          display:"flex", alignItems:"center", gap:SP.md,
+          padding:`${SP.lg}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}`, flexShrink:0,
+        }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ ...TYPE.h2, color:T.text }}>Needs your attention</div>
+            <div style={{ ...TYPE.caption, color:T.muted, marginTop:2 }}>
+              {loading ? "Checking…" : total > 0 ? `${total} item${total === 1 ? "" : "s"}` : "Nothing outstanding"}
+            </div>
+          </div>
+          <IconButton T={T} icon={X} onClick={onClose} title="Close notifications" />
+        </div>
+
+        <div className="pmo-scroll" style={{ flex:1, overflowY:"auto" }}>
+          {loading && (
+            <div style={{ padding:SP.lg, display:"flex", flexDirection:"column", gap:SP.md }}>
+              {[0,1,2,3].map(i => <Skeleton key={i} T={T} h={46} />)}
+            </div>
+          )}
+
+          {!loading && total === 0 && activity.length === 0 && (
+            <EmptyState T={T} icon={CheckCircle2} tone={T.positive}
+              title="You're all caught up"
+              message="No overdue projects and no unread updates. Anything needing attention will appear here." />
+          )}
+
+          {!loading && overdue.length > 0 && (
+            <Section label="Past planned finish" count={overdue.length}>
+              {overdue.map(p => (
+                <Item key={p.id} tone={T.danger} icon={AlertTriangle}
+                  title={p.name}
+                  note={`${p.code && p.code !== "-" ? p.code + " · " : ""}${STAGE_META[p.workflow_stage]?.label || ""}`}
+                  meta={`${daysLate(p.end_date)} days past planned finish`}
+                  onClick={() => { onSelectProject(p.id); onClose(); }} />
+              ))}
+            </Section>
+          )}
+
+          {!loading && unread.length > 0 && (
+            <Section label="Unread updates" count={unread.length}>
+              {unread.map(c => (
+                <Item key={c.id} tone={T.info} icon={MessageSquare}
+                  title={c.author_name || "Someone"}
+                  note={(c.body || "").slice(0, 80)}
+                  meta={ago(c.created_at)}
+                  onClick={() => { onGoToUpdates(); onClose(); }} />
+              ))}
+            </Section>
+          )}
+
+          {!loading && activity.length > 0 && (
+            <Section label="Recent portfolio activity" count={activity.length}>
+              {activity.map(a => (
+                <Item key={a.id} tone={T.neutral} icon={Activity}
+                  title={a.summary || `${a.action} ${a.entity_type}`}
+                  meta={`${a.actor_name || "System"} · ${ago(a.created_at)}`} />
+              ))}
+            </Section>
+          )}
+        </div>
+
+        <div style={{
+          padding:`${SP.md}px ${SP.lg}px`, borderTop:`1px solid ${T.border}`,
+          background:T.pageAlt, flexShrink:0,
+        }}>
+          <Button T={T} variant="ghost" full icon={MessageSquare}
+            onClick={() => { onGoToUpdates(); onClose(); }}>Open all updates</Button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
 // ─── GLOBAL SEARCH ───────────────────────────────────────────────────────────
 // §25. A command palette over the whole portfolio: name, project ID,
 // organisation, segment, stage and priority, all matched at once. Opens on
@@ -7209,6 +7392,7 @@ export default function App() {
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [navMobileOpen, setNavMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [notifOpen, setNotifOpen]   = useState(false);
   // ⌘K / Ctrl+K from anywhere. Bound at the document so it works regardless of
   // which page or control currently holds focus.
   useEffect(() => {
@@ -7240,6 +7424,12 @@ export default function App() {
   return (
     <>
       <DeadlineAlertPopups T={T} session={session} />
+      <NotificationsDrawer
+        T={T} session={session} open={notifOpen} isCompact={vp.isCompact}
+        onClose={() => setNotifOpen(false)}
+        onSelectProject={(id) => openProject(id)}
+        onGoToUpdates={() => navigateToPage("upd")}
+      />
       <GlobalSearch
         T={T} session={session} open={searchOpen}
         onClose={() => setSearchOpen(false)}
@@ -7258,7 +7448,7 @@ export default function App() {
           T={T} title={pageInfo.title} subtitle={pageInfo.subtitle}
           dark={dark} setDark={setDark} onLogout={handleLogout}
           isCompact={vp.isCompact} onMenu={() => setNavMobileOpen(true)}
-          unreadCount={unreadCount} onBellClick={() => navigateToPage("upd")}
+          unreadCount={unreadCount} onBellClick={() => setNotifOpen(true)}
           onSearch={() => setSearchOpen(true)}
         />
         {selectedProjectId ? (
