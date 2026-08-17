@@ -2224,18 +2224,38 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     setSaving(false);
   };
 
-  const inp = {background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:R.sm,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none",width:"100%",boxSizing:"border-box"};
-  const sel = {...inp,cursor:"pointer"};
-  const lbl = {display:"block",fontSize:10,fontWeight:700,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:5};
+  // These three objects style all 27 controls in this form, so upgrading them
+  // here is what brings the PMO's main data-entry surface onto the design
+  // system without rewriting every field.
+  const inp = {
+    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+    padding:"9px 11px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
+    outline:"none", width:"100%", boxSizing:"border-box",
+    transition:`border-color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
+  };
+  const sel = {...inp, cursor:"pointer", appearance:"none", WebkitAppearance:"none", MozAppearance:"none",
+    backgroundImage:"url(\"data:image/svg+xml;charset=UTF-8,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237C95AF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")",
+    backgroundRepeat:"no-repeat", backgroundPosition:"right 10px center", paddingRight:26 };
+  const lbl = {...TYPE.label, display:"block", color:T.muted, marginBottom:5};
 
   return (
-    <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease",padding:20}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:R.lg,padding:"26px 28px",width:700,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily}}>{isEdit?`Edit — ${project.code || "-"}`:"New Project"}</div>
-          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
-        </div>
-        {err&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:R.sm,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:ROSE,fontSize:13,display:"flex",gap:8}}><span>⚠</span>{err}</div>}
+    <Modal T={T} onClose={onClose} width={720} icon={FolderKanban}
+      title={isEdit ? `Edit project${project.code && project.code !== "-" ? ` — ${project.code}` : ""}` : "New project"}
+      sub={isEdit ? project.name : "Add a capital project to the FY 2026-27 portfolio"}
+      footer={<>
+        <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button T={T} variant="primary" onClick={save} loading={saving}>
+          {isEdit ? "Save changes" : "Create project"}
+        </Button>
+      </>}>
+      <div>
+        {err && (
+          <div style={{marginBottom:SP.md, padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+            background:`${T.danger}${T.wash}`, border:`1px solid ${T.danger}44`,
+            color:T.danger, ...TYPE.bodySm, display:"flex", gap:8, alignItems:"flex-start"}}>
+            <AlertCircle size={14} style={{marginTop:1, flexShrink:0}} />{err}
+          </div>
+        )}
 
         <Sec T={T} title="Basic"/>
         <Row>
@@ -2309,11 +2329,9 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         <textarea value={form.notes} onChange={e=>set("notes",e.target.value)} rows={3} placeholder="Additional notes…" style={{...inp,resize:"vertical",lineHeight:1.6,marginBottom:18}}/>
 
         <div style={{display:"flex",gap:10}}>
-          <button onClick={onClose} style={{flex:1,padding:"10px",borderRadius:R.md,border:`1px solid ${T.border}`,background:"none",color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{flex:2,padding:"10px",borderRadius:R.md,border:"none",background:saving?T.muted:NAVY,color:"#fff",cursor:saving?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:TYPE.body.fontFamily}}>{saving?"Saving…":isEdit?"Save Changes":"Create Project"}</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -7014,9 +7032,9 @@ function GlobalSearch({ T, session, open, onClose, onSelect }) {
                   <div style={{ ...TYPE.bodySm, color:T.text, fontWeight: on ? 600 : 450,
                     overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                   <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginTop:2 }}>
-                    <span style={{ ...TYPE.mono, color:T.muted }}>
-                      {p.code && p.code !== "-" ? p.code : "No ID"}
-                    </span>
+                    {p.code && p.code !== "-"
+                      ? <span style={{ ...TYPE.mono, color:T.muted }}>{p.code}</span>
+                      : <span style={{ ...TYPE.caption, color:T.dim, fontStyle:"italic" }}>No ID yet</span>}
                     <span style={{ ...TYPE.caption, color:T.dim }}>
                       {[p.segments?.name, p.sectors?.name].filter(Boolean).join(" · ") || "—"}
                     </span>
