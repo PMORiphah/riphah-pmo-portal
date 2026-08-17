@@ -95,14 +95,14 @@ const fmtP = (n) => n == null ? "—" : parseFloat(n).toFixed(1) + "%";
 // ─── STAGE METADATA ───────────────────────────────────────────────────────────
 const STAGE = {
   pdd_not_submitted:{ label:"PDD Not Submitted", light:"#94A3B8", dark:"rgba(148,163,184,0.15)" },
-  identified:{ label:"PDD Submitted", light:"#6B9AB8", dark:"rgba(107,154,184,0.15)" },
-  df_review: { label:"DF Review",   light:"#3B82F6", dark:"rgba(59,130,246,0.15)" },
-  ed_review: { label:"ED Review",   light:"#8B5CF6", dark:"rgba(139,92,246,0.15)" },
-  mt_review: { label:"MT Review",   light:"#A855F7", dark:"rgba(168,85,247,0.15)" },
-  approved:  { label:"Approved",    light:"#2DD4BF", dark:"rgba(45,212,191,0.15)" },
-  closed:    { label:"Closed",      light:"#6B7280", dark:"rgba(107,114,128,0.15)" },
+  identified:{ label:"PDD Submitted", light:DATA.info, dark:"rgba(107,154,184,0.15)" },
+  df_review: { label:"DF Review",   light:BRAND.blue, dark:"rgba(59,130,246,0.15)" },
+  ed_review: { label:"ED Review",   light:VIOLET, dark:"rgba(139,92,246,0.15)" },
+  mt_review: { label:"MT Review",   light:VIOLET, dark:"rgba(168,85,247,0.15)" },
+  approved:  { label:"Approved",    light:EMERALD, dark:"rgba(45,212,191,0.15)" },
+  closed:    { label:"Closed",      light:DATA.neutral, dark:"rgba(107,114,128,0.15)" },
 };
-const PRIORITY = { top_priority:"#F87171", first_priority:"#F59E0B", second_priority:"#60A5FA", third_priority:"#2DD4BF", carry_forward:"#A855F7" };
+const PRIORITY = { top_priority:ROSE, first_priority:AMBER, second_priority:DATA.info, third_priority:EMERALD, carry_forward:VIOLET };
 const PRIORITY_LABEL = { top_priority:"1st Priority", first_priority:"First Priority", second_priority:"2nd Priority", third_priority:"3rd Priority", carry_forward:"Carry Forward" };
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
@@ -418,14 +418,14 @@ function DeadlineAlertPopups({ T, session }) {
 
   return (
     <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
-      <div className="pmo-card-in" style={{ width:420, background:T.card, border:"1px solid "+T.border, borderRadius:14, boxShadow:T.shadow, overflow:"hidden" }}>
+      <div className="pmo-card-in" style={{ width:420, background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, boxShadow:T.shadow, overflow:"hidden" }}>
         <div style={{ background:badgeColor, padding:"14px 22px", display:"flex", alignItems:"center", gap:10 }}>
           <AlertTriangle size={17} color="#fff" />
           <span style={{ color:"#fff", fontWeight:700, fontSize:13, letterSpacing:0.3 }}>DEADLINE ALERT</span>
           {queue.length > 1 && <span style={{ marginLeft:"auto", color:"rgba(255,255,255,0.85)", fontSize:11.5 }}>{idx+1} of {queue.length}</span>}
         </div>
         <div style={{ padding:"22px 22px 18px" }}>
-          <div style={{ display:"inline-block", background:badgeColor+"20", color:badgeColor, fontSize:11, fontWeight:700, padding:"3px 11px", borderRadius:20, marginBottom:12 }}>
+          <div style={{ display:"inline-block", background:badgeColor+"20", color:badgeColor, fontSize:11, fontWeight:700, padding:"3px 11px", borderRadius:R.pill, marginBottom:12 }}>
             {daysLabel.toUpperCase()}
           </div>
           <div style={{ fontSize:11, color:T.dim, fontFamily:"monospace", marginBottom:4 }}>{p.code || "-"}</div>
@@ -438,7 +438,7 @@ function DeadlineAlertPopups({ T, session }) {
         </div>
         <div style={{ padding:"14px 22px", borderTop:"1px solid "+T.border, display:"flex", justifyContent:"flex-end" }}>
           <button onClick={() => setIdx(i => i + 1)}
-            style={{ padding:"8px 18px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+            style={{ padding:"8px 18px", background:NAVY, border:"none", borderRadius:R.md, color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
             {idx + 1 < queue.length ? "Next" : "Dismiss"}
           </button>
         </div>
@@ -576,7 +576,7 @@ function KCard({ T, label, value, sub, accent, featured, onClick, isSelected }) 
       style={{
         flex:1, background:T.card,
         border:"1px solid "+(isSelected ? (accent||GOLD) : T.border),
-        borderRadius:10, padding:"15px 18px",
+        borderRadius:R.md, padding:"15px 18px",
         borderTop: featured ? "3px solid "+(accent||GOLD) : "3px solid "+T.border+"60",
         minWidth:0,
         cursor: clickable ? "pointer" : "default",
@@ -960,7 +960,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
 function PipelineFunnelChart({ T, d, height = 300 }) {
   const stages = [
     { label:"PDD Not Submitted", value:d.pdd_not_submitted_count||0, color:T.muted },
-    { label:"PDD Submitted",     value:d.pdds_submitted||0,          color:"#5B9FE8" },
+    { label:"PDD Submitted",     value:d.pdds_submitted||0,          color:DATA.info },
     { label:"DF Review",         value:d.in_df||0,                   color:GOLD },
     { label:"ED Review",         value:d.in_ed||0,                   color:GOLD_DEEP },
     { label:"MT Review",         value:d.in_mt||0,                   color:VIOLET },
@@ -968,7 +968,7 @@ function PipelineFunnelChart({ T, d, height = 300 }) {
   ];
   const data = {
     labels: stages.map(s=>s.label),
-    datasets: [{ data: stages.map(s=>s.value), backgroundColor: stages.map(s=>s.color), borderRadius:6, borderSkipped:false, barThickness:30 }],
+    datasets: [{ data: stages.map(s=>s.value), backgroundColor: stages.map(s=>s.color), borderRadius:R.sm, borderSkipped:false, barThickness:30 }],
   };
   const options = {
     ...chartBaseOptions(T), indexAxis:"y",
@@ -1140,7 +1140,7 @@ function DonutChart({ slices, T }) {
 
 // ─── BREAKDOWN SECTION ────────────────────────────────────────────────────────
 const ORG_COLORS  = { Riphah:GOLD, Trust:EMERALD };
-const SEG_COLORS  = { Academic:"#5B9FE8", Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
+const SEG_COLORS  = { Academic:DATA.info, Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
 const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
 
 function BreakdownSection({ T, session }) {
@@ -1221,7 +1221,7 @@ function BreakdownSection({ T, session }) {
   if (loading) return null;
 
   const SectionCard = ({ title, children, note }) => (
-    <div className="pmo-card-in" style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow, position:"relative", overflow:"hidden" }}>
+    <div className="pmo-card-in" style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow, position:"relative", overflow:"hidden" }}>
       <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:note?4:18 }}>{title}</div>
       {note && <div style={{ fontSize:11, color:T.dim, marginBottom:14 }}>{note}</div>}
       {children}
@@ -1233,31 +1233,31 @@ function BreakdownSection({ T, session }) {
       {/* Header */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"4px 0" }}>
         <div style={{ display:"flex", alignItems:"center", gap:9 }}>
-          <div style={{ width:26, height:26, borderRadius:8, background:GOLD+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ width:26, height:26, borderRadius:R.md, background:GOLD+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center" }}>
             <BarChart3 size={14} color={GOLD} strokeWidth={2.25} />
           </div>
           <div style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2 }}>Portfolio Breakdown · Planned vs Actual</div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
           <select value={fy} onChange={e=>setFy(e.target.value)}
-            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}>
+            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}>
             <option value="__all__">All Fiscal Years</option>
             {allFYs.map(f=><option key={f} value={f}>{f}</option>)}
           </select>
           {isPMO && !editing && (
             <button onClick={startEdit}
-              style={{ padding:"6px 14px", background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, display:"flex", alignItems:"center", gap:6, transition:"border-color .15s, color .15s" }}>
+              style={{ padding:"6px 14px", background:"none", border:`1px solid ${T.border}`, borderRadius:R.md, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, display:"flex", alignItems:"center", gap:6, transition:"border-color .15s, color .15s" }}>
               <Edit2 size={11}/> Set Targets
             </button>
           )}
           {isPMO && editing && (
             <div style={{ display:"flex", gap:7 }}>
               <button onClick={saveTargets} disabled={saving}
-                style={{ padding:"6px 15px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+                style={{ padding:"6px 15px", background:NAVY, border:"none", borderRadius:R.md, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                 {saving?"Saving…":"Save Targets"}
               </button>
               <button onClick={()=>setEditing(false)}
-                style={{ padding:"6px 11px", background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, cursor:"pointer" }}>
+                style={{ padding:"6px 11px", background:"none", border:`1px solid ${T.border}`, borderRadius:R.md, color:T.muted, fontSize:12, cursor:"pointer" }}>
                 Cancel
               </button>
             </div>
@@ -1368,7 +1368,7 @@ function BreakdownSection({ T, session }) {
       {/* ── Organisation split ── */}
       <div style={{ display:"flex", gap:14 }}>
         {Object.entries(byOrg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], oi) => {
-          const color      = ORG_COLORS[name] || "#5B9FE8";
+          const color      = ORG_COLORS[name] || DATA.info;
           const OrgIcon    = name === "Trust" ? Landmark : Building2;
           const plannedAbs = (orgTgts[name]?.bac || 0) * 1e6;
           const isOver     = plannedAbs > 0 && data.bac > plannedAbs;
@@ -1382,14 +1382,14 @@ function BreakdownSection({ T, session }) {
             <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(oi*70)+"ms", flex:1, minWidth:0 }}>
               <div style={{
                 background: lightMode ? T.card : `linear-gradient(165deg, ${T.card} 0%, ${T.card} 55%, ${barColor}${T.washAlpha} 100%)`,
-                border:`1px solid ${T.border}`, borderRadius:14, padding:"20px 22px",
+                border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"20px 22px",
                 borderTop: lightMode ? `1px solid ${T.border}` : `3px solid ${barColor}`, display:"flex", flexDirection:"column", gap:13,
                 position:"relative", overflow:"hidden", boxShadow:T.shadow,
               }}>
                 <ArchMotif T={T} color={barColor} size={80} />
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", position:"relative" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ width:32, height:32, borderRadius:9, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <div style={{ width:32, height:32, borderRadius:R.md, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                       <OrgIcon size={16} color={barColor} strokeWidth={2.25} />
                     </div>
                     <div>
@@ -1397,7 +1397,7 @@ function BreakdownSection({ T, session }) {
                       <div style={{ fontSize:11, color:T.dim }}>{data.count} projects · {fy === "__all__" ? "All FY" : fy}</div>
                     </div>
                   </div>
-                  {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"3px 9px", borderRadius:20 }}>OVER TARGET</span>}
+                  {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"3px 9px", borderRadius:R.pill }}>OVER TARGET</span>}
                 </div>
 
                 <div style={{ display:"flex", alignItems:"baseline", gap:10, position:"relative" }}>
@@ -1441,7 +1441,7 @@ function BreakdownSection({ T, session }) {
                       value={editBuf.orgs?.[name] || ""}
                       onChange={e=>setEditBuf(b=>({...b,orgs:{...b.orgs,[name]:e.target.value}}))}
                       placeholder={`e.g. ${Math.round(data.bac/1e6/10)*10+50}`}
-                      style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:7, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}/>
+                      style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:R.sm, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}/>
                     <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Enter in PKR Millions — e.g. 600 means PKR 600M</div>
                   </div>
                 )}
@@ -1478,10 +1478,10 @@ function BreakdownSection({ T, session }) {
                 const gradId     = "segGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
                 const lightMode  = T.mode === "light";
                 return (
-                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background: lightMode ? T.card2 : `linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}${T.washAlpha} 100%)`, borderRadius:12, padding:"16px 18px", border: lightMode ? `1px solid ${T.border}` : `1px solid ${barColor}${T.glowRing}`, position:"relative", overflow:"hidden", boxShadow:T.shadow }}>
+                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background: lightMode ? T.card2 : `linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}${T.washAlpha} 100%)`, borderRadius:R.lg, padding:"16px 18px", border: lightMode ? `1px solid ${T.border}` : `1px solid ${barColor}${T.glowRing}`, position:"relative", overflow:"hidden", boxShadow:T.shadow }}>
                     {/* Header row */}
                     <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:11, position:"relative" }}>
-                      <div style={{ width:26, height:26, borderRadius:8, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                      <div style={{ width:26, height:26, borderRadius:R.md, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                         <SegIcon size={13} color={barColor} strokeWidth={2.25} />
                       </div>
                       <span style={{ fontSize:14, fontWeight:700, color:T.text }}>{name}</span>
@@ -1498,7 +1498,7 @@ function BreakdownSection({ T, session }) {
                     {plannedAbs>0 && !editing && (
                       <div style={{ fontSize:12, color:isOver?ROSE:T.muted, marginBottom:9, position:"relative" }}>
                         Target: {fmtM(plannedAbs)}
-                        {isOver && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:`${ROSE}20`, padding:"1px 6px", borderRadius:20, marginLeft:6 }}>OVER</span>}
+                        {isOver && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:`${ROSE}20`, padding:"1px 6px", borderRadius:R.pill, marginLeft:6 }}>OVER</span>}
                       </div>
                     )}
 
@@ -1510,7 +1510,7 @@ function BreakdownSection({ T, session }) {
                           value={editBuf.segs?.[name]||""}
                           onChange={e=>setEditBuf(b=>({...b,segs:{...b.segs,[name]:e.target.value}}))}
                           placeholder="e.g. 320"
-                          style={{ flex:1, background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:6, padding:"4px 8px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}/>
+                          style={{ flex:1, background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:R.sm, padding:"4px 8px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}/>
                       </div>
                     )}
 
@@ -1576,8 +1576,8 @@ function CarryForwardList({ T, session }) {
   const th = { padding:"9px 12px", fontSize:10, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1.5, textAlign:"left", borderBottom:"1px solid "+T.border, whiteSpace:"nowrap", opacity:0.65 };
   const td = { padding:"11px 12px", fontSize:12.5, color:T.text, borderBottom:"1px solid "+T.border+"80", verticalAlign:"middle" };
 
-  if (loading) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>Loading…</div>;
-  if (rows.length === 0) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No carry-forward projects on record.</div>;
+  if (loading) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>Loading…</div>;
+  if (rows.length === 0) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No carry-forward projects on record.</div>;
 
   const total = rows.reduce((s,r) => s + (r.amount||0), 0);
   // Fixed inputs from Finance's FY2026 carry-forward reconciliation — not
@@ -1588,14 +1588,14 @@ function CarryForwardList({ T, session }) {
   const carryForward2026 = afterSavings - PAYMENTS;
 
   return (
-    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, overflow:"hidden" }}>
+    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, overflow:"hidden" }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid "+T.border }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:3, height:14, background:GOLD, borderRadius:2 }} />
           <span style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1 }}>
             Carry Forward — Prior FY
           </span>
-          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:20 }}>
+          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:R.pill }}>
             {rows.length} projects
           </span>
         </div>
@@ -1651,7 +1651,7 @@ function CarryForwardList({ T, session }) {
 function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
   if (!projects || projects.length === 0) {
     return (
-      <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>
+      <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>
         No projects match this filter.
       </div>
     );
@@ -1669,7 +1669,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
   const td = { padding:"11px 12px", fontSize:12.5, color:T.text, borderBottom:"1px solid "+T.border+"80", verticalAlign:"middle" };
 
   return (
-    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, overflow:"hidden" }}>
+    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, overflow:"hidden" }}>
       {/* List header */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid "+T.border }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1677,7 +1677,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
           <span style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1 }}>
             {tab === "pipeline" ? "PDD Status" : "Project Health"} — {filterLabel}
           </span>
-          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:20 }}>
+          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:R.pill }}>
             {projects.length} {projects.length === 1 ? "project" : "projects"}
           </span>
         </div>
@@ -1724,16 +1724,16 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 <td style={td}><StageBadge stage={p.workflow_stage}/></td>
                 {tab === "execution" && (
                   <td style={td}>
-                    {p.manual_schedule_flag === "on_time"  && <span style={{ fontSize:10, fontWeight:700, color:"#2DD4BF", background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:20 }}>On Time</span>}
-                    {p.manual_schedule_flag === "delayed"  && <span style={{ fontSize:10, fontWeight:700, color:"#F87171", background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:20 }}>Delayed</span>}
+                    {p.manual_schedule_flag === "on_time"  && <span style={{ fontSize:10, fontWeight:700, color:EMERALD, background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>On Time</span>}
+                    {p.manual_schedule_flag === "delayed"  && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Delayed</span>}
                     {p.manual_schedule_flag === "not_started" && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                     {!p.manual_schedule_flag && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                   </td>
                 )}
                 {tab === "execution" && (
                   <td style={td}>
-                    {p.manual_budget_flag === "within" && <span style={{ fontSize:10, fontWeight:700, color:"#2DD4BF", background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:20 }}>Within</span>}
-                    {p.manual_budget_flag === "over"   && <span style={{ fontSize:10, fontWeight:700, color:"#F87171", background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:20 }}>Over</span>}
+                    {p.manual_budget_flag === "within" && <span style={{ fontSize:10, fontWeight:700, color:EMERALD, background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Within</span>}
+                    {p.manual_budget_flag === "over"   && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Over</span>}
                     {p.manual_budget_flag === "not_started" && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                     {!p.manual_budget_flag && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                   </td>
@@ -1875,22 +1875,22 @@ function CommandCenter({ T, session, onSelectProject }) {
 
   if (loading) return (
     <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture }}>
-      <div className="pmo-skeleton" style={{ height:104, borderRadius:14, background:T.card, border:"1px solid "+T.border }} />
+      <div className="pmo-skeleton" style={{ height:104, borderRadius:R.lg, background:T.card, border:"1px solid "+T.border }} />
       <div style={{ display:"flex", gap:4, borderBottom:"2px solid "+T.border, paddingBottom:2 }}>
-        {[0,1,2,3].map(i => <div key={i} className="pmo-skeleton" style={{ width:120, height:32, borderRadius:6, background:T.card2 }} />)}
+        {[0,1,2,3].map(i => <div key={i} className="pmo-skeleton" style={{ width:120, height:32, borderRadius:R.sm, background:T.card2 }} />)}
       </div>
       <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
         {[0,1,2,3,4].map(i => (
-          <div key={i} className="pmo-skeleton" style={{ flex:1, height:100, borderRadius:12, background:T.card, border:"1px solid "+T.border }} />
+          <div key={i} className="pmo-skeleton" style={{ flex:1, height:100, borderRadius:R.lg, background:T.card, border:"1px solid "+T.border }} />
         ))}
       </div>
     </div>
   );
-  if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color="#F87171" /><span style={{ color:"#F87171", fontSize:13 }}>{err}</span><button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:6, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
+  if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color={ROSE} /><span style={{ color:ROSE, fontSize:13 }}>{err}</span><button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
   if (!data) return null;
 
   const d = data;
-  const good = "#2DD4BF", warn = "#F59E0B", bad = "#F87171";
+  const good = EMERALD, warn = AMBER, bad = ROSE;
   const healthColor = d.portfolio_health === "Good" ? good : d.portfolio_health === "At Risk" ? warn : bad;
 
   // One icon library throughout (§28) — the emoji set read as placeholder art
@@ -2034,7 +2034,7 @@ function CommandCenter({ T, session, onSelectProject }) {
           <EditableKCard Icon={CheckCircle} index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
           <EditableKCard Icon={Clock} index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
           <EditableKCard Icon={AlertTriangle} index={3} T={T} label="Over Budget"             canEdit={canEdit} kpiKey="over_budget"     accent={bad}    onSave={saveKPI} onCardClick={() => toggleCard("over_budget")}     isSelected={activeCard==="over_budget"}     {...kv("over_budget",     d.over_budget_count,    "CPI < 0.95")} />
-          <EditableKCard Icon={RefreshCw} index={4} T={T} label="Change in Scope"         canEdit={canEdit} kpiKey="scope_change"    accent="#A78BFA" onSave={saveKPI} onCardClick={() => toggleCard("scope_change")}    isSelected={activeCard==="scope_change"}    {...kv("scope_change",    d.scope_change_count||0,"Scope revised projects")} />
+          <EditableKCard Icon={RefreshCw} index={4} T={T} label="Change in Scope"         canEdit={canEdit} kpiKey="scope_change"    accent={VIOLET} onSave={saveKPI} onCardClick={() => toggleCard("scope_change")}    isSelected={activeCard==="scope_change"}    {...kv("scope_change",    d.scope_change_count||0,"Scope revised projects")} />
           <EditableKCard Icon={PauseCircle} index={5} T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
         </div>
       )}
@@ -2078,7 +2078,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         </div>
       )}
       {activeTab === "financials" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · Payments Pending</div>
           <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} /></ChartErrorBoundary>
         </div>
@@ -2104,7 +2104,7 @@ function CommandCenter({ T, session, onSelectProject }) {
       {activeTab === "budgeting" && <BreakdownSection T={T} session={session} />}
 
       {activeTab === "budgeting" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · DF Recommended Budget</div>
           <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} /></ChartErrorBoundary>
         </div>
@@ -2129,7 +2129,7 @@ function StageBadge({ stage, size = 11 }) {
   const s = STAGE[stage] || { label:stage, light:"#aaa", dark:"rgba(170,170,170,0.15)" };
   return (
     <span style={{
-      display:"inline-flex", alignItems:"center", padding:"2px 8px", borderRadius:20,
+      display:"inline-flex", alignItems:"center", padding:"2px 8px", borderRadius:R.pill,
       background:s.dark, color:s.light, fontSize:size, fontWeight:600, whiteSpace:"nowrap",
     }}>{s.label}</span>
   );
@@ -2205,18 +2205,18 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     setSaving(false);
   };
 
-  const inp = {background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none",width:"100%",boxSizing:"border-box"};
+  const inp = {background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:R.sm,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none",width:"100%",boxSizing:"border-box"};
   const sel = {...inp,cursor:"pointer"};
   const lbl = {display:"block",fontSize:10,fontWeight:700,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:5};
 
   return (
     <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease",padding:20}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:700,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:R.lg,padding:"26px 28px",width:700,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
           <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily}}>{isEdit?`Edit — ${project.code || "-"}`:"New Project"}</div>
           <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
         </div>
-        {err&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:7,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#F87171",fontSize:13,display:"flex",gap:8}}><span>⚠</span>{err}</div>}
+        {err&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:R.sm,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:ROSE,fontSize:13,display:"flex",gap:8}}><span>⚠</span>{err}</div>}
 
         <Sec T={T} title="Basic"/>
         <Row>
@@ -2290,8 +2290,8 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         <textarea value={form.notes} onChange={e=>set("notes",e.target.value)} rows={3} placeholder="Additional notes…" style={{...inp,resize:"vertical",lineHeight:1.6,marginBottom:18}}/>
 
         <div style={{display:"flex",gap:10}}>
-          <button onClick={onClose} style={{flex:1,padding:"10px",borderRadius:8,border:`1px solid ${T.border}`,background:"none",color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{flex:2,padding:"10px",borderRadius:8,border:"none",background:saving?T.muted:NAVY,color:"#fff",cursor:saving?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:TYPE.body.fontFamily}}>{saving?"Saving…":isEdit?"Save Changes":"Create Project"}</button>
+          <button onClick={onClose} style={{flex:1,padding:"10px",borderRadius:R.md,border:`1px solid ${T.border}`,background:"none",color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{flex:2,padding:"10px",borderRadius:R.md,border:"none",background:saving?T.muted:NAVY,color:"#fff",cursor:saving?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:TYPE.body.fontFamily}}>{saving?"Saving…":isEdit?"Save Changes":"Create Project"}</button>
         </div>
       </div>
     </div>
@@ -2640,18 +2640,18 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
   if (step==="done") return (
     <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease"}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"44px 40px",width:420,textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:R.lg,padding:"44px 40px",width:420,textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{fontSize:40,marginBottom:16}}>✅</div>
         <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily,marginBottom:8}}>Import Complete</div>
         <div style={{fontSize:14,color:T.muted,lineHeight:1.8,marginBottom:28}}>{parsed.length} projects loaded successfully.<br/>Dashboard KPIs updated automatically.</div>
-        <button onClick={onImported} style={{width:"100%",padding:"12px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>View Projects</button>
+        <button onClick={onImported} style={{width:"100%",padding:"12px",background:NAVY,border:"none",borderRadius:R.md,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>View Projects</button>
       </div>
     </div>
   );
 
   return (
     <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease",padding:20}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:620,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:R.lg,padding:"26px 28px",width:620,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
           <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily}}>{step==="pick"?"Import Projects from Excel":`Preview — ${fileName}`}</div>
           <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
@@ -2659,15 +2659,15 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
         {step==="pick" && (
           <>
-            <label style={{display:"block",border:`2px dashed ${T.border}`,borderRadius:10,padding:"44px 30px",textAlign:"center",cursor:"pointer",marginBottom:18}}>
+            <label style={{display:"block",border:`2px dashed ${T.border}`,borderRadius:R.md,padding:"44px 30px",textAlign:"center",cursor:"pointer",marginBottom:18}}>
               <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
               <div style={{fontSize:36,marginBottom:12}}>📂</div>
               <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Click to select an Excel file</div>
               <div style={{fontSize:12,color:T.muted}}>Accepts .xlsx · .xls · .csv — first row must be column headers</div>
             </label>
             <div style={{display:"flex",gap:10}}>
-              <button onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
-              <button onClick={onClose} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
+              <button onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
+              <button onClick={onClose} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
             </div>
           </>
         )}
@@ -2676,8 +2676,8 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
           <>
             {/* Stats row */}
             <div style={{display:"flex",gap:10,marginBottom:16}}>
-              {[{l:"To Import",v:parsed.length,c:"#2DD4BF"},{l:"Parse Errors",v:errors.length,c:errors.length?"#F87171":T.dim},{l:"New Lookups",v:totalNew,c:totalNew?GOLD:T.dim}].map((s,i)=>(
-                <div key={i} style={{flex:1,background:T.card2,border:`1px solid ${T.border}`,borderRadius:8,padding:"12px",textAlign:"center"}}>
+              {[{l:"To Import",v:parsed.length,c:EMERALD},{l:"Parse Errors",v:errors.length,c:errors.length?"#F87171":T.dim},{l:"New Lookups",v:totalNew,c:totalNew?GOLD:T.dim}].map((s,i)=>(
+                <div key={i} style={{flex:1,background:T.card2,border:`1px solid ${T.border}`,borderRadius:R.md,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:24,fontWeight:700,color:s.c,fontFamily:TYPE.display.fontFamily}}>{s.v}</div>
                   <div style={{fontSize:11,color:T.muted,marginTop:3}}>{s.l}</div>
                 </div>
@@ -2685,7 +2685,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             </div>
 
             {/* Deletion warning */}
-            <div style={{background:"rgba(248,113,113,0.07)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"12px 14px",marginBottom:12,fontSize:13,color:"#F87171",lineHeight:1.8}}>
+            <div style={{background:"rgba(248,113,113,0.07)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:ROSE,lineHeight:1.8}}>
               <strong>⚠ This will permanently replace all existing data:</strong><br/>
               • {counts.projects} existing projects will be deleted<br/>
               • <strong>{counts.comments} discussion comments</strong> will be deleted<br/>
@@ -2694,7 +2694,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
             {/* New lookups */}
             {totalNew>0&&(
-              <div style={{background:"rgba(216,152,64,0.07)",border:"1px solid rgba(216,152,64,0.3)",borderRadius:8,padding:"12px 14px",marginBottom:12,fontSize:13,color:GOLD,lineHeight:1.8}}>
+              <div style={{background:"rgba(216,152,64,0.07)",border:"1px solid rgba(216,152,64,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:GOLD,lineHeight:1.8}}>
                 <strong>✦ Auto-creating {totalNew} new values:</strong><br/>
                 {newL.sectors.length>0&&<span>Sectors: {newL.sectors.join(", ")}<br/></span>}
                 {newL.regions.length>0&&<span>Regions: {newL.regions.join(", ")}<br/></span>}
@@ -2706,18 +2706,18 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
             {/* Parse errors */}
             {errors.length>0&&(
-              <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:8,padding:"12px 14px",marginBottom:12,maxHeight:110,overflow:"auto"}}>
-                <div style={{fontSize:11,fontWeight:700,color:"#F87171",marginBottom:5,textTransform:"uppercase",letterSpacing:1}}>Errors — rows skipped</div>
-                {errors.map((e,i)=><div key={i} style={{fontSize:12,color:"#F87171",lineHeight:1.7}}>• {e}</div>)}
+              <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,maxHeight:110,overflow:"auto"}}>
+                <div style={{fontSize:11,fontWeight:700,color:ROSE,marginBottom:5,textTransform:"uppercase",letterSpacing:1}}>Errors — rows skipped</div>
+                {errors.map((e,i)=><div key={i} style={{fontSize:12,color:ROSE,lineHeight:1.7}}>• {e}</div>)}
               </div>
             )}
 
             {/* Progress */}
-            {progress&&<div style={{background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.3)",borderRadius:8,padding:"9px 14px",marginBottom:12,fontSize:13,color:"#2DD4BF"}}>⏳ {progress}</div>}
+            {progress&&<div style={{background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.3)",borderRadius:R.md,padding:"9px 14px",marginBottom:12,fontSize:13,color:EMERALD}}>⏳ {progress}</div>}
 
             <div style={{display:"flex",gap:10}}>
-              <button onClick={onClose} disabled={importing} style={{flex:1,padding:"11px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
-              <button onClick={executeImport} disabled={importing||parsed.length===0} style={{flex:2,padding:"11px",background:importing||parsed.length===0?"#555":NAVY,border:"none",borderRadius:8,color:"#fff",cursor:importing?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:TYPE.body.fontFamily}}>
+              <button onClick={onClose} disabled={importing} style={{flex:1,padding:"11px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
+              <button onClick={executeImport} disabled={importing||parsed.length===0} style={{flex:2,padding:"11px",background:importing||parsed.length===0?"#555":NAVY,border:"none",borderRadius:R.md,color:"#fff",cursor:importing?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:TYPE.body.fontFamily}}>
                 {importing?"Importing…":`Confirm — Import ${parsed.length} Projects`}
               </button>
             </div>
@@ -3462,11 +3462,11 @@ function ProjectsPage({ T, session, onSelectProject }) {
 
       {/* Delete confirmation banner with comment count */}
       {confirmDel&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.card,border:"1px solid rgba(248,113,113,0.4)",borderRadius:10,padding:"12px 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"center",gap:14,fontSize:13,whiteSpace:"nowrap"}}>
-          <span style={{color:"#F87171"}}>⚠ Delete <strong>{confirmDel.code || "-"}</strong>?</span>
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.card,border:"1px solid rgba(248,113,113,0.4)",borderRadius:R.md,padding:"12px 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"center",gap:14,fontSize:13,whiteSpace:"nowrap"}}>
+          <span style={{color:ROSE}}>⚠ Delete <strong>{confirmDel.code || "-"}</strong>?</span>
           {confirmDel.comments>0&&<span style={{color:T.muted}}>({confirmDel.comments} comment{confirmDel.comments!==1?"s":""} will also be deleted)</span>}
-          <button onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:"#F87171",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
-          <button onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:6,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
+          <button onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:ROSE,border:"none",borderRadius:R.sm,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
+          <button onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
         </div>
       )}
 
@@ -3546,7 +3546,7 @@ function CampusPage({ T, session, onSelectProject }) {
     };
   }, [filtered]);
 
-  const good="#2DD4BF", warn="#F59E0B", bad="#F87171";
+  const good={EMERALD}, warn={AMBER}, bad={ROSE};
 
   // Each KPI card maps to a predicate over the campus-filtered rows, so clicking
   // a card drills the list down to exactly the projects it counted.
@@ -3573,10 +3573,10 @@ function CampusPage({ T, session, onSelectProject }) {
 
   const th = {fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",whiteSpace:"nowrap",textAlign:"left",borderBottom:"1px solid "+T.border};
   const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
-  const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
+  const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:R.sm,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
 
   if (loading) return <div style={{color:T.muted,fontSize:13,padding:20}}>Loading campuses…</div>;
-  if (err)     return <div style={{color:"#F87171",fontSize:13,padding:20}}>{err}</div>;
+  if (err)     return <div style={{color:ROSE,fontSize:13,padding:20}}>{err}</div>;
 
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -3596,8 +3596,8 @@ function CampusPage({ T, session, onSelectProject }) {
             {label:"Projects",  value:String(filtered.length), color:T.text},
             {label:"DF Rec",    value:fmtM(k.dfBudget),        color:T.text},
             {label:"Approved",  value:fmtM(k.budget),          color:GOLD},
-            {label:"Released",  value:fmtM(k.released),        color:"#2DD4BF"},
-            {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:"#60A5FA"},
+            {label:"Released",  value:fmtM(k.released),        color:EMERALD},
+            {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:DATA.info},
           ].map(s => (
             <div key={s.label} style={{textAlign:"right",whiteSpace:"nowrap"}}>
               <div style={{fontSize:9,color:T.muted,letterSpacing:1.2,textTransform:"uppercase",marginBottom:2}}>{s.label}</div>
@@ -3633,7 +3633,7 @@ function CampusPage({ T, session, onSelectProject }) {
       </div>
 
       {/* Project list */}
-      <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:10,overflow:"hidden"}}>
+      <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:R.md,overflow:"hidden"}}>
         {activeCard && CARD_FILTERS[activeCard] && (
           <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:"1px solid "+T.border,background:T.card2}}>
             <span style={{fontSize:12,color:T.muted}}>
@@ -3641,7 +3641,7 @@ function CampusPage({ T, session, onSelectProject }) {
               {sel ? ` in ${sel}` : ""}
             </span>
             <button onClick={()=>setActiveCard(null)}
-              style={{marginLeft:"auto",background:"none",border:"1px solid "+T.border,borderRadius:6,color:T.muted,fontSize:11,padding:"4px 10px",cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>
+              style={{marginLeft:"auto",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,padding:"4px 10px",cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>
               ✕ Clear
             </button>
           </div>
@@ -3699,10 +3699,10 @@ function SettingsPage({ T, session }) {
     const ok = status.ok;
     return (
       <div style={{
-        display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:8, marginTop:14,
+        display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:R.md, marginTop:14,
         background: ok ? "rgba(45,212,191,0.1)" : "rgba(248,113,113,0.1)",
         border: `1px solid ${ok ? "rgba(45,212,191,0.3)" : "rgba(248,113,113,0.3)"}`,
-        color: ok ? "#2DD4BF" : "#F87171", fontSize:13,
+        color: ok ? EMERALD : ROSE, fontSize:13,
       }}>
         <span>{ok ? "✓" : "⚠"}</span>{status.msg}
       </div>
@@ -3710,7 +3710,7 @@ function SettingsPage({ T, session }) {
   };
 
   const SectionCard = ({ title, children }) => (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"24px 28px", marginBottom:20 }}>
+    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"24px 28px", marginBottom:20 }}>
       <div style={{ fontSize:13, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>
         {title}
       </div>
@@ -3727,14 +3727,14 @@ function SettingsPage({ T, session }) {
   );
 
   const inp = {
-    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8,
+    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md,
     padding:"10px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", width:"100%", boxSizing:"border-box",
   };
 
   const Btn = ({ onClick, loading, disabled, children, variant="primary" }) => (
     <button onClick={onClick} disabled={loading || disabled} style={{
-      padding:"10px 22px", borderRadius:8, border:"none", cursor: loading||disabled ? "default" : "pointer",
+      padding:"10px 22px", borderRadius:R.md, border:"none", cursor: loading||disabled ? "default" : "pointer",
       fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
       background: loading||disabled ? T.muted : variant==="primary" ? NAVY : "transparent",
       color: variant==="primary" ? "#fff" : T.muted,
@@ -4000,15 +4000,15 @@ function PerformancePage({ T, session, onSelectProject }) {
   };
 
   // Colour helpers
-  const cpiClr = v => v == null ? T.dim : parseFloat(v) >= 0.95 ? "#2DD4BF" : parseFloat(v) >= 0.85 ? "#F59E0B" : "#F87171";
-  const varClr = v => v == null ? T.dim : parseFloat(v) >= 0 ? "#2DD4BF" : "#F87171";
+  const cpiClr = v => v == null ? T.dim : parseFloat(v) >= 0.95 ? EMERALD : parseFloat(v) >= 0.85 ? AMBER : ROSE;
+  const varClr = v => v == null ? T.dim : parseFloat(v) >= 0 ? EMERALD : ROSE;
 
   const FLAG = {
     not_started: { label:"Not Started", c: T.dim },
-    on_time:     { label:"On Schedule", c:"#2DD4BF" },
-    delayed:     { label:"Delayed",     c:"#F59E0B" },
-    within:      { label:"On Budget",   c:"#2DD4BF" },
-    over:        { label:"Over Budget", c:"#F87171" },
+    on_time:     { label:"On Schedule", c:EMERALD },
+    delayed:     { label:"Delayed",     c:AMBER },
+    within:      { label:"On Budget",   c:EMERALD },
+    over:        { label:"Over Budget", c:ROSE },
   };
   const FlagBadge = ({ flag }) => {
     const f = FLAG[flag] || { label: flag || "—", c: T.dim };
@@ -4055,7 +4055,7 @@ function PerformancePage({ T, session, onSelectProject }) {
       <div style={{ padding:"10px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:6, flexShrink:0, alignItems:"center" }}>
         {FILTERS.map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)} style={{
-            padding:"4px 12px", borderRadius:20, border:`1px solid ${filter===f.id ? GOLD : T.border}`,
+            padding:"4px 12px", borderRadius:R.pill, border:`1px solid ${filter===f.id ? GOLD : T.border}`,
             background: filter===f.id ? "rgba(216,152,64,0.12)" : T.card2,
             color: filter===f.id ? GOLD : T.muted,
             fontSize:11.5, fontWeight:filter===f.id ? 700 : 400,
@@ -4074,9 +4074,9 @@ function PerformancePage({ T, session, onSelectProject }) {
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading EVM data…</div>
       ) : err ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
-          <AlertCircle color="#F87171" />
-          <span style={{ color:"#F87171", fontSize:13 }}>{err}</span>
-          <button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:6, cursor:"pointer", fontSize:12 }}>Retry</button>
+          <AlertCircle color={ROSE} />
+          <span style={{ color:ROSE, fontSize:13 }}>{err}</span>
+          <button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.dim, fontSize:13 }}>
@@ -4135,7 +4135,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                         <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
                           <div style={{ width:56, height:4, background:T.border, borderRadius:2 }}>
                             <div style={{ width:`${Math.min(r.pct_complete, 100)}%`, height:"100%", borderRadius:2,
-                              background: r.pct_complete >= 75 ? "#2DD4BF" : r.pct_complete >= 40 ? GOLD : "#F59E0B" }} />
+                              background: r.pct_complete >= 75 ? EMERALD : r.pct_complete >= 40 ? GOLD : AMBER }} />
                           </div>
                           <span style={{ fontSize:11, color:T.muted }}>{fmtP(r.pct_complete)}</span>
                         </div>
@@ -4272,7 +4272,7 @@ function ProjectAttachments({ T, session, projectId }) {
   };
 
   return (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"20px 22px" }}>
+    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"20px 22px" }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
         <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>
           Attachments {items.length > 0 && <span style={{opacity:.6}}>({items.length})</span>}
@@ -4281,7 +4281,7 @@ function ProjectAttachments({ T, session, projectId }) {
           <>
             <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)} />
             <button onClick={()=>fileInputRef.current?.click()} disabled={uploading}
-              style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", background:uploading?T.muted:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:11.5, fontWeight:700, cursor:uploading?"default":"pointer", fontFamily:TYPE.body.fontFamily }}>
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", background:uploading?T.muted:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:11.5, fontWeight:700, cursor:uploading?"default":"pointer", fontFamily:TYPE.body.fontFamily }}>
               <Upload size={12}/> {uploading ? "Uploading…" : "Upload"}
             </button>
           </>
@@ -4290,7 +4290,7 @@ function ProjectAttachments({ T, session, projectId }) {
 
       {canManage && globalBytes !== null && (() => {
         const pct = Math.min(100, (globalBytes / STORAGE_CAP_BYTES) * 100);
-        const barColor = pct >= 90 ? "#F87171" : pct >= 70 ? "#F59E0B" : "#2DD4BF";
+        const barColor = pct >= 90 ? ROSE : pct >= 70 ? AMBER : EMERALD;
         return (
           <div style={{ marginBottom:14 }}>
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:T.dim, marginBottom:5 }}>
@@ -4301,7 +4301,7 @@ function ProjectAttachments({ T, session, projectId }) {
               <div style={{ width:pct+"%", height:"100%", background:barColor, borderRadius:3, transition:"width .4s" }}/>
             </div>
             {pct >= 80 && (
-              <div style={{ fontSize:10.5, color:"#F59E0B", marginTop:5 }}>
+              <div style={{ fontSize:10.5, color:AMBER, marginTop:5 }}>
                 Approaching the Free-tier storage limit — consider upgrading to Supabase Pro before this fills up.
               </div>
             )}
@@ -4309,7 +4309,7 @@ function ProjectAttachments({ T, session, projectId }) {
         );
       })()}
 
-      {err && <div style={{ fontSize:11.5, color:"#F87171", marginBottom:10 }}>{err}</div>}
+      {err && <div style={{ fontSize:11.5, color:ROSE, marginBottom:10 }}>{err}</div>}
 
       {loading ? (
         <div style={{ fontSize:12, color:T.dim, padding:"8px 0" }}>Loading…</div>
@@ -4320,7 +4320,7 @@ function ProjectAttachments({ T, session, projectId }) {
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
           {items.map(att => (
-            <div key={att.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 4px", borderRadius:7, cursor:"pointer" }}
+            <div key={att.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 4px", borderRadius:R.sm, cursor:"pointer" }}
               onMouseEnter={e=>e.currentTarget.style.background=T.card2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}
               onClick={()=>handleDownload(att)}>
               <FileText size={15} color={T.muted} style={{flexShrink:0}}/>
@@ -4544,7 +4544,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   };
 
   if (loading) return <div style={{flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13}}>Loading project…</div>;
-  if (err)     return <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10}}><AlertCircle color="#F87171"/><span style={{color:"#F87171",fontSize:13}}>{err}</span></div>;
+  if (err)     return <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10}}><AlertCircle color={ROSE}/><span style={{color:ROSE,fontSize:13}}>{err}</span></div>;
   if (!evm || !details) return null;
 
   // Formatters
@@ -4553,17 +4553,17 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const fmtP  = n => n == null ? "—" : parseFloat(n).toFixed(1)+"%";
   const fmtD  = d => d ? new Date(d).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}) : "—";
   const fmtMv = n => { if(n==null)return"—"; const m=(Math.abs(parseFloat(n))/1e6).toFixed(1); return(parseFloat(n)>=0?"+":"−")+m+"M"; };
-  const cpiClr = v => v==null?T.dim:parseFloat(v)>=0.95?"#2DD4BF":parseFloat(v)>=0.85?"#F59E0B":"#F87171";
-  const varClr = v => v==null?T.dim:parseFloat(v)>=0?"#2DD4BF":"#F87171";
+  const cpiClr = v => v==null?T.dim:parseFloat(v)>=0.95?"#2DD4BF":parseFloat(v)>=0.85?"#F59E0B":ROSE;
+  const varClr = v => v==null?T.dim:parseFloat(v)>=0?"#2DD4BF":ROSE;
 
-  const ST = { identified:{c:"#6B9AB8"}, df_review:{c:"#3B82F6"}, ed_review:{c:"#8B5CF6"}, mt_review:{c:"#A855F7"}, approved:{c:"#2DD4BF"}, closed:{c:"#6B7280"} };
+  const ST = { identified:{c:DATA.info}, df_review:{c:BRAND.blue}, ed_review:{c:VIOLET}, mt_review:{c:VIOLET}, approved:{c:EMERALD}, closed:{c:DATA.neutral} };
   const stc = (ST[evm.workflow_stage]||{c:T.dim}).c;
   const stLabel = { pdd_not_submitted:"PDD Not Submitted", identified:"PDD Submitted", df_review:"DF Review", ed_review:"ED Review", mt_review:"MT Review", approved:"Approved", closed:"Closed" }[evm.workflow_stage] || evm.workflow_stage;
 
-  const MS = { done:{icon:"✓",c:"#2DD4BF"}, in_progress:{icon:"◉",c:GOLD}, pending:{icon:"○",c:T.dim} };
+  const MS = { done:{icon:"✓",c:EMERALD}, in_progress:{icon:"◉",c:GOLD}, pending:{icon:"○",c:T.dim} };
 
   const Card = ({title, children}) => (
-    <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"20px 22px"}}>
+    <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"20px 22px"}}>
       <div style={{fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${T.border}`}}>
         {title}
       </div>
@@ -4579,9 +4579,9 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   );
 
   const scheduleStatus = evm.schedule_flag === "on_time" ? "On Schedule" : evm.schedule_flag === "delayed" ? "Delayed" : "Not Started";
-  const scheduleColor  = evm.schedule_flag === "on_time" ? "#2DD4BF"    : evm.schedule_flag === "delayed" ? "#F59E0B" : T.dim;
+  const scheduleColor  = evm.schedule_flag === "on_time" ? EMERALD    : evm.schedule_flag === "delayed" ? AMBER : T.dim;
   const budgetStatus   = evm.budget_flag   === "within"  ? "On Budget"  : evm.budget_flag   === "over"    ? "Over Budget" : "Not Started";
-  const budgetColor    = evm.budget_flag   === "within"  ? "#2DD4BF"    : evm.budget_flag   === "over"    ? "#F87171" : T.dim;
+  const budgetColor    = evm.budget_flag   === "within"  ? EMERALD    : evm.budget_flag   === "over"    ? ROSE : T.dim;
 
   return (
     <div className="pmo-scroll" style={{ flex:1, overflow:"auto", background:T.page }}>
@@ -4733,7 +4733,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             return details.duration_months ? `${details.duration_months} months` : "—";
           })()} />
           {details.notes && (
-            <div style={{marginTop:12, padding:"10px 12px", background:T.card2, borderRadius:8, fontSize:12, color:T.muted, lineHeight:1.6}}>
+            <div style={{marginTop:12, padding:"10px 12px", background:T.card2, borderRadius:R.md, fontSize:12, color:T.muted, lineHeight:1.6}}>
               {details.notes}
             </div>
           )}
@@ -4746,7 +4746,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <Row label="SU Requested"     value={fmtM(details.su_requested_amount)} />
           <Row label="DF Recommended"   value={fmtM(details.df_recommended_amount)} />
           {parseFloat(details.su_requested_amount) !== parseFloat(details.df_recommended_amount) && (
-            <Row label="Budget Reduction" value={fmtM(details.su_requested_amount - details.df_recommended_amount)} vc="#F59E0B" />
+            <Row label="Budget Reduction" value={fmtM(details.su_requested_amount - details.df_recommended_amount)} vc={AMBER} />
           )}
           <Row label="BAC (Sanctioned)" value={fmtM(details.bac)} vc={GOLD} />
           <div style={{margin:"10px 0", height:1, background:T.border}} />
@@ -4757,11 +4757,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
               : "—"}
             vc={details.budget_release_date ? T.text : T.dim} />
           <Row label="Payments Made"    value={fmtM(details.payments_made)} />
-          <Row label="Budget Remaining" value={fmtM(parseFloat(details.bac||0) - parseFloat(details.amount_released||0))} vc="#2DD4BF" />
+          <Row label="Budget Remaining" value={fmtM(parseFloat(details.bac||0) - parseFloat(details.amount_released||0))} vc={EMERALD} />
           <div style={{margin:"10px 0", height:1, background:T.border}} />
-          <Row label="Payments Pending" value={details.payments_pending ? "Yes — awaiting transfer" : "No"} vc={details.payments_pending ? "#F59E0B" : "#2DD4BF"} />
+          <Row label="Payments Pending" value={details.payments_pending ? "Yes — awaiting transfer" : "No"} vc={details.payments_pending ? AMBER : EMERALD} />
           <Row label="Carry Forward"    value={details.is_carry_forward ? "Yes — prior FY obligation" : "No"} vc={details.is_carry_forward ? GOLD : T.muted} />
-          <Row label="Change in Scope"  value={details.scope_change ? "Yes — scope revised" : "No"} vc={details.scope_change ? "#A78BFA" : T.muted} />
+          <Row label="Change in Scope"  value={details.scope_change ? "Yes — scope revised" : "No"} vc={details.scope_change ? VIOLET : T.muted} />
         </Card>
 
         </div>
@@ -4777,7 +4777,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                   {label:"Planned Value", value:fmtM(evm.planned_value),  sub:"PV = BAC × elapsed"},
                   {label:"Actual Cost",   value:fmtM(evm.amount_released),sub:"AC = Released"},
                 ].map(({label,value,sub}) => (
-                  <div key={label} style={{background:T.card2, borderRadius:8, padding:"10px", textAlign:"center"}}>
+                  <div key={label} style={{background:T.card2, borderRadius:R.md, padding:"10px", textAlign:"center"}}>
                     <div style={{fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1, marginBottom:4}}>{label}</div>
                     <div style={{fontSize:17, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily}}>{value}</div>
                     <div style={{fontSize:9, color:T.dim, marginTop:3}}>{sub}</div>
@@ -4814,11 +4814,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                 <div>
                   <div style={{fontSize:15, fontWeight:700, color:T.text}}>{pm.user_profiles?.full_name || pm.user_profiles?.username || "—"}</div>
                   <div style={{fontSize:12, color:T.muted, marginTop:2}}>@{pm.user_profiles?.username}</div>
-                  <span style={{display:"inline-block", marginTop:5, fontSize:10, fontWeight:700, background:"rgba(59,130,246,0.12)", color:"#3B82F6", padding:"2px 10px", borderRadius:20}}>Project Manager</span>
+                  <span style={{display:"inline-block", marginTop:5, fontSize:10, fontWeight:700, background:"rgba(59,130,246,0.12)", color:BRAND.blue, padding:"2px 10px", borderRadius:R.pill}}>Project Manager</span>
                 </div>
               </div>
               {session?.role==="pmo" && !assigningPM && (
-                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:7, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
+                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Change PM
                 </button>
               )}
@@ -4827,26 +4827,26 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             <>
               <div style={{textAlign:"center", color:T.dim, fontSize:13, padding:"20px 0 14px"}}>No project manager assigned yet.</div>
               {session?.role==="pmo" && !assigningPM && (
-                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
+                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Assign Project Manager
                 </button>
               )}
             </>
           )}
           {session?.role==="pmo" && assigningPM && (
-            <div style={{marginTop:10, padding:14, background:T.card2, borderRadius:8, border:"1px solid "+T.border}}>
+            <div style={{marginTop:10, padding:14, background:T.card2, borderRadius:R.md, border:"1px solid "+T.border}}>
               <label style={{fontSize:11, color:T.muted, fontWeight:700, letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:7}}>Select Project Manager</label>
-              <select value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", marginBottom:10, boxSizing:"border-box"}}>
+              <select value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:R.sm, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", marginBottom:10, boxSizing:"border-box"}}>
                 <option value="">— Select PM —</option>
                 {allPMs.map(p=>(
                   <option key={p.id} value={p.id}>{p.full_name||p.username} (@{p.username})</option>
                 ))}
               </select>
               <div style={{display:"flex", gap:8}}>
-                <button onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:6, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
+                <button onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   {savingPM?"Saving…":"Assign"}
                 </button>
-                <button onClick={()=>{setAssigningPM(false);setSelectedPM("");}} style={{flex:1, padding:"8px", background:"none", border:"1px solid "+T.border, borderRadius:6, color:T.muted, fontSize:12, cursor:"pointer"}}>
+                <button onClick={()=>{setAssigningPM(false);setSelectedPM("");}} style={{flex:1, padding:"8px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer"}}>
                   Cancel
                 </button>
               </div>
@@ -4869,7 +4869,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
 function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClose, inviteLink }) {
   const [copied, setCopied] = useState(false);
   const copyLink = () => { navigator.clipboard.writeText(inviteLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); }); };
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
     <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
@@ -4895,20 +4895,20 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
           </select>
         </div>
         {status && (
-          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:13, display:"flex", alignItems:"flex-start", gap:8, background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, color:status.ok?"#2DD4BF":"#F87171" }}>
+          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", alignItems:"flex-start", gap:8, background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, color:status.ok?"#2DD4BF":ROSE }}>
             <span>{status.ok?"✓":"⚠"}</span><span style={{ lineHeight:1.5 }}>{status.msg}</span>
           </div>
         )}
         {inviteLink && (
-          <div style={{ marginBottom:18, background:T.card2, border:`1px solid ${T.border}`, borderRadius:10, padding:"14px 16px" }}>
+          <div style={{ marginBottom:18, background:T.card2, border:`1px solid ${T.border}`, borderRadius:R.md, padding:"14px 16px" }}>
             <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>
               📋 Invite Link — share this if email doesn't arrive
             </div>
             <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-              <div style={{ flex:1, fontSize:11, color:T.dim, wordBreak:"break-all", lineHeight:1.5, fontFamily:"monospace", background:T.inputBg, padding:"6px 10px", borderRadius:6, border:`1px solid ${T.inputBorder}` }}>
+              <div style={{ flex:1, fontSize:11, color:T.dim, wordBreak:"break-all", lineHeight:1.5, fontFamily:"monospace", background:T.inputBg, padding:"6px 10px", borderRadius:R.sm, border:`1px solid ${T.inputBorder}` }}>
                 {inviteLink.length > 90 ? inviteLink.slice(0,90)+"…" : inviteLink}
               </div>
-              <button onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:7, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?"#2DD4BF":T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
+              <button onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:R.sm, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?"#2DD4BF":T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
                 {copied?"✓ Copied":"Copy"}
               </button>
             </div>
@@ -4916,8 +4916,8 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
           </div>
         )}
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{inviteLink?"Close":"Cancel"}</button>
-          {!inviteLink && <button onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{creating?"Creating user…":"Send Invite"}</button>}
+          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{inviteLink?"Close":"Cancel"}</button>
+          {!inviteLink && <button onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{creating?"Creating user…":"Send Invite"}</button>}
         </div>
         {!inviteLink && <div style={{ marginTop:14, fontSize:11, color:T.dim, lineHeight:1.6 }}>You'll get the invite link regardless of whether the email arrives.</div>}
       </div>
@@ -4926,7 +4926,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
 }
 
 function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search, onSearch, saving, onSave, onClose }) {
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const q = search.toLowerCase();
   const filtered = sortRealCodeFirst(q ? projects.filter(p => p.name.toLowerCase().includes(q) || (p.code||"").toLowerCase().includes(q)) : projects);
   return (
@@ -4935,7 +4935,7 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
         <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:4, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Assign Projects — {user.username}</div>
         <div style={{ fontSize:12, color:T.muted, marginBottom:12, paddingTop:10 }}>{selectedIds.size} project{selectedIds.size !== 1 ? "s" : ""} selected</div>
         <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Search by name or code…" style={{ ...inp, marginBottom:12 }} />
-        <div style={{ maxHeight:300, overflow:"auto", border:`1px solid ${T.border}`, borderRadius:8 }}>
+        <div style={{ maxHeight:300, overflow:"auto", border:`1px solid ${T.border}`, borderRadius:R.md }}>
           {filtered.map((p, i) => {
             const checked = selectedIds.has(p.id);
             return (
@@ -4954,8 +4954,8 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
           {filtered.length === 0 && <div style={{ padding:"20px", textAlign:"center", color:T.dim, fontSize:13 }}>No projects match.</div>}
         </div>
         <div style={{ display:"flex", gap:10, marginTop:18 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
-          <button onClick={onSave} disabled={saving} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:saving?T.muted:NAVY, color:"#fff", cursor:saving?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>
+          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
+          <button onClick={onSave} disabled={saving} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:saving?T.muted:NAVY, color:"#fff", cursor:saving?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>
             {saving ? "Saving…" : `Save ${selectedIds.size} Assignment${selectedIds.size !== 1 ? "s" : ""}`}
           </button>
         </div>
@@ -5027,8 +5027,8 @@ function UserManagementPage({ T, session }) {
   const getUserAssignments = uid => allAssignments.filter(a => a.user_id === uid);
   const ROLE_CFG = {
     pmo:             { label:"Administrator",   c:GOLD },
-    project_manager: { label:"Project Manager", c:"#60A5FA" },
-    guest:           { label:"Guest",           c:"#9CA3AF" },
+    project_manager: { label:"Project Manager", c:DATA.info },
+    guest:           { label:"Guest",           c:DATA.neutral },
   };
   const isMe = uid => uid === session.user_id;
   const setField = (k, v) => setForm(f => ({...f, [k]: v}));
@@ -5119,7 +5119,7 @@ function UserManagementPage({ T, session }) {
   };
 
   // ── Shared table styles ────────────────────────────────────────────────────
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const th  = { fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 16px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" };
   const td  = { padding:"12px 16px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" };
 
@@ -5132,7 +5132,7 @@ function UserManagementPage({ T, session }) {
         <div style={{ marginLeft:"auto" }}>
           <button onClick={() => { setShowCreate(true); setCreateStatus(null); }} style={{
             display:"flex", alignItems:"center", gap:7, padding:"8px 18px", background:NAVY, color:"#fff",
-            border:"none", borderRadius:8, cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
+            border:"none", borderRadius:R.md, cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
             boxShadow:"0 3px 12px rgba(24,80,120,0.3)",
           }}>+ Create User</button>
         </div>
@@ -5142,7 +5142,7 @@ function UserManagementPage({ T, session }) {
       {loading ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading users…</div>
       ) : err ? (
-        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#F87171", fontSize:13 }}>{err}</div>
+        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:ROSE, fontSize:13 }}>{err}</div>
       ) : (
         <div style={{ flex:1, overflow:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse" }}>
@@ -5185,7 +5185,7 @@ function UserManagementPage({ T, session }) {
                           onBlur={()=>savePhone(u.id)}
                           onKeyDown={e=>{ if(e.key==="Enter") savePhone(u.id); if(e.key==="Escape") setEditPhoneId(null); }}
                           placeholder="+923001234567"
-                          style={{ width:150, background:T.inputBg, border:"1px solid "+GOLD, borderRadius:5, padding:"4px 7px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}
+                          style={{ width:150, background:T.inputBg, border:"1px solid "+GOLD, borderRadius:R.sm, padding:"4px 7px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}
                         />
                       ) : (
                         <span
@@ -5196,10 +5196,10 @@ function UserManagementPage({ T, session }) {
                       )}
                     </td>
                     <td style={td}>
-                      <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:20 }}>{rc.label}</span>
+                      <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:R.pill }}>{rc.label}</span>
                     </td>
                     <td style={td}>
-                      <span style={{ fontSize:11, fontWeight:700, color:u.is_active?"#2DD4BF":"#F87171", background:u.is_active?"rgba(45,212,191,0.12)":"rgba(248,113,113,0.12)", padding:"3px 10px", borderRadius:20 }}>
+                      <span style={{ fontSize:11, fontWeight:700, color:u.is_active?"#2DD4BF":ROSE, background:u.is_active?"rgba(45,212,191,0.12)":"rgba(248,113,113,0.12)", padding:"3px 10px", borderRadius:R.pill }}>
                         {u.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
@@ -5213,15 +5213,15 @@ function UserManagementPage({ T, session }) {
                       {!me && (
                         <div style={{ display:"flex", gap:8, justifyContent:"flex-end", alignItems:"center" }}>
                           {u.role === "project_manager" && (
-                            <button onClick={() => openAssign(u)} style={{ padding:"5px 12px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+                            <button onClick={() => openAssign(u)} style={{ padding:"5px 12px", borderRadius:R.sm, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                               Assign Projects
                             </button>
                           )}
                           {u.role !== "pmo" && (
                             <button onClick={() => toggleActive(u)} style={{
-                              padding:"5px 12px", borderRadius:7, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily,
+                              padding:"5px 12px", borderRadius:R.sm, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily,
                               border:`1px solid ${u.is_active?"rgba(248,113,113,0.4)":"rgba(45,212,191,0.4)"}`,
-                              background:"none", color:u.is_active?"#F87171":"#2DD4BF",
+                              background:"none", color:u.is_active?"#F87171":EMERALD,
                             }}>
                               {u.is_active ? "Deactivate" : "Reactivate"}
                             </button>
@@ -5230,15 +5230,15 @@ function UserManagementPage({ T, session }) {
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                                 <span style={{ fontSize:11, color:T.muted }}>Sure?</span>
-                                <button onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:7, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:"#F87171", fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
+                                <button onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
                                   {deleting === u.id ? "Deleting…" : "Yes, Delete"}
                                 </button>
-                                <button onClick={() => setConfirmDelete(null)} style={{ padding:"5px 8px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+                                <button onClick={() => setConfirmDelete(null)} style={{ padding:"5px 8px", borderRadius:R.sm, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                                   Cancel
                                 </button>
                               </div>
                             ) : (
-                              <button onClick={() => setConfirmDelete(u.id)} style={{ padding:"5px 12px", borderRadius:7, border:"1px solid rgba(248,113,113,0.3)", background:"none", color:"#F87171", fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, opacity:0.7 }}>
+                              <button onClick={() => setConfirmDelete(u.id)} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid rgba(248,113,113,0.3)", background:"none", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, opacity:0.7 }}>
                                 Delete
                               </button>
                             )
@@ -5345,21 +5345,21 @@ function RestoreSnapshotButton({ T, session, entry }) {
     } catch(e) { setMsg(e.message); setState("error"); }
   };
 
-  if (state === "done") return <div style={{marginTop:6,fontSize:11,color:"#2DD4BF"}}>✓ Restored — refresh Projects tab to see changes.</div>;
-  if (state === "error") return <div style={{marginTop:6,fontSize:11,color:"#F87171"}}>✗ {msg}</div>;
+  if (state === "done") return <div style={{marginTop:6,fontSize:11,color:EMERALD}}>✓ Restored — refresh Projects tab to see changes.</div>;
+  if (state === "error") return <div style={{marginTop:6,fontSize:11,color:ROSE}}>✗ {msg}</div>;
 
   return (
     <div style={{marginTop:6}}>
       {state === "confirming" ? (
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:"#F87171"}}>Replace ALL current projects with this snapshot?</span>
-          <button onClick={restore} style={{padding:"3px 10px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:5,color:"#F87171",fontSize:11,fontWeight:700,cursor:"pointer"}}>Yes, Restore</button>
-          <button onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:5,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
+          <span style={{fontSize:11,color:ROSE}}>Replace ALL current projects with this snapshot?</span>
+          <button onClick={restore} style={{padding:"3px 10px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:R.sm,color:ROSE,fontSize:11,fontWeight:700,cursor:"pointer"}}>Yes, Restore</button>
+          <button onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
         </div>
       ) : state === "restoring" ? (
-        <div style={{fontSize:11,color:"#2DD4BF"}}>⏳ {msg}</div>
+        <div style={{fontSize:11,color:EMERALD}}>⏳ {msg}</div>
       ) : (
-        <button onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:5,color:GOLD,fontSize:11,cursor:"pointer"}}>
+        <button onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:R.sm,color:GOLD,fontSize:11,cursor:"pointer"}}>
           📦 Restore this version ({entry.details.imported} projects)
         </button>
       )}
@@ -5398,22 +5398,22 @@ function ActivityLogPage({ T, session }) {
 
   // ── Display config ─────────────────────────────────────────────────────────
   const ACTION_CFG = {
-    created:          { c:"#2DD4BF", bg:"rgba(45,212,191,0.12)",  label:"Created" },
-    updated:          { c:"#60A5FA", bg:"rgba(96,165,250,0.12)",  label:"Updated" },
-    deleted:          { c:"#F87171", bg:"rgba(248,113,113,0.12)", label:"Deleted" },
+    created:          { c:EMERALD, bg:"rgba(45,212,191,0.12)",  label:"Created" },
+    updated:          { c:DATA.info, bg:"rgba(96,165,250,0.12)",  label:"Updated" },
+    deleted:          { c:ROSE, bg:"rgba(248,113,113,0.12)", label:"Deleted" },
     stage_changed:    { c:GOLD,      bg:"rgba(216,152,64,0.12)",  label:"Stage Changed" },
-    import:           { c:"#2DD4BF", bg:"rgba(45,212,191,0.12)",  label:"Import" },
-    commented:        { c:"#A78BFA", bg:"rgba(167,139,250,0.12)", label:"Commented" },
-    comment_edited:   { c:"#60A5FA", bg:"rgba(96,165,250,0.12)",  label:"Edited" },
-    comment_deleted:  { c:"#F87171", bg:"rgba(248,113,113,0.12)", label:"Comment Deleted" },
-    assigned:         { c:"#FB923C", bg:"rgba(251,146,60,0.12)",  label:"Assigned" },
-    unassigned:       { c:"#FB923C", bg:"rgba(251,146,60,0.12)",  label:"Unassigned" },
-    assignment_updated:{ c:"#FB923C",bg:"rgba(251,146,60,0.12)",  label:"Reassigned" },
+    import:           { c:EMERALD, bg:"rgba(45,212,191,0.12)",  label:"Import" },
+    commented:        { c:VIOLET, bg:"rgba(167,139,250,0.12)", label:"Commented" },
+    comment_edited:   { c:DATA.info, bg:"rgba(96,165,250,0.12)",  label:"Edited" },
+    comment_deleted:  { c:ROSE, bg:"rgba(248,113,113,0.12)", label:"Comment Deleted" },
+    assigned:         { c:AMBER, bg:"rgba(251,146,60,0.12)",  label:"Assigned" },
+    unassigned:       { c:AMBER, bg:"rgba(251,146,60,0.12)",  label:"Unassigned" },
+    assignment_updated:{ c:AMBER,bg:"rgba(251,146,60,0.12)",  label:"Reassigned" },
   };
   const ROLE_CFG = {
     pmo:             { label:"Admin",   c:GOLD },
-    project_manager: { label:"PM",      c:"#60A5FA" },
-    guest:           { label:"Guest",   c:"#9CA3AF" },
+    project_manager: { label:"PM",      c:DATA.info },
+    guest:           { label:"Guest",   c:DATA.neutral },
   };
   const ENTITY_LABELS = {
     projects:            "Project",
@@ -5449,7 +5449,7 @@ function ActivityLogPage({ T, session }) {
   };
 
   const sel = {
-    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:7,
+    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
     padding:"7px 10px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", cursor:"pointer",
   };
@@ -5481,7 +5481,7 @@ function ActivityLogPage({ T, session }) {
         </div>
 
         {hasFilters && (
-          <button onClick={clearFilters} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>
+          <button onClick={clearFilters} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"6px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>
             Clear filters
           </button>
         )}
@@ -5497,9 +5497,9 @@ function ActivityLogPage({ T, session }) {
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading activity log…</div>
       ) : err ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
-          <AlertCircle color="#F87171"/>
-          <span style={{ color:"#F87171", fontSize:13 }}>{err}</span>
-          <button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:6, cursor:"pointer", fontSize:12 }}>Retry</button>
+          <AlertCircle color={ROSE}/>
+          <span style={{ color:ROSE, fontSize:13 }}>{err}</span>
+          <button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
         </div>
       ) : entries.length === 0 ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10, color:T.dim }}>
@@ -5513,7 +5513,7 @@ function ActivityLogPage({ T, session }) {
               : "Actions taken in the portal — project updates, user management, comments — will appear here automatically."}
           </div>
           {hasFilters && (
-            <button onClick={clearFilters} style={{ marginTop:4, padding:"7px 18px", background:NAVY, color:"#fff", border:"none", borderRadius:7, cursor:"pointer", fontSize:12, fontFamily:TYPE.body.fontFamily }}>
+            <button onClick={clearFilters} style={{ marginTop:4, padding:"7px 18px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12, fontFamily:TYPE.body.fontFamily }}>
               Clear filters
             </button>
           )}
@@ -5551,7 +5551,7 @@ function ActivityLogPage({ T, session }) {
                     </td>
                     {/* Action badge */}
                     <td style={{ padding:"10px 14px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" }}>
-                      <span style={{ display:"inline-block", padding:"3px 9px", borderRadius:20, background:ac.bg, color:ac.c, fontSize:11, fontWeight:700, whiteSpace:"nowrap" }}>
+                      <span style={{ display:"inline-block", padding:"3px 9px", borderRadius:R.pill, background:ac.bg, color:ac.c, fontSize:11, fontWeight:700, whiteSpace:"nowrap" }}>
                         {ac.label}
                       </span>
                     </td>
@@ -5597,22 +5597,22 @@ const buildTree = comments => {
 };
 
 function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
-  const ROLE = { pmo:{ c:GOLD, label:"Admin" }, project_manager:{ c:"#60A5FA", label:"PM" }, guest:{ c:"#9CA3AF", label:"Guest" } };
+  const ROLE = { pmo:{ c:GOLD, label:"Admin" }, project_manager:{ c:DATA.info, label:"PM" }, guest:{ c:DATA.neutral, label:"Guest" } };
   const role = comment.author_role || comment.user_profiles?.role;
-  const rc   = ROLE[role] || { c:"#9CA3AF", label:"?" };
+  const rc   = ROLE[role] || { c:DATA.neutral, label:"?" };
   const name = comment.author_name || comment.user_profiles?.full_name || comment.user_profiles?.username;
   const deleted = !name;
   const init = deleted ? "✕" : name[0].toUpperCase();
   return (
     <div style={{ marginLeft: depth ? 36 : 0, marginBottom:10 }}>
-      <div style={{ background:T.card2, borderRadius:10, padding:"11px 14px", border:`1px solid ${T.border}` }}>
+      <div style={{ background:T.card2, borderRadius:R.md, padding:"11px 14px", border:`1px solid ${T.border}` }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
           <div style={{ width:26, height:26, borderRadius:"50%", background:NAVY, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>{init}</div>
           <span style={{ fontSize:13, fontWeight:600, color:deleted ? T.dim : T.text }}>{deleted ? "Deleted User" : name}</span>
-          <span style={{ fontSize:10, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"2px 8px", borderRadius:20 }}>{rc.label}</span>
+          <span style={{ fontSize:10, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"2px 8px", borderRadius:R.pill }}>{rc.label}</span>
           <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{timeAgo(comment.created_at)}</span>
           {onDelete && (
-            <button onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:"#F87171", display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
+            <button onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:ROSE, display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
               <Trash2 size={13} />
             </button>
           )}
@@ -5640,7 +5640,7 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
   return (
     <div style={{ padding:"14px 20px", borderTop:`1px solid ${T.border}`, flexShrink:0, background:T.headerBg }}>
       {replyingTo && (
-        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", background:T.card2, borderRadius:6, marginBottom:8, fontSize:12, color:T.muted }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", background:T.card2, borderRadius:R.sm, marginBottom:8, fontSize:12, color:T.muted }}>
           <span>↩ Replying to <strong style={{ color:T.text }}>{replyingTo.author_name || replyingTo.user_profiles?.full_name || replyingTo.user_profiles?.username || "Deleted User"}</strong></span>
           <button onClick={onCancelReply} style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", color:T.dim, fontSize:16, padding:0, lineHeight:1 }}>×</button>
         </div>
@@ -5649,11 +5649,11 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
         placeholder="Write a comment… (Ctrl+Enter to post)"
         rows={3}
         onKeyDown={e => { if (e.key==="Enter" && (e.ctrlKey||e.metaKey)) onPost(); }}
-        style={{ width:"100%", background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", resize:"vertical", boxSizing:"border-box" }}
+        style={{ width:"100%", background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", resize:"vertical", boxSizing:"border-box" }}
       />
       <div style={{ display:"flex", justifyContent:"flex-end", marginTop:8 }}>
         <button onClick={onPost} disabled={posting || !value.trim()} style={{
-          padding:"7px 20px", borderRadius:7, border:"none",
+          padding:"7px 20px", borderRadius:R.sm, border:"none",
           background: posting||!value.trim() ? T.muted : NAVY,
           color:"#fff", cursor:posting||!value.trim()?"default":"pointer",
           fontSize:12, fontWeight:700, fontFamily:TYPE.body.fontFamily,
@@ -5866,7 +5866,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
             }}>
               {tab.label}
               {tab.badge > 0 && (
-                <span style={{ background:"#F87171", color:"#fff", fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:20 }}>
+                <span style={{ background:ROSE, color:"#fff", fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:R.pill }}>
                   {tab.badge}
                 </span>
               )}
@@ -5895,10 +5895,10 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                 transition:"background .1s",
               }}>
                 <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  {cm.unread > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"#F87171", flexShrink:0 }} />}
+                  {cm.unread > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:ROSE, flexShrink:0 }} />}
                   <span style={{ fontSize:10, color:T.dim, fontFamily:"monospace", flexShrink:0 }}>{p.code || "-"}</span>
                   {cm.unread > 0 && (
-                    <span style={{ marginLeft:"auto", fontSize:10, fontWeight:700, color:"#F87171", background:"rgba(248,113,113,0.12)", padding:"1px 6px", borderRadius:20 }}>
+                    <span style={{ marginLeft:"auto", fontSize:10, fontWeight:700, color:ROSE, background:"rgba(248,113,113,0.12)", padding:"1px 6px", borderRadius:R.pill }}>
                       {cm.unread} new
                     </span>
                   )}
@@ -5964,7 +5964,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                     <a key={pm.id}
                        href={`https://wa.me/${pm.phone.replace(/[^0-9]/g,"")}?text=${encodeURIComponent(msg)}`}
                        target="_blank" rel="noopener noreferrer"
-                       style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"5px 11px", background:"rgba(37,211,102,0.10)", border:"1px solid rgba(37,211,102,0.45)", borderRadius:20, color:"#25D366", fontSize:11.5, fontWeight:600, textDecoration:"none" }}>
+                       style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"5px 11px", background:"rgba(37,211,102,0.10)", border:"1px solid rgba(37,211,102,0.45)", borderRadius:R.pill, color:"#25D366", fontSize:11.5, fontWeight:600, textDecoration:"none" }}>
                       {pm.full_name || pm.username}
                     </a>
                   ))}
@@ -6022,7 +6022,7 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
   return (
     <div style={{
       position:"absolute", left:L.left, top:L.top, width:L.w,
-      background:T.card, border:`1px solid ${T.border}`, borderRadius:11,
+      background:T.card, border:`1px solid ${T.border}`, borderRadius:R.md,
       padding:isLg?"16px 14px 12px":"12px 12px 10px", textAlign:"center",
       boxShadow:`0 ${isLg?4:2}px ${isLg?14:8}px rgba(0,0,0,0.12)`,
     }}>
@@ -6060,7 +6060,7 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
   return (
     <div style={{
       position:"relative",
-      background:T.card, border:`1px solid ${T.border}`, borderRadius:11,
+      background:T.card, border:`1px solid ${T.border}`, borderRadius:R.md,
       padding: big ? "16px 14px 12px" : "12px 12px 10px", textAlign:"center",
       boxShadow:`0 ${big?4:2}px ${big?14:8}px rgba(0,0,0,0.12)`,
     }}>
@@ -6118,7 +6118,7 @@ function MemberEditModal({ T, roleId, data, onSave, onClose }) {
 
 function AboutEditModal({ T, data, onSave, onClose }) {
   const [form, setForm] = useState({ heading:data?.heading||"", body:data?.body||"" });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
     <Modal T={T} onClose={onClose} width={560} icon={FileText} title="Edit About section"
@@ -6145,7 +6145,7 @@ function ContactEditModal({ T, data, onSave, onClose }) {
     email:data?.email||"", phone:data?.phone||"", address:data?.address||"",
     office:data?.office||"", hours:data?.hours||"", website:data?.website||"",
   });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   const FIELDS = [["email","Email"],["phone","Phone"],["address","Address"],["office","Office Location"],["hours","Office Hours"],["website","Website"]];
   return (
@@ -6214,10 +6214,10 @@ function TeamPage({ T, session }) {
       <div style={{ maxWidth:820, margin:"0 auto", display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* ── About Us ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"22px 26px", borderTop:`3px solid ${GOLD}` }}>
+        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"22px 26px", borderTop:`3px solid ${GOLD}` }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>About Us</div>
-            {isPMO && <button onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
+            {isPMO && <button onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
           </div>
           <div style={{ display:"flex", gap:24, alignItems:"flex-start" }}>
             <img src={LOGO} alt="Riphah" style={{ width:90, flexShrink:0, opacity:.8, filter:T===DK?"brightness(0) invert(1)":"none" }} />
@@ -6233,7 +6233,7 @@ function TeamPage({ T, session }) {
         </div>
 
         {/* ── Our Team ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"22px 26px" }}>
+        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"22px 26px" }}>
           <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             Our Team {isPMO && <span style={{ fontSize:9, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
           </div>
@@ -6296,10 +6296,10 @@ function TeamPage({ T, session }) {
         </div>
 
         {/* ── Contact Us ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"22px 26px", marginBottom:8 }}>
+        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"22px 26px", marginBottom:8 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>Contact Us</div>
-            {isPMO && <button onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
+            {isPMO && <button onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 32px" }}>
             {Object.entries(CONTACT_LABELS).map(([key, label]) => {
@@ -6378,7 +6378,7 @@ function ChangePasswordModal({ T, session, onClose }) {
     setLoading(false);
   };
 
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"10px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"10px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
 
   return (
@@ -6386,10 +6386,10 @@ function ChangePasswordModal({ T, session, onClose }) {
       <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:SP.xxl, animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:400, boxShadow:"0 24px 60px rgba(0,0,0,0.45)" }}>
         <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Change Password</div>
         {status && (
-          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:13, display:"flex", gap:8,
+          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", gap:8,
             background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)",
             border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`,
-            color:status.ok?"#2DD4BF":"#F87171" }}>
+            color:status.ok?"#2DD4BF":ROSE }}>
             <span>{status.ok?"✓":"⚠"}</span><span style={{lineHeight:1.5}}>{status.msg}</span>
           </div>
         )}
@@ -6408,8 +6408,8 @@ function ChangePasswordModal({ T, session, onClose }) {
           </div>
         </div>
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{status?.ok?"Close":"Cancel"}</button>
-          {!status?.ok && <button onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{loading?"Changing…":"Change Password"}</button>}
+          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{status?.ok?"Close":"Cancel"}</button>
+          {!status?.ok && <button onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{loading?"Changing…":"Change Password"}</button>}
         </div>
       </div>
     </div>
@@ -6426,7 +6426,7 @@ function SessionExpiredModal({ T, onSignIn }) {
         <div style={{ fontSize:14, color:T.muted, lineHeight:1.8, marginBottom:30 }}>
           Your session expired after 1 hour.<br/>Please sign in again to continue.
         </div>
-        <button onClick={onSignIn} style={{ width:"100%", padding:"13px", background:NAVY, color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
+        <button onClick={onSignIn} style={{ width:"100%", padding:"13px", background:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
           Sign In Again
         </button>
       </div>
@@ -6480,7 +6480,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
     setLoading(false);
   };
 
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"11px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"11px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
 
   return (
     <div style={{ display:"flex", height:"100vh", background:T.mainBg }}>
@@ -6504,7 +6504,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
 
       {/* Form */}
       <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <div style={{ width:380, background:T.card, border:`1px solid ${T.border}`, borderRadius:16, padding:"40px 42px",
+        <div style={{ width:380, background:T.card, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:"40px 42px",
           boxShadow:dark?"0 24px 80px rgba(0,0,0,0.45)":"0 8px 40px rgba(24,80,120,0.1)" }}>
           <div style={{ fontSize:23, fontWeight:700, color:T.text, marginBottom:6, fontFamily:TYPE.display.fontFamily }}>
             {type==="invite" ? "Set your password" : "Choose a new password"}
@@ -6514,7 +6514,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
           </div>
 
           {status && (
-            <div style={{ background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, borderRadius:8, padding:"10px 14px", marginBottom:18, fontSize:13, color:status.ok?"#2DD4BF":"#F87171", display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, borderRadius:R.md, padding:"10px 14px", marginBottom:18, fontSize:13, color:status.ok?"#2DD4BF":ROSE, display:"flex", alignItems:"center", gap:8 }}>
               <span>{status.ok?"✓":"⚠"}</span><span style={{ lineHeight:1.5 }}>{status.msg}</span>
             </div>
           )}
@@ -6533,7 +6533,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
               <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
-          <button onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:8, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
+          <button onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
             {loading ? "Setting password…" : type==="invite" ? "Set Password & Enter Portal" : "Set New Password"}
           </button>
         </div>
@@ -6617,21 +6617,21 @@ function Login({ T, dark, onLogin }) {
   const fieldStyle = {
     width:"100%", boxSizing:"border-box", padding:"12px 14px 12px 42px",
     background:"rgba(255,255,255,0.06)", border:"1px solid rgba(100,160,255,0.2)",
-    borderRadius:10, color:"#fff", fontSize:14, fontFamily:TYPE.body.fontFamily, outline:"none",
+    borderRadius:R.md, color:"#fff", fontSize:14, fontFamily:TYPE.body.fontFamily, outline:"none",
   };
 
   // ── Reset password screen ──────────────────────────────────────────────────
   if (mode === "reset") return (
     <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:BG, fontFamily:TYPE.body.fontFamily }}>
-      <div style={{ background:CARD, border:"1px solid rgba(100,160,255,0.2)", borderRadius:24, padding:"40px 36px", width:400, boxShadow:"0 0 60px rgba(30,100,255,0.15)" }}>
+      <div style={{ background:CARD, border:"1px solid rgba(100,160,255,0.2)", borderRadius:R.xl, padding:"40px 36px", width:400, boxShadow:"0 0 60px rgba(30,100,255,0.15)" }}>
         <div style={{ fontSize:20, fontWeight:700, color:"#fff", marginBottom:6 }}>Reset Password</div>
         <div style={{ fontSize:13, color:"rgba(255,255,255,0.4)", marginBottom:24 }}>Enter your username and we'll send a reset link.</div>
         {resetStatus === "sent" ? (
-          <div style={{ padding:"14px", background:"rgba(45,212,191,0.1)", border:"1px solid rgba(45,212,191,0.3)", borderRadius:8, color:"#2DD4BF", fontSize:13, textAlign:"center", marginBottom:20 }}>
+          <div style={{ padding:"14px", background:"rgba(45,212,191,0.1)", border:"1px solid rgba(45,212,191,0.3)", borderRadius:R.md, color:EMERALD, fontSize:13, textAlign:"center", marginBottom:20 }}>
             ✓ Reset link sent — check your email inbox.
           </div>
         ) : resetStatus === "error" ? (
-          <div style={{ padding:"14px", background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:8, color:"#F87171", fontSize:13, textAlign:"center", marginBottom:20 }}>
+          <div style={{ padding:"14px", background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:R.md, color:ROSE, fontSize:13, textAlign:"center", marginBottom:20 }}>
             ⚠ Username not found. Contact the PMO.
           </div>
         ) : null}
@@ -6641,7 +6641,7 @@ function Login({ T, dark, onLogin }) {
               <label style={{ display:"block", fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:8 }}>Username</label>
               <input value={resetUser} onChange={e=>setResetUser(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleReset()} placeholder="Your username" style={{ ...fieldStyle, paddingLeft:14 }} />
             </div>
-            <button onClick={handleReset} disabled={resetStatus==="sending"} style={{ width:"100%", padding:"13px", background:"linear-gradient(135deg,#E8A020,#C87820)", border:"none", borderRadius:10, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:14 }}>
+            <button onClick={handleReset} disabled={resetStatus==="sending"} style={{ width:"100%", padding:"13px", background:"linear-gradient(135deg,#E8A020,#C87820)", border:"none", borderRadius:R.md, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:14 }}>
               {resetStatus==="sending" ? "Sending…" : "Send Reset Link"}
             </button>
           </>
@@ -6736,7 +6736,7 @@ function Login({ T, dark, onLogin }) {
         <div style={{
           width:"100%", maxWidth:400,
           background:"rgba(8,16,36,0.72)", backdropFilter:"blur(30px)", WebkitBackdropFilter:"blur(30px)",
-          border:"1px solid rgba(255,255,255,0.14)", borderRadius:22,
+          border:"1px solid rgba(255,255,255,0.14)", borderRadius:R.pill,
           padding:"38px 34px",
           boxShadow:"0 32px 90px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.05)",
           position:"relative",
@@ -6763,7 +6763,7 @@ function Login({ T, dark, onLogin }) {
 
           {/* Error message */}
           {err && (
-            <div style={{ marginBottom:16, padding:"10px 14px", borderRadius:8, background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.35)", color:"#FCA5A5", fontSize:13, display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ marginBottom:16, padding:"10px 14px", borderRadius:R.md, background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.35)", color:"#FCA5A5", fontSize:13, display:"flex", alignItems:"center", gap:8 }}>
               <span>⚠</span><span>{err}</span>
             </div>
           )}
@@ -6799,7 +6799,7 @@ function Login({ T, dark, onLogin }) {
           <button onClick={handleLogin} disabled={loading} style={{
             width:"100%", padding:"13px 20px",
             background: loading ? "rgba(216,152,64,0.4)" : "linear-gradient(135deg,#E8A828,#C47818)",
-            border:"none", borderRadius:10, color:"#fff",
+            border:"none", borderRadius:R.md, color:"#fff",
             fontSize:14.5, fontWeight:700, cursor:loading?"default":"pointer",
             fontFamily:TYPE.body.fontFamily,
             display:"flex", alignItems:"center", justifyContent:"center", gap:11,
