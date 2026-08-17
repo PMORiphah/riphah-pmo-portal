@@ -383,6 +383,69 @@ const ArchMotif = ({ color, size = 72, T }) => {
   );
 };
 
+// ─── DEADLINE ALERT POPUPS ──────────────────────────────────────────────────
+// Fires once per PMO session establishment (fresh login or a restored
+// session on page load — both count as "logging in" from the user's
+// perspective) — not time-gated, exactly as requested. Reads the same
+// at_risk_projects view the daily email uses, so the two can never disagree
+// about which projects qualify. Shows one project per popup, in sequence.
+function DeadlineAlertPopups({ T, session }) {
+  const [queue, setQueue] = useState(null); // null = not yet loaded; [] = loaded, none at risk
+  const [idx, setIdx] = useState(0);
+  const firedFor = useRef(null);
+
+  useEffect(() => {
+    if (session?.role !== "pmo") return;
+    if (firedFor.current === session.access_token) return; // once per session, not per render
+    firedFor.current = session.access_token;
+    (async () => {
+      try {
+        const rows = await supa("/rest/v1/at_risk_projects?select=*", {}, session.access_token);
+        setQueue(Array.isArray(rows) ? rows : []);
+      } catch { setQueue([]); }
+    })();
+  }, [session?.access_token, session?.role]);
+
+  if (!queue || queue.length === 0 || idx >= queue.length) return null;
+  const p = queue[idx];
+  const overdue = p.days_remaining < 0;
+  const urgent = !overdue && p.days_remaining <= 7;
+  const badgeColor = overdue ? "#E4576B" : urgent ? "#E2A83D" : "#185078";
+  const daysLabel = overdue ? `${Math.abs(p.days_remaining)} day${Math.abs(p.days_remaining)===1?"":"s"} OVERDUE`
+    : p.days_remaining === 0 ? "Due today"
+    : `${p.days_remaining} day${p.days_remaining===1?"":"s"} remaining`;
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div className="pmo-card-in" style={{ width:420, background:T.card, border:"1px solid "+T.border, borderRadius:14, boxShadow:T.shadow, overflow:"hidden" }}>
+        <div style={{ background:badgeColor, padding:"14px 22px", display:"flex", alignItems:"center", gap:10 }}>
+          <AlertTriangle size={17} color="#fff" />
+          <span style={{ color:"#fff", fontWeight:700, fontSize:13, letterSpacing:0.3 }}>DEADLINE ALERT</span>
+          {queue.length > 1 && <span style={{ marginLeft:"auto", color:"rgba(255,255,255,0.85)", fontSize:11.5 }}>{idx+1} of {queue.length}</span>}
+        </div>
+        <div style={{ padding:"22px 22px 18px" }}>
+          <div style={{ display:"inline-block", background:badgeColor+"20", color:badgeColor, fontSize:11, fontWeight:700, padding:"3px 11px", borderRadius:20, marginBottom:12 }}>
+            {daysLabel.toUpperCase()}
+          </div>
+          <div style={{ fontSize:11, color:T.dim, fontFamily:"monospace", marginBottom:4 }}>{p.code || "-"}</div>
+          <div style={{ fontSize:16, fontWeight:700, color:T.text, lineHeight:1.35, marginBottom:14 }}>{p.name}</div>
+          <div style={{ fontSize:12.5, color:T.muted, lineHeight:1.8 }}>
+            <div>Campus: <span style={{color:T.text}}>{p.campus || "Unspecified"}</span></div>
+            <div>Stage: <span style={{color:T.text}}>{p.workflow_stage}</span></div>
+            <div>Planned End Date: <span style={{color:T.text}}>{p.end_date}</span></div>
+          </div>
+        </div>
+        <div style={{ padding:"14px 22px", borderTop:"1px solid "+T.border, display:"flex", justifyContent:"flex-end" }}>
+          <button onClick={() => setIdx(i => i + 1)}
+            style={{ padding:"8px 18px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
+            {idx + 1 < queue.length ? "Next" : "Dismiss"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false }) {
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
@@ -5990,6 +6053,8 @@ export default function App() {
   const pageInfo = PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" };
 
   return (
+    <>
+      <DeadlineAlertPopups T={T} session={session} />
     <div style={{ display:"flex", height:"100vh", fontFamily:"Inter,sans-serif", background:T.mainBg }}>
       <Sidebar page={effectivePage} setPage={navigateToPage} session={session} unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)} />
       <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
@@ -6027,5 +6092,6 @@ export default function App() {
         }} />
       )}
     </div>
+    </>
   );
 }
