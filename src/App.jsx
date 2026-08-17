@@ -3642,7 +3642,8 @@ function CampusPage({ T, session, onSelectProject }) {
     textAlign:"left", background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
     position:"sticky", top:0, zIndex:2};
   const td = {...TYPE.bodySm, color:T.text, padding:"10px 12px",
-    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle", whiteSpace:"nowrap"};
+    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle",
+    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"};
   const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:R.sm,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
 
   if (loading) return <div style={{color:T.muted,fontSize:13,padding:20}}>Loading campuses…</div>;
@@ -3725,7 +3726,7 @@ function CampusPage({ T, session, onSelectProject }) {
           </div>
         )}
         <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,tableLayout:"fixed"}}>
             <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
               <tr>
                 <th style={{...th,width:44}}>#</th>
