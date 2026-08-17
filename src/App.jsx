@@ -3257,7 +3257,11 @@ function ProjectsPage({ T, session, onSelectProject }) {
             return (
               <Surface key={p.id} T={T} pad={SP.md} interactive
                 onClick={() => onSelectProject && onSelectProject(p.id)}
-                className="pmo-in" style={{ animationDelay:`${Math.min(i, 8) * 35}ms` }}>
+                className="pmo-in"
+                // Column flex + overflow:auto crushes children unless they opt
+                // out of shrinking — the same trap that flattened the dashboard
+                // header. Any card in a scrolling column list needs this.
+                style={{ animationDelay:`${Math.min(i, 8) * 35}ms`, flexShrink:0 }}>
                 <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:SP.sm }}>
                   <div style={{ minWidth:0 }}>
                     <div style={{ ...TYPE.mono, color:T.muted, marginBottom:3 }}>{p.code || "—"}</div>
