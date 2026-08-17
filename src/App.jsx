@@ -746,6 +746,133 @@ function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320 }) 
 // Approvals pipeline funnel — rendered as a horizontal bar in fixed stage
 // order (not sorted by value), which reads as a funnel since a healthy
 // pipeline naturally narrows stage to stage.
+// ─── APPROVAL PIPELINE ───────────────────────────────────────────────────────
+// Replaces the horizontal bar chart, which failed at exactly the job it existed
+// to do: with 102 projects in one stage and 0-2 in the rest, every other bar
+// collapsed to a stub and the pipeline read as "nothing is happening anywhere".
+//
+// Fix: a proportional flow strip where each stage keeps a minimum width, so a
+// stage holding 1 project is still visible, still labelled and still clickable,
+// while the 96% stage is still obviously the 96% stage. The bottleneck is then
+// named in plain words underneath rather than left for the reader to infer.
+function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
+  const stages = [
+    { key:"pdd_not_submitted", label:"PDD Not Submitted", short:"Not Submitted", value:d.pdd_not_submitted_count || 0, note:"Awaiting submission" },
+    { key:"pdds_submitted",    label:"PDD Submitted",     short:"Submitted",     value:d.pdds_submitted || 0,          note:"With the PMO" },
+    { key:"in_df",             label:"DF Review",         short:"DF",            value:d.in_df || 0,                   note:"Director Finance" },
+    { key:"in_ed",             label:"ED Review",         short:"ED",            value:d.in_ed || 0,                   note:"Executive Director" },
+    { key:"in_mt",             label:"MT Review",         short:"MT",            value:d.in_mt || 0,                   note:"Management Team" },
+    { key:"approved",          label:"Approved",          short:"Approved",      value:d.approved_count || 0,          note:"Sanctioned" },
+  ].map((st, i) => ({ ...st, color: STAGE_META[STAGE_ORDER[i]]?.color || T.neutral }));
+
+  const total = stages.reduce((a, b) => a + b.value, 0) || 1;
+  const inReview = stages.slice(2, 5).reduce((a, b) => a + b.value, 0);
+
+  // The bottleneck is the stage holding the most work that has not yet cleared.
+  const blocked = stages.slice(0, 5);
+  const worst = blocked.reduce((a, b) => (b.value > a.value ? b : a), blocked[0]);
+  const worstPct = ((worst.value / total) * 100).toFixed(1);
+
+  const donut = stages
+    .filter(st => st.value > 0)
+    .map(st => ({ key:st.key, name:st.label, value:st.value, color:st.color }));
+
+  return (
+    <Surface T={T} pad={SP.lg} style={{ flexShrink:0 }}>
+      <SectionTitle
+        T={T} icon={ClipboardList}
+        title="Approvals pipeline"
+        sub="Where every project sits, PDD submission through to approval"
+        right={<span style={{ ...TYPE.caption, color:T.muted }}>{total} projects · click a stage to filter</span>}
+      />
+
+      {/* Proportional flow strip */}
+      <div style={{ display:"flex", gap:3, marginTop:SP.sm }}>
+        {stages.map((st) => {
+          const pct = (st.value / total) * 100;
+          const on  = activeCard === st.key;
+          const dim = activeCard && !on;
+          return (
+            <button
+              key={st.key} onClick={() => onPick(st.key)}
+              className="pmo-focusable"
+              title={`${st.label} — ${st.value} project${st.value === 1 ? "" : "s"} (${pct.toFixed(1)}%)`}
+              style={{
+                flex:`${Math.max(st.value, 0.35)} 1 0`,
+                minWidth: isCompact ? 54 : 92,
+                background:"none", border:"none", padding:0, cursor:"pointer",
+                textAlign:"left", opacity: dim ? 0.42 : 1,
+                transition:`opacity ${MOTION.base}`,
+              }}>
+              <div style={{
+                height:38, borderRadius:R.sm, position:"relative", overflow:"hidden",
+                background:`linear-gradient(180deg, ${st.color}${T.washStrong}, ${st.color}${T.wash})`,
+                border:`1px solid ${on ? st.color : st.color + "44"}`,
+                boxShadow: on ? `0 0 0 1px ${st.color}${T.ring}` : "none",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
+              }}>
+                <span style={{ ...TYPE.metricSm, fontSize:16, color:st.color }}>{st.value}</span>
+              </div>
+              <div style={{ ...TYPE.label, color: on ? T.text : T.muted, marginTop:7, lineHeight:1.3,
+                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                {isCompact ? st.short : st.label}
+              </div>
+              {!isCompact && (
+                <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>{pct.toFixed(1)}%</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Bottleneck, stated plainly (§5 micro-insights) */}
+      <div style={{
+        display:"flex", alignItems:"flex-start", gap:9, marginTop:SP.lg,
+        padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+        background:`${worst.color}${T.wash}`, border:`1px solid ${worst.color}33`,
+      }}>
+        <AlertTriangle size={14} color={worst.color} style={{ marginTop:1, flexShrink:0 }} />
+        <div style={{ ...TYPE.bodySm, color:T.textSoft, lineHeight:1.55 }}>
+          The pipeline is held at <strong style={{ color:T.text }}>{worst.label}</strong> — {worst.value} of {total} projects
+          ({worstPct}%) sit there. {inReview} {inReview === 1 ? "project is" : "projects are"} currently
+          with a reviewer, and {d.approved_count || 0} {(d.approved_count || 0) === 1 ? "has" : "have"} been approved.
+        </div>
+      </div>
+
+      {/* Distribution */}
+      {donut.length > 1 && (
+        <div style={{ display:"flex", flexWrap:"wrap", alignItems:"center", gap:SP.xl, marginTop:SP.lg }}>
+          <div style={{ width: isCompact ? "100%" : 260, flexShrink:0 }}>
+            <Donut T={T} data={donut} height={200} total={total} totalLabel="Total projects"
+              activeKey={activeCard} onSlice={onPick} />
+          </div>
+          <div style={{ flex:1, minWidth:210, display:"flex", flexDirection:"column", gap:2 }}>
+            {stages.map(st => {
+              const on = activeCard === st.key;
+              return (
+                <button key={st.key} onClick={() => onPick(st.key)} className="pmo-focusable"
+                  style={{
+                    display:"flex", alignItems:"center", gap:10, padding:"6px 9px",
+                    background: on ? T.rowActive : "transparent", border:"none",
+                    borderRadius:R.sm, cursor:"pointer", textAlign:"left", width:"100%",
+                    transition:`background ${MOTION.fast}`,
+                  }}>
+                  <span style={{ width:9, height:9, borderRadius:3, background:st.color, flexShrink:0 }} />
+                  <span style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft, flex:1 }}>{st.label}</span>
+                  <span style={{ ...TYPE.caption, color:T.muted }}>{st.note}</span>
+                  <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.text,
+                    fontVariantNumeric:"tabular-nums", minWidth:34, textAlign:"right" }}>{st.value}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Surface>
+  );
+}
+
 function PipelineFunnelChart({ T, d, height = 300 }) {
   const stages = [
     { label:"PDD Not Submitted", value:d.pdd_not_submitted_count||0, color:T.muted },
@@ -1812,11 +1939,10 @@ function CommandCenter({ T, session, onSelectProject }) {
         </div>
       )}
       {activeTab === "pipeline" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
-          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:4 }}>Approvals Pipeline</div>
-          <div style={{ fontSize:11, color:T.dim, marginBottom:16 }}>Where every project sits, PDD submission through to Approved</div>
-          <ChartErrorBoundary T={T}><PipelineFunnelChart T={T} d={d} /></ChartErrorBoundary>
-        </div>
+        <ChartErrorBoundary T={T}>
+          <ApprovalPipeline T={T} d={d} activeCard={activeCard}
+            onPick={toggleCard} isCompact={vp.isCompact} />
+        </ChartErrorBoundary>
       )}
       {activeTab === "execution" && (
         <div style={{ display:"flex", gap:10 }}>
