@@ -2752,6 +2752,13 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const [showImport,   setShowImport]   = useState(false);
   const [confirmDel,   setConfirmDel]   = useState(null);
   const [deleting,     setDeleting]     = useState(false);
+  // Enterprise data-workspace controls (§13)
+  const [sort,     setSort]     = useState({ key:"code", dir:"asc" });
+  const [page,     setPage]     = useState(1);
+  const [perPage,  setPerPage]  = useState(50);
+  const [hiddenCols, setHiddenCols] = useState([]);
+  const [showCols, setShowCols] = useState(false);
+  const vpP = useViewport();
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -2793,6 +2800,47 @@ function ProjectsPage({ T, session, onSelectProject }) {
     if (fCC)    r = r.filter(p=>(p.cost_centers?.name||"")=== fCC);
     return sortRealCodeFirst(r);
   }, [rows,search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC]);
+
+  // Sorting. Text sorts case-insensitively; money/percent sort numerically;
+  // stage and priority sort by their real workflow order rather than
+  // alphabetically, which would put "Approved" before "DF Review".
+  const SORTERS = {
+    code:      (p) => (p.code || "").toLowerCase(),
+    name:      (p) => (p.name || "").toLowerCase(),
+    fiscal_year:(p) => p.fiscal_year || "",
+    org:       (p) => (p.segments?.name || "").toLowerCase(),
+    segment:   (p) => (p.sectors?.name || "").toLowerCase(),
+    df:        (p) => +p.df_recommended_amount || 0,
+    bac:       (p) => +p.bac || 0,
+    priority:  (p) => Object.keys(PRIORITY_META).indexOf(p.priority),
+    stage:     (p) => STAGE_ORDER.indexOf(p.workflow_stage),
+    strategic: (p) => (p.strategic_priority || "").toLowerCase(),
+    cc:        (p) => (p.cost_centers?.name || "").toLowerCase(),
+  };
+
+  const sorted = useMemo(() => {
+    const fn = SORTERS[sort.key] || SORTERS.code;
+    const mul = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const x = fn(a), y = fn(b);
+      if (x < y) return -1 * mul;
+      if (x > y) return  1 * mul;
+      return 0;
+    });
+  }, [filtered, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
+  const pageSafe   = Math.min(page, totalPages);
+  const paged      = useMemo(
+    () => sorted.slice((pageSafe - 1) * perPage, pageSafe * perPage),
+    [sorted, pageSafe, perPage]
+  );
+  // Any change to the result set sends the reader back to the first page —
+  // otherwise filtering while on page 3 shows an empty table.
+  useEffect(() => { setPage(1); }, [search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC,perPage]);
+
+  const toggleSort = (key) =>
+    setSort(s => s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir:"asc" });
 
   const activeFilterCount = [fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC].filter(Boolean).length;
   const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); setFCC(""); };
@@ -2920,272 +2968,460 @@ function ProjectsPage({ T, session, onSelectProject }) {
     setDeleting(false);
   };
 
-  const th = {fontSize:10,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1.2,padding:"11px 12px 9px",whiteSpace:"nowrap",textAlign:"left",background:T.card2,boxShadow:"inset 0 -1px 0 "+T.border};
-  const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
+  // ── Column model. One definition drives headers, sorting, visibility and the
+  //    mobile card, so a column can never drift out of sync with its filter.
+  const COLS = [
+    { key:"fiscal_year", label:"Fiscal Year", sort:"fiscal_year", min:92 },
+    { key:"org",         label:"Organization",sort:"org",         min:104 },
+    { key:"code",        label:"Project ID",  sort:"code",        min:118 },
+    { key:"name",        label:"Project Name",sort:"name",        min:230, grow:true },
+    { key:"df",          label:"DF Rec",      sort:"df",          min:96,  num:true },
+    { key:"bac",         label:"Approved",    sort:"bac",         min:96,  num:true },
+    { key:"segment",     label:"Segment",     sort:"segment",     min:104 },
+    { key:"priority",    label:"Priority",    sort:"priority",    min:104 },
+    { key:"strategic",   label:"Strategic Priority", sort:"strategic", min:150 },
+    { key:"stage",       label:"Stage",       sort:"stage",       min:132 },
+    { key:"cc",          label:"Cost Centre", sort:"cc",          min:112 },
+  ];
+  // Narrow screens drop the lowest-value columns rather than forcing a
+  // sideways scroll the reader has to discover (§13, §26).
+  const autoHidden = vpP.width < 1500 ? ["strategic","cc"] : vpP.width < 1700 ? ["strategic"] : [];
+  const visible = COLS.filter(c => !hiddenCols.includes(c.key) && !autoHidden.includes(c.key));
+
+  const maxBac = summary.maxBac;
+
+  const SortHead = ({ col }) => {
+    const on = sort.key === col.sort;
+    return (
+      <th style={{
+        ...TYPE.label, color: on ? T.text : T.muted, textAlign: col.num ? "right" : "left",
+        padding:"10px 12px 8px", whiteSpace:"nowrap", background:T.surfaceRaised,
+        boxShadow:`inset 0 -1px 0 ${T.border}`, minWidth:col.min, cursor:"pointer",
+        userSelect:"none", position:"sticky", top:0, zIndex:3,
+      }}
+        onClick={() => toggleSort(col.sort)}
+        title={`Sort by ${col.label}`}>
+        <span style={{ display:"inline-flex", alignItems:"center", gap:4,
+          flexDirection: col.num ? "row-reverse" : "row" }}>
+          {col.label}
+          <span style={{ display:"inline-flex", opacity: on ? 1 : 0.25, color: on ? T.blueBright : T.dim }}>
+            {on && sort.dir === "desc"
+              ? <ArrowDownRight size={11} style={{ transform:"rotate(-45deg)" }} />
+              : <ArrowUpRight size={11} style={{ transform:"rotate(45deg)" }} />}
+          </span>
+        </span>
+      </th>
+    );
+  };
+
+  const td = { ...TYPE.bodySm, color:T.text, padding:"10px 12px",
+    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" };
+
+  // ── Cell renderers, shared by the table and the mobile card ───────────────
+  const cell = (p, key, hovered) => {
+    const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+    switch (key) {
+      case "fiscal_year": return <span style={{ color:T.muted, whiteSpace:"nowrap" }}>{p.fiscal_year || "—"}</span>;
+      case "org":         return <span style={{ color:T.muted }}>{p.segments?.name || "—"}</span>;
+      case "code": return (
+        <span style={{ display:"inline-flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>
+          {p.is_carry_forward && (
+            <span title="Carried forward from a prior fiscal year" style={{
+              ...TYPE.caption, fontWeight:700, fontSize:9, letterSpacing:"0.05em",
+              background:T.violet + T.badge, color:T.violet, padding:"1px 5px", borderRadius:R.sm }}>CF</span>
+          )}
+          <span style={{ ...TYPE.mono, color: hovered ? T.text : T.textSoft }}>{p.code || "—"}</span>
+        </span>
+      );
+      case "name": return (
+        <span title={p.name} style={{ display:"block", maxWidth:330, overflow:"hidden",
+          textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight: hovered ? 600 : 450,
+          color:T.text, transition:`font-weight ${MOTION.fast}` }}>{p.name}</span>
+      );
+      case "df": return (
+        <span style={{ fontVariantNumeric:"tabular-nums", fontWeight:600, color:T.textSoft }}>
+          {fmtM(p.df_recommended_amount)}
+        </span>
+      );
+      case "bac": {
+        const v = +p.bac || 0;
+        const pct = maxBac > 0 ? Math.round((v / maxBac) * 100) : 0;
+        return (
+          <span style={{ display:"inline-flex", flexDirection:"column", alignItems:"flex-end", gap:3, minWidth:64 }}>
+            <span style={{ fontVariantNumeric:"tabular-nums", fontWeight:700,
+              color: v > 0 ? BRAND.gold : T.dim }}>{fmtM(p.bac)}</span>
+            {/* Replaces the earlier full-cell tint, which read as a muddy
+                block in dark mode. A hairline under the figure carries the
+                same comparison without fighting the row background. */}
+            {v > 0 && (
+              <span style={{ display:"block", width:56, height:2, borderRadius:2,
+                background: T.mode === "dark" ? "rgba(255,255,255,0.07)" : "rgba(16,42,71,0.07)" }}>
+                <span style={{ display:"block", width:`${pct}%`, height:"100%", borderRadius:2,
+                  background:BRAND.gold, opacity:0.75 }} />
+              </span>
+            )}
+          </span>
+        );
+      }
+      case "segment":   return <span style={{ color:T.muted }}>{p.sectors?.name || "—"}</span>;
+      case "priority":  return p.priority
+        ? <Badge T={T} color={pClr} size="sm" dot>{PRIORITY_META[p.priority]?.label || p.priority}</Badge>
+        : <span style={{ color:T.dim }}>—</span>;
+      case "strategic": return (
+        <span title={p.strategic_priority || ""} style={{ color:T.muted, display:"block", maxWidth:210,
+          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.strategic_priority || "—"}</span>
+      );
+      case "stage": {
+        const st = STAGE_META[p.workflow_stage];
+        return <Badge T={T} color={st?.color || T.neutral} size="sm">{st?.label || p.workflow_stage || "—"}</Badge>;
+      }
+      case "cc": return <span style={{ color:T.muted }}>{p.cost_centers?.name || "—"}</span>;
+      default: return null;
+    }
+  };
 
   if (loading) return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div className="pmo-skeleton" style={{height:64,flexShrink:0,background:T.card2,borderBottom:"1px solid "+T.border}}/>
-      <div className="pmo-skeleton" style={{height:46,flexShrink:0,background:T.headerBg,borderBottom:"1px solid "+T.border}}/>
-      <div style={{flex:1,padding:"12px 20px",display:"flex",flexDirection:"column",gap:8,overflow:"hidden"}}>
-        {[0,1,2,3,4,5,6,7,8,9,10,11].map(i=>(
-          <div key={i} className="pmo-skeleton" style={{height:26,borderRadius:6,background:T.tableRow,opacity:1-(i*0.06)}}/>
-        ))}
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
+      <Skeleton T={T} h={72} radius={0} />
+      <div style={{ padding:SP.lg, display:"flex", gap:SP.sm }}>
+        <Skeleton T={T} w={240} h={34} /><Skeleton T={T} w={110} h={34} style={{ marginLeft:"auto" }} />
       </div>
+      <SkeletonRows T={T} rows={14} />
     </div>
   );
-  if (err)     return <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><AlertCircle color="#F87171"/><span style={{color:"#F87171",fontSize:13}}>{err}</span><button onClick={load} style={{padding:"6px 16px",background:NAVY,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:12}}>Retry</button></div>;
+  if (err) return (
+    <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", background:T.page }}>
+      <EmptyState T={T} icon={AlertCircle} tone={T.danger}
+        title="Couldn't load projects" message={err}
+        action={<Button T={T} variant="primary" icon={RefreshCw} onClick={load}>Try again</Button>} />
+    </div>
+  );
 
   return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      {/* ── LIVE SLICE SUMMARY ── */}
-      {/* Restates the portfolio for the current filter, so the register always
-          answers "how much money is in what I'm looking at right now". */}
-      <div className="pmo-fade-in" style={{
-        flexShrink:0, background:T.heroGradient, padding:"13px 24px",
-        display:"flex", alignItems:"center", gap:26, position:"relative", overflow:"hidden",
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
+
+      {/* ── SLICE SUMMARY ── */}
+      {/* Restates the portfolio for whatever is filtered, so the register always
+          answers "how much money is in what I'm looking at". */}
+      <div className="pmo-fade" style={{
+        flexShrink:0, background:T.hero, position:"relative", overflow:"hidden",
+        padding: vpP.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.md}px ${SP.xxl}px`,
+        display:"flex", alignItems:"center", gap: vpP.isCompact ? SP.lg : SP.xxl, flexWrap:"wrap",
       }}>
-        <div className="pmo-mesh" style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-          <div style={{position:"absolute",top:"-70%",right:"6%",width:260,height:260,borderRadius:"50%",background:`radial-gradient(circle, ${GOLD}1F 0%, transparent 68%)`}}/>
+        <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
+          <div style={{ position:"absolute", top:"-70%", right:"7%", width:260, height:260, borderRadius:"50%",
+            background:`radial-gradient(circle, ${BRAND.blueBright}1F 0%, transparent 68%)` }} />
         </div>
-        <svg width="180" height="80" viewBox="0 0 180 80" style={{position:"absolute",right:0,bottom:0,pointerEvents:"none"}} aria-hidden="true">
-          <path d="M180 80 L180 32 Q180 8 152 3 Q155 17 141 27 Q159 32 159 50 L159 80 Z" fill="#fff" opacity="0.045"/>
-          <path d="M180 80 L180 44 Q180 24 160 20 Q162 31 152 39 Q164 43 164 56 L164 80 Z" fill={GOLD} opacity="0.09"/>
-        </svg>
-        <div style={{position:"relative"}}>
-          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>
-            {activeFilterCount||search.trim() ? "In this view" : "All projects"}
+        <div style={{ position:"relative" }}>
+          <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>
+            {activeFilterCount || search.trim() ? "In this view" : "All projects"}
           </div>
-          <div style={{display:"flex",alignItems:"baseline",gap:7}}>
-            <span style={{fontSize:26,fontWeight:700,color:"#fff",fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{filtered.length}</span>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>of {rows.length}</span>
+          <div style={{ display:"flex", alignItems:"baseline", gap:7 }}>
+            <span style={{ ...TYPE.metric, color:"#fff" }}>{sorted.length}</span>
+            <span style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)" }}>of {rows.length}</span>
           </div>
         </div>
-        <div style={{width:1,height:38,background:"rgba(255,255,255,0.16)",flexShrink:0}}/>
-        <div style={{position:"relative"}}>
-          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>DF Recommended</div>
-          <div style={{fontSize:19,fontWeight:700,color:"#fff",fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.df)}</div>
+        <div style={{ position:"relative" }}>
+          <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>DF Recommended</div>
+          <div style={{ ...TYPE.metricSm, color:"#fff" }}>PKR {fmtM(summary.df)}</div>
         </div>
-        <div style={{width:1,height:38,background:"rgba(255,255,255,0.16)",flexShrink:0}}/>
-        <div style={{position:"relative"}}>
-          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>Approved Budget</div>
-          <div style={{fontSize:19,fontWeight:700,color:GOLD,fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.bac)}</div>
+        <div style={{ position:"relative" }}>
+          <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>Approved Budget</div>
+          <div style={{ ...TYPE.metricSm, color:BRAND.gold }}>PKR {fmtM(summary.bac)}</div>
         </div>
-        <div style={{marginLeft:"auto",display:"flex",gap:18,position:"relative"}}>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.6,fontWeight:600,marginBottom:4}}>Approved</div>
-            <div style={{fontSize:17,fontWeight:700,color:"#6EE7D0",fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.approved}</div>
+        {!vpP.isCompact && (
+          <div style={{ marginLeft:"auto", display:"flex", gap:SP.xl, position:"relative" }}>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>Approved</div>
+              <div style={{ ...TYPE.metricSm, color:T.positive }}>{summary.approved}</div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>Carry fwd</div>
+              <div style={{ ...TYPE.metricSm, color:"#fff" }}>{summary.cf}</div>
+            </div>
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.6,fontWeight:600,marginBottom:4}}>Carry fwd</div>
-            <div style={{fontSize:17,fontWeight:700,color:"#fff",fontFamily:TYPE.display.fontFamily,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.cf}</div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* ── TOOLBAR ── */}
-      <div style={{padding:"11px 20px",display:"flex",alignItems:"center",gap:10,flexShrink:0,borderBottom:"1px solid "+T.border,background:T.headerBg,flexWrap:"wrap"}}>
-        {/* Search */}
-        <div style={{display:"flex",alignItems:"center",gap:8,background:T.inputBg,border:"1px solid "+(search?GOLD+"88":T.inputBorder),borderRadius:8,padding:"7px 12px",flex:1,maxWidth:260,transition:"border-color .15s"}}>
-          <Search size={13} color={search?GOLD:T.muted}/>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or project ID…" style={{background:"none",border:"none",outline:"none",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,flex:1,minWidth:0}}/>
-          {search && <button onClick={()=>setSearch("")} title="Clear search" style={{background:"none",border:"none",cursor:"pointer",color:T.dim,padding:0,display:"flex"}}><X size={12}/></button>}
-        </div>
+      <div style={{
+        padding:`${SP.sm}px ${vpP.isCompact ? SP.md : SP.xl}px`, display:"flex", alignItems:"center",
+        gap:SP.sm, flexShrink:0, borderBottom:`1px solid ${T.border}`,
+        background:T.surface, flexWrap:"wrap", position:"relative", zIndex:20,
+      }}>
+        <Input T={T} icon={Search} value={search} onChange={e => setSearch(e.target.value)}
+          onClear={() => setSearch("")} placeholder="Search name or project ID…"
+          style={{ flex:"1 1 210px", maxWidth:280 }} />
 
-        {/* Active filter chips */}
-        {chips.length>0&&(
-          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",minWidth:0}}>
-            {chips.map(c=>(
-              <span key={c.key} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 6px 4px 10px",background:GOLD+T.washAlpha,border:"1px solid "+GOLD+"55",borderRadius:20,fontSize:11,color:T.text,maxWidth:210,whiteSpace:"nowrap"}}>
-                <span style={{color:GOLD,fontWeight:700}}>{c.label}</span>
-                <span style={{overflow:"hidden",textOverflow:"ellipsis",opacity:.85}}>{c.val}</span>
-                <button onClick={c.clear} title={"Remove "+c.label+" filter"} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:0,lineHeight:0}}><X size={11}/></button>
+        {chips.length > 0 && (
+          <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", minWidth:0 }}>
+            {chips.map(c => (
+              <span key={c.key} style={{
+                display:"inline-flex", alignItems:"center", gap:6, padding:"3px 6px 3px 9px",
+                background:BRAND.blue + T.wash, border:`1px solid ${BRAND.blue}55`,
+                borderRadius:R.pill, ...TYPE.caption, color:T.text, maxWidth:210, whiteSpace:"nowrap",
+              }}>
+                <span style={{ color:T.blueBright, fontWeight:700 }}>{c.label}</span>
+                <span style={{ overflow:"hidden", textOverflow:"ellipsis", opacity:.85 }}>{c.val}</span>
+                <button onClick={c.clear} title={`Remove ${c.label} filter`} className="pmo-focusable"
+                  style={{ background:"none", border:"none", cursor:"pointer", color:T.muted,
+                    display:"flex", padding:0, lineHeight:0 }}><X size={11} /></button>
               </span>
             ))}
-            <button onClick={clearAllFilters} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:11,textDecoration:"underline",fontFamily:TYPE.body.fontFamily,padding:"0 2px"}}>Clear all</button>
+            <Button T={T} variant="subtle" size="sm" onClick={clearAllFilters}>Clear all</Button>
           </div>
         )}
 
-        {/* Right buttons */}
-        <div style={{marginLeft:"auto",display:"flex",gap:7,alignItems:"center"}}>
-          <button onClick={downloadExport}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:EMERALD+T.washAlpha,border:"1px solid "+EMERALD+"66",borderRadius:8,color:EMERALD,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:TYPE.body.fontFamily,whiteSpace:"nowrap"}}
-            title={activeFilterCount>0?"Download the projects currently in view":"Download all projects"}>
-            <Download size={13}/>
-            {activeFilterCount||search.trim()?`Export ${filtered.length}`:"Export all"}
-          </button>
-          {isPMO&&(
+        <div style={{ marginLeft:"auto", display:"flex", gap:6, alignItems:"center", position:"relative" }}>
+          {!vpP.isCompact && (
+            <div style={{ position:"relative" }}>
+              <Button T={T} variant="ghost" size="md" icon={Layers} onClick={() => setShowCols(v => !v)}
+                title="Choose which columns to show">Columns</Button>
+              {showCols && (
+                <>
+                  <div onClick={() => setShowCols(false)} style={{ position:"fixed", inset:0, zIndex:30 }} />
+                  <div className="pmo-scale" style={{
+                    position:"absolute", right:0, top:"calc(100% + 6px)", zIndex:31, minWidth:210,
+                    background:T.surface, border:`1px solid ${T.borderStrong}`, borderRadius:R.md,
+                    boxShadow:T.shadowLg, padding:SP.sm,
+                  }}>
+                    <div style={{ ...TYPE.label, color:T.muted, padding:`4px ${SP.sm}px 6px` }}>Visible columns</div>
+                    {COLS.map(c => {
+                      const auto = autoHidden.includes(c.key);
+                      const on = !hiddenCols.includes(c.key) && !auto;
+                      return (
+                        <label key={c.key} style={{
+                          display:"flex", alignItems:"center", gap:8, padding:`5px ${SP.sm}px`,
+                          borderRadius:R.sm, cursor: auto ? "not-allowed" : "pointer",
+                          opacity: auto ? 0.45 : 1, ...TYPE.bodySm, color:T.textSoft,
+                        }}
+                          title={auto ? "Hidden automatically — not enough width" : undefined}>
+                          <input type="checkbox" checked={on} disabled={auto}
+                            onChange={() => setHiddenCols(h => h.includes(c.key) ? h.filter(k => k !== c.key) : [...h, c.key])} />
+                          {c.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <Button T={T} variant="accent" tone={T.positive} icon={Download} onClick={downloadExport}
+            title={activeFilterCount ? "Download the projects currently in view" : "Download all projects"}>
+            {activeFilterCount || search.trim() ? `Export ${sorted.length}` : "Export all"}
+          </Button>
+          {isPMO && (
             <>
-              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",background:NAVY,border:"1px solid "+NAVY,borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily,boxShadow:T.shadow,whiteSpace:"nowrap"}}><Plus size={13}/>New project</button>
-              <button onClick={()=>setShowImport(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:TYPE.body.fontFamily,whiteSpace:"nowrap"}}><Upload size={13}/>Import</button>
-              <button onClick={downloadDataTemplate} title="Download every project pre-filled in the import template format" style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:TYPE.body.fontFamily,whiteSpace:"nowrap"}}><Download size={13}/>Data template</button>
+              <Button T={T} variant="primary" icon={Plus}
+                onClick={() => { setEditProject(null); setShowForm(true); }}>
+                {vpP.isCompact ? "New" : "New project"}
+              </Button>
+              {!vpP.isCompact && (
+                <>
+                  <Button T={T} variant="ghost" icon={Upload} onClick={() => setShowImport(true)}>Import</Button>
+                  <Button T={T} variant="ghost" icon={Download} onClick={downloadDataTemplate}
+                    title="Download every project pre-filled in the import template format">Template</Button>
+                </>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {/* Table */}
-      <div style={{flex:1,overflow:"auto",backgroundImage:T.pageTexture,backgroundAttachment:"local"}}>
-        <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0}}>
-          <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
-            {/* Column headers */}
-            <tr>
-              <th style={th}>#</th>
-              <th style={th}>Fiscal Year</th>
-              <th style={th}>Organization</th>
-              <th style={{...th,minWidth:120}}>Project ID</th>
-              <th style={{...th,minWidth:220}}>Project Name</th>
-              <th style={{...th,textAlign:"right"}}>DF Rec Budget</th>
-              <th style={{...th,textAlign:"right"}}>Approved Budget</th>
-              <th style={th}>Segment</th>
-              <th style={th}>Priorities</th>
-              <th style={{...th,minWidth:160}}>Strategic Priorities</th>
-              <th style={th}>Stage</th>
-              <th style={th}>Cost Centre</th>
-              {isPMO&&<th style={{...th,textAlign:"center",width:80}}>Actions</th>}
-            </tr>
-            {/* Filter row */}
-            {(()=>{
-              const fSel = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none",cursor:"pointer"};
-              const fInp = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
-              const fc   = {padding:"5px 8px",background:T.card2,boxShadow:`inset 0 -2px 0 ${activeFilterCount>0?GOLD+"99":T.border}`};
-              const highlight = (val) => val ? {...fSel,border:"1px solid "+GOLD,color:GOLD,fontWeight:600} : fSel;
-              const highlightI = (val) => val ? {...fInp,border:"1px solid "+GOLD,color:GOLD,fontWeight:600} : fInp;
-              return (
-                <tr>
-                  <td style={fc}></td>
-                  <td style={fc}>
-                    <select value={fFY} onChange={e=>setFFY(e.target.value)} style={highlight(fFY)}>
-                      <option value="">All FY</option>
-                      {distinctFYs.map(v=><option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <select value={fOrg} onChange={e=>setFOrg(e.target.value)} style={highlight(fOrg)}>
-                      <option value="">All Orgs</option>
-                      {distinctOrgs.map(v=><option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <input value={fCode} onChange={e=>setFCode(e.target.value)} placeholder="Filter ID…" style={highlightI(fCode)}/>
-                  </td>
-                  <td style={fc}>
-                    <input value={fName} onChange={e=>setFName(e.target.value)} placeholder="Filter name…" style={highlightI(fName)}/>
-                  </td>
-                  <td style={fc}></td>
-                  <td style={fc}></td>
-                  <td style={fc}>
-                    <select value={fSeg} onChange={e=>setFSeg(e.target.value)} style={highlight(fSeg)}>
-                      <option value="">All Segments</option>
-                      {distinctSegs.map(v=><option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <select value={fPri} onChange={e=>setFPri(e.target.value)} style={highlight(fPri)}>
-                      <option value="">All</option>
-                      <option value="top_priority">1st Priority</option>
-                      <option value="second_priority">2nd Priority</option>
-                      <option value="third_priority">3rd Priority</option>
-                      <option value="carry_forward">Carry Forward</option>
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <input value={fStrat} onChange={e=>setFStrat(e.target.value)} placeholder="Filter…" style={highlightI(fStrat)}/>
-                  </td>
-                  <td style={fc}>
-                    <select value={fStage} onChange={e=>setFStage(e.target.value)} style={highlight(fStage)}>
-                      <option value="">All Stages</option>
-                      {Object.entries(STAGE).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <select value={fCC} onChange={e=>setFCC(e.target.value)} style={highlight(fCC)}>
-                      <option value="">All Cost Centres</option>
-                      {lookups.cost_centers.map(cc=><option key={cc.id} value={cc.name}>{cc.name}</option>)}
-                    </select>
-                  </td>
-                  {isPMO&&<td style={fc}></td>}
-                </tr>
-              );
-            })()}
-          </thead>
-          <tbody>
-            {filtered.map((p,i)=>{
-              const hovered = hoverId===p.id;
-              const pClr    = PRIORITY[p.priority]||T.dim;
-              // Right-anchored proportional fill on Approved Budget — makes the
-              // relative size of 99 budgets scannable at a glance. Painted as a
-              // background gradient so it costs zero row height.
-              const bacPct  = summary.maxBac>0 ? Math.round(((+p.bac||0)/summary.maxBac)*100) : 0;
-              return (
-              <tr key={p.id} onClick={()=>onSelectProject&&onSelectProject(p.id)} onMouseEnter={()=>setHoverId(p.id)} onMouseLeave={()=>setHoverId(null)}
-                style={{background:hovered?T.tableRowHover:i%2===0?"transparent":T.tableRow,cursor:onSelectProject?"pointer":"default",transition:"background .12s"}}>
-                <td style={{...td,color:T.dim,fontSize:11.5,width:40,fontVariantNumeric:"tabular-nums",boxShadow:hovered?"inset 3px 0 0 "+pClr:"none",transition:"box-shadow .12s"}}>{i+1}</td>
-                <td style={{...td,fontSize:12,color:T.muted,whiteSpace:"nowrap"}}>{p.fiscal_year||"—"}</td>
-                <td style={{...td,fontSize:12,color:T.muted}}>{p.segments?.name||"—"}</td>
-                <td style={{...td,fontFamily:"'JetBrains Mono',monospace",fontSize:11.5,color:hovered?T.text:T.muted,whiteSpace:"nowrap",transition:"color .12s"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:5}}>
-                    {p.is_carry_forward&&<span title="Carry forward from prior FY" style={{fontSize:9,fontWeight:700,background:GOLD+T.badgeAlpha,color:GOLD,padding:"1px 5px",borderRadius:4,letterSpacing:.5}}>CF</span>}
-                    {p.code || "-"}
+      {/* ── MOBILE: cards, not a squeezed table ── */}
+      {vpP.isCompact ? (
+        <div className="pmo-scroll" style={{ flex:1, overflowY:"auto", padding:SP.md,
+          display:"flex", flexDirection:"column", gap:SP.sm, backgroundImage:T.ambient }}>
+          {paged.map((p, i) => {
+            const st = STAGE_META[p.workflow_stage];
+            const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+            return (
+              <Surface key={p.id} T={T} pad={SP.md} interactive
+                onClick={() => onSelectProject && onSelectProject(p.id)}
+                className="pmo-in" style={{ animationDelay:`${Math.min(i, 8) * 35}ms` }}>
+                <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:SP.sm }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ ...TYPE.mono, color:T.muted, marginBottom:3 }}>{p.code || "—"}</div>
+                    <div style={{ ...TYPE.h3, color:T.text, lineHeight:1.35 }}>{p.name}</div>
                   </div>
-                </td>
-                <td style={{...td,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:hovered?600:400,transition:"font-weight .12s"}} title={p.name}>{p.name}</td>
-                <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:T.muted}}>{fmtM(p.df_recommended_amount)}</td>
-                <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:GOLD,
-                  backgroundImage: bacPct>0 ? `linear-gradient(to right, transparent ${100-bacPct}%, ${GOLD}1C ${100-bacPct}%)` : "none"}}>{fmtM(p.bac)}</td>
-                <td style={{...td,fontSize:12,color:T.muted}}>{p.sectors?.name||"—"}</td>
-                <td style={td}>
-                  {p.priority
-                    ? <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:20,background:pClr+T.badgeAlpha,color:pClr,fontSize:10.5,fontWeight:700,whiteSpace:"nowrap"}}>{PRIORITY_LABEL[p.priority]||p.priority}</span>
-                    : <span style={{color:T.dim,fontSize:12}}>—</span>}
-                </td>
-                <td style={{...td,fontSize:12,color:T.muted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.strategic_priority||""}>{p.strategic_priority||"—"}</td>
-                <td style={td}><StageBadge stage={p.workflow_stage}/></td>
-                <td style={{...td,fontSize:12,color:T.muted}}>{p.cost_centers?.name||"—"}</td>
-                {isPMO&&(
-                  <td style={{...td,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
-                    {confirmDel?.id===p.id?(
-                      <div style={{display:"flex",gap:4,justifyContent:"center"}}>
-                        <button onClick={doDelete} disabled={deleting} style={{padding:"3px 8px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:5,color:"#F87171",fontSize:11,fontWeight:700,cursor:"pointer"}}>{deleting?"…":"Yes"}</button>
-                        <button onClick={()=>setConfirmDel(null)} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:5,color:T.muted,fontSize:11,cursor:"pointer"}}>No</button>
-                      </div>
-                    ):(
-                      <div style={{display:"flex",gap:6,justifyContent:"center",opacity:hovered?1:0.4,transition:"opacity .12s"}}>
-                        <button onClick={async ()=>{ const full = await supa(`/rest/v1/projects?id=eq.${p.id}&select=*`,{},session.access_token); setEditProject(full[0]||p); setShowForm(true); }} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}} title="Edit project"><Edit2 size={13}/></button>
-                        <button onClick={()=>startDelete(p)} style={{background:"none",border:"none",cursor:"pointer",color:"#F87171",display:"flex",padding:2}} title="Delete project"><Trash2 size={13}/></button>
-                      </div>
-                    )}
-                  </td>
+                  <span style={{ width:3, alignSelf:"stretch", borderRadius:2, background:pClr, flexShrink:0 }} />
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginTop:SP.sm }}>
+                  <Badge T={T} color={st?.color || T.neutral} size="sm">{st?.label || "—"}</Badge>
+                  {p.priority && <Badge T={T} color={pClr} size="sm" dot>{PRIORITY_META[p.priority]?.label}</Badge>}
+                  {p.is_carry_forward && <Badge T={T} color={T.violet} size="sm">Carry forward</Badge>}
+                </div>
+                <div style={{ display:"flex", gap:SP.xl, marginTop:SP.md }}>
+                  <div>
+                    <div style={{ ...TYPE.label, color:T.muted, marginBottom:2 }}>DF Rec</div>
+                    <div style={{ ...TYPE.bodySm, fontWeight:700, color:T.textSoft }}>{fmtM(p.df_recommended_amount)}</div>
+                  </div>
+                  <div>
+                    <div style={{ ...TYPE.label, color:T.muted, marginBottom:2 }}>Approved</div>
+                    <div style={{ ...TYPE.bodySm, fontWeight:700, color: +p.bac > 0 ? BRAND.gold : T.dim }}>{fmtM(p.bac)}</div>
+                  </div>
+                  <div style={{ marginLeft:"auto", alignSelf:"flex-end" }}>
+                    <ChevronRight size={15} color={T.dim} />
+                  </div>
+                </div>
+              </Surface>
+            );
+          })}
+          {sorted.length === 0 && (
+            <EmptyState T={T} icon={Search}
+              title={rows.length === 0 ? "No projects yet" : "No projects match these filters"}
+              message={rows.length === 0 ? "Nothing has been added to the portfolio yet." : "Try removing a filter to widen the search."}
+              action={chips.length > 0
+                ? <Button T={T} variant="primary" onClick={clearAllFilters}>Clear all filters</Button> : null} />
+          )}
+        </div>
+      ) : (
+        /* ── DESKTOP TABLE ── */
+        <div className="pmo-scroll" style={{ flex:1, overflow:"auto", backgroundImage:T.ambient, backgroundAttachment:"local" }}>
+          <table style={{ width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"auto" }}>
+            <thead>
+              <tr>
+                <th style={{ ...TYPE.label, color:T.muted, padding:"10px 12px 8px", width:44,
+                  background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
+                  position:"sticky", top:0, zIndex:3, textAlign:"left" }}>#</th>
+                {visible.map(c => <SortHead key={c.key} col={c} />)}
+                {isPMO && (
+                  <th style={{ ...TYPE.label, color:T.muted, padding:"10px 12px 8px", width:78,
+                    textAlign:"center", background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
+                    position:"sticky", top:0, zIndex:3 }}>Actions</th>
                 )}
               </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              {/* Filter row, pinned directly under the headers as one control band */}
+              <tr>
+                {(() => {
+                  const fc = { padding:"5px 8px", background:T.surfaceRaised, position:"sticky", top:36, zIndex:2,
+                    boxShadow:`inset 0 -2px 0 ${activeFilterCount > 0 ? BRAND.gold + "99" : T.border}` };
+                  const F = {
+                    fiscal_year:<Select T={T} size="sm" full active={!!fFY} value={fFY} onChange={e=>setFFY(e.target.value)}>
+                      <option value="">All FY</option>{distinctFYs.map(v=><option key={v} value={v}>{v}</option>)}</Select>,
+                    org:<Select T={T} size="sm" full active={!!fOrg} value={fOrg} onChange={e=>setFOrg(e.target.value)}>
+                      <option value="">All orgs</option>{distinctOrgs.map(v=><option key={v} value={v}>{v}</option>)}</Select>,
+                    code:<Input T={T} size="sm" full value={fCode} onChange={e=>setFCode(e.target.value)} placeholder="Filter ID…" />,
+                    name:<Input T={T} size="sm" full value={fName} onChange={e=>setFName(e.target.value)} placeholder="Filter name…" />,
+                    segment:<Select T={T} size="sm" full active={!!fSeg} value={fSeg} onChange={e=>setFSeg(e.target.value)}>
+                      <option value="">All segments</option>{distinctSegs.map(v=><option key={v} value={v}>{v}</option>)}</Select>,
+                    priority:<Select T={T} size="sm" full active={!!fPri} value={fPri} onChange={e=>setFPri(e.target.value)}>
+                      <option value="">All</option>
+                      {Object.entries(PRIORITY_META).filter(([k])=>k!=="first_priority").map(([k,v])=>
+                        <option key={k} value={k}>{v.label}</option>)}</Select>,
+                    strategic:<Input T={T} size="sm" full value={fStrat} onChange={e=>setFStrat(e.target.value)} placeholder="Filter…" />,
+                    stage:<Select T={T} size="sm" full active={!!fStage} value={fStage} onChange={e=>setFStage(e.target.value)}>
+                      <option value="">All stages</option>
+                      {STAGE_ORDER.map(k=><option key={k} value={k}>{STAGE_META[k].label}</option>)}</Select>,
+                    cc:<Select T={T} size="sm" full active={!!fCC} value={fCC} onChange={e=>setFCC(e.target.value)}>
+                      <option value="">All centres</option>
+                      {lookups.cost_centers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</Select>,
+                  };
+                  return (
+                    <>
+                      <td style={fc} />
+                      {visible.map(c => <td key={c.key} style={fc}>{F[c.key] || null}</td>)}
+                      {isPMO && <td style={fc} />}
+                    </>
+                  );
+                })()}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((p, i) => {
+                const hovered = hoverId === p.id;
+                const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+                const n = (pageSafe - 1) * perPage + i + 1;
+                return (
+                  <tr key={p.id}
+                    onClick={() => onSelectProject && onSelectProject(p.id)}
+                    onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId(null)}
+                    style={{
+                      background: hovered ? T.rowHover : i % 2 === 0 ? "transparent" : T.rowAlt,
+                      cursor: onSelectProject ? "pointer" : "default",
+                      transition:`background ${MOTION.fast}`,
+                    }}>
+                    <td style={{ ...td, color:T.dim, fontVariantNumeric:"tabular-nums", width:44,
+                      boxShadow: hovered ? `inset 3px 0 0 ${pClr}` : "none",
+                      transition:`box-shadow ${MOTION.fast}` }}>{n}</td>
+                    {visible.map(c => (
+                      <td key={c.key} style={{ ...td, textAlign: c.num ? "right" : "left" }}>
+                        {cell(p, c.key, hovered)}
+                      </td>
+                    ))}
+                    {isPMO && (
+                      <td style={{ ...td, textAlign:"center" }} onClick={e => e.stopPropagation()}>
+                        {confirmDel?.id === p.id ? (
+                          <div style={{ display:"flex", gap:4, justifyContent:"center" }}>
+                            <Button T={T} variant="danger" size="sm" onClick={doDelete} loading={deleting}>Yes</Button>
+                            <Button T={T} variant="ghost" size="sm" onClick={() => setConfirmDel(null)}>No</Button>
+                          </div>
+                        ) : (
+                          <div style={{ display:"flex", gap:2, justifyContent:"center",
+                            opacity: hovered ? 1 : 0.4, transition:`opacity ${MOTION.fast}` }}>
+                            <IconButton T={T} icon={Edit2} size={13} title="Edit project"
+                              onClick={async () => {
+                                const full = await supa(`/rest/v1/projects?id=eq.${p.id}&select=*`, {}, session.access_token);
+                                setEditProject(full[0] || p); setShowForm(true);
+                              }} />
+                            <IconButton T={T} icon={Trash2} size={13} title="Delete project"
+                              tone={T.danger} onClick={() => startDelete(p)} />
+                          </div>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
 
-        {/* Empty state — previously the table just went blank when filters matched nothing */}
-        {filtered.length===0&&(
-          <div className="pmo-fade-in" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,padding:"64px 20px",textAlign:"center"}}>
-            <div style={{width:46,height:46,borderRadius:14,background:GOLD+T.badgeAlpha,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <Search size={20} color={GOLD}/>
-            </div>
-            <div style={{fontSize:15,fontWeight:600,color:T.text,fontFamily:TYPE.display.fontFamily}}>
-              {rows.length===0 ? "No projects yet" : "No projects match these filters"}
-            </div>
-            <div style={{fontSize:12,color:T.muted,maxWidth:340,lineHeight:1.5}}>
-              {rows.length===0
-                ? (isPMO ? "Add your first project, or import a filled-in template to load the portfolio in bulk." : "Nothing has been added to the portfolio yet.")
+          {sorted.length === 0 && (
+            <EmptyState T={T} icon={Search}
+              title={rows.length === 0 ? "No projects yet" : "No projects match these filters"}
+              message={rows.length === 0
+                ? (isPMO ? "Add your first project, or import a filled-in template to load the portfolio in bulk."
+                         : "Nothing has been added to the portfolio yet.")
                 : "Try removing a filter to widen the search."}
-            </div>
-            {rows.length>0&&chips.length>0&&(
-              <button onClick={clearAllFilters} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>Clear all filters</button>
-            )}
-            {rows.length===0&&isPMO&&(
-              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>New project</button>
-            )}
+              action={
+                rows.length > 0 && chips.length > 0
+                  ? <Button T={T} variant="primary" onClick={clearAllFilters}>Clear all filters</Button>
+                  : rows.length === 0 && isPMO
+                    ? <Button T={T} variant="primary" icon={Plus}
+                        onClick={() => { setEditProject(null); setShowForm(true); }}>New project</Button>
+                    : null} />
+          )}
+        </div>
+      )}
+
+      {/* ── PAGINATION ── */}
+      {sorted.length > 0 && (
+        <div style={{
+          flexShrink:0, display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap",
+          padding:`${SP.sm}px ${vpP.isCompact ? SP.md : SP.xl}px`,
+          borderTop:`1px solid ${T.border}`, background:T.surface,
+        }}>
+          <span style={{ ...TYPE.caption, color:T.muted }}>
+            {(pageSafe - 1) * perPage + 1}–{Math.min(pageSafe * perPage, sorted.length)} of {sorted.length}
+          </span>
+          {!vpP.isCompact && (
+            <Select T={T} size="sm" value={perPage} onChange={e => setPerPage(+e.target.value)}
+              title="Rows per page">
+              {[25, 50, 100, 250].map(n => <option key={n} value={n}>{n} per page</option>)}
+            </Select>
+          )}
+          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}>
+            <Button T={T} variant="ghost" size="sm" disabled={pageSafe <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Button>
+            <span style={{ ...TYPE.caption, color:T.textSoft, minWidth:78, textAlign:"center" }}>
+              Page {pageSafe} of {totalPages}
+            </span>
+            <Button T={T} variant="ghost" size="sm" disabled={pageSafe >= totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Delete confirmation banner with comment count */}
       {confirmDel&&(
