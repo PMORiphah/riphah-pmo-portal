@@ -18,7 +18,7 @@ import {
   injectGlobals, useViewport, BP, Surface, Button, IconButton, Input, Select,
   Badge, StatusDot, Progress, Skeleton, SkeletonCard, SkeletonChart, SkeletonRows,
   EmptyState, Modal, Tooltip as TooltipUI, ArchMotif as ArchMotifUI, Ambient, Tabs as TabsUI,
-  Metric, CountUp, Stack, Inline, SectionTitle, Spinner,
+  Metric, CountUp, useCountUp, Stack, Inline, SectionTitle, Spinner,
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -185,7 +185,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
         )}
       </div>
     );
-    return mini ? <Tooltip T={T} label={label} side="right" key={id}>{row}</Tooltip> : <div key={id}>{row}</div>;
+    return mini ? <TooltipUI T={T} label={label} side="right" key={id}>{row}</TooltipUI> : <div key={id}>{row}</div>;
   };
 
   const panel = (
