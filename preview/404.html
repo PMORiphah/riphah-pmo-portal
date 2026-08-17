@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Riphah PMO Portal</title>
+  <script>
+    // GitHub Pages serves this 404.html for any path it can't find.
+    // We use it to catch Supabase auth redirects (invite / password-recovery)
+    // that land on paths that don't exist, and bounce them back to the
+    // portal root with all the token information intact.
+    var base   = '/riphah-pmo-portal/';
+    var search = window.location.search;   // e.g. ?code=xxx (PKCE)
+    var hash   = window.location.hash;     // e.g. #access_token=xxx (implicit)
+    window.location.replace(base + search + hash);
+  </script>
+</head>
+<body></body>
+</html>
