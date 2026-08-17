@@ -158,6 +158,13 @@ const supa = async (path, opts = {}, token = null) => {
 
 // ─── FORMATTERS ───────────────────────────────────────────────────────────────
 const fmtM = (n) => n == null ? "—" : (n / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";
+// Real project codes (IT./RU.) sort first, blank ("-") ones after — used by
+// every project list in the portal (Projects, Campus/Sites, Dashboard
+// drill-downs, Performance), not just one page, so this lives in one place.
+const sortRealCodeFirst = (arr) => {
+  const hasReal = (p) => p.code && p.code !== "-";
+  return [...arr].sort((a,b) => (hasReal(b)?1:0) - (hasReal(a)?1:0));
+};
 // Duration is always derived from start/end dates, never typed manually —
 // uses the same 30.4375-day average-month formula as the one-time database
 // backfill, so a project edited in the UI always agrees with one computed
@@ -1276,7 +1283,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
             </tr>
           </thead>
           <tbody>
-            {projects.map((p, i) => (
+            {sortRealCodeFirst(projects).map((p, i) => (
               <tr key={p.id}
                 onClick={() => onSelectProject && onSelectProject(p.id)}
                 style={{ cursor:"pointer", transition:"background .12s" }}
@@ -2325,11 +2332,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
     if (fPri)   r = r.filter(p=>p.priority === fPri);
     if (fStrat) { const q=fStrat.toLowerCase(); r=r.filter(p=>(p.strategic_priority||"").toLowerCase().includes(q)); }
     if (fStage) r = r.filter(p=>p.workflow_stage === fStage);
-    // Real project codes (IT./RU.) surface first; the 102 blank ("-") ones
-    // follow. A plain code.asc DB sort put them last, since '-' sorts before
-    // letters alphabetically — this reorders without touching that query.
-    r = [...r].sort((a,b) => (b.code && b.code !== "-" ? 1 : 0) - (a.code && a.code !== "-" ? 1 : 0));
-    return r;
+    return sortRealCodeFirst(r);
   }, [rows,search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage]);
 
   const activeFilterCount = [fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage].filter(Boolean).length;
@@ -2783,7 +2786,7 @@ function CampusPage({ T, session, onSelectProject }) {
       const s = q.toLowerCase();
       out = out.filter(r => (r.code||"").toLowerCase().includes(s) || (r.name||"").toLowerCase().includes(s));
     }
-    return out;
+    return sortRealCodeFirst(out);
   }, [rows, sel, q]);
 
   const k = useMemo(() => {
@@ -3245,7 +3248,7 @@ function PerformancePage({ T, session, onSelectProject }) {
 
   const filtered = useMemo(() => {
     const f = FILTERS.find(x => x.id === filter);
-    return f ? rows.filter(f.fn) : rows;
+    return sortRealCodeFirst(f ? rows.filter(f.fn) : rows);
   }, [rows, filter, FILTERS]);
 
   // Formatters
@@ -3961,7 +3964,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
 function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search, onSearch, saving, onSave, onClose }) {
   const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
   const q = search.toLowerCase();
-  const filtered = q ? projects.filter(p => p.name.toLowerCase().includes(q) || (p.code||"").toLowerCase().includes(q)) : projects;
+  const filtered = sortRealCodeFirst(q ? projects.filter(p => p.name.toLowerCase().includes(q) || (p.code||"").toLowerCase().includes(q)) : projects);
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:460, maxHeight:"85vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
