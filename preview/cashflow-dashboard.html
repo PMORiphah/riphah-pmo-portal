@@ -28,7 +28,9 @@
 /* Dark theme. The portal has had dark mode since launch; this tab never did,
    so it rendered as a white slab inside a dark application. */
 [data-theme="dark"]{
-  --navy-950:#E8F0FA; --navy-900:#E8F0FA; --navy-800:#4A9BE0; --navy-700:#4A9BE0;
+  /* Navy stays navy: these tokens paint the masthead and table headers. Text
+     that happened to reuse them is remapped below instead. */
+  --navy-950:#0A1729; --navy-900:#0E2340; --navy-800:#14395C; --navy-700:#2C7BC4;
   --gold:#E0A94A; --gold-soft:#B8842E;
   --teal:#22C4A8; --coral:#F0637D;
   --bg:#070E1B; --bg-alt:#050A14;
@@ -362,6 +364,36 @@ footer{
 }
 .modal-foot .spacer{margin-left:auto;}
 @media (max-width:760px){ .form-grid{grid-template-columns:1fr;} .form-grid .half{grid-column:span 1;} }
+
+/* Foreground remaps for dark mode. Each of these previously took its colour
+   from a navy token that also paints surfaces. */
+[data-theme="dark"] .section-title,
+[data-theme="dark"] .kpi-value,
+[data-theme="dark"] .card-title,
+[data-theme="dark"] .heat-total,
+[data-theme="dark"] .filter-count b,
+[data-theme="dark"] .footnote b,
+[data-theme="dark"] .hero-title,
+[data-theme="dark"] .display { color: var(--ink) !important; }
+
+[data-theme="dark"] .tab-btn.active,
+[data-theme="dark"] .tab-btn:hover { color: #E8F0FA !important; }
+
+[data-theme="dark"] .topbar { background: var(--hero) !important; }
+[data-theme="dark"] .hero-card { background: var(--surface-raised) !important; }
+[data-theme="dark"] thead th { background: var(--surface-raised) !important; color: var(--muted) !important; }
+
+/* Native controls: the browser default is a white select on a dark card. */
+[data-theme="dark"] select,
+[data-theme="dark"] input,
+[data-theme="dark"] textarea {
+  background: #0A1526 !important; color: var(--ink) !important;
+  border-color: var(--line-strong) !important;
+}
+[data-theme="dark"] select option { background:#0E1A2E; color:#E8F0FA; }
+[data-theme="dark"] .card,
+[data-theme="dark"] .panel { background: var(--surface) !important; border-color: var(--line) !important; }
+[data-theme="dark"] body { background: var(--bg) !important; color: var(--ink); }
 </style>
 
 <script>
@@ -693,6 +725,13 @@ const QUARTERS = [
   {name:"Q3 FY26-27", months:MONTHS.slice(6,9)},
   {name:"Q4 FY26-27", months:MONTHS.slice(9,12)},
 ];
+const CHART_INK = () => getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#101E3B";
+const CHART_MUTED = () => getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#66738C";
+const CHART_LINE = () => getComputedStyle(document.documentElement).getPropertyValue("--line").trim() || "#E4E9F1";
+if (window.Chart) {
+  Chart.defaults.color = CHART_MUTED();
+  Chart.defaults.borderColor = CHART_LINE();
+}
 const PALETTE = ["#4A9BE0","#22C4A8","#8B7FD9","#E8A63C","#2BD4D4","#F0637D","#2C7BC4","#E0A94A","#1FAE8E","#B4573F","#5A9BD5","#8AA6C9"];
 
 let currentData = RAW_DATA.slice();
