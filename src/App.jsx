@@ -417,7 +417,7 @@ function DeadlineAlertPopups({ T, session }) {
     : `${p.days_remaining} day${p.days_remaining===1?"":"s"} remaining`;
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center" }}>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
       <div className="pmo-card-in" style={{ width:420, background:T.card, border:"1px solid "+T.border, borderRadius:14, boxShadow:T.shadow, overflow:"hidden" }}>
         <div style={{ background:badgeColor, padding:"14px 22px", display:"flex", alignItems:"center", gap:10 }}>
           <AlertTriangle size={17} color="#fff" />
@@ -2210,7 +2210,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
   const lbl = {display:"block",fontSize:10,fontWeight:700,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:5};
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease",padding:20}}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:700,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
           <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily}}>{isEdit?`Edit — ${project.code || "-"}`:"New Project"}</div>
@@ -2639,7 +2639,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
   const totalNew = Object.values(newL).reduce((s,a)=>s+a.length,0);
 
   if (step==="done") return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease"}}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"44px 40px",width:420,textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{fontSize:40,marginBottom:16}}>✅</div>
         <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily,marginBottom:8}}>Import Complete</div>
@@ -2650,7 +2650,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
   );
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease",padding:20}}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:620,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
           <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:TYPE.display.fontFamily}}>{step==="pick"?"Import Projects from Excel":`Preview — ${fileName}`}</div>
@@ -4872,8 +4872,8 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
   const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:480, maxHeight:"90vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:SP.xxl, animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:480, maxHeight:"90vh", overflow:"auto", boxShadow:T.shadowLg }}>
         <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Create New User</div>
         <div style={{ marginBottom:14 }}>
           <label style={lbl}>Full Name</label>
@@ -4930,8 +4930,8 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
   const q = search.toLowerCase();
   const filtered = sortRealCodeFirst(q ? projects.filter(p => p.name.toLowerCase().includes(q) || (p.code||"").toLowerCase().includes(q)) : projects);
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:460, maxHeight:"85vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:SP.xxl, animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:460, maxHeight:"85vh", overflow:"auto", boxShadow:T.shadowLg }}>
         <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:4, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Assign Projects — {user.username}</div>
         <div style={{ fontSize:12, color:T.muted, marginBottom:12, paddingTop:10 }}>{selectedIds.size} project{selectedIds.size !== 1 ? "s" : ""} selected</div>
         <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Search by name or code…" style={{ ...inp, marginBottom:12 }} />
@@ -6088,12 +6088,16 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
 
 function MemberEditModal({ T, roleId, data, onSave, onClose }) {
   const [form, setForm] = useState({ name:data?.name||"", desc:data?.desc||"", photo:data?.photo||"" });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
-  const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const lbl = { ...TYPE.label, display:"block", color:T.muted, marginBottom:5 };
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:28, width:420, boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:16, fontWeight:700, color:T.text, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Edit — {MEMBER_TITLES[roleId]}</div>
+    <Modal T={T} onClose={onClose} width={440} icon={Users}
+      title={`Edit — ${MEMBER_TITLES[roleId]}`}
+      footer={<>
+        <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button T={T} variant="primary" onClick={() => onSave(form)}>Save changes</Button>
+      </>}>
+      <div>
         <div style={{ marginBottom:14 }}>
           <label style={lbl}>Full Name</label>
           <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Dr. Muhammad Ali" style={inp} />
@@ -6107,12 +6111,8 @@ function MemberEditModal({ T, roleId, data, onSave, onClose }) {
           <input value={form.photo} onChange={e=>setForm(f=>({...f,photo:e.target.value}))} placeholder="https://..." style={inp} />
           <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Paste a direct image link. Leave blank to use initials avatar.</div>
         </div>
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>Save</button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -6121,9 +6121,12 @@ function AboutEditModal({ T, data, onSave, onClose }) {
   const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:28, width:540, maxHeight:"85vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:16, fontWeight:700, color:T.text, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Edit About Section</div>
+    <Modal T={T} onClose={onClose} width={560} icon={FileText} title="Edit About section"
+      footer={<>
+        <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button T={T} variant="primary" onClick={() => onSave(form)}>Save changes</Button>
+      </>}>
+      <div>
         <div style={{ marginBottom:14 }}>
           <label style={lbl}>Section Heading</label>
           <input value={form.heading} onChange={e=>setForm(f=>({...f,heading:e.target.value}))} style={inp} />
@@ -6132,12 +6135,8 @@ function AboutEditModal({ T, data, onSave, onClose }) {
           <label style={lbl}>Body Text</label>
           <textarea value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} rows={9} placeholder="Write your About Us content here..." style={{...inp,resize:"vertical"}} />
         </div>
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>Save</button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -6150,21 +6149,20 @@ function ContactEditModal({ T, data, onSave, onClose }) {
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   const FIELDS = [["email","Email"],["phone","Phone"],["address","Address"],["office","Office Location"],["hours","Office Hours"],["website","Website"]];
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:28, width:460, maxHeight:"88vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:16, fontWeight:700, color:T.text, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Edit Contact Information</div>
+    <Modal T={T} onClose={onClose} width={480} icon={Landmark} title="Edit contact information"
+      footer={<>
+        <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button T={T} variant="primary" onClick={() => onSave(form)}>Save changes</Button>
+      </>}>
+      <div>
         {FIELDS.map(([key,label]) => (
           <div key={key} style={{ marginBottom:14 }}>
             <label style={lbl}>{label}</label>
             <input value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} style={inp} />
           </div>
         ))}
-        <div style={{ display:"flex", gap:10, marginTop:6 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>Save</button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -6384,8 +6382,8 @@ function ChangePasswordModal({ T, session, onClose }) {
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:400, boxShadow:"0 24px 60px rgba(0,0,0,0.45)" }}>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:SP.xxl, animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:400, boxShadow:"0 24px 60px rgba(0,0,0,0.45)" }}>
         <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Change Password</div>
         {status && (
           <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:13, display:"flex", gap:8,
@@ -6421,8 +6419,8 @@ function ChangePasswordModal({ T, session, onClose }) {
 // ─── SESSION EXPIRED MODAL ─────────────────────────────────────────────────────
 function SessionExpiredModal({ T, onSignIn }) {
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:16, padding:"44px 40px", width:380, textAlign:"center", boxShadow:"0 24px 80px rgba(0,0,0,0.6)" }}>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:"40px 36px", animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:380, textAlign:"center", boxShadow:T.shadowLg }}>
         <div style={{ fontSize:36, marginBottom:16 }}>⏱</div>
         <div style={{ fontSize:22, fontWeight:700, color:T.text, marginBottom:10, fontFamily:TYPE.display.fontFamily }}>Session Expired</div>
         <div style={{ fontSize:14, color:T.muted, lineHeight:1.8, marginBottom:30 }}>
