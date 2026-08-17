@@ -598,7 +598,7 @@ function Funnel({ T, title, children }) {
         <div style={{ width:3, height:14, background:GOLD, borderRadius:2 }} />
         <div style={{ fontSize:11, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2, opacity:0.7 }}>{title}</div>
       </div>
-      <div style={{ display:"flex", gap:10 }}>{children}</div>
+      <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>{children}</div>
     </div>
   );
 }
@@ -1879,7 +1879,7 @@ function CommandCenter({ T, session, onSelectProject }) {
       <div style={{ display:"flex", gap:4, borderBottom:"2px solid "+T.border, paddingBottom:2 }}>
         {[0,1,2,3].map(i => <div key={i} className="pmo-skeleton" style={{ width:120, height:32, borderRadius:6, background:T.card2 }} />)}
       </div>
-      <div style={{ display:"flex", gap:10 }}>
+      <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
         {[0,1,2,3,4].map(i => (
           <div key={i} className="pmo-skeleton" style={{ flex:1, height:100, borderRadius:12, background:T.card, border:"1px solid "+T.border }} />
         ))}
@@ -2002,7 +2002,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         </div>
       )}
       {activeTab === "budgeting" && (
-        <div style={{ display:"flex", gap:10 }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
           <EditableKCard Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
           <EditableKCard Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
           <EditableKCard Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
@@ -2013,7 +2013,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         </div>
       )}
       {activeTab === "pipeline" && (
-        <div style={{ display:"flex", gap:10 }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
           <EditableKCard Icon={FileText} index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
           <EditableKCard Icon={ClipboardList} index={1} T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
           <EditableKCard Icon={Landmark} index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
@@ -2029,7 +2029,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         </ChartErrorBoundary>
       )}
       {activeTab === "execution" && (
-        <div style={{ display:"flex", gap:10 }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
           <EditableKCard Icon={Activity} index={0} T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
           <EditableKCard Icon={CheckCircle} index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
           <EditableKCard Icon={Clock} index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
@@ -2069,7 +2069,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         );
       })()}
       {activeTab === "financials" && (
-        <div style={{ display:"flex", gap:10 }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
           <EditableKCard Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
           <EditableKCard Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
           <EditableKCard Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
@@ -4915,7 +4915,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
             <div style={{ fontSize:11, color:T.dim, marginTop:8, lineHeight:1.5 }}>Link expires in 24 hours. User clicks it → sets password → logs in with their username.</div>
           </div>
         )}
-        <div style={{ display:"flex", gap:10 }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
           <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{inviteLink?"Close":"Cancel"}</button>
           {!inviteLink && <button onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{creating?"Creating user…":"Send Invite"}</button>}
         </div>
@@ -6407,7 +6407,7 @@ function ChangePasswordModal({ T, session, onClose }) {
             <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
           </div>
         </div>
-        <div style={{ display:"flex", gap:10 }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
           <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{status?.ok?"Close":"Cancel"}</button>
           {!status?.ok && <button onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{loading?"Changing…":"Change Password"}</button>}
         </div>
