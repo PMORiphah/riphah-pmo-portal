@@ -316,7 +316,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
 // Glass header that reads as part of the page rather than a detached bar.
 function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu,
-                 unreadCount = 0, onBellClick, actions, onSearch }) {
+                 unreadCount = 0, onBellClick, actions, onSearch, quickActions }) {
   const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
   return (
     <div style={{
@@ -341,6 +341,13 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
         )}
       </div>
       {actions}
+      {/* Contextual quick actions — hidden on narrow screens, where the header
+          has to prioritise the page title and the essential icon controls. */}
+      {!isCompact && quickActions?.map(a => (
+        <Button key={a.label} T={T} variant="ghost" size="md" icon={a.icon} onClick={a.onClick}>
+          {a.label}
+        </Button>
+      ))}
       {/* Search affordance. Shown as a field on desktop so the shortcut is
           discoverable rather than hidden behind a keystroke nobody guesses. */}
       {onSearch && (isCompact ? (
@@ -3899,13 +3906,15 @@ function SettingsPage({ T, session }) {
   ];
 
   return (
-    <div style={{ flex:1, overflow:"auto", padding:"24px 28px", maxWidth:700 }}>
-      <div style={{ marginBottom:24 }}>
-        <div style={{ fontSize:13, color:T.muted }}>
+    <div className="pmo-scroll" style={{ flex:1, overflow:"auto",
+      padding:`${SP.xl}px ${SP.xxl}px`, backgroundImage:T.ambient }}>
+      <div style={{ maxWidth:760 }}>
+      <Surface T={T} pad={SP.md} style={{ marginBottom:SP.xl }}>
+        <div style={{ ...TYPE.bodySm, color:T.muted }}>
           Signed in as <span style={{ color:T.text, fontWeight:600 }}>{session.username}</span>
-          <span style={{ color:T.dim }}> · {session.role}</span>
+          <span style={{ color:T.dim }}> · {session.role?.replace("_", " ")}</span>
         </div>
-      </div>
+      </Surface>
 
       {/* ── Security ── */}
       <SectionCard title="Security">
@@ -3991,6 +4000,7 @@ function SettingsPage({ T, session }) {
           ))}
         </div>
       </SectionCard>
+      </div>
     </div>
   );
 }
@@ -3998,12 +4008,15 @@ function SettingsPage({ T, session }) {
 // ─── PERFORMANCE / EVM ────────────────────────────────────────────────────────
 // ─── PROJECT CASHFLOWS & TIMELINES ─────────────────────────────────────────────
 // Embeds a separately-authored standalone HTML dashboard (Chart.js + a frozen
-// data snapshot) completely unmodified, via an iframe. This is deliberate: the
-// file has its own <script> tags doing the filtering/charting, and scripts
-// injected into React via dangerouslySetInnerHTML never execute — an iframe is
-// the only way to embed it verbatim and keep it fully interactive. It also
-// keeps its CSS/JS in an isolated browsing context so nothing here can clash
-// with the portal's own styles or globals.
+// 151-row data snapshot) via an iframe. The file has its own <script> tags
+// doing the filtering and charting, and scripts injected through
+// dangerouslySetInnerHTML never execute — an iframe is the only way to embed it
+// verbatim and keep it interactive, and it isolates its CSS from the portal's.
+//
+// Its palette has been remapped onto src/theme.js and it now honours the
+// portal's light/dark toggle through the theme bridge below. NOTE: that file
+// exists twice (repo root for production, public/ for the build). Edit both —
+// deploy-preview.py aborts if they drift.
 function CashflowPage({ T, dark }) {
   const frame = useRef(null);
   // The src was hardcoded to the production URL, so the preview build loaded
@@ -5222,8 +5235,11 @@ function UserManagementPage({ T, session }) {
     <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
 
       {/* Header */}
-      <div style={{ padding:"12px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
-        <div style={{ fontSize:13, color:T.muted }}>{users.length} users · PMO creates all accounts</div>
+      <div style={{ padding:`${SP.sm}px ${SP.xl}px`, borderBottom:`1px solid ${T.border}`,
+        background:T.surface, display:"flex", alignItems:"center", gap:SP.md, flexShrink:0 }}>
+        <div style={{ ...TYPE.bodySm, color:T.muted }}>
+          {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
+        </div>
         <div style={{ marginLeft:"auto" }}>
           <button onClick={() => { setShowCreate(true); setCreateStatus(null); }} style={{
             display:"flex", alignItems:"center", gap:7, padding:"8px 18px", background:NAVY, color:"#fff",
@@ -5556,7 +5572,9 @@ function ActivityLogPage({ T, session }) {
     <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
 
       {/* ── Filter bar ── */}
-      <div style={{ padding:"12px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:10, flexShrink:0, alignItems:"center", flexWrap:"wrap" }}>
+      <div style={{ padding:`${SP.sm}px ${SP.xl}px`, borderBottom:`1px solid ${T.border}`,
+        background:T.surface, display:"flex", gap:SP.sm, flexShrink:0,
+        alignItems:"center", flexWrap:"wrap" }}>
 
         <select value={actionFilter} onChange={e=>setActionFilter(e.target.value)} style={sel}>
           {ACTION_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
@@ -6305,11 +6323,12 @@ function TeamPage({ T, session }) {
   if (loading) return <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading…</div>;
 
   return (
-    <div style={{ flex:1, overflow:"auto", padding:"24px 28px" }}>
+    <div className="pmo-scroll" style={{ flex:1, overflow:"auto",
+      padding:`${SP.xl}px ${SP.xxl}px`, backgroundImage:T.ambient }}>
       <div style={{ maxWidth:820, margin:"0 auto", display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* ── About Us ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"22px 26px", borderTop:`3px solid ${GOLD}` }}>
+        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:`${SP.xl}px ${SP.xxl}px`, boxShadow:T.shadow, borderTop:`2px solid ${BRAND.gold}` }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>About Us</div>
             {isPMO && <button onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
@@ -7417,6 +7436,25 @@ export default function App() {
   if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
   if (!session) return <Login T={T} dark={dark} onLogin={setSession} />;
 
+  // Contextual quick actions for the header. Deliberately small: two per page
+  // at most, and only actions the current role can actually perform (§24).
+  const quickActions = (() => {
+    if (selectedProjectId) return null;
+    const isPMO = session?.role === "pmo";
+    const acts = [];
+    if (effectivePage === "cmd") {
+      acts.push({ label:"View projects", icon:FolderKanban, onClick:() => navigateToPage("proj") });
+      acts.push({ label:"Performance",   icon:TrendingUp,   onClick:() => navigateToPage("perf") });
+    } else if (effectivePage === "proj" || effectivePage === "camp") {
+      acts.push({ label:"Pending approvals", icon:ClipboardList, onClick:() => navigateToPage("cmd") });
+    } else if (effectivePage === "upd") {
+      acts.push({ label:"View projects", icon:FolderKanban, onClick:() => navigateToPage("proj") });
+    } else if (effectivePage === "users" && isPMO) {
+      acts.push({ label:"Activity log", icon:Activity, onClick:() => navigateToPage("log") });
+    }
+    return acts.length ? acts : null;
+  })();
+
   const pageInfo = selectedProjectId
     ? { title:"Project detail", subtitle:`From ${returnPage === "perf" ? "Performance" : "Projects"}` }
     : (PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" });
@@ -7424,6 +7462,8 @@ export default function App() {
   return (
     <>
       <DeadlineAlertPopups T={T} session={session} />
+      {/* Quick actions are computed per page and per role, then handed to the
+          header — see QUICK_ACTIONS below. */}
       <NotificationsDrawer
         T={T} session={session} open={notifOpen} isCompact={vp.isCompact}
         onClose={() => setNotifOpen(false)}
@@ -7450,6 +7490,7 @@ export default function App() {
           isCompact={vp.isCompact} onMenu={() => setNavMobileOpen(true)}
           unreadCount={unreadCount} onBellClick={() => setNotifOpen(true)}
           onSearch={() => setSearchOpen(true)}
+          quickActions={quickActions}
         />
         {selectedProjectId ? (
           <ProjectDetailPage
