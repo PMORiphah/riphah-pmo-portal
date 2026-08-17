@@ -739,7 +739,12 @@ function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320 }) 
       y: { ...chartBaseOptions(T).scales.y, grid: { display:false } },
     },
   };
-  if (sorted.length === 0) return <div style={{padding:40, textAlign:"center", color:T.dim, fontSize:12}}>No projects with this figure yet.</div>;
+  // Bare grey text in an empty panel reads as a failure; state what is missing.
+  if (sorted.length === 0) return (
+    <EmptyState T={T} icon={BarChart3} compact tone={T.info}
+      title="Nothing recorded yet"
+      message="No project currently carries a value for this figure. This chart fills in as the PMO records the data." />
+  );
   return <div style={{height}}><Bar data={data} options={options} /></div>;
 }
 
