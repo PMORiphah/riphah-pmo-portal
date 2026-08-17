@@ -4611,7 +4611,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           gap:SP.lg, flexWrap:"wrap", position:"relative" }}>
           <div style={{ minWidth:0, flex:"1 1 320px" }}>
             <div style={{ ...TYPE.mono, color:"rgba(255,255,255,0.55)", marginBottom:5 }}>
-              {evm.code || "No project ID"}
+              {evm.code && evm.code !== "-" ? evm.code : "No project ID assigned"}
             </div>
             <h2 style={{ ...TYPE.display, fontSize: vpD.isCompact ? 21 : 27, color:"#fff",
               margin:0, lineHeight:1.2 }}>{evm.name}</h2>
@@ -6953,7 +6953,9 @@ export default function App() {
   if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
   if (!session) return <Login T={T} dark={dark} onLogin={setSession} />;
 
-  const pageInfo = PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" };
+  const pageInfo = selectedProjectId
+    ? { title:"Project detail", subtitle:`From ${returnPage === "perf" ? "Performance" : "Projects"}` }
+    : (PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" });
 
   return (
     <>
