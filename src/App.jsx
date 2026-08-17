@@ -933,6 +933,7 @@ const SEG_COLORS  = { Academic:"#5B9FE8", Healthcare:EMERALD, Management:VIOLET,
 const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
 
 function BreakdownSection({ T, session }) {
+  const vpB = useViewport();
   const [projects, setProjects] = useState([]);
   const [targets,  setTargets]  = useState({});
   const [fy,       setFy]       = useState("__all__");
@@ -947,7 +948,7 @@ function BreakdownSection({ T, session }) {
     (async () => {
       try {
         const [proj, sett] = await Promise.all([
-          supa("/rest/v1/projects?select=id,bac,amount_released,payments_made,fiscal_year,segments(name),sectors(name),strategic_priority", {}, session.access_token),
+          supa("/rest/v1/projects?select=id,bac,amount_released,payments_made,fiscal_year,start_date,budget_release_date,df_recommended_amount,segments(name),sectors(name),strategic_priority", {}, session.access_token),
           supa("/rest/v1/settings?key=eq.dashboard_breakdowns&select=value", {}, session.access_token),
         ]);
         setProjects(proj);
@@ -1052,6 +1053,106 @@ function BreakdownSection({ T, session }) {
           )}
         </div>
       </div>
+
+      {/* ── CUMULATIVE PLANNED VS ACTUAL ───────────────────────────────────
+          Built entirely from real rows, not a synthetic monthly series:
+            planned = cumulative DF-recommended budget, bucketed by each
+                      project's start_date  (96 of 106 projects carry one)
+            actual  = cumulative amount_released, bucketed by
+                      budget_release_date   (4 projects so far)
+          The gap between the two lines IS the portfolio's story right now,
+          so the chart is honest rather than flattering. Where a bucket has no
+          rows the series simply carries forward — it does not interpolate
+          values that were never recorded. */}
+      {(() => {
+        const money = (p) => parseFloat(p.df_recommended_amount) || 0;
+        const rel   = (p) => parseFloat(p.amount_released) || 0;
+
+        const planBuckets = {}, actBuckets = {};
+        fyProjects.forEach(p => {
+          if (p.start_date && money(p) > 0) {
+            const k = String(p.start_date).slice(0, 7);
+            planBuckets[k] = (planBuckets[k] || 0) + money(p);
+          }
+          if (p.budget_release_date && rel(p) > 0) {
+            const k = String(p.budget_release_date).slice(0, 7);
+            actBuckets[k] = (actBuckets[k] || 0) + rel(p);
+          }
+        });
+
+        const keys = [...new Set([...Object.keys(planBuckets), ...Object.keys(actBuckets)])].sort();
+        if (keys.length < 2) return null;
+
+        // Fill the calendar gaps so the x-axis is evenly spaced in time
+        const months = [];
+        let [y, m] = keys[0].split("-").map(Number);
+        const [ly, lm] = keys[keys.length - 1].split("-").map(Number);
+        while (y < ly || (y === ly && m <= lm)) {
+          months.push(`${y}-${String(m).padStart(2, "0")}`);
+          m++; if (m > 12) { m = 1; y++; }
+        }
+
+        const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        let cp = 0, ca = 0;
+        const data = months.map(k => {
+          cp += planBuckets[k] || 0;
+          ca += actBuckets[k] || 0;
+          const [yy, mm] = k.split("-");
+          return { label:`${MON[+mm - 1]} ${yy.slice(2)}`, planned:cp, actual:ca, key:k };
+        });
+
+        const planTotal = data[data.length - 1].planned;
+        const actTotal  = data[data.length - 1].actual;
+        const pct = planTotal > 0 ? (actTotal / planTotal) * 100 : 0;
+
+        return (
+          <Surface T={T} pad={SP.lg} style={{ flexShrink:0 }}>
+            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
+              gap:SP.lg, flexWrap:"wrap", marginBottom:SP.md }}>
+              <div>
+                <div style={{ ...TYPE.h3, color:T.text }}>Cumulative release against plan</div>
+                <div style={{ ...TYPE.caption, color:T.muted, marginTop:3 }}>
+                  Planned by project start date · actual by budget release date
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:SP.xl, flexWrap:"wrap" }}>
+                <div>
+                  <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Planned</div>
+                  <div style={{ ...TYPE.metricSm, color:T.info }}>{fmtM(planTotal)}</div>
+                </div>
+                <div>
+                  <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Released</div>
+                  <div style={{ ...TYPE.metricSm, color:T.positive }}>{fmtM(actTotal)}</div>
+                </div>
+                <div>
+                  <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Of plan</div>
+                  <div style={{ ...TYPE.metricSm, color: pct < 25 ? T.danger : pct < 60 ? T.warning : T.positive }}>
+                    {pct.toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <PlannedActualChart T={T} data={data} height={vpB.isCompact ? 210 : 280}
+              isMobile={vpB.isCompact} fmt={(v) => fmtM(v)} />
+
+            {/* Say plainly what the shape means — an executive shouldn't have to
+                infer it, and a near-flat actual line is easy to misread as a bug */}
+            <div style={{ display:"flex", alignItems:"flex-start", gap:8, marginTop:SP.md,
+              padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+              background: pct < 25 ? `${T.warning}${T.wash}` : T.pageAlt,
+              border:`1px solid ${pct < 25 ? T.warning + "33" : T.border}` }}>
+              <AlertCircle size={13} color={pct < 25 ? T.warning : T.muted} style={{ marginTop:1, flexShrink:0 }} />
+              <span style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.5 }}>
+                {fmtM(actTotal)} of {fmtM(planTotal)} planned CAPEX has been released
+                ({pct.toFixed(1)}%). Release dates are recorded for{" "}
+                {fyProjects.filter(p => p.budget_release_date).length} of {fyProjects.length} projects,
+                so the actual line reflects only those.
+              </span>
+            </div>
+          </Surface>
+        );
+      })()}
 
       {/* ── Organisation split ── */}
       <div style={{ display:"flex", gap:14 }}>
@@ -1581,11 +1682,13 @@ function CommandCenter({ T, session, onSelectProject }) {
   const good = "#2DD4BF", warn = "#F59E0B", bad = "#F87171";
   const healthColor = d.portfolio_health === "Good" ? good : d.portfolio_health === "At Risk" ? warn : bad;
 
+  // One icon library throughout (§28) — the emoji set read as placeholder art
+  // and rendered differently on every OS.
   const TABS = [
-    { id:"budgeting",  label:"CAPEX Portfolio Overview",     icon:"📋" },
-    { id:"pipeline",   label:"PDD Status",        icon:"🔁" },
-    { id:"execution",  label:"Project Health",    icon:"⚡" },
-    { id:"financials", label:"Payments Status",   icon:"💰" },
+    { id:"budgeting",  label:"CAPEX Overview",  Icon:Wallet },
+    { id:"pipeline",   label:"PDD Status",      Icon:ClipboardList, count:d.total_projects },
+    { id:"execution",  label:"Project Health",  Icon:Activity,      count:d.approved_count },
+    { id:"financials", label:"Payments Status", Icon:PiggyBank },
   ];
 
   return (
@@ -1677,27 +1780,8 @@ function CommandCenter({ T, session, onSelectProject }) {
       })()}
 
       {/* ── TAB BAR ── */}
-      <div style={{ display:"flex", borderBottom:"2px solid "+T.border, gap:4 }}>
-        {TABS.map((tab, i) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button key={tab.id} onClick={() => switchTab(tab.id)}
-              style={{
-                padding:"10px 24px", border:"none", borderBottom: isActive ? "2px solid "+GOLD : "2px solid transparent",
-                marginBottom:"-2px", cursor:"pointer", fontFamily:TYPE.body.fontFamily,
-                fontSize:13, fontWeight: isActive ? 700 : 500, letterSpacing:0.2,
-                background: isActive ? T.card2 : "transparent",
-                borderRadius: isActive ? "8px 8px 0 0" : 0,
-                color: isActive ? GOLD : T.muted,
-                transition:"background .18s, color .18s, border-color .18s", whiteSpace:"nowrap",
-              }}>
-              <span style={{ display:"flex", alignItems:"center", gap:8 }}>
-                {tab.icon && <span style={{ fontSize:14, opacity: isActive ? 1 : 0.6 }}>{tab.icon}</span>}
-                {tab.label}
-              </span>
-            </button>
-          );
-        })}
+      <div style={{ flexShrink:0 }}>
+        <TabsUI T={T} tabs={TABS} active={activeTab} onChange={switchTab} isMobile={vp.isCompact} />
       </div>
 
       {/* ── KPI CARDS ── */}
