@@ -755,6 +755,85 @@ function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320 }) 
 // stage holding 1 project is still visible, still labelled and still clickable,
 // while the 96% stage is still obviously the 96% stage. The bottleneck is then
 // named in plain words underneath rather than left for the reader to infer.
+// ─── FINANCIAL FLOW ──────────────────────────────────────────────────────────
+// §16 asked for Budget → Commitment → Payment. There is no "committed" field in
+// the schema, so the flow is built from the four stages that ARE recorded:
+//   DF recommended → approved → released → paid
+// Each step shows the absolute figure, its share of the original recommendation
+// and the value that fell away at that step, so the leakage is legible rather
+// than implied.
+function FinancialFlow({ T, d, isCompact }) {
+  const steps = [
+    { key:"df",       label:"DF Recommended", value:+d.df_recommended_total || 0, color:T.info,
+      note:"After Finance Director review" },
+    { key:"approved", label:"Approved",       value:+d.approved_total || 0,       color:BRAND.blue,
+      note:"Sanctioned for execution" },
+    { key:"released", label:"Released",       value:+d.budget_consumed || 0,      color:T.positive,
+      note:"Funds transferred to projects" },
+    { key:"paid",     label:"Paid",           value:+d.payments_made_total || 0,  color:T.cyan,
+      note:"Finance-confirmed payments" },
+  ];
+  const base = steps[0].value || 1;
+  const pending = +d.payments_pending_amount || 0;
+
+  return (
+    <Surface T={T} pad={SP.lg} style={{ flexShrink:0 }}>
+      <SectionTitle
+        T={T} icon={Wallet}
+        title="Where the money is"
+        sub="Each stage of the CAPEX flow, as a share of the DF-recommended budget"
+      />
+
+      <div style={{ display:"flex", flexDirection:"column", gap:SP.md, marginTop:SP.sm }}>
+        {steps.map((st, i) => {
+          const pct  = (st.value / base) * 100;
+          const prev = i === 0 ? null : steps[i - 1].value;
+          const drop = prev == null ? null : prev - st.value;
+          return (
+            <div key={st.key}>
+              <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between",
+                gap:SP.md, marginBottom:6, flexWrap:"wrap" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:9, minWidth:0 }}>
+                  <span style={{ width:9, height:9, borderRadius:3, background:st.color, flexShrink:0 }} />
+                  <span style={{ ...TYPE.h3, color:T.text }}>{st.label}</span>
+                  {!isCompact && <span style={{ ...TYPE.caption, color:T.dim }}>{st.note}</span>}
+                </div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:SP.md }}>
+                  {drop != null && drop > 0 && (
+                    <span style={{ ...TYPE.caption, color:T.danger }}>
+                      −{fmtM(drop)} vs {steps[i - 1].label.toLowerCase()}
+                    </span>
+                  )}
+                  <span style={{ ...TYPE.caption, color:T.muted, fontVariantNumeric:"tabular-nums" }}>
+                    {pct.toFixed(1)}%
+                  </span>
+                  <span style={{ ...TYPE.metricSm, color:st.color, minWidth:74, textAlign:"right" }}>
+                    {fmtM(st.value)}
+                  </span>
+                </div>
+              </div>
+              <Progress T={T} value={st.value} max={base} color={st.color} height={9} delay={i * 110} />
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display:"flex", alignItems:"flex-start", gap:9, marginTop:SP.lg,
+        padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+        background:T.pageAlt, border:`1px solid ${T.border}` }}>
+        <AlertCircle size={13} color={T.muted} style={{ marginTop:1, flexShrink:0 }} />
+        <span style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.55 }}>
+          {fmtM(steps[3].value)} has been paid against {fmtM(steps[2].value)} released.
+          {pending > 0
+            ? ` ${fmtM(pending)} is awaiting transfer across ${d.payments_pending_count} project${d.payments_pending_count === 1 ? "" : "s"}.`
+            : " No payments are currently flagged as pending."}
+          {" "}A commitment stage (POs raised) is not recorded in the portal, so it is not shown.
+        </span>
+      </div>
+    </Surface>
+  );
+}
+
 function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
   const stages = [
     { key:"pdd_not_submitted", label:"PDD Not Submitted", short:"Not Submitted", value:d.pdd_not_submitted_count || 0, note:"Awaiting submission" },
@@ -814,8 +893,8 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
               }}>
                 <span style={{ ...TYPE.metricSm, fontSize:16, color:st.color }}>{st.value}</span>
               </div>
-              <div style={{ ...TYPE.label, color: on ? T.text : T.muted, marginTop:7, lineHeight:1.3,
-                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              <div style={{ ...TYPE.label, color: on ? T.text : T.muted, marginTop:7, lineHeight:1.25,
+                display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
                 {isCompact ? st.short : st.label}
               </div>
               {!isCompact && (
@@ -859,8 +938,8 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
                     transition:`background ${MOTION.fast}`,
                   }}>
                   <span style={{ width:9, height:9, borderRadius:3, background:st.color, flexShrink:0 }} />
-                  <span style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft, flex:1 }}>{st.label}</span>
-                  <span style={{ ...TYPE.caption, color:T.muted }}>{st.note}</span>
+                  <span style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft }}>{st.label}</span>
+                  <span style={{ ...TYPE.caption, color:T.dim, flex:1 }}>{st.note}</span>
                   <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.text,
                     fontVariantNumeric:"tabular-nums", minWidth:34, textAlign:"right" }}>{st.value}</span>
                 </button>
@@ -1912,7 +1991,7 @@ function CommandCenter({ T, session, onSelectProject }) {
       </div>
 
       {/* ── KPI CARDS ── */}
-      {(activeTab === "pipeline" || activeTab === "execution") && (
+      {activeTab === "execution" && (
         <div style={{ fontSize:11, color:T.dim, textAlign:"center", letterSpacing:0.3 }}>
           {activeCard ? "↓ Scroll down to see the project list — click the same card to collapse" : "Click any card below to view its projects"}
         </div>
@@ -1954,13 +2033,36 @@ function CommandCenter({ T, session, onSelectProject }) {
           <EditableKCard Icon={PauseCircle} index={5} T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
         </div>
       )}
-      {activeTab === "execution" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
-          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:4 }}>Cost vs Schedule Performance</div>
-          <div style={{ fontSize:11, color:T.dim, marginBottom:16 }}>Every project plotted by CPI and SPI — top-right quadrant is on track</div>
-          <ChartErrorBoundary T={T}><CpiSpiScatterChart T={T} rows={dashProjects} /></ChartErrorBoundary>
-        </div>
-      )}
+      {activeTab === "execution" && (() => {
+        // A CPI/SPI plot is only meaningful for projects that actually carry
+        // both values. With a portfolio this early, that set is usually empty —
+        // and an empty quadrant chart reads as a broken panel, so say what is
+        // missing and what would populate it instead (§21).
+        const plottable = (dashProjects || []).filter(
+          p => +p.cpi > 0 && +p.spi > 0
+        );
+        return (
+          <Surface T={T} pad={SP.lg} style={{ flexShrink:0 }}>
+            <SectionTitle
+              T={T} icon={Activity}
+              title="Cost vs schedule performance"
+              sub="Every project plotted by CPI and SPI — the top-right quadrant is on track"
+              right={plottable.length > 0
+                ? <span style={{ ...TYPE.caption, color:T.muted }}>{plottable.length} plotted</span>
+                : null}
+            />
+            {plottable.length > 0 ? (
+              <ChartErrorBoundary T={T}><CpiSpiScatterChart T={T} rows={dashProjects} /></ChartErrorBoundary>
+            ) : (
+              <EmptyState
+                T={T} icon={Activity} tone={T.info}
+                title="No performance data to plot yet"
+                message={`CPI and SPI are calculated from a project's baseline budget and schedule against its actuals. ${d.approved_count || 0} of ${d.total_projects} projects are approved, and none yet record both a baseline and progress, so there is nothing to plot. The chart fills in as approved projects begin reporting.`}
+              />
+            )}
+          </Surface>
+        );
+      })()}
       {activeTab === "financials" && (
         <div style={{ display:"flex", gap:10 }}>
           <EditableKCard Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
@@ -1975,6 +2077,12 @@ function CommandCenter({ T, session, onSelectProject }) {
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · Payments Pending</div>
           <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} /></ChartErrorBoundary>
         </div>
+      )}
+
+      {activeTab === "financials" && (
+        <ChartErrorBoundary T={T}>
+          <FinancialFlow T={T} d={d} isCompact={vp.isCompact} />
+        </ChartErrorBoundary>
       )}
 
       {/* ── PROJECT LIST ── */}
