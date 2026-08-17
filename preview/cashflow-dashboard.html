@@ -94,7 +94,7 @@ body{
   color:#DCE4F2;
   display:flex; align-items:center; gap:8px;
 }
-.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(43,182,168,0.25);}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(34,196,168,0.25);}
 .btn{
   font-family:'Inter',sans-serif;
   font-weight:600;
@@ -354,7 +354,7 @@ footer{
   width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:var(--r-sm);
   font-family:'Inter',sans-serif; font-size:13px; color:var(--ink); background:#fff;
 }
-.fld input:focus, .fld select:focus, .fld textarea:focus{outline:none; border-color:var(--navy-700); box-shadow:0 0 0 3px rgba(29,67,132,0.12);}
+.fld input:focus, .fld select:focus, .fld textarea:focus{outline:none; border-color:var(--navy-700); box-shadow:0 0 0 3px rgba(44,123,196,0.12);}
 .fld textarea{min-height:64px; resize:vertical;}
 .fld .hint{font-size:11px; color:var(--muted); margin-top:4px;}
 .fld input.mono-in{font-family:'IBM Plex Mono',monospace;}
@@ -895,7 +895,7 @@ function renderHero(){
     type:"line",
     data:{labels:MONTH_LABELS, datasets:[{
       data:cum, borderColor:"#E8D9AE", backgroundColor:gradient, fill:true, tension:.35,
-      borderWidth:2.5, pointRadius:3, pointBackgroundColor:"#C9A24B", pointBorderColor:"#0A1A30"
+      borderWidth:2.5, pointRadius:3, pointBackgroundColor:"#E0A94A", pointBorderColor:"#0A1A30"
     }]},
     options:{
       responsive:true, maintainAspectRatio:false,
@@ -916,7 +916,7 @@ function renderMiniTrend(){
     type:"bar",
     data:{labels:MONTH_LABELS, datasets:[
       {type:"bar", label:"Planned", data:months, backgroundColor:"#153564", borderRadius:4, maxBarThickness:26},
-      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#C9A24B", borderWidth:2, borderDash:[6,4], pointRadius:0}
+      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#E0A94A", borderWidth:2, borderDash:[6,4], pointRadius:0}
     ]},
     options:{responsive:true, maintainAspectRatio:false,
       plugins:{legend:{position:"bottom", labels:{boxWidth:10,font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+": "+fmtPKR(c.parsed.y,true)}}},
@@ -944,7 +944,7 @@ function renderTrend(){
   destroy("trend");
   charts.trend = new Chart(document.getElementById("trendChart"),{
     type:"line",
-    data:{labels:MONTH_LABELS, datasets:[{data:months, borderColor:"#1D4384", backgroundColor:"rgba(29,67,132,0.08)", fill:true, tension:.3, pointBackgroundColor:"#1D4384", pointRadius:4, borderWidth:2.5}]},
+    data:{labels:MONTH_LABELS, datasets:[{data:months, borderColor:"#2C7BC4", backgroundColor:"rgba(44,123,196,0.08)", fill:true, tension:.3, pointBackgroundColor:"#2C7BC4", pointRadius:4, borderWidth:2.5}]},
     options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
       scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
   });
@@ -957,8 +957,8 @@ function renderComparison(){
   charts.comparison = new Chart(document.getElementById("comparisonChart"),{
     type:"bar",
     data:{labels:MONTH_LABELS, datasets:[
-      {type:"bar", label:"Monthly Planned", data:months, backgroundColor:months.map(v=>v>=avg?"#2BB6A8":"#C9A24B"), borderRadius:5},
-      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#E2725B", borderWidth:2, borderDash:[5,4], pointRadius:0}
+      {type:"bar", label:"Monthly Planned", data:months, backgroundColor:months.map(v=>v>=avg?"#22C4A8":"#E0A94A"), borderRadius:5},
+      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#F0637D", borderWidth:2, borderDash:[5,4], pointRadius:0}
     ]},
     options:{responsive:true, maintainAspectRatio:false,
       plugins:{legend:{position:"bottom", labels:{boxWidth:10,font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+": "+fmtPKR(c.parsed.y,true)}}},
@@ -973,7 +973,7 @@ function renderCumulative(){
   destroy("cumulative");
   charts.cumulative = new Chart(document.getElementById("cumulativeChart"),{
     type:"line",
-    data:{labels:MONTH_LABELS, datasets:[{data:cum, borderColor:"#2BB6A8", backgroundColor:"rgba(43,182,168,0.12)", fill:true, tension:.35, pointRadius:3, borderWidth:2.5}]},
+    data:{labels:MONTH_LABELS, datasets:[{data:cum, borderColor:"#22C4A8", backgroundColor:"rgba(34,196,168,0.12)", fill:true, tension:.35, pointRadius:3, borderWidth:2.5}]},
     options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
       scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
   });
@@ -997,7 +997,7 @@ function renderQuarter(){
   destroy("quarter");
   charts.quarter = new Chart(document.getElementById("quarterChart"),{
     type:"bar",
-    data:{labels:QUARTERS.map(q=>q.name), datasets:[{data:qTotals, backgroundColor:["#0F2547","#1D4384","#2BB6A8","#C9A24B"], borderRadius:8, maxBarThickness:70}]},
+    data:{labels:QUARTERS.map(q=>q.name), datasets:[{data:qTotals, backgroundColor:["#4A9BE0","#2C7BC4","#22C4A8","#E0A94A"], borderRadius:8, maxBarThickness:70}]},
     options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
       scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
   });
@@ -1020,7 +1020,7 @@ function renderTop10(){
   destroy("top10");
   charts.top10 = new Chart(document.getElementById("top10Chart"),{
     type:"bar",
-    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#0F2547", borderRadius:5}]},
+    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#4A9BE0", borderRadius:5}]},
     options:{indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.x,true), title:c=>projects[c[0].dataIndex].name}}},
       scales:{x:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true), font:{size:10}}}, y:{grid:{display:false}, ticks:{font:{size:10.5}}}}
     }
@@ -1032,7 +1032,7 @@ function renderBottom10(){
   destroy("bottom10");
   charts.bottom10 = new Chart(document.getElementById("bottom10Chart"),{
     type:"bar",
-    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#E2725B", borderRadius:5}]},
+    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#F0637D", borderRadius:5}]},
     options:{indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.x,true), title:c=>projects[c[0].dataIndex].name}}},
       scales:{x:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true), font:{size:10}}}, y:{grid:{display:false}, ticks:{font:{size:10.5}}}}
     }
@@ -1073,7 +1073,7 @@ function renderStatus(){
   destroy("status");
   charts.status = new Chart(document.getElementById("statusChart"),{
     type:"doughnut",
-    data:{labels:Object.keys(counts), datasets:[{data:Object.values(counts), backgroundColor:["#2BB6A8","#1D4384","#8C96A8","#E2725B"], borderWidth:2, borderColor:"#fff"}]},
+    data:{labels:Object.keys(counts), datasets:[{data:Object.values(counts), backgroundColor:["#22C4A8","#2C7BC4","#8C96A8","#F0637D"], borderWidth:2, borderColor:"#fff"}]},
     options:{responsive:true, maintainAspectRatio:false, cutout:"60%",
       plugins:{legend:{position:"bottom", labels:{boxWidth:10, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.label+": "+c.parsed+" projects"}}}
     }
@@ -1114,7 +1114,7 @@ function renderHeatmap(){
       const v = p.byMonth[m]||0;
       const intensity = maxVal>0 ? v/maxVal : 0;
       const bg = v>0 ? `rgba(15,37,71,${(0.08+intensity*0.75).toFixed(2)})` : "#F4F6F9";
-      const color = intensity>0.5 ? "#fff" : "#0F2547";
+      const color = intensity>0.5 ? "#fff" : "#4A9BE0";
       return `<td class="heat-cell" style="background:${bg}; color:${color};" title="${monthLabel(m)} &mdash; ${fmtPKR(v)}">${v>0?fmtPKR(v,true).replace('PKR ',''):''}</td>`;
     }).join("");
     const unsched = p.byMonth['unsched']||0;
