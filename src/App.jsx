@@ -831,14 +831,14 @@ function FinancialFlow({ T, d, isCompact }) {
                 </div>
                 <div style={{ display:"flex", alignItems:"baseline", gap:SP.md }}>
                   {drop != null && drop > 0 && (
-                    <span style={{ ...TYPE.caption, color:T.danger }}>
+                    <span style={{ ...TYPE.caption, color:T.textOf(T.danger) }}>
                       −{fmtM(drop)} vs {steps[i - 1].label.toLowerCase()}
                     </span>
                   )}
                   <span style={{ ...TYPE.caption, color:T.muted, fontVariantNumeric:"tabular-nums" }}>
                     {pct.toFixed(1)}%
                   </span>
-                  <span style={{ ...TYPE.metricSm, color:st.color, minWidth:74, textAlign:"right" }}>
+                  <span style={{ ...TYPE.metricSm, color:T.textOf(st.color), minWidth:74, textAlign:"right" }}>
                     {fmtM(st.value)}
                   </span>
                 </div>
@@ -922,7 +922,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
                 display:"flex", alignItems:"center", justifyContent:"center",
                 transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
               }}>
-                <span style={{ ...TYPE.metricSm, fontSize:16, color:st.color }}>{st.value}</span>
+                <span style={{ ...TYPE.metricSm, fontSize:16, color:T.textOf(st.color) }}>{st.value}</span>
               </div>
               <div style={{ ...TYPE.label, color: on ? T.text : T.muted, marginTop:7, lineHeight:1.25,
                 display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
@@ -1355,15 +1355,15 @@ function BreakdownSection({ T, session }) {
               <div style={{ display:"flex", gap:SP.xl, flexWrap:"wrap" }}>
                 <div>
                   <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Planned</div>
-                  <div style={{ ...TYPE.metricSm, color:T.info }}>{fmtM(planTotal)}</div>
+                  <div style={{ ...TYPE.metricSm, color:T.textOf(T.info) }}>{fmtM(planTotal)}</div>
                 </div>
                 <div>
                   <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Released</div>
-                  <div style={{ ...TYPE.metricSm, color:T.positive }}>{fmtM(actTotal)}</div>
+                  <div style={{ ...TYPE.metricSm, color:T.textOf(T.positive) }}>{fmtM(actTotal)}</div>
                 </div>
                 <div>
                   <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Of plan</div>
-                  <div style={{ ...TYPE.metricSm, color: pct < 25 ? T.danger : pct < 60 ? T.warning : T.positive }}>
+                  <div style={{ ...TYPE.metricSm, color: T.textOf(pct < 25 ? T.danger : pct < 60 ? T.warning : T.positive) }}>
                     {pct.toFixed(1)}%
                   </div>
                 </div>
@@ -3141,7 +3141,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
         return (
           <span style={{ display:"inline-flex", flexDirection:"column", alignItems:"flex-end", gap:3, minWidth:64 }}>
             <span style={{ fontVariantNumeric:"tabular-nums", fontWeight:700,
-              color: v > 0 ? BRAND.gold : T.dim }}>{fmtM(p.bac)}</span>
+              color: v > 0 ? (T.goldText || BRAND.gold) : T.dim }}>{fmtM(p.bac)}</span>
             {/* Replaces the earlier full-cell tint, which read as a muddy
                 block in dark mode. A hairline under the figure carries the
                 same comparison without fighting the row background. */}
@@ -3355,7 +3355,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                   </div>
                   <div>
                     <div style={{ ...TYPE.label, color:T.muted, marginBottom:2 }}>Approved</div>
-                    <div style={{ ...TYPE.bodySm, fontWeight:700, color: +p.bac > 0 ? BRAND.gold : T.dim }}>{fmtM(p.bac)}</div>
+                    <div style={{ ...TYPE.bodySm, fontWeight:700, color: +p.bac > 0 ? (T.goldText || BRAND.gold) : T.dim }}>{fmtM(p.bac)}</div>
                   </div>
                   <div style={{ marginLeft:"auto", alignSelf:"flex-end" }}>
                     <ChevronRight size={15} color={T.dim} />
@@ -3680,9 +3680,9 @@ function CampusPage({ T, session, onSelectProject }) {
             {[
               {label:"Projects",  value:String(filtered.length),     color:T.text},
               {label:"DF Rec",    value:fmtM(k.dfBudget),            color:T.textSoft},
-              {label:"Approved",  value:fmtM(k.budget),              color:BRAND.gold},
-              {label:"Released",  value:fmtM(k.released),            color:T.positive},
-              {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:T.info},
+              {label:"Approved",  value:fmtM(k.budget),              color:T.goldText || BRAND.gold},
+              {label:"Released",  value:fmtM(k.released),            color:T.textOf(T.positive)},
+              {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:T.textOf(T.info)},
             ].map(x => (
               <div key={x.label} style={{textAlign:"right", whiteSpace:"nowrap"}}>
                 <div style={{...TYPE.label, color:T.muted, marginBottom:3}}>{x.label}</div>
@@ -7291,7 +7291,7 @@ function GlobalSearch({ T, session, open, onClose, onSelect }) {
                 </div>
                 {st && <Badge T={T} color={st.color} size="sm">{st.label}</Badge>}
                 <span style={{ ...TYPE.bodySm, fontWeight:700, minWidth:66, textAlign:"right",
-                  color: +p.bac > 0 ? BRAND.gold : T.dim, fontVariantNumeric:"tabular-nums" }}>
+                  color: +p.bac > 0 ? (T.goldText || BRAND.gold) : T.dim, fontVariantNumeric:"tabular-nums" }}>
                   {fmtM(p.bac || p.df_recommended_amount)}
                 </span>
               </div>
