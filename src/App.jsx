@@ -733,7 +733,8 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
               </div>
               {canEdit && (
                 <button className="pmo-focusable pmo-btn" onClick={e => { e.stopPropagation(); startEdit(); }}
-                  className="pmo-focusable" title="Edit this value"
+                  className="pmo-focusable"
+                  title={insightOnly ? "Edit hover text" : "Edit value, sub-label and hover text"}
                   style={{ background:"none", border:"none", cursor:"pointer", color:T.dim,
                     padding:2, display:"flex", opacity: hover ? 1 : 0.35,
                     transition:`opacity ${MOTION.fast}` }}>
