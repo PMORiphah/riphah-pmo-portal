@@ -1321,14 +1321,14 @@ export function Aurora({ T }) {
   const dark = T.mode === "dark";
   const blobs = dark
     ? [
-        { c:"rgba(44,123,196,0.22)",  w:"58vw", h:"58vw", top:"-22%", left:"-12%" },
-        { c:"rgba(34,196,168,0.14)",  w:"46vw", h:"46vw", top:"38%",  left:"58%" },
-        { c:"rgba(139,127,217,0.13)", w:"40vw", h:"40vw", top:"72%",  left:"6%" },
+        { c:"rgba(44,123,196,0.44)",  w:"62vw", h:"62vw", top:"-22%", left:"-12%" },
+        { c:"rgba(34,196,168,0.28)",  w:"50vw", h:"50vw", top:"38%",  left:"58%" },
+        { c:"rgba(139,127,217,0.26)", w:"44vw", h:"44vw", top:"72%",  left:"6%" },
       ]
     : [
-        { c:"rgba(44,123,196,0.13)",  w:"58vw", h:"58vw", top:"-24%", left:"-14%" },
-        { c:"rgba(34,196,168,0.10)",  w:"46vw", h:"46vw", top:"36%",  left:"60%" },
-        { c:"rgba(224,169,74,0.07)",  w:"38vw", h:"38vw", top:"74%",  left:"8%" },
+        { c:"rgba(44,123,196,0.26)",  w:"62vw", h:"62vw", top:"-24%", left:"-14%" },
+        { c:"rgba(34,196,168,0.20)",  w:"50vw", h:"50vw", top:"36%",  left:"60%" },
+        { c:"rgba(224,169,74,0.14)",  w:"42vw", h:"42vw", top:"74%",  left:"8%" },
       ];
   return (
     <div className="pmo-aurora" aria-hidden="true">
