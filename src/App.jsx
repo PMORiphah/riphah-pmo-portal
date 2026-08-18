@@ -4311,30 +4311,30 @@ function SettingsPage({ T, session }) {
         ) : cfg && (
           <>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
-              <Field label="CPI Threshold" hint="Projects below this are flagged Over Budget.">
+              <Field label="CPI Threshold" hint="Projects below this are flagged Over Budget. Drives the Portfolio Health verdict, the Over Budget card on Project Health, and the budget status column on Performance.">
                 <input type="number" min="0" max="1" step="0.01"
                   value={cfg.cpi_threshold ?? 0.95}
                   onChange={e=>set("cpi_threshold", e.target.value)}
                   style={{ ...inp, width:"100%" }} />
               </Field>
-              <Field label="SPI Threshold" hint="Projects below this are flagged Delayed.">
+              <Field label="SPI Threshold" hint="Projects below this are flagged Delayed. Drives the Portfolio Health verdict, the Delayed and On Schedule cards, and the schedule status column on Performance.">
                 <input type="number" min="0" max="1" step="0.01"
                   value={cfg.spi_threshold ?? 0.95}
                   onChange={e=>set("spi_threshold", e.target.value)}
                   style={{ ...inp, width:"100%" }} />
               </Field>
             </div>
-            <Field label="Portfolio Health Override" hint="Force a specific status, or leave on Auto to let CPI & SPI determine it.">
+            <Field label="Portfolio Health Override" hint="Force a specific status, or leave on Auto to let CPI and SPI determine it. Shown as the headline verdict at the top of the dashboard.">
               <Select T={T} value={cfg.health_override ?? ""} onChange={e=>set("health_override", e.target.value)}
                 style={{ ...inp, cursor:"pointer" }}>
                 {HEALTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Select>
             </Field>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
-              <Field label="Dashboard Title">
+              <Field label="Dashboard Title" hint="Shown as the page title on the Capex Dashboard.">
                 <input value={cfg.dashboard_title ?? "PMO CAPEX Dashboard"} onChange={e=>set("dashboard_title", e.target.value)} style={{ ...inp, width:"100%" }} />
               </Field>
-              <Field label="Fiscal Year">
+              <Field label="Fiscal Year" hint="Appears in the dashboard subtitle, the hero footer and the sidebar strapline.">
                 <input value={cfg.fiscal_year ?? "FY 2026-27"} onChange={e=>set("fiscal_year", e.target.value)} style={{ ...inp, width:"100%" }} />
               </Field>
             </div>
@@ -6001,10 +6001,29 @@ function ActivityLogPage({ T, session }) {
                 const rowBg = i%2===0 ? "transparent" : T.tableRow;
                 return (
                   <tr key={e.id} style={{ background:rowBg }}>
-                    {/* Timestamp */}
-                    <td style={{ padding:"10px 20px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" }}>
-                      <div style={{ fontSize:12.5, color:T.text, fontVariantNumeric:"tabular-nums" }}>{date}</div>
-                      <div style={{ fontSize:11, color:T.dim, marginTop:2 }}>{time}</div>
+                    {/* Timestamp, on a continuous rail. The connector runs
+                        between rows so the log reads as a sequence of events
+                        rather than a grid of cells (§47). */}
+                    <td style={{ padding:"10px 20px", borderBottom:`1px solid ${T.border}`,
+                      verticalAlign:"middle", position:"relative" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:11 }}>
+                        <div style={{ position:"relative", display:"flex", flexDirection:"column",
+                          alignItems:"center", alignSelf:"stretch", flexShrink:0 }}>
+                          <span style={{
+                            width:9, height:9, borderRadius:"50%", flexShrink:0,
+                            background:ac.c, boxShadow:`0 0 0 3px ${ac.c}22`,
+                          }} />
+                          <span aria-hidden="true" style={{
+                            position:"absolute", top:12, bottom:-22, width:1.5,
+                            background:T.border, borderRadius:2,
+                            display: i === entries.length - 1 ? "none" : "block",
+                          }} />
+                        </div>
+                        <div>
+                          <div style={{ ...TYPE.bodySm, color:T.text, fontVariantNumeric:"tabular-nums" }}>{date}</div>
+                          <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>{time}</div>
+                        </div>
+                      </div>
                     </td>
                     {/* Actor */}
                     <td style={{ padding:"10px 14px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle", whiteSpace:"nowrap" }}>
@@ -7124,13 +7143,28 @@ function Login({ T, dark, onLogin }) {
   return (
     <div style={{ height:"100vh", display:"flex", position:"relative", overflow:"hidden", fontFamily:TYPE.body.fontFamily }}>
 
-      {/* Campus photo background */}
-      <div style={{
+      {/* Campus photograph. A very slow scale drift gives the still image the
+          quality of a held camera shot rather than a wallpaper — it is the only
+          moving thing on the screen before sign-in, and at 40s it registers as
+          atmosphere rather than animation (§49). */}
+      <div className="pmo-kenburns" style={{
         position:"absolute", inset:0,
         backgroundImage:"url(" + import.meta.env.BASE_URL + "campus-bg.jpg)",
         backgroundSize:"cover", backgroundPosition:"center 38%",
         zIndex:0,
       }} />
+
+      {/* Ambient light fields over the photograph, matching the application's
+          atmosphere so signing in feels like entering the same environment. */}
+      <div aria-hidden="true" style={{ position:"absolute", inset:0, zIndex:0, overflow:"hidden", pointerEvents:"none" }}>
+        <div className="pmo-drift" style={{
+          position:"absolute", top:"-28%", left:"-10%", width:"58vw", height:"58vw", borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(44,123,196,0.30) 0%, transparent 66%)", filter:"blur(40px)" }} />
+        <div className="pmo-drift" style={{
+          position:"absolute", bottom:"-32%", right:"-6%", width:"52vw", height:"52vw", borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(224,169,74,0.16) 0%, transparent 68%)",
+          filter:"blur(46px)", animationDelay:"-9s" }} />
+      </div>
 
       {/* Dark veil for overall readability */}
       <div style={{ position:"absolute", inset:0, background:"rgba(4,10,24,0.42)", zIndex:0 }} />
