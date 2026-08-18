@@ -6014,8 +6014,9 @@ function ActivityLogPage({ T, session }) {
                             background:ac.c, boxShadow:`0 0 0 3px ${ac.c}22`,
                           }} />
                           <span aria-hidden="true" style={{
-                            position:"absolute", top:12, bottom:-22, width:1.5,
-                            background:T.border, borderRadius:2,
+                            position:"absolute", top:13, bottom:-30, width:2,
+                            borderRadius:2,
+                            background:`linear-gradient(180deg, ${ac.c}55, ${T.borderStrong} 55%)`,
                             display: i === entries.length - 1 ? "none" : "block",
                           }} />
                         </div>
