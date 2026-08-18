@@ -520,31 +520,202 @@ const XIcon = ({ size = 12 }) => (
   </svg>
 );
 
-export function Select({ T, value, onChange, children, size = "md", full, active, style, ...rest }) {
+// ─── SELECT (§54) ────────────────────────────────────────────────────────────
+// A real listbox rather than a native <select>. The OS dropdown was the last
+// browser-default control in the product: it ignores the theme entirely, renders
+// its own system font and chrome, and looks identical in a premium portal and a
+// 1998 form.
+//
+// The API is unchanged — callers still pass <option> children and receive an
+// onChange carrying { target: { value } } — so every existing call site upgrades
+// without being touched.
+//
+// The panel is positioned fixed, computed from the trigger's rect. Absolute
+// positioning would clip inside the Projects filter row, which sits in a table
+// cell with its own overflow.
+export function Select({ T, value, onChange, children, size = "md", full, active, style,
+                         placeholder, ...rest }) {
+  const [open, setOpen]   = useState(false);
   const [focus, setFocus] = useState(false);
-  const pad = size === "sm" ? "5px 9px" : "8px 12px";
+  const [hover, setHover] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  const [rect, setRect]   = useState(null);
+  const btn  = useRef(null);
+  const list = useRef(null);
+  const typed = useRef({ str: "", at: 0 });
+
+  // Read the <option> children into plain data.
+  const items = [];
+  const walk = (nodes) => {
+    (Array.isArray(nodes) ? nodes : [nodes]).forEach((n) => {
+      if (!n) return;
+      if (Array.isArray(n)) return walk(n);
+      if (n.type === "option") {
+        items.push({ value: n.props.value ?? "", label: String(n.props.children ?? ""),
+                     disabled: !!n.props.disabled });
+      } else if (n.props?.children) walk(n.props.children);
+    });
+  };
+  walk(children);
+
+  const selected = items.find(i => String(i.value) === String(value)) || items[0];
+  const pad = size === "sm" ? "5px 9px"  : "8px 12px";
   const fs  = size === "sm" ? 11.5 : 12.5;
+
+  const place = useCallback(() => {
+    const el = btn.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const room = window.innerHeight - r.bottom;
+    const H = Math.min(300, items.length * 32 + 12);
+    setRect({ left: r.left, width: Math.max(r.width, 168),
+              top: room < H + 16 ? r.top - H - 6 : r.bottom + 6, maxH: H });
+  }, [items.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onScroll = () => place();
+    const onDoc = (e) => {
+      if (!btn.current?.contains(e.target) && !list.current?.contains(e.target)) setOpen(false);
+    };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    document.addEventListener("mousedown", onDoc);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+      document.removeEventListener("mousedown", onDoc);
+    };
+  }, [open, place]);
+
+  useEffect(() => {
+    if (open) setCursor(Math.max(0, items.findIndex(i => String(i.value) === String(value))));
+  }, [open]);   // eslint-disable-line
+
+  useEffect(() => {
+    if (!open) return;
+    list.current?.querySelector(`[data-i="${cursor}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [cursor, open]);
+
+  const pick = (item) => {
+    if (item?.disabled) return;
+    onChange?.({ target: { value: item.value } });
+    setOpen(false);
+    btn.current?.focus();
+  };
+
+  const onKey = (e) => {
+    if (!open) {
+      if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) { e.preventDefault(); setOpen(true); }
+      return;
+    }
+    if (e.key === "ArrowDown")      { e.preventDefault(); setCursor(c => Math.min(items.length - 1, c + 1)); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
+    else if (e.key === "Home")      { e.preventDefault(); setCursor(0); }
+    else if (e.key === "End")       { e.preventDefault(); setCursor(items.length - 1); }
+    else if (e.key === "Enter")     { e.preventDefault(); pick(items[cursor]); }
+    else if (e.key === "Escape")    { e.preventDefault(); setOpen(false); btn.current?.focus(); }
+    else if (e.key === "Tab")       { setOpen(false); }
+    else if (e.key.length === 1) {
+      // Type-ahead, matching native select behaviour.
+      const now = Date.now();
+      typed.current.str = now - typed.current.at > 900 ? e.key : typed.current.str + e.key;
+      typed.current.at = now;
+      const hit = items.findIndex(i => i.label.toLowerCase().startsWith(typed.current.str.toLowerCase()));
+      if (hit >= 0) setCursor(hit);
+    }
+  };
+
+  const ring = open || focus;
+
   return (
-    <select
-      {...rest}
-      className="pmo-select pmo-focusable"
-      value={value} onChange={onChange}
-      onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
-      style={{
-        padding:pad, background:T.inputBg,
-        border:`1px solid ${focus ? T.inputFocus : active ? T.borderAccent : T.inputBorder}`,
-        borderRadius:R.sm,
-        fontFamily:TYPE.body.fontFamily, fontSize:fs,
-        color: active ? T.text : T.textSoft,
-        fontWeight: active ? 600 : 400,
-        cursor:"pointer", outline:"none", width: full ? "100%" : undefined,
-        boxShadow: focus ? `0 0 0 3px ${T.inputFocus}22` : "none",
-        transition:`border-color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
-        ...style,
-      }}
-    >{children}</select>
+    <>
+      <button
+        {...rest}
+        ref={btn} type="button"
+        role="combobox" aria-expanded={open} aria-haspopup="listbox"
+        onClick={() => setOpen(o => !o)}
+        onKeyDown={onKey}
+        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+        onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+        className="pmo-focusable"
+        style={{
+          display:"flex", alignItems:"center", gap:8, padding:pad,
+          background:T.inputBg,
+          border:`1px solid ${ring ? T.inputFocus : hover ? T.borderStrong : active ? T.borderAccent : T.inputBorder}`,
+          borderRadius:R.sm,
+          fontFamily:TYPE.body.fontFamily, fontSize:fs,
+          color: active ? T.text : T.textSoft, fontWeight: active ? 600 : 400,
+          cursor:"pointer", outline:"none", textAlign:"left",
+          width: full ? "100%" : undefined,
+          boxShadow: ring ? `0 0 0 3px ${T.inputFocus}22` : "none",
+          transition:`border-color ${MOTION.fast}, box-shadow ${MOTION.fast}, background ${MOTION.fast}`,
+          ...style,
+        }}>
+        <span style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+          {selected ? selected.label : (placeholder || "")}
+        </span>
+        <Chevron size={11} open={open} color={ring ? T.inputFocus : T.muted} />
+      </button>
+
+      {open && rect && (
+        <div ref={list} role="listbox" className="pmo-scale pmo-scroll"
+          style={{
+            position:"fixed", left:rect.left, top:rect.top, width:rect.width,
+            maxHeight:rect.maxH, overflowY:"auto", zIndex:1400,
+            // L5 in the depth system: an overlay, not a card.
+            background:T.surfaceOver,
+            border:`1px solid ${T.borderStrong}`, borderRadius:R.md,
+            boxShadow:T.shadowLg, padding:4,
+            backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+          }}>
+          {items.map((it, i) => {
+            const on  = String(it.value) === String(value);
+            const cur = i === cursor;
+            return (
+              <div key={`${it.value}-${i}`} data-i={i} role="option" aria-selected={on}
+                onMouseEnter={() => setCursor(i)}
+                onClick={() => pick(it)}
+                style={{
+                  display:"flex", alignItems:"center", gap:8,
+                  padding:"6px 9px", borderRadius:R.sm,
+                  background: cur ? T.rowHover : "transparent",
+                  color: it.disabled ? T.dim : on ? T.text : T.textSoft,
+                  fontFamily:TYPE.body.fontFamily, fontSize:fs,
+                  fontWeight: on ? 600 : 400,
+                  cursor: it.disabled ? "not-allowed" : "pointer",
+                  transition:`background ${MOTION.fast}`,
+                }}>
+                <span style={{
+                  width:4, alignSelf:"stretch", borderRadius:2, flexShrink:0,
+                  background: on ? T.blueBright : "transparent",
+                }} />
+                <span style={{ flex:1, minWidth:0, overflow:"hidden",
+                  textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.label}</span>
+                {on && <Tick size={11} color={T.blueBright} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
+
+const Chevron = ({ size = 11, open, color }) => (
+  <svg width={size} height={size} viewBox="0 0 10 6" fill="none" style={{ flexShrink:0,
+    transform: open ? "rotate(180deg)" : "none", transition:`transform ${MOTION.base}` }}>
+    <path d="M1 1l4 4 4-4" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const Tick = ({ size = 11, color }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+    strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
 
 // ─── BADGES ──────────────────────────────────────────────────────────────────
 export function Badge({ T, color, children, size = "md", dot, style, hint, hintTitle }) {
