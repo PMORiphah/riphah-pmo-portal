@@ -138,6 +138,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
   const NavRow = ({ id, Icon, label, admin }) => {
     const active = page === id;
     const [hover, setHover] = useState(false);
+    const desc = NAV_INSIGHT[id];
     const row = (
       <div
         onClick={() => { setPage(id); if (isCompact) setMobileOpen(false); }}
@@ -154,6 +155,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
           background: active
             ? `linear-gradient(90deg, ${BRAND.blue}${T.mode === "dark" ? "2E" : "1A"} 0%, ${BRAND.blue}0A 100%)`
             : hover ? T.sidebarHover : "transparent",
+          boxShadow: active ? `inset 0 0 22px -8px ${BRAND.gold}55` : "none",
           color: active ? T.sidebarFgOn : admin ? T.sidebarFgSoft : T.sidebarFg,
           fontFamily:TYPE.body.fontFamily, fontSize:13, fontWeight: active ? 600 : 450,
           transition:`background ${MOTION.fast}, color ${MOTION.fast}`,
@@ -166,14 +168,16 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
             boxShadow:`0 0 10px ${BRAND.gold}88`,
           }} />
         )}
-        <div style={{
+        <div className={hover && !active ? "pmo-hot" : ""} style={{
           width:26, height:26, borderRadius:R.sm, flexShrink:0,
           display:"flex", alignItems:"center", justifyContent:"center",
-          background: active ? BRAND.blue+T.badge : "transparent",
+          background: active ? BRAND.blue+T.badge : hover ? BRAND.blue+T.wash : "transparent",
           transition:`background ${MOTION.fast}`,
         }}>
-          <Icon size={15} strokeWidth={active ? 2.1 : 1.7}
-            color={active ? BRAND.gold : "currentColor"} />
+          <Icon className={active ? "pmo-ico-glow" : hover ? "pmo-ico-glow" : ""}
+            size={15} strokeWidth={active ? 2.1 : 1.7}
+            color={active ? BRAND.gold : hover ? BRAND.blueBright : "currentColor"}
+            style={{ transition:`color ${MOTION.fast}` }} />
         </div>
         {!mini && <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{label}</span>}
         {id === "upd" && unreadCount > 0 && (
@@ -187,7 +191,19 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
         )}
       </div>
     );
-    return mini ? <TooltipUI T={T} label={label} side="right" key={id}>{row}</TooltipUI> : <div key={id}>{row}</div>;
+    // Collapsed: the label itself is the tooltip. Expanded: the label is already
+    // visible, so the hover adds the description instead of repeating it (§10).
+    if (mini) return <TooltipUI T={T} label={label} side="right" key={id}>{row}</TooltipUI>;
+    return (
+      <div key={id} style={{ position:"relative" }}
+        onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+        {row}
+        {desc && (
+          <InsightTip T={T} show={hover && !active} side="right" width={214}
+            tone={BRAND.blueBright} line={desc} />
+        )}
+      </div>
+    );
   };
 
   const panel = (
@@ -1971,10 +1987,10 @@ function CommandCenter({ T, session, onSelectProject }) {
   // One icon library throughout (§28) — the emoji set read as placeholder art
   // and rendered differently on every OS.
   const TABS = [
-    { id:"budgeting",  label:"CAPEX Overview",  Icon:Wallet },
-    { id:"pipeline",   label:"PDD Status",      Icon:ClipboardList, count:d.total_projects },
-    { id:"execution",  label:"Project Health",  Icon:Activity,      count:d.approved_count },
-    { id:"financials", label:"Payments Status", Icon:PiggyBank },
+    { id:"budgeting",  label:"CAPEX Overview",  Icon:Wallet,        insight:TAB_INSIGHT.budgeting(d) },
+    { id:"pipeline",   label:"PDD Status",      Icon:ClipboardList, count:d.total_projects,  insight:TAB_INSIGHT.pipeline(d) },
+    { id:"execution",  label:"Project Health",  Icon:Activity,      count:d.approved_count,  insight:TAB_INSIGHT.execution(d) },
+    { id:"financials", label:"Payments Status", Icon:PiggyBank,     insight:TAB_INSIGHT.financials(d) },
   ];
 
   return (
@@ -2215,7 +2231,8 @@ function StageBadge({ T, stage, size }) {
     );
   }
   return (
-    <Badge T={T} color={meta?.color || T.neutral} size="sm">
+    <Badge T={T} color={meta?.color || T.neutral} size="sm"
+      hintTitle={meta?.label} hint={STAGE_HINT[stage]}>
       {meta?.label || stage || "—"}
     </Badge>
   );
@@ -3218,7 +3235,10 @@ function ProjectsPage({ T, session, onSelectProject }) {
       }
       case "segment":   return <span style={{ color:T.muted }}>{p.sectors?.name || "—"}</span>;
       case "priority":  return p.priority
-        ? <Badge T={T} color={pClr} size="sm" dot>{PRIORITY_META[p.priority]?.label || p.priority}</Badge>
+        ? <Badge T={T} color={pClr} size="sm" dot
+            hintTitle={PRIORITY_META[p.priority]?.label} hint={PRIORITY_HINT[p.priority]}>
+            {PRIORITY_META[p.priority]?.label || p.priority}
+          </Badge>
         : <span style={{ color:T.dim }}>—</span>;
       case "strategic": return (
         <span title={p.strategic_priority || ""} style={{ color:T.muted, display:"block",
@@ -3226,7 +3246,12 @@ function ProjectsPage({ T, session, onSelectProject }) {
       );
       case "stage": {
         const st = STAGE_META[p.workflow_stage];
-        return <Badge T={T} color={st?.color || T.neutral} size="sm">{st?.label || p.workflow_stage || "—"}</Badge>;
+        return (
+          <Badge T={T} color={st?.color || T.neutral} size="sm"
+            hintTitle={st?.label} hint={STAGE_HINT[p.workflow_stage]}>
+            {st?.label || p.workflow_stage || "—"}
+          </Badge>
+        );
       }
       case "cc": return <span style={{ color:T.muted }}>{p.cost_centers?.name || "—"}</span>;
       default: return null;
@@ -3510,7 +3535,9 @@ function ProjectsPage({ T, session, onSelectProject }) {
                     onClick={() => onSelectProject && onSelectProject(p.id)}
                     onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId(null)}
                     style={{
-                      background: hovered ? T.rowHover : i % 2 === 0 ? "transparent" : T.rowAlt,
+                      background: hovered
+                        ? `linear-gradient(90deg, ${pClr}14, ${T.rowHover} 22%)`
+                        : i % 2 === 0 ? "transparent" : T.rowAlt,
                       cursor: onSelectProject ? "pointer" : "default",
                       transition:`background ${MOTION.fast}`,
                     }}>
@@ -3518,8 +3545,21 @@ function ProjectsPage({ T, session, onSelectProject }) {
                       boxShadow: hovered ? `inset 3px 0 0 ${pClr}` : "none",
                       transition:`box-shadow ${MOTION.fast}` }}>{n}</td>
                     {visible.map(c => (
-                      <td key={c.key} style={{ ...td, textAlign: c.num ? "right" : "left" }}>
+                      <td key={c.key} style={{ ...td, textAlign: c.num ? "right" : "left",
+                        position: c.key === "name" ? "relative" : undefined }}>
                         {cell(p, c.key, hovered)}
+                        {/* Open affordance appears in the name cell on hover, so
+                            the row states what clicking will do (§14). */}
+                        {c.key === "name" && hovered && onSelectProject && (
+                          <span className="pmo-rise" style={{
+                            position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
+                            display:"inline-flex", alignItems:"center", gap:3,
+                            ...TYPE.caption, fontWeight:700, color:T.blueBright,
+                            background:T.surfaceRaised, borderRadius:R.pill,
+                            padding:"2px 8px", border:`1px solid ${T.blueBright}44`,
+                            boxShadow:T.shadowSm, pointerEvents:"none",
+                          }}>Open <ChevronRight size={11} /></span>
+                        )}
                       </td>
                     ))}
                     {isPMO && (
