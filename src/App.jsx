@@ -1615,7 +1615,7 @@ function BreakdownSection({ T, session }) {
                 </div>
 
                 <div style={{ display:"flex", alignItems:"baseline", gap:10, position:"relative" }}>
-                  <div style={{ fontSize:32, fontWeight:700, color:barColor, fontFamily:TYPE.display.fontFamily, fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></div>
+                  <div style={{ fontSize:32, fontWeight:700, color:T.textOf(barColor), fontFamily:TYPE.display.fontFamily, fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></div>
                   {plannedAbs > 0 && !editing && <div style={{ fontSize:13, color:T.dim }}>/ {fmtM(plannedAbs)} planned</div>}
                 </div>
 
@@ -1623,7 +1623,7 @@ function BreakdownSection({ T, session }) {
                   <div style={{position:"relative"}}>
                     <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.dim, marginBottom:5 }}>
                       <span>{pct.toFixed(1)}% of target</span>
-                      <span style={{ color:isOver?ROSE:T.dim }}>{isOver?`+${fmtM(data.bac-plannedAbs)} over`:`${fmtM(plannedAbs-data.bac)} to go`}</span>
+                      <span style={{ color:isOver?T.textOf(ROSE):T.dim }}>{isOver?`+${fmtM(data.bac-plannedAbs)} over`:`${fmtM(plannedAbs-data.bac)} to go`}</span>
                     </div>
                     <svg width="100%" height="8" style={{display:"block"}}>
                       <defs>
