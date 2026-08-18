@@ -65,6 +65,9 @@ export const injectGlobals = () => {
     /* §18 — tab content arrives from the direction of travel. */
     @keyframes pmoPanelR  { from{opacity:0; transform:translateX(12px)} to{opacity:1; transform:none} }
     @keyframes pmoPanelL  { from{opacity:0; transform:translateX(-12px)} to{opacity:1; transform:none} }
+    /* §49 — a held camera shot rather than a static wallpaper. */
+    @keyframes pmoKenBurns{ 0%,100%{transform:scale(1.04) translate(0,0)}
+                            50%{transform:scale(1.10) translate(-1.2%,-0.8%)} }
 
     .pmo-aurora   { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
     .pmo-aurora i { position:absolute; display:block; border-radius:50%; filter:blur(60px); }
@@ -83,6 +86,7 @@ export const injectGlobals = () => {
     .pmo-grow    { animation: pmoGrow 900ms cubic-bezier(.16,1,.3,1) backwards; transform-origin:left; }
 
     /* Sections arrive as they enter the viewport rather than all at once. */
+    .pmo-kenburns { animation: pmoKenBurns 40s ease-in-out infinite; will-change:transform; }
     .pmo-page     { animation: pmoPageIn 240ms cubic-bezier(.16,1,.3,1); }
     .pmo-panel-r  { animation: pmoPanelR 260ms cubic-bezier(.16,1,.3,1); }
     .pmo-panel-l  { animation: pmoPanelL 260ms cubic-bezier(.16,1,.3,1); }
@@ -178,7 +182,7 @@ export const injectGlobals = () => {
     @media (prefers-reduced-motion: reduce) {
       .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
       .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
-      .pmo-page,.pmo-panel-r,.pmo-panel-l,
+      .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
       .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
