@@ -13,12 +13,14 @@ import * as XLSX from "xlsx";
 import {
   DK, LT, BRAND, DATA, TYPE, SP, R, MOTION, CATEGORICAL,
   STAGE_META, STAGE_ORDER, PRIORITY_META, healthOf, perfStatus,
+  KPI_INSIGHT, TAB_INSIGHT, NAV_INSIGHT, STAGE_HINT, PRIORITY_HINT,
 } from "./theme.js";
 import {
   injectGlobals, useViewport, BP, Surface, Button, IconButton, Input, Select,
   Badge, StatusDot, Progress, Skeleton, SkeletonCard, SkeletonChart, SkeletonRows,
   EmptyState, Modal, Tooltip as TooltipUI, ArchMotif as ArchMotifUI, Ambient, Tabs as TabsUI,
   Metric, CountUp, useCountUp, Stack, Inline, SectionTitle, Spinner,
+  InsightTip, WithInsight,
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -474,7 +476,7 @@ function DeadlineAlertPopups({ T, session }) {
   );
 }
 
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false }) {
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData }) {
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
   const [eSub,    setESub]    = useState("");
@@ -494,6 +496,28 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
 
   const shownVal = editing ? value : (displayVal ?? value);
   const clr = accent || BRAND.blue;
+  // Which icon micro-animation suits this metric (§6): money nudges upward,
+  // approvals tick, warnings breathe, carry-forward shifts as if layered.
+  const ICON_ANIM = {
+    su_requested:"pmo-ico-up", df_recommended:"pmo-ico-up", total_capex:"pmo-ico-up",
+    approved:"pmo-ico-tick", approved_projects:"pmo-ico-tick",
+    budgeted:"pmo-ico-tick", budgeted_projects:"pmo-ico-tick", payments_made:"pmo-ico-tick",
+    non_budgeted:"pmo-ico-pulse", non_budgeted_projects:"pmo-ico-pulse", payments_pending:"pmo-ico-pulse",
+    carry_forward:"pmo-ico-shift", total_projects:"pmo-ico-glow",
+  };
+  const iconAnim = ICON_ANIM[kpiKey] || "pmo-ico-glow";
+  // Short explanation of what this metric means, with live figures where the
+  // copy references them. Never fabricated — see KPI_INSIGHT in theme.js.
+  const KEY_ALIAS = {
+    approved_projects:"approved", budgeted_projects:"budgeted",
+    non_budgeted_projects:"non_budgeted", total_capex_portfolio:"total_capex",
+    budget_released:"released", remaining_capex:"remaining",
+  };
+  const insight = (() => {
+    const fn = KPI_INSIGHT[KEY_ALIAS[kpiKey] || kpiKey];
+    if (!fn) return null;
+    try { return fn(dashData); } catch (_) { return null; }
+  })();
   const long = String(shownVal ?? "").length;
   const valSize = long > 9 ? "metricSm" : long > 6 ? "metric" : "metricXL";
 
@@ -504,16 +528,22 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
       onClick={() => { if (!editing && onCardClick) onCardClick(); }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
     >
-      <div style={{
+      <div className={hover && !editing ? "pmo-hot" : ""} style={{
         flex:1, minWidth:0, position:"relative", overflow:"hidden",
-        background: `linear-gradient(158deg, ${T.surfaceRaised} 0%, ${T.surface} 55%, ${clr}${T.wash} 100%)`,
-        border:`1px solid ${isSelected ? clr : hover && onCardClick ? T.borderStrong : T.border}`,
+        background: hover && !editing
+          ? `linear-gradient(158deg, ${T.surfaceHi} 0%, ${T.surfaceRaised} 52%, ${clr}${T.washStrong} 100%)`
+          : `linear-gradient(158deg, ${T.surfaceRaised} 0%, ${T.surface} 55%, ${clr}${T.wash} 100%)`,
+        border:`1px solid ${isSelected ? clr : hover ? clr + "66" : T.border}`,
         borderRadius:R.lg, padding:`${SP.lg}px ${SP.lg}px ${SP.md}px`,
         cursor: onCardClick && !editing ? "pointer" : "default",
-        boxShadow: isSelected ? `0 0 0 1px ${clr}${T.ring}, ${T.shadow}`
-                 : hover && onCardClick ? T.shadowLg : T.shadow,
+        // Glow is a token, so it can't drift brighter card by card (§19).
+        boxShadow: isSelected ? T.glowRingHover(clr)
+                 : hover && !editing ? T.glowSoft(clr)
+                 : T.shadow,
         transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, background ${MOTION.base}`,
       }}>
+        {/* One slow sheen pass on hover — the "expensive" cue (§5) */}
+        <span className="pmo-sheen" />
         {/* Accent hairline across the top — the card's status colour, stated once */}
         <div style={{
           position:"absolute", top:0, left:0, right:0, height:2,
@@ -545,10 +575,12 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
                 {Icon && (
                   <div style={{
                     width:28, height:28, borderRadius:R.sm, flexShrink:0,
-                    background:`${clr}${T.badge}`, border:`1px solid ${clr}26`,
+                    background: hover ? `${clr}${T.washStrong}` : `${clr}${T.badge}`,
+                    border:`1px solid ${clr}${hover ? "4D" : "26"}`,
                     display:"flex", alignItems:"center", justifyContent:"center",
+                    transition:`background ${MOTION.base}, border-color ${MOTION.base}`,
                   }}>
-                    <Icon size={14} color={clr} strokeWidth={2} />
+                    <Icon className={iconAnim} size={14} color={clr} strokeWidth={2} />
                   </div>
                 )}
                 <div style={{ ...TYPE.label, color:T.muted, minWidth:0, lineHeight:1.3,
@@ -570,7 +602,28 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
               overflow:"hidden", textOverflow:"ellipsis" }}>{shownVal}</div>
 
             {sub && (
-              <div style={{ ...TYPE.caption, color:T.muted, marginTop:6, lineHeight:1.4 }}>{sub}</div>
+              <div style={{ ...TYPE.caption, color: hover ? T.textSoft : T.muted,
+                marginTop:6, lineHeight:1.4, transition:`color ${MOTION.base}` }}>{sub}</div>
+            )}
+
+            {/* Contextual insight (§2–§4). Lives inside the card rather than
+                floating over it, and the card reserves no space for it — it
+                expands on hover, which is what makes the card feel like it is
+                telling you something rather than hiding a tooltip. */}
+            {insight && (
+              <div style={{
+                maxHeight: hover ? 46 : 0, opacity: hover ? 1 : 0,
+                overflow:"hidden",
+                transition:`max-height ${MOTION.slow}, opacity ${MOTION.base}, margin-top ${MOTION.base}`,
+                marginTop: hover ? 9 : 0,
+              }}>
+                <div style={{ display:"flex", gap:7, alignItems:"flex-start",
+                  paddingTop:8, borderTop:`1px solid ${clr}2E` }}>
+                  <span style={{ width:2, alignSelf:"stretch", background:clr,
+                    borderRadius:2, opacity:.7, flexShrink:0 }} />
+                  <span style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.45 }}>{insight}</span>
+                </div>
+              </div>
             )}
 
             {onCardClick && (
@@ -2030,23 +2083,23 @@ function CommandCenter({ T, session, onSelectProject }) {
       )}
       {activeTab === "budgeting" && (
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
-          <EditableKCard Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
-          <EditableKCard Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
-          <EditableKCard Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
-          <EditableKCard Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
-          <EditableKCard Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
-          <EditableKCard Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
-          <EditableKCard Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} onCardClick={() => toggleCard("total_projects")} isSelected={activeCard==="total_projects"} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
+          <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
+          <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard dashData={d} Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard dashData={d} Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard dashData={d} Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
+          <EditableKCard dashData={d} Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} onCardClick={() => toggleCard("total_projects")} isSelected={activeCard==="total_projects"} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
       )}
       {activeTab === "pipeline" && (
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
-          <EditableKCard Icon={FileText} index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
-          <EditableKCard Icon={ClipboardList} index={1} T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
-          <EditableKCard Icon={Landmark} index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
-          <EditableKCard Icon={Shield} index={3} T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
-          <EditableKCard Icon={Users} index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Management Team")} />
-          <EditableKCard Icon={CheckCircle} index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved"       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
+          <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
+          <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
+          <EditableKCard dashData={d} Icon={Landmark} index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
+          <EditableKCard dashData={d} Icon={Shield} index={3} T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
+          <EditableKCard dashData={d} Icon={Users} index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Management Team")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved"       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
         </div>
       )}
       {activeTab === "pipeline" && (
@@ -2057,12 +2110,12 @@ function CommandCenter({ T, session, onSelectProject }) {
       )}
       {activeTab === "execution" && (
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
-          <EditableKCard Icon={Activity} index={0} T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
-          <EditableKCard Icon={CheckCircle} index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
-          <EditableKCard Icon={Clock} index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
-          <EditableKCard Icon={AlertTriangle} index={3} T={T} label="Over Budget"             canEdit={canEdit} kpiKey="over_budget"     accent={bad}    onSave={saveKPI} onCardClick={() => toggleCard("over_budget")}     isSelected={activeCard==="over_budget"}     {...kv("over_budget",     d.over_budget_count,    "CPI < 0.95")} />
-          <EditableKCard Icon={RefreshCw} index={4} T={T} label="Change in Scope"         canEdit={canEdit} kpiKey="scope_change"    accent={VIOLET} onSave={saveKPI} onCardClick={() => toggleCard("scope_change")}    isSelected={activeCard==="scope_change"}    {...kv("scope_change",    d.scope_change_count||0,"Scope revised projects")} />
-          <EditableKCard Icon={PauseCircle} index={5} T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
+          <EditableKCard dashData={d} Icon={Activity} index={0} T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
+          <EditableKCard dashData={d} Icon={Clock} index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
+          <EditableKCard dashData={d} Icon={AlertTriangle} index={3} T={T} label="Over Budget"             canEdit={canEdit} kpiKey="over_budget"     accent={bad}    onSave={saveKPI} onCardClick={() => toggleCard("over_budget")}     isSelected={activeCard==="over_budget"}     {...kv("over_budget",     d.over_budget_count,    "CPI < 0.95")} />
+          <EditableKCard dashData={d} Icon={RefreshCw} index={4} T={T} label="Change in Scope"         canEdit={canEdit} kpiKey="scope_change"    accent={VIOLET} onSave={saveKPI} onCardClick={() => toggleCard("scope_change")}    isSelected={activeCard==="scope_change"}    {...kv("scope_change",    d.scope_change_count||0,"Scope revised projects")} />
+          <EditableKCard dashData={d} Icon={PauseCircle} index={5} T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
         </div>
       )}
       {activeTab === "execution" && (() => {
@@ -2097,11 +2150,11 @@ function CommandCenter({ T, session, onSelectProject }) {
       })()}
       {activeTab === "financials" && (
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
-          <EditableKCard Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
-          <EditableKCard Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
-          <EditableKCard Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
-          <EditableKCard Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
-          <EditableKCard Icon={Clock} index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
+          <EditableKCard dashData={d} Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
+          <EditableKCard dashData={d} Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
+          <EditableKCard dashData={d} Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
+          <EditableKCard dashData={d} Icon={Clock} index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
         </div>
       )}
       {activeTab === "financials" && (
