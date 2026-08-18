@@ -14,6 +14,7 @@ import {
   DK, LT, BRAND, DATA, TYPE, SP, R, MOTION, CATEGORICAL,
   STAGE_META, STAGE_ORDER, PRIORITY_META, healthOf, perfStatus,
   KPI_INSIGHT, KPI_INSIGHT_PLAIN, TAB_INSIGHT, NAV_INSIGHT, STAGE_HINT, PRIORITY_HINT,
+  rampColor, RANK_RAMP, ALERT_RAMP,
 } from "./theme.js";
 import {
   injectGlobals, useViewport, BP, Surface, Button, IconButton, Input, Select,
@@ -924,7 +925,7 @@ function StrategicPriorityStackedBar({ T, byStrat, height = 340 }) {
   );
 }
 
-function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320, onSelectProject }) {
+function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320, onSelectProject, ramp }) {
   // Was a chart.js horizontal bar: every bar the same flat gold, project names
   // clipped to 40 characters, and the figure only visible on hover. Rebuilt on
   // the same ranked treatment as the rest of the Overview tab, so a reader can
@@ -936,21 +937,24 @@ function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320, on
       .sort((a, b) => (b[field] || 0) - (a[field] || 0))
       .slice(0, 10);
     const peak = top.length ? (top[0][field] || 0) : 0;
+    // `ramp` lets the caller pick the family: the neutral blue-to-teal ramp for
+    // ranked value, the amber-to-coral ramp where the list means "pending".
+    const stops = ramp || RANK_RAMP;
     return top.map((r, i) => ({
       key: r.id || r.code || `${i}`,
       // Full name — a ranked row gives the label the whole width, which is why
       // truncating to 40 characters is no longer necessary.
       label: r.name,
       value: r[field] || 0,
-      // Rank shading rather than one flat colour: the eye gets an ordering cue
-      // from tone as well as from length.
-      color: color,
-      opacityStep: peak > 0 ? (r[field] || 0) / peak : 1,
+      // Hue carries rank alongside length. Ten bars in one colour left rows
+      // 8-10 (17.5M / 16.5M / 15.1M) nearly indistinguishable, and ten gold
+      // bars made gold the theme rather than an accent.
+      color: rampColor(i, top.length, stops),
       meta: [r.code && r.code !== "-" ? r.code : null, STAGE_META[r.workflow_stage]?.label]
         .filter(Boolean).join(" · "),
       _id: r.id,
     }));
-  }, [rows, field, color]);
+  }, [rows, field, ramp]);
 
   if (items.length === 0) return (
     <EmptyState T={T} icon={BarChart3} compact tone={T.info}
@@ -2271,7 +2275,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
       {activeTab === "financials" && (
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · Payments Pending</div>
-          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} onSelectProject={onSelectProject} /></ChartErrorBoundary>
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" valueFmt={fmtM} ramp={ALERT_RAMP} onSelectProject={onSelectProject} /></ChartErrorBoundary>
         </div>
       )}
 
@@ -2297,7 +2301,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
       {activeTab === "budgeting" && (
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · DF Recommended Budget</div>
-          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} onSelectProject={onSelectProject} /></ChartErrorBoundary>
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" valueFmt={fmtM} onSelectProject={onSelectProject} /></ChartErrorBoundary>
         </div>
       )}
 
