@@ -274,7 +274,7 @@ const LIGHT = {
   heroFg:      "#0C1E33",
   heroFgSoft:  "#4A6076",
   heroFgMuted: "#5B6E83",
-  heroFgDim:   "#8095AB",
+  heroFgDim:   "#6E8299",
   heroDivider: "#DCE7F4",
   heroAccent:  "#96681A",
   heroMotifA:  "rgba(18,60,92,0.05)",
