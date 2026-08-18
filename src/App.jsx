@@ -2149,13 +2149,13 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
             title={label} line={IDX_INSIGHT[label]}
             stat={value == null ? "No project reports both a baseline and actuals yet" : `${status.label} · threshold 0.95`}>
           <div style={{ position:"relative", minWidth:96, cursor:"help" }}>
-            <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:6 }}>{label}</div>
+            <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:6 }}>{label}</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
-              <span style={{ ...TYPE.metricXL, color: value == null ? "rgba(255,255,255,0.35)" : "#fff" }}>
+              <span style={{ ...TYPE.metricXL, color: value == null ? T.heroFgDim : T.heroFg }}>
                 {value == null ? "—" : <AnimatedNumber value={fmtR(value)} />}
               </span>
               {value != null && (
-                <span style={{ ...TYPE.caption, fontWeight:700, color:status.color }}>{status.label}</span>
+                <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(status.color) }}>{status.label}</span>
               )}
             </div>
             <div style={{ ...TYPE.caption, color:T.heroFgMuted, marginTop:3 }}>{hint}</div>
@@ -5029,7 +5029,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
               <Button T={T} variant={commentCount > 0 ? "accent" : "ghost"}
                 tone={commentCount > 0 ? T.warning : undefined}
                 icon={MessageSquare} onClick={() => onGoToDiscussion(projectId)}
-                style={commentCount > 0 ? undefined : { color:"rgba(255,255,255,0.75)", borderColor:"rgba(255,255,255,0.2)" }}>
+                style={commentCount > 0 ? undefined : { color:T.heroFgSoft, borderColor:T.heroDivider }}>
                 {commentCount > 0 ? `Discussion (${commentCount})` : "Start discussion"}
               </Button>
             )}
