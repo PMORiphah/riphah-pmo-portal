@@ -239,6 +239,7 @@ export function Sparkline({ T, data, color, height = 30 }) {
 // ─── GROUPED / CATEGORICAL BAR ───────────────────────────────────────────────
 export function CategoryBars({ T, data, height = 300, fmt, color, horizontal, onPick }) {
   const c = color || T.info;
+  const [hoverIdx, setHoverIdx] = useState(null);
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} layout={horizontal ? "vertical" : "horizontal"}
