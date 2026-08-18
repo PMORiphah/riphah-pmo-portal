@@ -540,7 +540,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   return (
     <div
       className={onCardClick && !editing ? "pmo-in pmo-lift" : "pmo-in"}
-      style={{ animationDelay:(index*55)+"ms", flex: featured ? 1.22 : 1, minWidth:0,
+      style={{ animationDelay:(160 + index*55)+"ms", flex: featured ? 1.22 : 1, minWidth:0,
         display:"flex", position:"relative" }}
       onClick={() => { if (!editing && onCardClick) onCardClick(); }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
@@ -2025,6 +2025,7 @@ function CommandCenter({ T, session, onSelectProject }) {
 
         return (
           <div className="pmo-in" style={{
+            animationDelay:"0ms",
             background:T.hero, borderRadius:R.xl,
             // The dashboard body is a column flex with overflow:auto — without
             // flexShrink:0 the browser crushes this block instead of scrolling.
@@ -2082,7 +2083,9 @@ function CommandCenter({ T, session, onSelectProject }) {
       })()}
 
       {/* ── TAB BAR ── */}
-      <div style={{ flexShrink:0 }}>
+      {/* Entrance order (§21): header → tabs → KPI strip → chart, each offset
+          by ~60ms. Total under 900ms, so nobody waits on the animation. */}
+      <div className="pmo-in" style={{ flexShrink:0, animationDelay:"90ms" }}>
         <TabsUI T={T} tabs={TABS} active={activeTab} onChange={switchTab} isMobile={vp.isCompact} />
       </div>
 
@@ -3551,6 +3554,12 @@ function ProjectsPage({ T, session, onSelectProject }) {
                         {/* Open affordance appears in the name cell on hover, so
                             the row states what clicking will do (§14). */}
                         {c.key === "name" && hovered && onSelectProject && (
+                          <>
+                          <span aria-hidden="true" style={{
+                            position:"absolute", right:0, top:0, bottom:0, width:96,
+                            background:`linear-gradient(90deg, transparent, ${T.surface} 55%)`,
+                            pointerEvents:"none",
+                          }} />
                           <span className="pmo-rise" style={{
                             position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
                             display:"inline-flex", alignItems:"center", gap:3,
@@ -3559,6 +3568,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                             padding:"2px 8px", border:`1px solid ${T.blueBright}44`,
                             boxShadow:T.shadowSm, pointerEvents:"none",
                           }}>Open <ChevronRight size={11} /></span>
+                          </>
                         )}
                       </td>
                     ))}
