@@ -899,3 +899,65 @@ export function Section({ T, tone, children, style, pad = SP.lg, glow = true, cl
     </div>
   );
 }
+
+
+// ─── SHARED PAGE + TABLE TREATMENT ───────────────────────────────────────────
+// Ten pages had drifted into ten different treatments: four carried the ambient
+// background and six didn't; five tables each defined their own header and row
+// styling; cards were a mix of <Surface> and hand-written divs. These helpers
+// are the single definition, applied everywhere, so a page can't look like a
+// different product just because it was written on a different day.
+
+/** Scroll container for any full page. Carries the ambient wash and the
+ *  standard gutters, so every page sits on the same ground. */
+export const pageBody = (T, { pad = true, compact = false } = {}) => ({
+  flex: 1,
+  minHeight: 0,
+  overflow: "auto",
+  background: T.page,
+  backgroundImage: T.ambient,
+  backgroundAttachment: "local",
+  padding: pad ? (compact ? `${SP.lg}px ${SP.lg}px ${SP.xxl}px` : `${SP.xl}px ${SP.xxl}px ${SP.xxl}px`) : 0,
+});
+
+/** A toolbar / filter strip pinned above page content. */
+export const pageBar = (T, { compact = false } = {}) => ({
+  display: "flex", alignItems: "center", gap: SP.sm, flexWrap: "wrap",
+  padding: `${SP.sm}px ${compact ? SP.lg : SP.xl}px`,
+  background: T.surface,
+  borderBottom: `1px solid ${T.border}`,
+  flexShrink: 0,
+});
+
+/** The card chrome, for places where a plain object is easier to drop in than
+ *  swapping the element for <Surface>. Identical output either way. */
+export const cardStyle = (T, { raised = false, pad = SP.lg, radius = R.lg } = {}) => ({
+  background: raised ? T.surfaceRaised : T.surface,
+  border: `1px solid ${T.border}`,
+  borderRadius: radius,
+  padding: pad,
+  boxShadow: T.shadow,
+});
+
+/** One table treatment: sticky header band, uppercase labels, hairline rows,
+ *  zebra striping and ellipsis. Every table in the product reads from this. */
+export const tableStyles = (T) => ({
+  table: { width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"fixed" },
+  th: {
+    ...TYPE.label, color:T.muted, textAlign:"left",
+    padding:"10px 12px 8px", whiteSpace:"nowrap",
+    background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
+    position:"sticky", top:0, zIndex:2,
+  },
+  td: {
+    ...TYPE.bodySm, color:T.text, padding:"10px 12px",
+    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle",
+    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+  },
+  row: (i, hovered, accent) => ({
+    background: hovered
+      ? (accent ? `linear-gradient(90deg, ${accent}14, ${T.rowHover} 22%)` : T.rowHover)
+      : i % 2 === 0 ? "transparent" : T.rowAlt,
+    transition:`background ${MOTION.fast}`,
+  }),
+});
