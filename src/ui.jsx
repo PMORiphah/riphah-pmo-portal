@@ -551,7 +551,11 @@ export function Select({ T, value, onChange, children, size = "md", full, active
       if (!n) return;
       if (Array.isArray(n)) return walk(n);
       if (n.type === "option") {
-        items.push({ value: n.props.value ?? "", label: String(n.props.children ?? ""),
+        const kids = n.props.children;
+        const label = Array.isArray(kids)
+          ? kids.filter(k => k != null && typeof k !== "boolean").join("")
+          : String(kids ?? "");
+        items.push({ value: n.props.value ?? "", label,
                      disabled: !!n.props.disabled });
       } else if (n.props?.children) walk(n.props.children);
     });
