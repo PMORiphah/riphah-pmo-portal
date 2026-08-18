@@ -1588,11 +1588,11 @@ function BreakdownSection({ T, session }) {
           <div style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2 }}>Portfolio Breakdown · Planned vs Actual</div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <select value={fy} onChange={e=>setFy(e.target.value)} className="pmo-select pmo-focusable"
+          <Select T={T} value={fy} onChange={e=>setFy(e.target.value)} className="pmo-select pmo-focusable"
             style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}>
             <option value="__all__">All Fiscal Years</option>
             {allFYs.map(f=><option key={f} value={f}>{f}</option>)}
-          </select>
+          </Select>
           {isPMO && !editing && (
             <Button T={T} variant="ghost" size="sm" icon={Edit2} onClick={startEdit}>Set Targets</Button>
           )}
@@ -2566,20 +2566,20 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
 
         <Sec T={T} title="Classification"/>
         <Row>
-          <Col><label style={lbl}>Segment</label><select value={form.sector_id} onChange={e=>set("sector_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.sectors.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Col>
-          <Col><label style={lbl}>Region</label><select value={form.region_id} onChange={e=>set("region_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.regions.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></Col>
-          <Col><label style={lbl}>Organization</label><select value={form.segment_id} onChange={e=>set("segment_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.segments.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Col>
+          <Col><label style={lbl}>Segment</label><Select T={T} value={form.sector_id} onChange={e=>set("sector_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.sectors.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</Select></Col>
+          <Col><label style={lbl}>Region</label><Select T={T} value={form.region_id} onChange={e=>set("region_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.regions.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</Select></Col>
+          <Col><label style={lbl}>Organization</label><Select T={T} value={form.segment_id} onChange={e=>set("segment_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.segments.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</Select></Col>
         </Row>
         <Row mb={0}>
-          <Col flex={2}><label style={lbl}>Cost Centre</label><select value={form.cost_center_id} onChange={e=>set("cost_center_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.cost_centers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Col>
-          <Col flex={2}><label style={lbl}>Campus / Site</label><select value={form.campus_id} onChange={e=>set("campus_id",e.target.value)} style={sel}><option value="">— None —</option>{(lookups.campuses||[]).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Col>
+          <Col flex={2}><label style={lbl}>Cost Centre</label><Select T={T} value={form.cost_center_id} onChange={e=>set("cost_center_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.cost_centers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Select></Col>
+          <Col flex={2}><label style={lbl}>Campus / Site</label><Select T={T} value={form.campus_id} onChange={e=>set("campus_id",e.target.value)} style={sel}><option value="">— None —</option>{(lookups.campuses||[]).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Select></Col>
           <Col><label style={lbl}>Project Type</label><input value={form.project_type} onChange={e=>set("project_type",e.target.value)} placeholder="e.g. Construction" style={inp}/></Col>
-          <Col><label style={lbl}>Priority</label><select value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="">— None —</option><option value="top_priority">1st Priority</option><option value="second_priority">2nd Priority</option><option value="third_priority">3rd Priority</option><option value="carry_forward">Carry Forward</option></select></Col>
+          <Col><label style={lbl}>Priority</label><Select T={T} value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="">— None —</option><option value="top_priority">1st Priority</option><option value="second_priority">2nd Priority</option><option value="third_priority">3rd Priority</option><option value="carry_forward">Carry Forward</option></Select></Col>
         </Row>
 
         <Sec T={T} title="Workflow"/>
         <Row mb={0}>
-          <Col flex={2}><label style={lbl}>Stage</label><select value={form.workflow_stage} onChange={e=>set("workflow_stage",e.target.value)} style={sel}><option value="pdd_not_submitted">PDD Not Submitted</option><option value="identified">PDD Submitted</option><option value="df_review">DF Review</option><option value="ed_review">ED Review</option><option value="mt_review">MT Review</option><option value="approved">Approved</option><option value="closed">Closed</option></select></Col>
+          <Col flex={2}><label style={lbl}>Stage</label><Select T={T} value={form.workflow_stage} onChange={e=>set("workflow_stage",e.target.value)} style={sel}><option value="pdd_not_submitted">PDD Not Submitted</option><option value="identified">PDD Submitted</option><option value="df_review">DF Review</option><option value="ed_review">ED Review</option><option value="mt_review">MT Review</option><option value="approved">Approved</option><option value="closed">Closed</option></Select></Col>
           <Col>
             <label style={{...lbl,marginBottom:10}}>Flags</label>
             <div style={{display:"flex",flexDirection:"column",gap:7}}>
@@ -2617,8 +2617,8 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         </Row>
         <Row mb={0}>
           <Col><label style={lbl}>% Complete</label><input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>set("pct_complete",e.target.value)} style={inp}/></Col>
-          <Col><label style={lbl}>Schedule Status</label><select value={form.manual_schedule_flag} onChange={e=>set("manual_schedule_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="on_time">On Time</option><option value="delayed">Delayed</option></select></Col>
-          <Col><label style={lbl}>Budget Status</label><select value={form.manual_budget_flag} onChange={e=>set("manual_budget_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="within">Within Budget</option><option value="over">Over Budget</option></select></Col>
+          <Col><label style={lbl}>Schedule Status</label><Select T={T} value={form.manual_schedule_flag} onChange={e=>set("manual_schedule_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="on_time">On Time</option><option value="delayed">Delayed</option></Select></Col>
+          <Col><label style={lbl}>Budget Status</label><Select T={T} value={form.manual_budget_flag} onChange={e=>set("manual_budget_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="within">Within Budget</option><option value="over">Over Budget</option></Select></Col>
         </Row>
 
         <Sec T={T} title="Additional"/>
@@ -4325,10 +4325,10 @@ function SettingsPage({ T, session }) {
               </Field>
             </div>
             <Field label="Portfolio Health Override" hint="Force a specific status, or leave on Auto to let CPI & SPI determine it.">
-              <select className="pmo-select pmo-focusable" value={cfg.health_override ?? ""} onChange={e=>set("health_override", e.target.value)}
+              <Select T={T} value={cfg.health_override ?? ""} onChange={e=>set("health_override", e.target.value)}
                 style={{ ...inp, cursor:"pointer" }}>
                 {HEALTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </Select>
             </Field>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
               <Field label="Dashboard Title">
@@ -5307,12 +5307,12 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           {session?.role==="pmo" && assigningPM && (
             <div style={{marginTop:10, padding:14, background:T.card2, borderRadius:R.md, border:"1px solid "+T.border}}>
               <label style={{fontSize:11, color:T.muted, fontWeight:700, letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:7}}>Select Project Manager</label>
-              <select value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:R.sm, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", marginBottom:10, boxSizing:"border-box"}}>
+              <Select T={T} value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:R.sm, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", marginBottom:10, boxSizing:"border-box"}}>
                 <option value="">— Select PM —</option>
                 {allPMs.map(p=>(
                   <option key={p.id} value={p.id}>{p.full_name||p.username} (@{p.username})</option>
                 ))}
-              </select>
+              </Select>
               <div style={{display:"flex", gap:8}}>
                 <button className="pmo-focusable pmo-btn" onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   {savingPM?"Saving…":"Assign"}
@@ -5360,10 +5360,10 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
         </div>
         <div style={{ marginBottom:20 }}>
           <label style={lbl}>Role *</label>
-          <select value={form.role} onChange={e => onChange("role", e.target.value)} style={{ ...inp, cursor:"pointer" }}>
+          <Select T={T} value={form.role} onChange={e => onChange("role", e.target.value)} style={{ ...inp, cursor:"pointer" }}>
             <option value="project_manager">Project Manager — can view assigned projects and post comments</option>
             <option value="guest">Guest — read-only view of the full portfolio</option>
-          </select>
+          </Select>
         </div>
         {status && (
           <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", alignItems:"flex-start", gap:8, background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, color:status.ok?"#2DD4BF":ROSE }}>
@@ -5925,13 +5925,13 @@ function ActivityLogPage({ T, session }) {
       {/* ── Filter bar ── */}
       <div style={pageBar(T)}>
 
-        <select value={actionFilter} onChange={e=>setActionFilter(e.target.value)} style={sel}>
+        <Select T={T} value={actionFilter} onChange={e=>setActionFilter(e.target.value)} style={sel}>
           {ACTION_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </Select>
 
-        <select value={entityFilter} onChange={e=>setEntityFilter(e.target.value)} style={sel}>
+        <Select T={T} value={entityFilter} onChange={e=>setEntityFilter(e.target.value)} style={sel}>
           {ENTITY_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </Select>
 
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
           <span style={{ fontSize:11, color:T.muted }}>From</span>
