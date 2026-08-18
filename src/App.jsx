@@ -2264,17 +2264,27 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
               return (
                 <div style={{ flex:"1 1 300px", minWidth:220, position:"relative", padding:`0 ${SP.lg}px` }}>
                   <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:9 }}>Approval flow</div>
-                  <div style={{ display:"flex", gap:3, alignItems:"flex-end", height:38 }}>
+                  <div style={{ display:"flex", gap:4, alignItems:"flex-end", height:42 }}>
                     {flow.map((f, i) => {
-                      const h = Math.max(6, (f.n / tot) * 100);
+                      // Square-root scaling with a floor. Linear height made
+                      // 101 fill the strip and rendered 1 and 3 as invisible
+                      // slivers — the same failure the old pipeline chart had.
+                      // Sqrt keeps the dominant stage obviously dominant while
+                      // leaving the small ones readable.
+                      const h = f.n > 0
+                        ? Math.max(18, Math.sqrt(f.n / tot) * 100)
+                        : 7;
                       return (
                         <div key={f.key} title={`${STAGE_META[f.key].label} — ${f.n}`}
                           style={{ flex:1, display:"flex", flexDirection:"column",
                             alignItems:"center", gap:4, minWidth:0 }}>
                           <div className="pmo-grow" style={{
                             width:"100%", height:`${h}%`, borderRadius:3,
-                            background:`linear-gradient(180deg, ${f.color}, ${f.color}88)`,
-                            boxShadow:`0 0 10px -3px ${f.color}`,
+                            background: f.n > 0
+                              ? `linear-gradient(180deg, ${f.color}, ${f.color}77)`
+                              : T.heroDivider,
+                            boxShadow: f.n > 0 ? `0 0 12px -3px ${f.color}` : "none",
+                            opacity: f.n > 0 ? 1 : 0.5,
                             animationDelay:`${420 + i * 90}ms`,
                           }} />
                         </div>
