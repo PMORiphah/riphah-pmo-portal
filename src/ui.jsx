@@ -942,7 +942,14 @@ export const cardStyle = (T, { raised = false, pad = SP.lg, radius = R.lg } = {}
 /** One table treatment: sticky header band, uppercase labels, hairline rows,
  *  zebra striping and ellipsis. Every table in the product reads from this. */
 export const tableStyles = (T) => ({
-  table: { width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"fixed" },
+  // Default is auto layout: it sizes columns to their content, which is right
+  // for tables that don't declare column widths. `tableFixed` is for tables
+  // that DO (Projects, Campus) — there, fixed layout is what guarantees the
+  // last column can't be pushed off-screen. Using fixed without widths gives
+  // every column an equal share, which crushes a project-name column to a
+  // fourteenth of the table.
+  table: { width:"100%", borderCollapse:"separate", borderSpacing:0 },
+  tableFixed: { width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"fixed" },
   th: {
     ...TYPE.label, color:T.muted, textAlign:"left",
     padding:"10px 12px 8px", whiteSpace:"nowrap",
@@ -953,6 +960,7 @@ export const tableStyles = (T) => ({
     ...TYPE.bodySm, color:T.text, padding:"10px 12px",
     borderBottom:`1px solid ${T.border}`, verticalAlign:"middle",
     whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+    maxWidth:280,
   },
   row: (i, hovered, accent) => ({
     background: hovered
