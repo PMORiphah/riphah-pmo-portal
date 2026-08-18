@@ -524,12 +524,16 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   return (
     <div
       className={onCardClick && !editing ? "pmo-in pmo-lift" : "pmo-in"}
-      style={{ animationDelay:(index*50)+"ms", flex: featured ? 1.22 : 1, minWidth:0, display:"flex" }}
+      style={{ animationDelay:(index*55)+"ms", flex: featured ? 1.22 : 1, minWidth:0,
+        display:"flex", position:"relative" }}
       onClick={() => { if (!editing && onCardClick) onCardClick(); }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
     >
       <div className={hover && !editing ? "pmo-hot" : ""} style={{
-        flex:1, minWidth:0, position:"relative", overflow:"hidden",
+        flex:1, minWidth:0, position:"relative",
+        // The sheen needs clipping; the insight tip must escape it. Clip the
+        // sheen at its own layer instead of the card.
+        overflow:"visible",
         background: hover && !editing
           ? `linear-gradient(158deg, ${T.surfaceHi} 0%, ${T.surfaceRaised} 52%, ${clr}${T.washStrong} 100%)`
           : `linear-gradient(158deg, ${T.surfaceRaised} 0%, ${T.surface} 55%, ${clr}${T.wash} 100%)`,
@@ -544,6 +548,15 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
       }}>
         {/* One slow sheen pass on hover — the "expensive" cue (§5) */}
         <span className="pmo-sheen" />
+
+        {/* Contextual insight (§2–§4). Floating rather than in-card: expanding
+            the card in place clipped longer copy and made the hovered card
+            taller than its neighbours, which reads as a glitch rather than a
+            flourish. */}
+        {insight && !editing && (
+          <InsightTip T={T} show={hover} tone={clr} side="bottom" align="left"
+            width={252} title={label} line={insight} />
+        )}
         {/* Accent hairline across the top — the card's status colour, stated once */}
         <div style={{
           position:"absolute", top:0, left:0, right:0, height:2,
@@ -606,25 +619,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
                 marginTop:6, lineHeight:1.4, transition:`color ${MOTION.base}` }}>{sub}</div>
             )}
 
-            {/* Contextual insight (§2–§4). Lives inside the card rather than
-                floating over it, and the card reserves no space for it — it
-                expands on hover, which is what makes the card feel like it is
-                telling you something rather than hiding a tooltip. */}
-            {insight && (
-              <div style={{
-                maxHeight: hover ? 46 : 0, opacity: hover ? 1 : 0,
-                overflow:"hidden",
-                transition:`max-height ${MOTION.slow}, opacity ${MOTION.base}, margin-top ${MOTION.base}`,
-                marginTop: hover ? 9 : 0,
-              }}>
-                <div style={{ display:"flex", gap:7, alignItems:"flex-start",
-                  paddingTop:8, borderTop:`1px solid ${clr}2E` }}>
-                  <span style={{ width:2, alignSelf:"stretch", background:clr,
-                    borderRadius:2, opacity:.7, flexShrink:0 }} />
-                  <span style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.45 }}>{insight}</span>
-                </div>
-              </div>
-            )}
+
 
             {onCardClick && (
               <div style={{
