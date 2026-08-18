@@ -113,12 +113,18 @@ export const MOTION = {
 const DARK = {
   mode:"dark",
 
-  // Layered environment
-  page:          "#070E1B",
-  pageAlt:       "#050A14",
-  surface:       "#0E1A2E",
-  surfaceRaised: "#132339",
-  surfaceHi:     "#1A2C46",
+  // ── Six-level depth (§04) ────────────────────────────────────────────
+  // L0 atmosphere · L1 application · L2 cards · L3 elevated/interactive
+  // L4 floating insight · L5 dialogs and overlays.
+  // Depth is carried by surface contrast and hairlines rather than heavy
+  // shadow, so the stack stays legible without anything looking pasted on.
+  page:          "#070E1B",   // L1 application surface
+  pageAlt:       "#050A14",   // L0 atmosphere
+  surface:       "#0E1A2E",   // L2 cards
+  surfaceRaised: "#132339",   // L3 elevated / interactive
+  surfaceHi:     "#1A2C46",   // L3 hover peak
+  surfaceFloat:  "rgba(23,40,66,0.92)",  // L4 floating insight
+  surfaceOver:   "rgba(20,36,60,0.97)",  // L5 dialogs, palette
   sidebar:       "linear-gradient(180deg, #14395C 0%, #0D2440 52%, #081A2E 100%)",
   sidebarFg:     "rgba(255,255,255,0.66)",
   sidebarFgSoft: "rgba(255,255,255,0.5)",
@@ -169,6 +175,11 @@ const DARK = {
   textOf: (c) => c,
   goldText: BRAND.gold,
 
+  // §51 — the radial light that follows the pointer inside major surfaces.
+  // Low enough to read as light reacting to the user rather than a torch.
+  cursorLight: "rgba(120,175,240,0.10)",
+  cursorLightHero: "rgba(140,190,255,0.13)",
+
   // Restrained glow (§19). Diffuse, low-opacity, never neon.
   glowSoft: (c) => `0 0 0 1px ${c}33, 0 6px 22px -6px ${c}4D`,
   glowRingHover: (c) => `0 0 0 1px ${c}4D, 0 10px 30px -8px ${c}59, 0 2px 8px rgba(0,0,0,0.4)`,
@@ -210,11 +221,16 @@ const LIGHT_TEXT_MAP = {
 const LIGHT = {
   mode:"light",
 
-  page:          "#F4F7FB",
-  pageAlt:       "#EDF2F8",
-  surface:       "#FFFFFF",
-  surfaceRaised: "#FFFFFF",
-  surfaceHi:     "#FFFFFF",
+  // Six-level depth (§04). Light mode expresses the same stack through
+  // shadow and hairline weight rather than brightness, since every surface
+  // above L1 is already white.
+  page:          "#F4F7FB",   // L1
+  pageAlt:       "#EDF2F8",   // L0
+  surface:       "#FFFFFF",   // L2
+  surfaceRaised: "#FFFFFF",   // L3
+  surfaceHi:     "#FFFFFF",   // L3 hover peak
+  surfaceFloat:  "rgba(255,255,255,0.96)",  // L4
+  surfaceOver:   "rgba(255,255,255,0.985)", // L5
   // Light mode gets a genuinely light sidebar — a navy rail beside cool-white
   // content reads as an un-themed leftover rather than a decision (§33).
   sidebar:       "linear-gradient(180deg, #FFFFFF 0%, #F7FAFD 100%)",
@@ -257,6 +273,9 @@ const LIGHT = {
   badge:         "1F",
   ring:          "4D",
   glow:          "38",
+
+  cursorLight: "rgba(44,123,196,0.075)",
+  cursorLightHero: "rgba(44,123,196,0.10)",
 
   glowSoft: (c) => `0 0 0 1px ${c}2E, 0 6px 20px -8px ${c}40`,
   glowRingHover: (c) => `0 0 0 1px ${c}3D, 0 12px 28px -10px ${c}47, 0 2px 8px rgba(16,42,71,0.10)`,
@@ -516,3 +535,24 @@ export const rampColor = (i, n, stops = RANK_RAMP) => {
 // Amber ramp for anything flagged as pending or at risk, so those lists stay
 // legible as "needs attention" rather than borrowing the neutral blue ramp.
 export const ALERT_RAMP = ["#B8842E", "#E0A94A", "#E8A63C", "#E2725B", "#F0637D"];
+
+
+// ─── AMBIENT FIELD (§08, §74) ────────────────────────────────────────────────
+// The atmosphere progresses through a hue sequence rather than sitting on one
+// colour: blue into teal into violet in dark, blue into cyan into warm gold in
+// light. Each field drifts on its own slow cycle, so the tint over any given
+// part of the screen changes gradually without the page ever looking animated.
+export const AURORA = {
+  dark: [
+    { c:"rgba(44,123,196,0.44)",  w:"62vw", h:"62vw", top:"-22%", left:"-12%" },
+    { c:"rgba(34,196,168,0.28)",  w:"50vw", h:"50vw", top:"38%",  left:"58%" },
+    { c:"rgba(139,127,217,0.26)", w:"44vw", h:"44vw", top:"72%",  left:"6%" },
+    { c:"rgba(224,169,74,0.10)",  w:"34vw", h:"34vw", top:"12%",  left:"74%" },
+  ],
+  light: [
+    { c:"rgba(44,123,196,0.26)",  w:"62vw", h:"62vw", top:"-24%", left:"-14%" },
+    { c:"rgba(43,212,212,0.17)",  w:"50vw", h:"50vw", top:"36%",  left:"60%" },
+    { c:"rgba(224,169,74,0.15)",  w:"42vw", h:"42vw", top:"74%",  left:"8%" },
+    { c:"rgba(44,123,196,0.10)",  w:"32vw", h:"32vw", top:"10%",  left:"76%" },
+  ],
+};
