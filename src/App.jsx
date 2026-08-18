@@ -13,7 +13,7 @@ import * as XLSX from "xlsx";
 import {
   DK, LT, BRAND, DATA, TYPE, SP, R, MOTION, CATEGORICAL,
   STAGE_META, STAGE_ORDER, PRIORITY_META, healthOf, perfStatus,
-  KPI_INSIGHT, TAB_INSIGHT, NAV_INSIGHT, STAGE_HINT, PRIORITY_HINT,
+  KPI_INSIGHT, KPI_INSIGHT_PLAIN, TAB_INSIGHT, NAV_INSIGHT, STAGE_HINT, PRIORITY_HINT,
 } from "./theme.js";
 import {
   injectGlobals, useViewport, BP, Surface, Button, IconButton, Input, Select,
@@ -492,21 +492,33 @@ function DeadlineAlertPopups({ T, session }) {
   );
 }
 
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData }) {
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden }) {
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
   const [eSub,    setESub]    = useState("");
+  const [eIns,    setEIns]    = useState("");
   const [saving,  setSaving]  = useState(false);
   const [hover,   setHover]   = useState(false);
   const displayVal = useCountUp(editing ? null : value);
 
-  const startEdit = () => { setEVal(String(value)); setESub(sub||""); setEditing(true); };
+  const startEdit = () => {
+    setEVal(String(value)); setESub(sub || "");
+    // Pre-fill with whatever is currently shown, so the PMO edits the sentence
+    // in front of them rather than starting from a blank box.
+    setEIns(insightOverride || insight || "");
+    setEditing(true);
+  };
   const cancel    = () => setEditing(false);
   const save      = async () => {
     setSaving(true);
     // lockSub cards (live counts, not editable labels) never persist a sub
     // override — only the number can be manually corrected.
-    await onSave(kpiKey, { value: eVal, sub: lockSub ? "" : eSub });
+    await onSave(kpiKey, {
+      value: eVal,
+      sub: lockSub ? "" : eSub,
+      // Blank means "use the generated default" rather than "no hover text".
+      insight: eIns.trim(),
+    });
     setSaving(false); setEditing(false);
   };
 
@@ -530,7 +542,9 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     budget_released:"released", remaining_capex:"remaining",
   };
   const insight = (() => {
-    const fn = KPI_INSIGHT[KEY_ALIAS[kpiKey] || kpiKey];
+    if (insightOverride) return insightOverride;          // PMO's own wording wins
+    const k = KEY_ALIAS[kpiKey] || kpiKey;
+    const fn = valueOverridden ? KPI_INSIGHT_PLAIN[k] : KPI_INSIGHT[k];
     if (!fn) return null;
     try { return fn(dashData); } catch (_) { return null; }
   })();
@@ -584,16 +598,21 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
         {editing ? (
           <div>
             <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>{label}</div>
-            <Input T={T} size="sm" full value={eVal} onChange={e => setEVal(e.target.value)} style={{ marginBottom:6 }} />
+            <Input T={T} size="sm" full value={eVal} onChange={e => setEVal(e.target.value)}
+              placeholder="Value" style={{ marginBottom:6 }} />
             {!lockSub && (
               <Input T={T} size="sm" full value={eSub} onChange={e => setESub(e.target.value)}
-                placeholder="Sub-label" style={{ marginBottom:SP.sm }} />
+                placeholder="Sub-label" style={{ marginBottom:6 }} />
             )}
+            {/* Hover text. Blank falls back to the generated description, so
+                the PMO only writes copy where the default is wrong. */}
+            <Input T={T} size="sm" full value={eIns} onChange={e => setEIns(e.target.value)}
+              placeholder="Hover text (leave blank for default)" style={{ marginBottom:SP.sm }} />
             <div style={{ display:"flex", gap:5 }}>
               <Button T={T} variant="primary" size="sm" onClick={save} loading={saving} full>Save</Button>
               <Button T={T} variant="accent" tone={T.positive} size="sm"
-                onClick={async () => { setSaving(true); await onSave(kpiKey, { value:"", sub: lockSub ? "" : eSub }); setSaving(false); setEditing(false); }}
-                title="Reset to the live calculated value — keeps your sub-label">Live</Button>
+                onClick={async () => { setSaving(true); await onSave(kpiKey, { value:"", sub: lockSub ? "" : eSub, insight: eIns.trim() }); setSaving(false); setEditing(false); }}
+                title="Reset the number to the live calculated value — keeps your labels">Live</Button>
               <Button T={T} variant="ghost" size="sm" onClick={cancel} title="Cancel">✕</Button>
             </div>
           </div>
@@ -1901,8 +1920,10 @@ function CommandCenter({ T, session, onSelectProject }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const saveKPI = useCallback(async (key, { value, sub }) => {
-    const updated = { ...kpiOverrides, [key]: { value, sub } };
+  // `insight` joins value/sub in the same JSON blob — no schema change, and it
+  // is saved and cleared through exactly the same path the PMO already knows.
+  const saveKPI = useCallback(async (key, { value, sub, insight }) => {
+    const updated = { ...kpiOverrides, [key]: { value, sub, insight } };
     await supa("/rest/v1/settings", {
       method: "POST",
       body: JSON.stringify({ key: "dashboard_kpis", value: updated }),
@@ -1913,9 +1934,18 @@ function CommandCenter({ T, session, onSelectProject }) {
 
   const kv = (key, calcValue, calcSub) => {
     const ov = kpiOverrides[key];
+    const valueOverridden = ov?.value != null && ov.value !== "";
     return {
-      value: (ov?.value != null && ov.value !== "") ? ov.value : calcValue,
+      value: valueOverridden ? ov.value : calcValue,
       sub:   (ov?.sub   != null && ov.sub   !== "") ? ov.sub   : calcSub,
+      insightOverride: (ov?.insight != null && ov.insight !== "") ? ov.insight : null,
+      // When the PMO has overridden the headline figure, the auto-generated
+      // insight can contradict it — the card showed "1166.33M from 272
+      // proposals" while the insight said "across 106 proposals", because the
+      // generated copy interpolates live counts. So a manual value suppresses
+      // the count-bearing default and falls back to a description that states
+      // only what the metric means.
+      valueOverridden,
     };
   };
 
