@@ -6571,37 +6571,107 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
 }
 
 // OrgCardInner — content-only card (parent wrapper handles absolute positioning)
+// ─── ORG CARD (§45) ──────────────────────────────────────────────────────────
+// The PMO's people, not an employee directory. Each card carries a seniority
+// accent so the hierarchy is legible from colour as well as position in the
+// chart, and the whole card responds to attention like every other surface in
+// the product rather than sitting inert.
+const ORG_ACCENT = {
+  head_pmo:    BRAND.gold,
+  manager_pmo: BRAND.gold,
+  deputy_pmo:  DATA.info,
+  exec_pmo:    DATA.info,
+  po1:         DATA.positive,
+  po2:         DATA.positive,
+};
+
 function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) {
   const [imgErr, setImgErr] = useState(false);
+  const [hot, setHot] = useState(false);
   const name  = data?.name  || "";
   const desc  = data?.desc  || "";
   const photo = data?.photo || "";
-  const init  = name ? name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase() : (initials || title.slice(0,2).toUpperCase());
-  const avatarSz = big ? 56 : 44;
+  const init  = name
+    ? name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()
+    : (initials || title.slice(0, 2).toUpperCase());
+  const avatarSz = big ? 58 : 46;
+  const c = ORG_ACCENT[roleId] || BRAND.blue;
+
   return (
-    <div style={{
-      position:"relative",
-      background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.md, boxShadow:T.shadow,
-      padding: big ? "16px 14px 12px" : "12px 12px 10px", textAlign:"center",
-      boxShadow:`0 ${big?4:2}px ${big?14:8}px rgba(0,0,0,0.12)`,
-    }}>
+    <div
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      style={{
+        position:"relative", overflow:"hidden",
+        background: hot
+          ? `linear-gradient(160deg, ${T.surfaceRaised} 0%, ${T.surface} 60%, ${c}${T.wash} 100%)`
+          : T.surface,
+        border:`1px solid ${hot ? c + "59" : T.border}`,
+        borderRadius:R.lg,
+        padding: big ? "18px 14px 14px" : "14px 12px 12px",
+        textAlign:"center",
+        boxShadow: hot ? T.glowSoft(c) : T.shadow,
+        transform: hot ? "translateY(-3px)" : "none",
+        transition:`transform ${MOTION.base}, box-shadow ${MOTION.base}, border-color ${MOTION.base}, background ${MOTION.base}`,
+      }}>
+      {/* Seniority accent along the top edge */}
+      <span aria-hidden="true" style={{
+        position:"absolute", top:0, left:0, right:0, height:2,
+        background:`linear-gradient(90deg, transparent, ${c}, transparent)`,
+        opacity: hot ? 1 : 0.55, transition:`opacity ${MOTION.base}`,
+      }} />
+
       {photo && !imgErr ? (
-        <img src={photo} alt={name} onError={()=>setImgErr(true)}
-          style={{ width:avatarSz, height:avatarSz, borderRadius:"50%", objectFit:"cover", margin:`0 auto ${big?10:7}px`, display:"block" }} />
+        <img src={photo} alt={name} onError={() => setImgErr(true)}
+          style={{
+            width:avatarSz, height:avatarSz, borderRadius:"50%", objectFit:"cover",
+            margin:`0 auto ${big ? 11 : 8}px`, display:"block",
+            boxShadow:`0 0 0 2px ${T.surface}, 0 0 0 3.5px ${c}${hot ? "AA" : "55"}`,
+            transition:`box-shadow ${MOTION.base}`,
+          }} />
       ) : (
-        <div style={{ width:avatarSz, height:avatarSz, borderRadius:"50%", margin:`0 auto ${big?10:7}px`,
-          background:`linear-gradient(135deg,${NAVY},#1060A0)`,
+        <div style={{
+          width:avatarSz, height:avatarSz, borderRadius:"50%", margin:`0 auto ${big ? 11 : 8}px`,
+          background:`linear-gradient(140deg, ${c}, ${c}88)`,
           display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:big?17:13, fontWeight:700, color:"#fff",
+          fontFamily:TYPE.display.fontFamily,
+          fontSize: big ? 18 : 14, fontWeight:700,
+          color: c === BRAND.gold ? "#20160A" : "#08131F",
+          boxShadow:`0 0 0 2px ${T.surface}, 0 0 0 3.5px ${c}${hot ? "AA" : "44"}`,
+          transition:`box-shadow ${MOTION.base}`,
         }}>{init}</div>
       )}
-      <div style={{ fontSize:10, fontWeight:700, color:(T.goldText || GOLD), textTransform:"uppercase", letterSpacing:1.3, marginBottom:3 }}>{title}</div>
-      <div style={{ fontSize:big?13:11.5, fontWeight:700, color:T.text, lineHeight:1.25, marginBottom:desc?4:0 }}>
-        {name || <span style={{ color:T.dim, fontStyle:"italic", fontWeight:400, fontSize:10 }}>{isPMO?"Click ✏ to add":"—"}</span>}
+
+      <div style={{ ...TYPE.label, color:T.textOf(c), marginBottom:4 }}>{title}</div>
+      <div style={{
+        fontFamily:TYPE.display.fontFamily,
+        fontSize: big ? 14 : 12.5, fontWeight:700, color:T.text,
+        lineHeight:1.25, marginBottom: desc ? 5 : 0,
+      }}>
+        {name || (
+          <span style={{ ...TYPE.caption, color:T.dim, fontStyle:"italic", fontWeight:400 }}>
+            {isPMO ? "Click to add" : "Vacant"}
+          </span>
+        )}
       </div>
-      {desc && <div style={{ fontSize:10, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
+      {desc && (
+        <div style={{ ...TYPE.caption, color: hot ? T.textSoft : T.muted, lineHeight:1.45,
+          overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical",
+          transition:`color ${MOTION.base}` }}>{desc}</div>
+      )}
+
       {isPMO && (
-        <button className="pmo-focusable pmo-btn" onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
+        <button className="pmo-focusable" onClick={onEdit} title={`Edit ${title}`}
+          style={{
+            position:"absolute", top:6, right:6, zIndex:2,
+            background: hot ? T.surfaceHi : "transparent",
+            border:`1px solid ${hot ? T.border : "transparent"}`,
+            borderRadius:R.sm, cursor:"pointer",
+            color: hot ? T.textSoft : T.dim, padding:3, display:"flex",
+            opacity: hot ? 1 : 0,
+            transition:`opacity ${MOTION.fast}, background ${MOTION.fast}`,
+          }}>
+          <Edit2 size={11} />
+        </button>
       )}
     </div>
   );
