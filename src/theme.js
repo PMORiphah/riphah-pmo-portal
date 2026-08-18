@@ -44,8 +44,8 @@ export const DATA = {
 // through this map in light mode. Values were computed by darkening each hue in
 // HLS until it cleared 4.5:1 on #FFFFFF — not eyeballed.
 export const DATA_TEXT_LIGHT = {
-  positive:"#178370", info:"#2178C1", warning:"#A16A13", danger:"#E6163C",
-  neutral:"#5D7999", violet:"#7667D2", cyan:"#1B8383",
+  positive:"#157A69", info:"#1F70B4", warning:"#986412", danger:"#D81539",
+  neutral:"#556F8C", violet:"#6B5CCE", cyan:"#197B7B",
 };
 
 // Ordered ramp for categorical series (segments, organisations) so charts pick
@@ -181,8 +181,8 @@ const LIGHT_TEXT_MAP = {
   [DATA.positive]:DATA_TEXT_LIGHT.positive, [DATA.info]:DATA_TEXT_LIGHT.info,
   [DATA.warning]:DATA_TEXT_LIGHT.warning,   [DATA.danger]:DATA_TEXT_LIGHT.danger,
   [DATA.neutral]:DATA_TEXT_LIGHT.neutral,   [DATA.violet]:DATA_TEXT_LIGHT.violet,
-  [DATA.cyan]:DATA_TEXT_LIGHT.cyan,         [BRAND.gold]:"#9A6B1A",
-  [BRAND.blue]:"#2B78C0",
+  [DATA.cyan]:DATA_TEXT_LIGHT.cyan,         [BRAND.gold]:"#96681A",
+  [BRAND.blue]:"#276EAF",
 };
 
 const LIGHT = {
@@ -211,8 +211,8 @@ const LIGHT = {
 
   text:          "#0C1E33",
   textSoft:      "#41576F",
-  muted:         "#62768C",
-  dim:           "#63778D",
+  muted:         "#607389",
+  dim:           "#61748A",
   onAccent:      "#FFFFFF",
 
   inputBg:       "#F7FAFD",
@@ -238,7 +238,7 @@ const LIGHT = {
 
   // Resolve a semantic colour to its AA-safe text equivalent.
   textOf: (c) => LIGHT_TEXT_MAP[c] || c,
-  goldText: "#9A6B1A",
+  goldText: "#96681A",
 
   ambient:"radial-gradient(ellipse 1100px 620px at 12% -8%, rgba(44,123,196,0.07), transparent 62%), radial-gradient(ellipse 900px 520px at 96% 4%, rgba(34,196,168,0.05), transparent 58%)",
   hero:   "linear-gradient(135deg, #14304E 0%, #0E2340 44%, #0A1729 100%)",
