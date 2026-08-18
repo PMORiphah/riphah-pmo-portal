@@ -169,6 +169,10 @@ const DARK = {
   textOf: (c) => c,
   goldText: BRAND.gold,
 
+  // Restrained glow (§19). Diffuse, low-opacity, never neon.
+  glowSoft: (c) => `0 0 0 1px ${c}33, 0 6px 22px -6px ${c}4D`,
+  glowRingHover: (c) => `0 0 0 1px ${c}4D, 0 10px 30px -8px ${c}59, 0 2px 8px rgba(0,0,0,0.4)`,
+
   // Ambient background — barely visible, never competes with data (§32)
   ambient:"radial-gradient(ellipse 1100px 620px at 12% -8%, rgba(44,123,196,0.10), transparent 62%), radial-gradient(ellipse 900px 520px at 96% 4%, rgba(34,196,168,0.055), transparent 58%)",
   // Executive hero surface
@@ -235,6 +239,9 @@ const LIGHT = {
   badge:         "1F",
   ring:          "4D",
   glow:          "38",
+
+  glowSoft: (c) => `0 0 0 1px ${c}2E, 0 6px 20px -8px ${c}40`,
+  glowRingHover: (c) => `0 0 0 1px ${c}3D, 0 12px 28px -10px ${c}47, 0 2px 8px rgba(16,42,71,0.10)`,
 
   // Resolve a semantic colour to its AA-safe text equivalent.
   textOf: (c) => LIGHT_TEXT_MAP[c] || c,
@@ -324,4 +331,76 @@ export const perfStatus = (v) => {
   if (v >= 0.95) return { label:"Healthy", color:DATA.positive };
   if (v >= 0.90) return { label:"Watch",   color:DATA.warning };
   return { label:"At Risk", color:DATA.danger };
+};
+
+
+// ─── CONTEXTUAL INSIGHTS ─────────────────────────────────────────────────────
+// One source of truth for the short explanations that surface on hover (§3, §7,
+// §10, §15). Two rules:
+//   1. Copy explains what a metric MEANS. Numbers are interpolated from live
+//      data — never invented, never estimated.
+//   2. One or two lines. If it needs a paragraph it belongs on the page, not in
+//      a hover.
+export const KPI_INSIGHT = {
+  su_requested:  (d) => `Total value requested across ${d?.total_projects ?? 0} CAPEX proposals for FY 2026-27.`,
+  df_recommended:(d) => "Portfolio value recommended after Director Finance review.",
+  approved:      (d) => `Budget sanctioned for execution — ${d?.approved_count ?? 0} of ${d?.total_projects ?? 0} projects.`,
+  budgeted:      (d) => "Projects carrying an approved budget allocation.",
+  non_budgeted:  (d) => "Approved projects still awaiting a budget allocation.",
+  carry_forward: (d) => `Budget carried forward from the previous fiscal year${d?.carry_forward_count ? ` across ${d.carry_forward_count} projects` : ""}.`,
+  total_projects:(d) => "Every CAPEX project currently tracked in the portfolio.",
+  total_capex:   (d) => "Combined value of the portfolio at its current approval stage.",
+  released:      (d) => "Funds transferred to projects and available to spend.",
+  remaining:     (d) => "Portfolio value not yet released to projects.",
+  payments_made: (d) => "Payments confirmed by Finance against released funds.",
+  payments_pending:(d) => "Approved payments awaiting transfer.",
+};
+
+// Tab descriptions plus a live figure, so the preview says something true about
+// the portfolio rather than restating the tab name (§8).
+export const TAB_INSIGHT = {
+  budgeting:  (d) => ({ title:"Portfolio overview",
+                        line:"Budget, approvals and planned against actual performance.",
+                        stat: d ? `${d.total_projects} projects · PKR ${((+d.total_capex||0)/1e6).toFixed(1)}M` : null }),
+  pipeline:   (d) => ({ title:"Approval pipeline",
+                        line:"Track projects from PDD submission through to approval.",
+                        stat: d ? `${d.pdd_not_submitted_count ?? 0} awaiting submission` : null }),
+  execution:  (d) => ({ title:"Delivery health",
+                        line:"Schedule and cost performance across active projects.",
+                        stat: d ? `${d.approved_count ?? 0} approved · ${d.delayed_count ?? 0} delayed` : null }),
+  financials: (d) => ({ title:"Financial activity",
+                        line:"Releases, payments and outstanding financial movement.",
+                        stat: d ? `PKR ${((+d.budget_consumed||0)/1e6).toFixed(1)}M released` : null }),
+};
+
+export const NAV_INSIGHT = {
+  cmd:      "Executive portfolio overview",
+  proj:     "Explore and manage capital projects",
+  camp:     "Projects and approvals by campus",
+  perf:     "Monitor schedule and cost performance",
+  cashflow: "Track financial and schedule movement",
+  upd:      "Project comments and communications",
+  team:     "PMO team and portal information",
+  users:    "Accounts, roles and project assignments",
+  log:      "Every change made in the portal",
+  set:      "Portal configuration and preferences",
+};
+
+// What each approval stage actually means for the project sitting in it (§15).
+export const STAGE_HINT = {
+  pdd_not_submitted:"A PDD is required before this project can enter the approval pipeline.",
+  identified:       "PDD submitted and with the PMO for initial review.",
+  df_review:        "Currently under Director Finance review.",
+  ed_review:        "Currently with the Executive Director for review.",
+  mt_review:        "Currently with the Management Team / Chancellor.",
+  approved:         "Sanctioned for execution.",
+  closed:           "Completed and handed over.",
+};
+
+export const PRIORITY_HINT = {
+  top_priority:   "Highest priority for the fiscal year.",
+  first_priority: "High priority for the fiscal year.",
+  second_priority:"Medium priority — scheduled after higher-priority work.",
+  third_priority: "Lower priority — subject to available budget.",
+  carry_forward:  "Carried over from the previous fiscal year.",
 };
