@@ -309,7 +309,7 @@ export function IconButton({ T, icon:Icon, onClick, title, tone, size = 15, acti
         <span style={{
           position:"absolute", top:2, right:2, minWidth:15, height:15, padding:"0 4px",
           borderRadius:R.pill, background:T.danger, color:"#fff",
-          fontSize:9, fontWeight:700, fontFamily:TYPE.body.fontFamily,
+          fontSize:9.5, fontWeight:700, fontFamily:TYPE.body.fontFamily,
           display:"flex", alignItems:"center", justifyContent:"center",
           boxShadow:`0 0 0 2px ${T.surface}`,
         }}>{badge > 99 ? "99+" : badge}</span>
@@ -390,8 +390,8 @@ export function Select({ T, value, onChange, children, size = "md", full, active
 export function Badge({ T, color, children, size = "md", dot, style }) {
   const c = color || T.neutral;
   const s = size === "sm"
-    ? { fontSize:9.5, padding:"2px 7px" }
-    : { fontSize:10.5, padding:"3px 9px" };
+    ? { fontSize:10.5, padding:"2px 8px" }
+    : { fontSize:11.5, padding:"3px 10px" };
   return (
     <span style={{
       display:"inline-flex", alignItems:"center", gap:5,
