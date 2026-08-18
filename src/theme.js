@@ -206,6 +206,33 @@ const DARK = {
   glass:  "rgba(19,35,57,0.72)",
 };
 
+// Darken an arbitrary colour until it clears ~5:1 on the light page. Used as
+// the fallback for hues that are computed rather than declared.
+const _rgb = (c) => {
+  if (typeof c !== "string") return null;
+  const h = c.trim();
+  if (h[0] === "#" && (h.length === 7 || h.length === 9))
+    return [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const m = h.match(/^rgba?\(([^)]+)\)/);
+  if (m) return m[1].split(",").slice(0, 3).map(v => parseInt(v, 10));
+  return null;
+};
+const _lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+const _lum = ([r, g, b]) => 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b);
+const _hex = (a) => "#" + a.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("").toUpperCase();
+
+export function darkenForLight(c, target = 5.0, bgLum = 0.90) {
+  const rgb = _rgb(c);
+  if (!rgb) return c;
+  let cur = rgb.slice();
+  for (let i = 0; i < 40; i++) {
+    const ratio = (bgLum + 0.05) / (_lum(cur) + 0.05);
+    if (ratio >= target) break;
+    cur = cur.map(v => v * 0.92);
+  }
+  return _hex(cur);
+}
+
 // Lookup from full-saturation hue -> AA-safe text hue, used by LIGHT.textOf.
 const LIGHT_TEXT_MAP = {
   [DATA.positive]:DATA_TEXT_LIGHT.positive, [DATA.info]:DATA_TEXT_LIGHT.info,
@@ -280,8 +307,11 @@ const LIGHT = {
   glowSoft: (c) => `0 0 0 1px ${c}2E, 0 6px 20px -8px ${c}40`,
   glowRingHover: (c) => `0 0 0 1px ${c}3D, 0 12px 28px -10px ${c}47, 0 2px 8px rgba(16,42,71,0.10)`,
 
-  // Resolve a semantic colour to its AA-safe text equivalent.
-  textOf: (c) => LIGHT_TEXT_MAP[c] || c,
+  // Resolve a colour to its AA-safe text equivalent. Known hues come from the
+  // map; anything computed at runtime — the rank ramp interpolates between
+  // stops, so its colours are never literals — is darkened on the fly. Without
+  // the fallback those values passed through unchanged and measured 2.2–3.9:1.
+  textOf: (c) => LIGHT_TEXT_MAP[c] || darkenForLight(c),
   goldText: "#7E5716",
 
   ambient:"radial-gradient(ellipse 1100px 620px at 12% -8%, rgba(44,123,196,0.07), transparent 62%), radial-gradient(ellipse 900px 520px at 96% 4%, rgba(34,196,168,0.05), transparent 58%)",
