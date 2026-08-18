@@ -7323,6 +7323,15 @@ function NotificationsDrawer({ T, session, open, onClose, onSelectProject, onGoT
     return () => { alive = false; };
   }, [open, session.access_token, session.user_id]);
 
+  // Escape closes the drawer, matching every modal in the product. Without it
+  // the scrim stayed up and blocked the page underneath.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   const ago = (iso) => {
     if (!iso) return "";
     const mins = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
