@@ -389,6 +389,9 @@ export function Select({ T, value, onChange, children, size = "md", full, active
 // ─── BADGES ──────────────────────────────────────────────────────────────────
 export function Badge({ T, color, children, size = "md", dot, style }) {
   const c = color || T.neutral;
+  // Fill and dot keep the full-saturation hue; the label uses the AA-safe
+  // variant, which matters on light surfaces where the raw hue reads at ~2:1.
+  const fg = T.textOf ? T.textOf(c) : c;
   const s = size === "sm"
     ? { fontSize:10.5, padding:"2px 8px" }
     : { fontSize:11.5, padding:"3px 10px" };
@@ -396,7 +399,7 @@ export function Badge({ T, color, children, size = "md", dot, style }) {
     <span style={{
       display:"inline-flex", alignItems:"center", gap:5,
       padding:s.padding, borderRadius:R.pill,
-      background:`${c}${T.badge}`, color:c,
+      background:`${c}${T.badge}`, color:fg,
       fontFamily:TYPE.body.fontFamily, fontSize:s.fontSize, fontWeight:600,
       whiteSpace:"nowrap", lineHeight:1.5,
       border:`1px solid ${c}22`,
