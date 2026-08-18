@@ -2276,8 +2276,12 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
                         : 7;
                       return (
                         <div key={f.key} title={`${STAGE_META[f.key].label} — ${f.n}`}
-                          style={{ flex:1, display:"flex", flexDirection:"column",
-                            alignItems:"center", gap:4, minWidth:0 }}>
+                          // height:100% + justify-end is what makes the bar's
+                          // percentage height resolve — inside an auto-height
+                          // column a percentage resolves to nothing, which is
+                          // why these rendered invisible.
+                          style={{ flex:1, height:"100%", display:"flex", flexDirection:"column",
+                            justifyContent:"flex-end", alignItems:"center", minWidth:0 }}>
                           <div className="pmo-grow" style={{
                             width:"100%", height:`${h}%`, borderRadius:3,
                             background: f.n > 0
