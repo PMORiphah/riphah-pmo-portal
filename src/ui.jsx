@@ -1002,9 +1002,8 @@ export function RankedBars({
         const on      = hot === r.key || activeKey === r.key;
         const dimmed  = (hot && hot !== r.key) || (activeKey && activeKey !== r.key);
         const c       = r.color || T.info;
-        // Rank shading: the leading row is fully saturated and each subsequent
-        // row steps back slightly, so ordering is legible even where two bars
-        // are close in length.
+        // Only applied where a caller still passes opacityStep; lists using the
+        // rank ramp carry their ordering in hue instead.
         const step    = r.opacityStep != null ? Math.max(0.55, 0.55 + r.opacityStep * 0.45) : 1;
         const vPct    = ceiling > 0 ? Math.min(100, ((r.value || 0) / ceiling) * 100) : 0;
         const tPct    = ceiling > 0 ? Math.min(100, ((r.target || 0) / ceiling) * 100) : 0;
