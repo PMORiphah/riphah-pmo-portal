@@ -1002,6 +1002,10 @@ export function RankedBars({
         const on      = hot === r.key || activeKey === r.key;
         const dimmed  = (hot && hot !== r.key) || (activeKey && activeKey !== r.key);
         const c       = r.color || T.info;
+        // Rank shading: the leading row is fully saturated and each subsequent
+        // row steps back slightly, so ordering is legible even where two bars
+        // are close in length.
+        const step    = r.opacityStep != null ? Math.max(0.55, 0.55 + r.opacityStep * 0.45) : 1;
         const vPct    = ceiling > 0 ? Math.min(100, ((r.value || 0) / ceiling) * 100) : 0;
         const tPct    = ceiling > 0 ? Math.min(100, ((r.target || 0) / ceiling) * 100) : 0;
         const share   = r.target > 0 ? ((r.value || 0) / r.target) * 100 : null;
@@ -1020,10 +1024,13 @@ export function RankedBars({
                 boxShadow: on ? `0 0 8px -1px ${c}` : "none", transition:`box-shadow ${MOTION.base}` }} />
               <span title={r.label} style={{
                 ...TYPE.bodySm, color: on ? T.text : T.textSoft, fontWeight: on ? 600 : 500,
+                textDecoration: on && onPick ? "underline" : "none",
+                textUnderlineOffset:3, textDecorationColor:`${c}88`,
                 overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1, minWidth:0,
                 transition:`color ${MOTION.fast}`,
               }}>{r.label}</span>
-              {r.meta && <span style={{ ...TYPE.caption, color:T.dim, flexShrink:0 }}>{r.meta}</span>}
+              {r.meta && <span style={{ ...TYPE.caption, color: on ? T.muted : T.dim, flexShrink:0,
+                transition:`color ${MOTION.fast}` }}>{r.meta}</span>}
               <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.textOf ? T.textOf(c) : c,
                 fontVariantNumeric:"tabular-nums", flexShrink:0 }}>{fmt(r.value)}</span>
             </div>
@@ -1045,6 +1052,7 @@ export function RankedBars({
                 width: drawn ? `${vPct}%` : 0,
                 borderRadius:R.pill,
                 background:`linear-gradient(90deg, ${c}CC, ${c})`,
+                opacity: on ? 1 : step,
                 boxShadow: on ? `0 0 12px -2px ${c}` : "none",
                 transition:`width 900ms ${MOTION.ease}, box-shadow ${MOTION.base}`,
               }} />
