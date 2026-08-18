@@ -4285,7 +4285,7 @@ function SettingsPage({ T, session }) {
             <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&changePassword()}
               placeholder="Enter new password" style={inp} />
-            <button className="pmo-focusable pmo-btn" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
+            <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
               <Eye size={15} />
             </button>
           </div>
@@ -4295,7 +4295,7 @@ function SettingsPage({ T, session }) {
             <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&changePassword()}
               placeholder="Re-enter new password" style={inp} />
-            <button className="pmo-focusable pmo-btn" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
+            <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
               <Eye size={15} />
             </button>
           </div>
@@ -4554,7 +4554,7 @@ function PerformancePage({ T, session, onSelectProject }) {
         </div>
       ) : (
         <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
-          <table style={{ ...tableStyles(T).table, minWidth:1180 }}>
+          <table style={{ ...tableStyles(T).table, minWidth:1120 }}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <th style={{ ...th, position:"sticky", left:0, zIndex:3, minWidth:220, borderRight:`1px solid ${T.border}` }}>Project</th>
@@ -6993,14 +6993,14 @@ function ChangePasswordModal({ T, session, onClose }) {
           <label style={lbl}>New Password</label>
           <div style={{ position:"relative" }}>
             <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} placeholder="At least 8 characters" style={inp} />
-            <button className="pmo-focusable pmo-btn" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
+            <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
           </div>
         </div>
         <div style={{ marginBottom:22 }}>
           <label style={lbl}>Confirm Password</label>
           <div style={{ position:"relative" }}>
             <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} style={inp} />
-            <button className="pmo-focusable pmo-btn" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
+            <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
           </div>
         </div>
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
@@ -7119,14 +7119,14 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
             <label style={{ display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, marginBottom:7, textTransform:"uppercase" }}>New Password</label>
             <div style={{ position:"relative" }}>
               <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} placeholder="At least 8 characters" style={inp} />
-              <button className="pmo-focusable pmo-btn" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
+              <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
           <div style={{ marginBottom:26 }}>
             <label style={{ display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, marginBottom:7, textTransform:"uppercase" }}>Confirm Password</label>
             <div style={{ position:"relative" }}>
               <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} style={inp} />
-              <button className="pmo-focusable pmo-btn" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
+              <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
           <button className="pmo-focusable pmo-btn" onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
