@@ -1452,7 +1452,7 @@ function DonutChart({ slices, T }) {
 const ORG_COLORS  = { Riphah:GOLD, Trust:EMERALD };
 const SEG_ICONS   = { Academic:Layers, Academics:Layers, Healthcare:Activity,
                       Management:Shield, Investment:Wallet, Infrastructure:Building2 };
-const SEG_COLORS  = { Academic:DATA.info, Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
+const SEG_COLORS  = { Academic:T.textOf(DATA.info), Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
 const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
 
 function BreakdownSection({ T, session }) {
@@ -3043,7 +3043,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
           <>
             {/* Stats row */}
             <div style={{display:"flex",gap:10,marginBottom:16}}>
-              {[{l:"To Import",v:parsed.length,c:EMERALD},{l:"Parse Errors",v:errors.length,c:errors.length?"#F87171":T.dim},{l:"New Lookups",v:totalNew,c:totalNew?GOLD:T.dim}].map((s,i)=>(
+              {[{l:"To Import",v:parsed.length,c:T.textOf(EMERALD)},{l:"Parse Errors",v:errors.length,c:errors.length?"#F87171":T.dim},{l:"New Lookups",v:totalNew,c:totalNew?GOLD:T.dim}].map((s,i)=>(
                 <div key={i} style={{flex:1,background:T.surfaceRaised,border:`1px solid ${T.border}`,borderRadius:R.md,boxShadow:T.shadow,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:24,fontWeight:700,color:s.c,fontFamily:TYPE.display.fontFamily}}>{s.v}</div>
                   <div style={{fontSize:11,color:T.muted,marginTop:3}}>{s.l}</div>
@@ -4406,6 +4406,33 @@ function CashflowPage({ T, dark }) {
   );
 }
 
+function CashflowPage({ T, dark }) {
+  const frame = useRef(null);
+  // The src was hardcoded to the production URL, so the preview build loaded
+  // production's copy of this file. A relative path keeps each deployment
+  // self-contained.
+  const src = `cashflow-dashboard.html?theme=${dark ? "dark" : "light"}`;
+
+  // Push theme changes to the frame so the tab flips with the rest of the app
+  // instead of only picking up the theme it was first loaded with.
+  useEffect(() => {
+    try {
+      frame.current?.contentWindow?.postMessage({ pmoTheme: dark ? "dark" : "light" }, "*");
+    } catch (_) {}
+  }, [dark]);
+
+  return (
+    <div style={{ flex:1, display:"flex", overflow:"hidden", background:T?.page }}>
+      <iframe
+        ref={frame}
+        src={src}
+        title="Project Cashflows & Timelines"
+        style={{ flex:1, border:"none", width:"100%", height:"100%" }}
+      />
+    </div>
+  );
+}
+
 function PerformancePage({ T, session, onSelectProject }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -4474,10 +4501,10 @@ function PerformancePage({ T, session, onSelectProject }) {
 
   const FLAG = {
     not_started: { label:"Not Started", c: T.dim },
-    on_time:     { label:"On Schedule", c:EMERALD },
-    delayed:     { label:"Delayed",     c:AMBER },
-    within:      { label:"On Budget",   c:EMERALD },
-    over:        { label:"Over Budget", c:ROSE },
+    on_time:     { label:"On Schedule", c:T.textOf(EMERALD) },
+    delayed:     { label:"Delayed",     c:T.textOf(AMBER) },
+    within:      { label:"On Budget",   c:T.textOf(EMERALD) },
+    over:        { label:"Over Budget", c:T.textOf(ROSE) },
   };
   const FlagBadge = ({ flag }) => {
     const f = FLAG[flag] || { label: flag || "—", c: T.dim };
@@ -4799,10 +4826,10 @@ function ProjectAttachments({ T, session, projectId }) {
             const kind =
               ["pdf"].includes(ext)                          ? { c:DATA.danger,   t:"PDF" }
             : ["xlsx","xls","csv"].includes(ext)             ? { c:DATA.positive, t:"Sheet" }
-            : ["doc","docx"].includes(ext)                   ? { c:DATA.info,     t:"Doc" }
+            : ["doc","docx"].includes(ext)                   ? { c:T.textOf(DATA.info),     t:"Doc" }
             : ["png","jpg","jpeg","gif","webp"].includes(ext)? { c:DATA.violet,   t:"Image" }
             : ["ppt","pptx"].includes(ext)                   ? { c:DATA.warning,  t:"Slides" }
-            :                                                  { c:DATA.neutral,  t:ext ? ext.toUpperCase() : "File" };
+            :                                                  { c:T.textOf(DATA.neutral),  t:ext ? ext.toUpperCase() : "File" };
             return (
             <div key={att.id} className="pmo-in pmo-lift" style={{
                 display:"flex", alignItems:"flex-start", gap:SP.md,
@@ -5058,14 +5085,14 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const fmtP  = n => n == null ? "—" : parseFloat(n).toFixed(1)+"%";
   const fmtD  = d => d ? new Date(d).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}) : "—";
   const fmtMv = n => { if(n==null)return"—"; const m=(Math.abs(parseFloat(n))/1e6).toFixed(1); return(parseFloat(n)>=0?"+":"−")+m+"M"; };
-  const cpiClr = v => v==null?T.dim:parseFloat(v)>=0.95?"#2DD4BF":parseFloat(v)>=0.85?"#F59E0B":ROSE;
-  const varClr = v => v==null?T.dim:parseFloat(v)>=0?"#2DD4BF":ROSE;
+  const cpiClr = v => v==null?T.dim:parseFloat(v)>=0.95?T.textOf(EMERALD):parseFloat(v)>=0.85?T.textOf(AMBER):T.textOf(ROSE);
+  const varClr = v => v==null?T.dim:parseFloat(v)>=0?T.textOf(EMERALD):T.textOf(ROSE);
 
-  const ST = { identified:{c:DATA.info}, df_review:{c:BRAND.blue}, ed_review:{c:VIOLET}, mt_review:{c:VIOLET}, approved:{c:EMERALD}, closed:{c:DATA.neutral} };
+  const ST = { identified:{c:T.textOf(DATA.info)}, df_review:{c:BRAND.blue}, ed_review:{c:T.textOf(VIOLET)}, mt_review:{c:T.textOf(VIOLET)}, approved:{c:T.textOf(EMERALD)}, closed:{c:T.textOf(DATA.neutral)} };
   const stc = (ST[evm.workflow_stage]||{c:T.dim}).c;
   const stLabel = { pdd_not_submitted:"PDD Not Submitted", identified:"PDD Submitted", df_review:"DF Review", ed_review:"ED Review", mt_review:"MT Review", approved:"Approved", closed:"Closed" }[evm.workflow_stage] || evm.workflow_stage;
 
-  const MS = { done:{icon:"✓",c:EMERALD}, in_progress:{icon:"◉",c:GOLD}, pending:{icon:"○",c:T.dim} };
+  const MS = { done:{icon:"✓",c:T.textOf(EMERALD)}, in_progress:{icon:"◉",c:GOLD}, pending:{icon:"○",c:T.dim} };
 
   const Card = ({title, children}) => (
     <div style={{background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 22px"}}>
@@ -5532,9 +5559,9 @@ function UserManagementPage({ T, session }) {
   // Helpers
   const getUserAssignments = uid => allAssignments.filter(a => a.user_id === uid);
   const ROLE_CFG = {
-    pmo:             { label:"Administrator",   c:GOLD },
-    project_manager: { label:"Project Manager", c:DATA.info },
-    guest:           { label:"Guest",           c:DATA.neutral },
+    pmo:             { label:"Administrator", c:T.textOf(GOLD) },
+    project_manager: { label:"Project Manager", c:T.textOf(DATA.info) },
+    guest:           { label:"Guest",           c:T.textOf(DATA.neutral) },
   };
   const isMe = uid => uid === session.user_id;
   const setField = (k, v) => setForm(f => ({...f, [k]: v}));
@@ -5894,23 +5921,27 @@ function ActivityLogPage({ T, session }) {
   const clearFilters = () => { setActionFilter(""); setEntityFilter(""); setDateFrom(""); setDateTo(""); };
 
   // ── Display config ─────────────────────────────────────────────────────────
+  // Fill stays the saturated hue; the label resolves through the AA-safe map,
+  // which is what these hand-rolled badges were missing. `dot` keeps the marker
+  // colour available for the timeline rail.
+  const A = (hue, label) => ({ c: T.textOf(hue), dot: hue, bg: `${hue}${T.badge}`, label });
   const ACTION_CFG = {
-    created:          { c:EMERALD, bg:"rgba(45,212,191,0.12)",  label:"Created" },
-    updated:          { c:DATA.info, bg:"rgba(96,165,250,0.12)",  label:"Updated" },
-    deleted:          { c:ROSE, bg:"rgba(248,113,113,0.12)", label:"Deleted" },
-    stage_changed:    { c:GOLD,      bg:"rgba(216,152,64,0.12)",  label:"Stage Changed" },
-    import:           { c:EMERALD, bg:"rgba(45,212,191,0.12)",  label:"Import" },
-    commented:        { c:VIOLET, bg:"rgba(167,139,250,0.12)", label:"Commented" },
-    comment_edited:   { c:DATA.info, bg:"rgba(96,165,250,0.12)",  label:"Edited" },
-    comment_deleted:  { c:ROSE, bg:"rgba(248,113,113,0.12)", label:"Comment Deleted" },
-    assigned:         { c:AMBER, bg:"rgba(251,146,60,0.12)",  label:"Assigned" },
-    unassigned:       { c:AMBER, bg:"rgba(251,146,60,0.12)",  label:"Unassigned" },
-    assignment_updated:{ c:AMBER,bg:"rgba(251,146,60,0.12)",  label:"Reassigned" },
+    created:           A(EMERALD,   "Created"),
+    updated:           A(DATA.info, "Updated"),
+    deleted:           A(ROSE,      "Deleted"),
+    stage_changed:     A(GOLD,      "Stage Changed"),
+    import:            A(EMERALD,   "Import"),
+    commented:         A(VIOLET,    "Commented"),
+    comment_edited:    A(DATA.info, "Edited"),
+    comment_deleted:   A(ROSE,      "Comment Deleted"),
+    assigned:          A(AMBER,     "Assigned"),
+    unassigned:        A(AMBER,     "Unassigned"),
+    assignment_updated:A(AMBER,     "Reassigned"),
   };
   const ROLE_CFG = {
-    pmo:             { label:"Admin",   c:GOLD },
-    project_manager: { label:"PM",      c:DATA.info },
-    guest:           { label:"Guest",   c:DATA.neutral },
+    pmo:             { label:"Admin",   c:T.textOf(GOLD) },
+    project_manager: { label:"PM",      c:T.textOf(DATA.info) },
+    guest:           { label:"Guest",   c:T.textOf(DATA.neutral) },
   };
   const ENTITY_LABELS = {
     projects:            "Project",
@@ -6046,12 +6077,12 @@ function ActivityLogPage({ T, session }) {
                           alignItems:"center", alignSelf:"stretch", flexShrink:0 }}>
                           <span style={{
                             width:9, height:9, borderRadius:"50%", flexShrink:0,
-                            background:ac.c, boxShadow:`0 0 0 3px ${ac.c}22`,
+                            background:ac.dot || ac.c, boxShadow:`0 0 0 3px ${(ac.dot || ac.c)}22`,
                           }} />
                           <span aria-hidden="true" style={{
                             position:"absolute", top:13, bottom:-30, width:2,
                             borderRadius:2,
-                            background:`linear-gradient(180deg, ${ac.c}55, ${T.borderStrong} 55%)`,
+                            background:`linear-gradient(180deg, ${(ac.dot || ac.c)}55, ${T.borderStrong} 55%)`,
                             display: i === entries.length - 1 ? "none" : "block",
                           }} />
                         </div>
@@ -6114,9 +6145,9 @@ const buildTree = comments => {
 };
 
 function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
-  const ROLE = { pmo:{ c:GOLD, label:"Admin" }, project_manager:{ c:DATA.info, label:"PM" }, guest:{ c:DATA.neutral, label:"Guest" } };
+  const ROLE = { pmo:{ c:T.textOf(GOLD), label:"Admin" }, project_manager:{ c:T.textOf(DATA.info), label:"PM" }, guest:{ c:T.textOf(DATA.neutral), label:"Guest" } };
   const role = comment.author_role || comment.user_profiles?.role;
-  const rc   = ROLE[role] || { c:DATA.neutral, label:"?" };
+  const rc   = ROLE[role] || { c:T.textOf(DATA.neutral), label:"?" };
   const name = comment.author_name || comment.user_profiles?.full_name || comment.user_profiles?.username;
   const deleted = !name;
   const init = deleted ? "✕" : name[0].toUpperCase();
