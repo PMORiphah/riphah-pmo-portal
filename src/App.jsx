@@ -4207,7 +4207,7 @@ function SettingsPage({ T, session }) {
               </Field>
             </div>
             <Field label="Portfolio Health Override" hint="Force a specific status, or leave on Auto to let CPI & SPI determine it.">
-              <select value={cfg.health_override ?? ""} onChange={e=>set("health_override", e.target.value)}
+              <select className="pmo-select pmo-focusable" value={cfg.health_override ?? ""} onChange={e=>set("health_override", e.target.value)}
                 style={{ ...inp, cursor:"pointer" }}>
                 {HEALTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
