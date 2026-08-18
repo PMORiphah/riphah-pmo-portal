@@ -705,7 +705,8 @@ export function Tabs({ T, tabs, active, onChange, isMobile }) {
         const on   = t.id === active;
         const hot  = hover === t.id;
         return (
-          <div key={t.id} style={{ position:"relative", display:"flex" }}
+          <div key={t.id} style={{ position:"relative", display:"flex",
+            zIndex: hot ? 20 : undefined }}
             onMouseEnter={() => setHover(t.id)} onMouseLeave={() => setHover(null)}>
             <button data-tab={t.id} onClick={() => onChange(t.id)}
               onFocus={() => setHover(t.id)} onBlur={() => setHover(null)}
