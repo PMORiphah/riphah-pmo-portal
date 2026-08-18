@@ -219,7 +219,7 @@ const _rgb = (c) => {
 };
 const _lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
 const _lum = ([r, g, b]) => 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b);
-const _hex = (a) => "#" + a.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("").toUpperCase();
+const _toHex = (a) => "#" + a.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("").toUpperCase();
 
 export function darkenForLight(c, target = 5.0, bgLum = 0.90) {
   const rgb = _rgb(c);
@@ -230,7 +230,7 @@ export function darkenForLight(c, target = 5.0, bgLum = 0.90) {
     if (ratio >= target) break;
     cur = cur.map(v => v * 0.92);
   }
-  return _hex(cur);
+  return _toHex(cur);
 }
 
 // Lookup from full-saturation hue -> AA-safe text hue, used by LIGHT.textOf.
