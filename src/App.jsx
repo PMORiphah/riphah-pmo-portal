@@ -22,6 +22,7 @@ import {
   Metric, CountUp, useCountUp, Stack, Inline, SectionTitle, Spinner,
   InsightTip, WithInsight, Section,
   pageBody, pageBar, cardStyle, tableStyles,
+  RankedBars, ShareStrip,
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -1412,6 +1413,42 @@ function BreakdownSection({ T, session }) {
   const fyTgts   = targets[fyKey] || {};
   const orgTgts  = fyTgts.orgs  || {};
   const segTgts  = fyTgts.segments || {};
+
+  // Rows for the ranked comparison. Value is what has actually been released;
+  // target is the configured planned figure, so every bar answers the same
+  // question and lengths are comparable across rows.
+  const segmentRows = Object.entries(bySeg)
+    .sort(([,a],[,b]) => b.bac - a.bac)
+    .map(([name, d]) => ({
+      key:name, label:name,
+      color: SEG_COLORS[name] || DATA.info,
+      value: d.released || 0,
+      target: (segTgts[name]?.bac || 0) * 1e6,
+      meta: `${d.count || 0} projects`,
+    }));
+
+  // Share is of approved budget, which is the question the donut answered.
+  const shareRows = Object.entries(bySeg)
+    .filter(([, d]) => (d.bac || 0) > 0)
+    .sort(([,a],[,b]) => b.bac - a.bac)
+    .map(([name, d]) => ({
+      key:name, label:name, value:d.bac || 0,
+      color: SEG_COLORS[name] || DATA.info,
+    }));
+
+  // Strategic priorities have no configured target, so they rank on approved
+  // budget with released shown against it — no ghost track, because inventing
+  // one would imply a target that was never set.
+  const stratRows = Object.entries(byStrat)
+    .sort(([,a],[,b]) => b.bac - a.bac)
+    .slice(0, 10)
+    .map(([name, d], i) => ({
+      key:name, label:name,
+      color: STRAT_PAL[i % STRAT_PAL.length],
+      value: d.released || 0,
+      target: d.bac || 0,
+      meta: `${d.count || 0} projects`,
+    }));
   const stratTgts = fyTgts.strategic_priorities || {};
 
   const startEdit = () => {
@@ -1579,185 +1616,77 @@ function BreakdownSection({ T, session }) {
         );
       })()}
 
-      {/* ── Organisation split ── */}
-      <div style={{ display:"flex", gap:14 }}>
-        {Object.entries(byOrg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], oi) => {
-          const color      = ORG_COLORS[name] || DATA.info;
-          const OrgIcon    = name === "Trust" ? Landmark : Building2;
-          const plannedAbs = (orgTgts[name]?.bac || 0) * 1e6;
-          const isOver     = plannedAbs > 0 && data.bac > plannedAbs;
-          const barColor   = isOver ? ROSE : color;
-          const pct        = plannedAbs > 0 ? Math.min(100,(data.bac/plannedAbs)*100) : 0;
-          const relPct     = data.bac > 0 ? (data.released/data.bac)*100 : 0;
-          const gradId     = "orgGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
-          const lightMode  = T.mode === "light";
+      {/* ── ORGANISATION & SEGMENT COMPARISON ────────────────────────────
+          Replaces two 100%-full "Amount Released" bars, a three-slice donut
+          and a mostly-empty stacked column chart.
+
+          The old cards each drew released ÷ approved — a ratio that is 100% for
+          every organisation and segment here, so a unit at 0.2% of its target
+          rendered a full green bar identical to one at 54%. Everything now sits
+          on ONE shared scale against its target, so bar length means the same
+          thing in every row and the shortfall is visible as distance. */}
+      <Section T={T} tone={T.info} pad={SP.lg}>
+        <SectionTitle T={T} icon={Landmark}
+          title="Release against target"
+          sub="Every organisation and segment on one scale — solid is released, the dashed ghost is target"
+          right={<span style={{ ...TYPE.caption, color:T.muted }}>PKR, all fiscal years</span>} />
+
+        {(() => {
+          const orgRows = Object.entries(byOrg)
+            .sort(([,a],[,b]) => b.bac - a.bac)
+            .map(([name, data]) => ({
+              key:name, label:name, color:ORG_COLORS[name] || DATA.info,
+              value:data.released || 0,
+              target:(orgTgts[name]?.bac || 0) * 1e6,
+              meta:`${data.count || 0} projects`,
+            }));
 
           return (
-            <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(oi*70)+"ms", flex:1, minWidth:0 }}>
-              <div style={{
-                background: lightMode ? T.card : `linear-gradient(165deg, ${T.card} 0%, ${T.card} 55%, ${barColor}${T.washAlpha} 100%)`,
-                border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"20px 22px",
-                borderTop: lightMode ? `1px solid ${T.border}` : `3px solid ${barColor}`, display:"flex", flexDirection:"column", gap:13,
-                position:"relative", overflow:"hidden", boxShadow:T.shadow,
-              }}>
-                <ArchMotif T={T} color={barColor} size={80} />
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", position:"relative" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ width:32, height:32, borderRadius:R.md, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                      <OrgIcon size={16} color={barColor} strokeWidth={2.25} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{name}</div>
-                      <div style={{ fontSize:11, color:T.dim }}>{data.count} projects · {fy === "__all__" ? "All FY" : fy}</div>
-                    </div>
-                  </div>
-                  {isOver && <span style={{ fontSize:10, fontWeight:700, background:`${ROSE}20`, color:T.textOf(ROSE), padding:"3px 9px", borderRadius:R.pill }}>OVER TARGET</span>}
-                </div>
-
-                <div style={{ display:"flex", alignItems:"baseline", gap:10, position:"relative" }}>
-                  <div style={{ fontSize:32, fontWeight:700, color:T.textOf(barColor), fontFamily:TYPE.display.fontFamily, fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></div>
-                  {plannedAbs > 0 && !editing && <div style={{ fontSize:13, color:T.dim }}>/ {fmtM(plannedAbs)} planned</div>}
-                </div>
-
-                {plannedAbs > 0 && !editing && (
-                  <div style={{position:"relative"}}>
-                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.dim, marginBottom:5 }}>
-                      <span>{pct.toFixed(1)}% of target</span>
-                      <span style={{ color:isOver?T.textOf(ROSE):T.dim }}>{isOver?`+${fmtM(data.bac-plannedAbs)} over`:`${fmtM(plannedAbs-data.bac)} to go`}</span>
-                    </div>
-                    <svg width="100%" height="8" style={{display:"block"}}>
-                      <defs>
-                        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor={barColor} stopOpacity="0.6" />
-                          <stop offset="100%" stopColor={barColor} stopOpacity="1" />
-                        </linearGradient>
-                      </defs>
-                      <rect x="0" y="0" width="100%" height="8" rx="4" fill={T.border} />
-                      <rect x="0" y="0" width={pct+"%"} height="8" rx="4" fill={`url(#${gradId})`} style={{transition:"width .6s cubic-bezier(.16,1,.3,1)"}} />
-                    </svg>
-                  </div>
-                )}
-
-                <div style={{position:"relative"}}>
-                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.muted, marginBottom:5 }}>
-                    <span>Amount Released</span><span style={{ color:T.textOf(EMERALD), fontWeight:600 }}>{fmtM(data.released)} ({relPct.toFixed(1)}%)</span>
-                  </div>
-                  <svg width="100%" height="6" style={{display:"block"}}>
-                    <rect x="0" y="0" width="100%" height="6" rx="3" fill={T.border} />
-                    <rect x="0" y="0" width={Math.min(100,relPct)+"%"} height="6" rx="3" fill={EMERALD} style={{transition:"width .6s"}} />
-                  </svg>
-                </div>
-
-                {editing && isPMO && (
-                  <div style={{ paddingTop:12, borderTop:`1px solid ${T.border}`, position:"relative" }}>
-                    <label style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Planned Budget (M)</label>
-                    <input type="number" step="0.1"
-                      value={editBuf.orgs?.[name] || ""}
-                      onChange={e=>setEditBuf(b=>({...b,orgs:{...b.orgs,[name]:e.target.value}}))}
-                      placeholder={`e.g. ${Math.round(data.bac/1e6/10)*10+50}`}
-                      style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:R.sm, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}/>
-                    <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Enter in PKR Millions — e.g. 600 means PKR 600M</div>
-                  </div>
-                )}
+            <div style={{ display:"grid", gap:SP.xl,
+              gridTemplateColumns: vpB.width >= 1180 ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)" }}>
+              <div>
+                <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>By organisation</div>
+                <RankedBars T={T} items={orgRows} fmt={fmtM} />
+              </div>
+              <div>
+                <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>By segment</div>
+                <RankedBars T={T} items={segmentRows} fmt={fmtM} />
               </div>
             </div>
           );
-        })}
-      </div>
+        })()}
 
-      {/* ── Segment breakdown — donut chart ── */}
-      <SectionCard title="By Segment">
-        <div style={{ display:"flex", gap:32, alignItems:"center" }}>
-          {/* Donut — 280px */}
-          <div className="pmo-fade-in" style={{ flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <DonutChart T={T}
-              slices={Object.entries(bySeg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data])=>({
-                name, value:data.bac, color:SEG_COLORS[name]||"#5B9FE8"
-              }))}/>
+        {/* Share of approved budget — the question the donut answered, in a
+            line rather than a ring with labels crowding its edge. */}
+        <div style={{ marginTop:SP.xxl, paddingTop:SP.lg, borderTop:`1px solid ${T.border}` }}>
+          <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between",
+            gap:SP.md, marginBottom:SP.sm, flexWrap:"wrap" }}>
+            <div style={{ ...TYPE.label, color:T.muted }}>Share of approved budget</div>
+            <div style={{ ...TYPE.caption, color:T.muted }}>
+              {fmtM(segmentRows.reduce((a, r) => a + (r.value || 0), 0))} approved in total
+            </div>
           </div>
-
-          {/* Legend — 2 columns on wide, 1 on narrow */}
-          <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px 16px" }}>
-            {(() => {
-              const total = Object.values(bySeg).reduce((s,d)=>s+d.bac,0)||1;
-              const SEG_ICONS = { Academic:Layers, Healthcare:Activity, Management:Shield, Investment:Wallet };
-              return Object.entries(bySeg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], si) => {
-                const color      = SEG_COLORS[name]||"#5B9FE8";
-                const SegIcon    = SEG_ICONS[name] || Layers;
-                const pct        = ((data.bac/total)*100).toFixed(1);
-                const plannedAbs = (segTgts[name]?.bac||0)*1e6;
-                const isOver     = plannedAbs>0 && data.bac>plannedAbs;
-                const barColor   = isOver ? ROSE : color;
-                const relPct     = data.bac>0 ? ((data.released/data.bac)*100).toFixed(1) : "0";
-                const gradId     = "segGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
-                const lightMode  = T.mode === "light";
-                return (
-                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background: lightMode ? T.card2 : `linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}${T.washAlpha} 100%)`, borderRadius:R.lg, padding:"16px 18px", border: lightMode ? `1px solid ${T.border}` : `1px solid ${barColor}${T.glowRing}`, position:"relative", overflow:"hidden", boxShadow:T.shadow }}>
-                    {/* Header row */}
-                    <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:11, position:"relative" }}>
-                      <div style={{ width:26, height:26, borderRadius:R.md, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                        <SegIcon size={13} color={barColor} strokeWidth={2.25} />
-                      </div>
-                      <span style={{ fontSize:14, fontWeight:700, color:T.text }}>{name}</span>
-                      <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{data.count} projects</span>
-                    </div>
-
-                    {/* Big BAC number */}
-                    <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:7, position:"relative" }}>
-                      <span style={{ fontSize:25, fontWeight:700, color:T.textOf(barColor), fontFamily:TYPE.display.fontFamily, fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></span>
-                      <span style={{ fontSize:14, color:T.muted, fontWeight:600 }}>{pct}%</span>
-                    </div>
-
-                    {/* Planned row */}
-                    {plannedAbs>0 && !editing && (
-                      <div style={{ fontSize:12, color:isOver?ROSE:T.muted, marginBottom:9, position:"relative" }}>
-                        Target: {fmtM(plannedAbs)}
-                        {isOver && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(ROSE), background:`${ROSE}20`, padding:"1px 6px", borderRadius:R.pill, marginLeft:6 }}>OVER</span>}
-                      </div>
-                    )}
-
-                    {/* Edit input */}
-                    {editing && (
-                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:9, position:"relative" }}>
-                        <span style={{ fontSize:11, color:T.muted }}>Target (M):</span>
-                        <input type="number" step="0.1"
-                          value={editBuf.segs?.[name]||""}
-                          onChange={e=>setEditBuf(b=>({...b,segs:{...b.segs,[name]:e.target.value}}))}
-                          placeholder="e.g. 320"
-                          style={{ flex:1, background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:R.sm, padding:"4px 8px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}/>
-                      </div>
-                    )}
-
-                    {/* Released bar */}
-                    <svg width="100%" height="7" style={{display:"block", position:"relative"}}>
-                      <defs>
-                        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor={EMERALD} stopOpacity="0.6" />
-                          <stop offset="100%" stopColor={EMERALD} stopOpacity="1" />
-                        </linearGradient>
-                      </defs>
-                      <rect x="0" y="0" width="100%" height="7" rx="3.5" fill={T.border} />
-                      <rect x="0" y="0" width={Math.min(100,parseFloat(relPct))+"%"} height="7" rx="3.5" fill={`url(#${gradId})`} style={{transition:"width .6s"}} />
-                    </svg>
-                    <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:11, position:"relative" }}>
-                      <span style={{ color:T.muted }}>Released</span>
-                      <span style={{ color:T.textOf(EMERALD), fontWeight:600 }}>{fmtM(data.released)} ({relPct}%)</span>
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
+          <ShareStrip T={T} items={shareRows} fmt={fmtM} />
         </div>
-      </SectionCard>
+      </Section>
 
-      {/* ── Strategic Priority breakdown ── */}
-      <SectionCard title="By Strategic Priority"
-        note={Object.keys(byStrat).length===0 ? "No strategic priorities in current data — import Excel with the 'Strategic Priority' column filled in to populate this section." : null}>
-        <ChartErrorBoundary T={T}>
-          <StrategicPriorityStackedBar T={T} byStrat={byStrat} />
-        </ChartErrorBoundary>
-      </SectionCard>
+      {/* ── STRATEGIC PRIORITY ────────────────────────────────────────────
+          Was a vertical stacked column with three categories and a great deal
+          of empty air above them; the labels were truncated because vertical
+          bars give a label only its own width. Horizontal bars give each label
+          the full row. */}
+      <Section T={T} tone={T.violet} pad={SP.lg}>
+        <SectionTitle T={T} icon={Layers}
+          title="By strategic priority"
+          sub="Approved budget per strategic priority, released against approved" />
+        {stratRows.length > 0 ? (
+          <RankedBars T={T} items={stratRows} fmt={fmtM} />
+        ) : (
+          <EmptyState T={T} icon={Layers} compact
+            title="No strategic priorities recorded"
+            message="Import projects with the Strategic Priority column filled in and they'll rank here." />
+        )}
+      </Section>
     </div>
   );
 }
