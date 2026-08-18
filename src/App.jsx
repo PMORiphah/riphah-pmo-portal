@@ -33,6 +33,18 @@ import {
 import { Bar, Scatter } from "react-chartjs-2";
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
+// Settings rows written before the save path was fixed contain a JSON string
+// that still carries its own quote marks (e.g. `"\"FY 2026-27\""`). Unwrap on
+// read so both the old and the corrected shape render the same text.
+const unquote = (v) => {
+  if (typeof v !== "string") return v;
+  const t = v.trim();
+  if (t.length > 1 && t.startsWith('"') && t.endsWith('"')) {
+    try { return JSON.parse(t); } catch (_) { return t.slice(1, -1); }
+  }
+  return t;
+};
+
 // ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
 // Fonts, keyframes, focus rings and native-control resets are injected once by
 // the design system (see ./ui.jsx). Replaces the previous inline font link and
@@ -125,7 +137,8 @@ const PMO_NAV = [
 ];
 
 function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
-                  T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact }) {
+                  T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
+                  fyLabel = "FY 2026-27" }) {
   const navItems = NAV.filter(n => {
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp")) return false;
@@ -236,7 +249,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
             <img src={LOGO} alt="Riphah International University" style={{ width:136, filter:T.sidebarLogoFilter, opacity:.95 }} />
             <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:8 }}>
               <div style={{ width:13, height:1.5, background:BRAND.gold, opacity:0.65 }} />
-              <div style={{ ...TYPE.label, color:T.sidebarFgSoft }}>PMO · FY 2026-27</div>
+              <div style={{ ...TYPE.label, color:T.sidebarFgSoft }}>PMO · {fyLabel}</div>
             </div>
           </div>
         )}
@@ -452,12 +465,18 @@ function DeadlineAlertPopups({ T, session }) {
     if (session?.role !== "pmo") return;
     if (firedFor.current === session.access_token) return; // once per session, not per render
     firedFor.current = session.access_token;
-    (async () => {
+    // Hold the alert for 5s after load. It is a full-screen modal that blocks
+    // every other control, so firing it immediately means the PMO's first
+    // interaction with the portal is dismissing something — the dashboard
+    // should be on screen and settled first.
+    let cancelled = false;
+    const timer = setTimeout(async () => {
       try {
         const rows = await supa("/rest/v1/at_risk_projects?select=*", {}, session.access_token);
-        setQueue(Array.isArray(rows) ? rows : []);
-      } catch { setQueue([]); }
-    })();
+        if (!cancelled) setQueue(Array.isArray(rows) ? rows : []);
+      } catch { if (!cancelled) setQueue([]); }
+    }, 5000);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [session?.access_token, session?.role]);
 
   if (!queue || queue.length === 0 || idx >= queue.length) return null;
@@ -1945,7 +1964,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
 }
 
 // ─── COMMAND CENTER ───────────────────────────────────────────────────────────
-function CommandCenter({ T, session, onSelectProject }) {
+function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) {
   const vp = useViewport();
   const [data,         setData]         = useState(null);
   const [loading,      setLoading]      = useState(true);
@@ -2200,7 +2219,7 @@ function CommandCenter({ T, session, onSelectProject }) {
                 <AnimatedNumber value={fmtM(d.total_capex)} />
               </div>
               <div style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)", marginTop:4 }}>
-                {d.total_projects} projects · FY 2026-27
+                {d.total_projects} projects · {fyLabel}
               </div>
             </div>
             </WithInsight>
@@ -4105,8 +4124,10 @@ function SettingsPage({ T, session }) {
     (async () => {
       try {
         const rows = await supa("/rest/v1/settings?select=key,value", {}, session.access_token);
+        // Existing rows were saved double-encoded; unwrap them on read so the
+        // portal shows the intended text without a data migration.
         const map = {};
-        rows.forEach(r => { map[r.key] = r.value; });
+        rows.forEach(r => { map[r.key] = unquote(r.value); });
         setCfg(map);
       } catch(e) { setCfg({}); }
       setCfgLoading(false);
@@ -4126,7 +4147,10 @@ function SettingsPage({ T, session }) {
       for (const [key, val] of patches) {
         await supa(`/rest/v1/settings?key=eq.${key}`, {
           method:"PATCH",
-          body: JSON.stringify({ value: typeof val === "string" ? JSON.stringify(val) : val }),
+          // No JSON.stringify on the value: `settings.value` is jsonb, so the
+          // request body encoding already handles it. Double-encoding is what
+          // baked literal quote marks into the stored string.
+          body: JSON.stringify({ value: val }),
           headers: { "Prefer":"return=minimal" }
         }, session.access_token);
       }
@@ -7655,6 +7679,26 @@ export default function App() {
   const [navMobileOpen, setNavMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen]   = useState(false);
+  // The PMO can rename the dashboard and set the fiscal year in Settings, but
+  // the header, hero and sidebar were all hardcoded — so those fields had no
+  // visible effect anywhere. Load them once and let them drive the chrome.
+  const [portal, setPortal] = useState({ title:"Capex Dashboard", fy:"FY 2026-27" });
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/settings?select=key,value&key=in.(dashboard_title,fiscal_year)", {}, session.access_token)
+      .then(rows => {
+        if (!alive || !Array.isArray(rows)) return;
+        const m = {};
+        rows.forEach(r => { m[r.key] = unquote(r.value); });
+        setPortal({
+          title: m.dashboard_title || "Capex Dashboard",
+          fy:    m.fiscal_year     || "FY 2026-27",
+        });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
   // ⌘K / Ctrl+K from anywhere. Bound at the document so it works regardless of
   // which page or control currently holds focus.
   useEffect(() => {
@@ -7700,7 +7744,9 @@ export default function App() {
 
   const pageInfo = selectedProjectId
     ? { title:"Project detail", subtitle:`From ${returnPage === "perf" ? "Performance" : "Projects"}` }
-    : (PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" });
+    : effectivePage === "cmd"
+      ? { title: portal.title, subtitle: `Portfolio ${portal.fy}` }
+      : (PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" });
 
   return (
     <>
@@ -7724,7 +7770,7 @@ export default function App() {
         unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)}
         collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}
-        isCompact={vp.isCompact}
+        isCompact={vp.isCompact} fyLabel={portal.fy}
       />
       <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
         <TopBar
@@ -7745,7 +7791,7 @@ export default function App() {
           />
         ) : (
           <>
-            {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} />}
+            {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} fyLabel={portal.fy} />}
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "perf" && <PerformancePage T={T} session={session} onSelectProject={openProject} />}
