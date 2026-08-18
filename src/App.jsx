@@ -259,7 +259,8 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
               <div style={{
                 display:"inline-flex", alignItems:"center", marginTop:3,
                 fontSize:10, fontWeight:600, letterSpacing:"0.06em", textTransform:"uppercase",
-                color:BRAND.gold, background:BRAND.gold+"1E", padding:"1.5px 7px", borderRadius:R.pill,
+                color:T.goldText || BRAND.gold, background:BRAND.gold+"1E",
+                padding:"1.5px 7px", borderRadius:R.pill,
               }}>{session?.role?.replace("_", " ") || "—"}</div>
             </div>
           )}
@@ -3765,7 +3766,7 @@ function CampusPage({ T, session, onSelectProject }) {
                 <tr key={p.id}>
                   <td style={{...td,color:T.dim}}>{i+1}</td>
                   <td style={td}>
-                    <button onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:GOLD,fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
+                    <button onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:(T.goldText || GOLD),fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
                   </td>
                   <td style={{...td,minWidth:220}}>{p.name}</td>
                   <td style={{...td,color:T.muted}}>{p.campus || "—"}</td>
