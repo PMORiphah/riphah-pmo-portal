@@ -4788,28 +4788,61 @@ function ProjectAttachments({ T, session, projectId }) {
           No attachments yet{canManage ? " — click Upload to add one." : "."}
         </div>
       ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-          {items.map(att => (
-            <div key={att.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 4px", borderRadius:R.sm, cursor:"pointer" }}
-              onMouseEnter={e=>e.currentTarget.style.background=T.card2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+        <div style={{ display:"grid", gap:SP.sm,
+          gridTemplateColumns:"repeat(auto-fill, minmax(min(280px,100%), 1fr))" }}>
+          {items.map((att, ai) => {
+            // File type drives the icon tint, so a folder of mixed artifacts is
+            // scannable by colour rather than needing every name read.
+            const ext = (att.file_name || "").split(".").pop().toLowerCase();
+            const kind =
+              ["pdf"].includes(ext)                          ? { c:DATA.danger,   t:"PDF" }
+            : ["xlsx","xls","csv"].includes(ext)             ? { c:DATA.positive, t:"Sheet" }
+            : ["doc","docx"].includes(ext)                   ? { c:DATA.info,     t:"Doc" }
+            : ["png","jpg","jpeg","gif","webp"].includes(ext)? { c:DATA.violet,   t:"Image" }
+            : ["ppt","pptx"].includes(ext)                   ? { c:DATA.warning,  t:"Slides" }
+            :                                                  { c:DATA.neutral,  t:ext ? ext.toUpperCase() : "File" };
+            return (
+            <div key={att.id} className="pmo-in pmo-lift" style={{
+                display:"flex", alignItems:"flex-start", gap:SP.md,
+                padding:`${SP.md}px ${SP.md}px`, borderRadius:R.lg, cursor:"pointer",
+                background:T.surface, border:`1px solid ${T.border}`, boxShadow:T.shadow,
+                animationDelay:`${ai * 45}ms`,
+                transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, transform ${MOTION.base}`,
+              }}
+              onMouseEnter={e=>{ e.currentTarget.style.borderColor = kind.c + "66";
+                                 e.currentTarget.style.boxShadow = T.glowSoft(kind.c); }}
+              onMouseLeave={e=>{ e.currentTarget.style.borderColor = T.border;
+                                 e.currentTarget.style.boxShadow = T.shadow; }}
               onClick={()=>handleDownload(att)}>
-              <FileText size={15} color={T.muted} style={{flexShrink:0}}/>
+              <div style={{
+                width:38, height:38, borderRadius:R.md, flexShrink:0,
+                background:`${kind.c}${T.badge}`, border:`1px solid ${kind.c}33`,
+                display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1,
+              }}>
+                <FileText size={15} color={kind.c} strokeWidth={2}/>
+                <span style={{ fontSize:7.5, fontWeight:700, letterSpacing:.4,
+                  color:T.textOf(kind.c) }}>{kind.t}</span>
+              </div>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:12.5, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{att.file_name}</div>
-                <div style={{ fontSize:10.5, color:T.dim }}>
-                  {fmtBytes(att.file_size)} · {att.uploaded_by_name || "Unknown"} · {new Date(att.uploaded_at).toLocaleDateString()}
+                <div style={{ ...TYPE.caption, color:T.muted, marginTop:3, lineHeight:1.5 }}>
+                  {fmtBytes(att.file_size)} · {att.uploaded_by_name || "Unknown"}
+                </div>
+                <div style={{ ...TYPE.caption, color:T.dim, marginTop:1 }}>
+                  {new Date(att.uploaded_at).toLocaleDateString("en-GB",
+                    { day:"numeric", month:"short", year:"numeric" })}
                 </div>
               </div>
-              <Download size={13} color={T.dim} style={{flexShrink:0}}/>
-              {canManage && (
-                <button className="pmo-focusable pmo-btn" onClick={e=>{e.stopPropagation(); handleDelete(att);}}
-                  style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:4, flexShrink:0 }}
-                  title="Delete">
-                  <Trash2 size={13}/>
-                </button>
-              )}
+              <div style={{ display:"flex", flexDirection:"column", gap:2, flexShrink:0 }}>
+                <IconButton T={T} icon={Download} size={13} title="Download"
+                  onClick={e=>{e.stopPropagation(); handleDownload(att);}} />
+                {canManage && (
+                  <IconButton T={T} icon={Trash2} size={13} tone={T.danger} title="Delete"
+                    onClick={e=>{e.stopPropagation(); handleDelete(att);}} />
+                )}
+              </div>
             </div>
-          ))}
+          ); })}
         </div>
       )}
     </div>
@@ -6427,7 +6460,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                   <span style={{ fontSize:12 }}>Be the first to post an update below.</span>
                 </div>
               ) : roots.map(c => (
-                <CommentBubble
+                <CommentBubble currentUserId={session.user_id}
                   key={c.id} T={T} comment={c}
                   replies={replies[c.id] || []}
                   onReply={canPost ? setReplyingTo : null}
