@@ -354,6 +354,21 @@ export const KPI_INSIGHT = {
   remaining:     (d) => "Portfolio value not yet released to projects.",
   payments_made: (d) => "Payments confirmed by Finance against released funds.",
   payments_pending:(d) => "Approved payments awaiting transfer.",
+
+  // ── PDD Status tab ────────────────────────────────────────────────────────
+  pdd_not_submitted:(d) => `Projects still needing a PDD before they can enter the approval pipeline${d?.pdd_not_submitted_count ? ` — ${d.pdd_not_submitted_count} of ${d.total_projects}` : ""}.`,
+  pdds_submitted:  (d) => "PDDs submitted and awaiting initial PMO review.",
+  in_df:           (d) => "Under review by the Director Finance.",
+  in_ed:           (d) => "Under review by the Executive Director.",
+  in_mt:           (d) => "With the Management Team / Chancellor for final sanction.",
+
+  // ── Project Health tab ────────────────────────────────────────────────────
+  active_projects: (d) => "Approved projects currently in execution.",
+  on_schedule:     (d) => "Projects tracking at or ahead of plan (SPI 0.95 or better).",
+  delayed:         (d) => "Projects running behind their planned schedule (SPI below 0.95).",
+  over_budget:     (d) => "Projects spending ahead of plan (CPI below 0.95).",
+  scope_change:    (d) => "Projects whose scope has been revised since approval.",
+  closed:          (d) => "Projects completed and handed over.",
 };
 
 // Used when the PMO has manually overridden a card's value. The count-bearing
@@ -374,6 +389,17 @@ export const KPI_INSIGHT_PLAIN = {
   remaining:     () => "Portfolio value not yet released to projects.",
   payments_made: () => "Payments confirmed by Finance against released funds.",
   payments_pending:() => "Approved payments awaiting transfer.",
+  pdd_not_submitted:() => "Projects still needing a PDD before they can enter the approval pipeline.",
+  pdds_submitted:  () => "PDDs submitted and awaiting initial PMO review.",
+  in_df:           () => "Under review by the Director Finance.",
+  in_ed:           () => "Under review by the Executive Director.",
+  in_mt:           () => "With the Management Team / Chancellor for final sanction.",
+  active_projects: () => "Approved projects currently in execution.",
+  on_schedule:     () => "Projects tracking at or ahead of plan (SPI 0.95 or better).",
+  delayed:         () => "Projects running behind their planned schedule (SPI below 0.95).",
+  over_budget:     () => "Projects spending ahead of plan (CPI below 0.95).",
+  scope_change:    () => "Projects whose scope has been revised since approval.",
+  closed:          () => "Projects completed and handed over.",
 };
 
 // Tab descriptions plus a live figure, so the preview says something true about
