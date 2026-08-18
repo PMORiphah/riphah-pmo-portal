@@ -1704,7 +1704,7 @@ function BreakdownSection({ T, session }) {
 
                     {/* Big BAC number */}
                     <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:7, position:"relative" }}>
-                      <span style={{ fontSize:25, fontWeight:700, color:barColor, fontFamily:TYPE.display.fontFamily, fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></span>
+                      <span style={{ fontSize:25, fontWeight:700, color:T.textOf(barColor), fontFamily:TYPE.display.fontFamily, fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></span>
                       <span style={{ fontSize:14, color:T.muted, fontWeight:600 }}>{pct}%</span>
                     </div>
 
