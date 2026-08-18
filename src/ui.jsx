@@ -29,6 +29,14 @@ export const injectGlobals = () => {
     @keyframes pmoPulse   { 0%,100% { box-shadow:0 0 0 0 currentColor; opacity:1; } 70% { box-shadow:0 0 0 6px transparent; opacity:.8; } }
     @keyframes pmoDrift   { 0%,100% { transform:translate(0,0) scale(1); } 50% { transform:translate(-1.5%,1%) scale(1.03); } }
     @keyframes pmoSlideR  { from { opacity:0; transform:translateX(14px); } to { opacity:1; transform:none; } }
+    @keyframes pmoRise    { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+    /* Icon micro-animations (§6). Each runs once on hover and is deliberately
+       tiny — a few pixels, under 400ms. */
+    @keyframes pmoNudgeUp { 0%{transform:translateY(0)} 45%{transform:translateY(-2.5px)} 100%{transform:translateY(0)} }
+    @keyframes pmoBreathe { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.09);opacity:.85} }
+    @keyframes pmoTick    { 0%{transform:scale(1) rotate(0)} 40%{transform:scale(1.14) rotate(-7deg)} 100%{transform:scale(1) rotate(0)} }
+    @keyframes pmoShift   { 0%{transform:translate(0,0)} 45%{transform:translate(1.5px,-1.5px)} 100%{transform:translate(0,0)} }
+    @keyframes pmoSheen   { 0%{transform:translateX(-120%)} 100%{transform:translateX(220%)} }
 
     .pmo-in      { animation: pmoIn .34s ${MOTION.ease} backwards; }
     .pmo-fade    { animation: pmoFade .28s ease backwards; }
@@ -37,7 +45,27 @@ export const injectGlobals = () => {
     .pmo-drift   { animation: pmoDrift 20s ease-in-out infinite; }
     .pmo-pulse   { animation: pmoPulse 2.4s ease-in-out infinite; }
     .pmo-lift    { transition: transform ${MOTION.base}, box-shadow ${MOTION.base}, border-color ${MOTION.base}; }
-    .pmo-lift:hover { transform: translateY(-2px); }
+    /* -3px, not more. The movement should read as expensive, not springy (§5). */
+    .pmo-lift:hover { transform: translateY(-3px); }
+    .pmo-rise    { animation: pmoRise .22s ${MOTION.ease}; }
+
+    /* Icon animations fire from the card's hover state, not the icon's, so the
+       whole card is the target rather than a 14px hit area. */
+    .pmo-ico-up:hover      .pmo-ico, .pmo-hot .pmo-ico-up      { animation: pmoNudgeUp .42s ease; }
+    .pmo-hot .pmo-ico-up   { animation: pmoNudgeUp .42s ease; }
+    .pmo-hot .pmo-ico-tick { animation: pmoTick .42s ease; }
+    .pmo-hot .pmo-ico-pulse{ animation: pmoBreathe 1.6s ease-in-out infinite; }
+    .pmo-hot .pmo-ico-shift{ animation: pmoShift .45s ease; }
+    .pmo-hot .pmo-ico-glow { filter: drop-shadow(0 0 5px currentColor); transition: filter .3s ease; }
+
+    /* A single slow sheen crossing a card on hover. One pass, then done. */
+    .pmo-sheen { position:absolute; inset:0; pointer-events:none; overflow:hidden; border-radius:inherit; opacity:0; transition:opacity .2s ease; }
+    .pmo-hot .pmo-sheen { opacity:1; }
+    .pmo-hot .pmo-sheen::after {
+      content:""; position:absolute; top:0; bottom:0; width:38%;
+      background:linear-gradient(100deg, transparent, rgba(255,255,255,.055), transparent);
+      animation: pmoSheen 1.1s cubic-bezier(.3,.7,.4,1) 1;
+    }
 
     /* Focus: always visible, never the default browser ring (§34) */
     .pmo-focusable:focus-visible {
@@ -66,7 +94,9 @@ export const injectGlobals = () => {
     .pmo-skeleton { background-repeat:no-repeat; animation: pmoShimmer 1.5s ease-in-out infinite; }
 
     @media (prefers-reduced-motion: reduce) {
-      .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,
+      .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
+      .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
+      .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
       .pmo-card-in,.pmo-fade-in,.pmo-pulse-dot,.pmo-mesh { animation:none !important; }
       .pmo-lift:hover { transform:none !important; }
       * { transition-duration:.01ms !important; }
@@ -701,6 +731,62 @@ export function Metric({ T, value, size = "metric", color, prefix, animate = tru
     <span style={{ ...TYPE[size], color: color || T.text, display:"inline-flex", alignItems:"baseline", gap:5 }}>
       {prefix && <span style={{ ...TYPE.caption, fontWeight:600, color:T.muted, letterSpacing:"0.04em" }}>{prefix}</span>}
       {animate ? shown : value}
+    </span>
+  );
+}
+
+
+// ─── INSIGHT TIP ─────────────────────────────────────────────────────────────
+// The contextual hover layer used by KPI cards, tabs, nav items and badges.
+// Deliberately not a browser tooltip and not a generic dark box: it inherits
+// the card chrome, animates in, and carries an optional live figure.
+//
+// §4 asked for "premium, not a boring tooltip"; §3 asked for one or two lines.
+// The component enforces the second constraint by simply not having room for
+// more — there is no scroll and no expansion.
+export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", align = "left", width = 250 }) {
+  if (!show) return null;
+  const c = tone || T.blueBright;
+  const pos = {
+    bottom: { top:"calc(100% + 9px)", ...(align === "center" ? { left:"50%", transform:"translateX(-50%)" } : align === "right" ? { right:0 } : { left:0 }) },
+    top:    { bottom:"calc(100% + 9px)", ...(align === "center" ? { left:"50%", transform:"translateX(-50%)" } : { left:0 }) },
+    right:  { left:"calc(100% + 10px)", top:"50%", transform:"translateY(-50%)" },
+  }[side];
+
+  return (
+    <div className="pmo-rise" role="tooltip" style={{
+      position:"absolute", ...pos, zIndex:200, width, maxWidth:"78vw",
+      background: T.mode === "dark" ? "rgba(20,36,60,0.97)" : "rgba(255,255,255,0.99)",
+      border:`1px solid ${T.borderStrong}`,
+      borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
+      boxShadow:T.shadowLg, pointerEvents:"none",
+      backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)",
+    }}>
+      {/* Accent edge ties the tip to whatever it is describing */}
+      <div style={{ position:"absolute", left:0, top:8, bottom:8, width:2,
+        borderRadius:2, background:c, opacity:.85 }} />
+      {title && <div style={{ ...TYPE.label, color:c, marginBottom:3 }}>{title}</div>}
+      <div style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.5 }}>{line}</div>
+      {stat && (
+        <div style={{ ...TYPE.caption, color:T.text, fontWeight:700, marginTop:5,
+          fontVariantNumeric:"tabular-nums" }}>{stat}</div>
+      )}
+    </div>
+  );
+}
+
+// Wraps any element so it reveals an InsightTip on hover or keyboard focus.
+export function WithInsight({ T, title, line, stat, tone, side, align, width, children, style }) {
+  const [on, setOn] = useState(false);
+  if (!line) return children;
+  return (
+    <span
+      onMouseEnter={() => setOn(true)} onMouseLeave={() => setOn(false)}
+      onFocus={() => setOn(true)} onBlur={() => setOn(false)}
+      style={{ position:"relative", display:"inline-flex", ...style }}>
+      {children}
+      <InsightTip T={T} show={on} title={title} line={line} stat={stat}
+        tone={tone} side={side} align={align} width={width} />
     </span>
   );
 }
