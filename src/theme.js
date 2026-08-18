@@ -45,7 +45,7 @@ export const DATA = {
 // HLS until it cleared 4.5:1 on #FFFFFF — not eyeballed.
 export const DATA_TEXT_LIGHT = {
   positive:"#157A69", info:"#1F70B4", warning:"#986412", danger:"#D81539",
-  neutral:"#556F8C", violet:"#6B5CCE", cyan:"#197B7B",
+  neutral:"#4F6884", violet:"#6B5CCE", cyan:"#197B7B",
 };
 
 // Ordered ramp for categorical series (segments, organisations) so charts pick
@@ -197,7 +197,7 @@ const LIGHT = {
   // content reads as an un-themed leftover rather than a decision (§33).
   sidebar:       "linear-gradient(180deg, #FFFFFF 0%, #F7FAFD 100%)",
   sidebarFg:     "#4B6076",
-  sidebarFgSoft: "#7B8EA3",
+  sidebarFgSoft: "#5C6F85",
   sidebarFgOn:   "#0C1E33",
   sidebarBorder: "#E3EAF3",
   sidebarHover:  "rgba(44,123,196,0.07)",
@@ -211,8 +211,8 @@ const LIGHT = {
 
   text:          "#0C1E33",
   textSoft:      "#41576F",
-  muted:         "#607389",
-  dim:           "#61748A",
+  muted:         "#5B6E83",
+  dim:           "#5C6F85",
   onAccent:      "#FFFFFF",
 
   inputBg:       "#F7FAFD",
