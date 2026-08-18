@@ -5401,7 +5401,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
           </Select>
         </div>
         {status && (
-          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", alignItems:"flex-start", gap:8, background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, color:status.ok?"#2DD4BF":ROSE }}>
+          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", alignItems:"flex-start", gap:8, background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, color:status.ok?T.textOf(EMERALD):ROSE }}>
             {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{ lineHeight:1.5 }}>{status.msg}</span>
           </div>
         )}
@@ -5414,7 +5414,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
               <div style={{ flex:1, fontSize:11, color:T.dim, wordBreak:"break-all", lineHeight:1.5, fontFamily:"monospace", background:T.inputBg, padding:"6px 10px", borderRadius:R.sm, border:`1px solid ${T.inputBorder}` }}>
                 {inviteLink.length > 90 ? inviteLink.slice(0,90)+"…" : inviteLink}
               </div>
-              <button className="pmo-focusable pmo-btn" onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:R.sm, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?"#2DD4BF":T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
+              <button className="pmo-focusable pmo-btn" onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:R.sm, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?T.textOf(EMERALD):T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
                 {copied?"✓ Copied":"Copy"}
               </button>
             </div>
@@ -5703,7 +5703,7 @@ function UserManagementPage({ T, session }) {
                       <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:R.pill }}>{rc.label}</span>
                     </td>
                     <td style={td}>
-                      <span style={{ fontSize:11, fontWeight:700, color:u.is_active?"#2DD4BF":ROSE, background:u.is_active?"rgba(45,212,191,0.12)":"rgba(248,113,113,0.12)", padding:"3px 10px", borderRadius:R.pill }}>
+                      <span style={{ fontSize:11, fontWeight:700, color:u.is_active?T.textOf(EMERALD):ROSE, background:u.is_active?"rgba(45,212,191,0.12)":"rgba(248,113,113,0.12)", padding:"3px 10px", borderRadius:R.pill }}>
                         {u.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
@@ -6985,7 +6985,7 @@ function ChangePasswordModal({ T, session, onClose }) {
           <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", gap:8,
             background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)",
             border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`,
-            color:status.ok?"#2DD4BF":ROSE }}>
+            color:status.ok?T.textOf(EMERALD):ROSE }}>
             {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{lineHeight:1.5}}>{status.msg}</span>
           </div>
         )}
@@ -7110,7 +7110,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
           </div>
 
           {status && (
-            <div style={{ background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, borderRadius:R.md, padding:"10px 14px", marginBottom:18, fontSize:13, color:status.ok?"#2DD4BF":ROSE, display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, borderRadius:R.md, padding:"10px 14px", marginBottom:18, fontSize:13, color:status.ok?T.textOf(EMERALD):ROSE, display:"flex", alignItems:"center", gap:8 }}>
               {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{ lineHeight:1.5 }}>{status.msg}</span>
             </div>
           )}
