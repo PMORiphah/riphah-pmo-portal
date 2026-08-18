@@ -1436,18 +1436,19 @@ function BreakdownSection({ T, session }) {
       color: SEG_COLORS[name] || DATA.info,
     }));
 
-  // Strategic priorities have no configured target, so they rank on approved
-  // budget with released shown against it — no ghost track, because inventing
-  // one would imply a target that was never set.
+  // Strategic priorities carry no configured target. Ranking released against
+  // approved would reproduce exactly the defect this section was rebuilt to
+  // remove — released equals approved for every priority here, so every bar
+  // would read "100.0% of target" and say nothing. They rank on approved budget
+  // instead, with the released figure carried in the row's metadata.
   const stratRows = Object.entries(byStrat)
     .sort(([,a],[,b]) => b.bac - a.bac)
     .slice(0, 10)
     .map(([name, d], i) => ({
       key:name, label:name,
       color: STRAT_PAL[i % STRAT_PAL.length],
-      value: d.released || 0,
-      target: d.bac || 0,
-      meta: `${d.count || 0} projects`,
+      value: d.bac || 0,
+      meta: `${d.count || 0} projects · ${fmtM(d.released || 0)} released`,
     }));
   const stratTgts = fyTgts.strategic_priorities || {};
 
@@ -1678,9 +1679,9 @@ function BreakdownSection({ T, session }) {
       <Section T={T} tone={T.violet} pad={SP.lg}>
         <SectionTitle T={T} icon={Layers}
           title="By strategic priority"
-          sub="Approved budget per strategic priority, released against approved" />
+          sub="Approved budget per strategic priority — ranked, largest first" />
         {stratRows.length > 0 ? (
-          <RankedBars T={T} items={stratRows} fmt={fmtM} />
+          <RankedBars T={T} items={stratRows} fmt={fmtM} showTarget={false} />
         ) : (
           <EmptyState T={T} icon={Layers} compact
             title="No strategic priorities recorded"
