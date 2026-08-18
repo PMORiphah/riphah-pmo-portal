@@ -1015,7 +1015,7 @@ export function RankedBars({
             onClick={() => onPick?.(r.key)}
             style={{
               cursor: onPick ? "pointer" : "default",
-              opacity: dimmed ? 0.45 : 1,
+              opacity: dimmed ? 0.62 : 1,
               transition:`opacity ${MOTION.base}`,
             }}>
             <div style={{ display:"flex", alignItems:"baseline", gap:SP.sm, marginBottom:5 }}>
