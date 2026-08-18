@@ -969,3 +969,146 @@ export const tableStyles = (T) => ({
     transition:`background ${MOTION.fast}`,
   }),
 });
+
+
+// ─── RANKED BARS ─────────────────────────────────────────────────────────────
+// Replaces three separate treatments on the CAPEX Overview tab: a 3-slice donut
+// with overlapping labels, a vertical stacked bar with two categories and a lot
+// of empty air, and a flat gold bar list with no values.
+//
+// The design problem those shared: nothing was comparable. Each segment card
+// carried its own "Released 100.0%" bar — released ÷ approved, which is always
+// full — so a segment with 0.2% of its target released looked identical to one
+// at 54%. Here every row is drawn on ONE shared scale, so length means the same
+// thing everywhere, and the target sits behind the actual as a ghost track so
+// the gap is the thing you see.
+export function RankedBars({
+  T, items, fmt = (v) => v, max, showTarget = true,
+  barH = 10, gap = SP.md, onPick, activeKey, emptyLabel = "Nothing to compare yet",
+}) {
+  const [hot, setHot] = useState(null);
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setDrawn(true), 80); return () => clearTimeout(t); }, []);
+
+  const rows = (items || []).filter(Boolean);
+  if (!rows.length) {
+    return <div style={{ ...TYPE.caption, color:T.muted, padding:`${SP.lg}px 0` }}>{emptyLabel}</div>;
+  }
+  const ceiling = max ?? Math.max(...rows.map(r => Math.max(r.value || 0, showTarget ? (r.target || 0) : 0)), 1);
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap }}>
+      {rows.map((r, i) => {
+        const on      = hot === r.key || activeKey === r.key;
+        const dimmed  = (hot && hot !== r.key) || (activeKey && activeKey !== r.key);
+        const c       = r.color || T.info;
+        const vPct    = ceiling > 0 ? Math.min(100, ((r.value || 0) / ceiling) * 100) : 0;
+        const tPct    = ceiling > 0 ? Math.min(100, ((r.target || 0) / ceiling) * 100) : 0;
+        const share   = r.target > 0 ? ((r.value || 0) / r.target) * 100 : null;
+
+        return (
+          <div key={r.key}
+            onMouseEnter={() => setHot(r.key)} onMouseLeave={() => setHot(null)}
+            onClick={() => onPick?.(r.key)}
+            style={{
+              cursor: onPick ? "pointer" : "default",
+              opacity: dimmed ? 0.45 : 1,
+              transition:`opacity ${MOTION.base}`,
+            }}>
+            <div style={{ display:"flex", alignItems:"baseline", gap:SP.sm, marginBottom:5 }}>
+              <span style={{ width:8, height:8, borderRadius:2, background:c, flexShrink:0,
+                boxShadow: on ? `0 0 8px -1px ${c}` : "none", transition:`box-shadow ${MOTION.base}` }} />
+              <span title={r.label} style={{
+                ...TYPE.bodySm, color: on ? T.text : T.textSoft, fontWeight: on ? 600 : 500,
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1, minWidth:0,
+                transition:`color ${MOTION.fast}`,
+              }}>{r.label}</span>
+              {r.meta && <span style={{ ...TYPE.caption, color:T.dim, flexShrink:0 }}>{r.meta}</span>}
+              <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.textOf ? T.textOf(c) : c,
+                fontVariantNumeric:"tabular-nums", flexShrink:0 }}>{fmt(r.value)}</span>
+            </div>
+
+            <div style={{ position:"relative", height:barH, borderRadius:R.pill,
+              background: T.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(16,42,71,0.055)" }}>
+              {/* Target sits behind as a ghost, so the shortfall is visible as
+                  distance rather than needing to be read off a number. */}
+              {showTarget && r.target > 0 && (
+                <div style={{
+                  position:"absolute", inset:0, width: drawn ? `${tPct}%` : 0,
+                  borderRadius:R.pill, background:`${c}22`,
+                  border:`1px dashed ${c}55`, boxSizing:"border-box",
+                  transition:`width 900ms ${MOTION.ease}`,
+                }} />
+              )}
+              <div style={{
+                position:"absolute", top:0, bottom:0, left:0,
+                width: drawn ? `${vPct}%` : 0,
+                borderRadius:R.pill,
+                background:`linear-gradient(90deg, ${c}CC, ${c})`,
+                boxShadow: on ? `0 0 12px -2px ${c}` : "none",
+                transition:`width 900ms ${MOTION.ease}, box-shadow ${MOTION.base}`,
+              }} />
+            </div>
+
+            {showTarget && r.target > 0 && (
+              <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
+                <span style={{ ...TYPE.caption, color:T.muted }}>
+                  {share != null ? `${share.toFixed(1)}% of ${fmt(r.target)} target` : ""}
+                </span>
+                <span style={{ ...TYPE.caption, color: on ? T.textSoft : T.dim }}>
+                  {fmt(Math.max(0, (r.target || 0) - (r.value || 0)))} remaining
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── SHARE STRIP ─────────────────────────────────────────────────────────────
+// A donut answers "what share?" but a 3-slice donut with labels around the ring
+// spends a lot of space to do it. This says the same thing in one line, and the
+// segments are directly comparable by length.
+export function ShareStrip({ T, items, fmt = (v) => v, height = 14, onPick, activeKey }) {
+  const [hot, setHot] = useState(null);
+  const rows = (items || []).filter(r => (r.value || 0) > 0);
+  const total = rows.reduce((a, b) => a + (b.value || 0), 0);
+  if (!total) return null;
+
+  return (
+    <div>
+      <div style={{ display:"flex", height, borderRadius:R.pill, overflow:"hidden", gap:2 }}>
+        {rows.map(r => {
+          const pct = (r.value / total) * 100;
+          const dimmed = (hot && hot !== r.key) || (activeKey && activeKey !== r.key);
+          return (
+            <div key={r.key} title={`${r.label} — ${fmt(r.value)} (${pct.toFixed(1)}%)`}
+              onMouseEnter={() => setHot(r.key)} onMouseLeave={() => setHot(null)}
+              onClick={() => onPick?.(r.key)}
+              style={{
+                width:`${pct}%`, background:`linear-gradient(180deg, ${r.color}, ${r.color}CC)`,
+                opacity: dimmed ? 0.35 : 1, cursor:onPick ? "pointer" : "default",
+                transition:`opacity ${MOTION.base}`,
+              }} />
+          );
+        })}
+      </div>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:`4px ${SP.lg}px`, marginTop:SP.sm }}>
+        {rows.map(r => {
+          const pct = (r.value / total) * 100;
+          return (
+            <span key={r.key} onMouseEnter={() => setHot(r.key)} onMouseLeave={() => setHot(null)}
+              style={{ display:"inline-flex", alignItems:"center", gap:6, ...TYPE.caption,
+                color: hot === r.key ? T.text : T.muted, cursor:onPick ? "pointer" : "default" }}>
+              <span style={{ width:7, height:7, borderRadius:2, background:r.color }} />
+              {r.label}
+              <strong style={{ color:T.textSoft, fontVariantNumeric:"tabular-nums" }}>{pct.toFixed(1)}%</strong>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
