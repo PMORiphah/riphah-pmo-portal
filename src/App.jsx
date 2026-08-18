@@ -295,7 +295,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
 
       {/* Collapse control — desktop only */}
       {!isCompact && (
-        <button onClick={() => setCollapsed(c => !c)} className="pmo-focusable"
+        <button className="pmo-focusable pmo-btn" onClick={() => setCollapsed(c => !c)} className="pmo-focusable"
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           style={{
@@ -482,7 +482,7 @@ function DeadlineAlertPopups({ T, session }) {
           </div>
         </div>
         <div style={{ padding:"14px 22px", borderTop:"1px solid "+T.border, display:"flex", justifyContent:"flex-end" }}>
-          <button onClick={() => setIdx(i => i + 1)}
+          <button className="pmo-focusable pmo-btn" onClick={() => setIdx(i => i + 1)}
             style={{ padding:"8px 18px", background:NAVY, border:"none", borderRadius:R.md, color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
             {idx + 1 < queue.length ? "Next" : "Dismiss"}
           </button>
@@ -645,7 +645,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
                   overflow:"hidden" }} title={label}>{label}</div>
               </div>
               {canEdit && (
-                <button onClick={e => { e.stopPropagation(); startEdit(); }}
+                <button className="pmo-focusable pmo-btn" onClick={e => { e.stopPropagation(); startEdit(); }}
                   className="pmo-focusable" title="Edit this value"
                   style={{ background:"none", border:"none", cursor:"pointer", color:T.dim,
                     padding:2, display:"flex", opacity: hover ? 1 : 0.35,
@@ -717,7 +717,7 @@ function Funnel({ T, title, children }) {
         <div style={{ width:3, height:14, background:GOLD, borderRadius:2 }} />
         <div style={{ fontSize:11, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2, opacity:0.7 }}>{title}</div>
       </div>
-      <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>{children}</div>
+      <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>{children}</div>
     </div>
   );
 }
@@ -1008,7 +1008,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
           const on  = activeCard === st.key;
           const dim = activeCard && !on;
           return (
-            <button
+            <button className="pmo-focusable pmo-btn"
               key={st.key} onClick={() => onPick(st.key)}
               className="pmo-focusable"
               title={`${st.label} — ${st.value} project${st.value === 1 ? "" : "s"} (${pct.toFixed(1)}%)`}
@@ -1066,7 +1066,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
             {stages.map(st => {
               const on = activeCard === st.key;
               return (
-                <button key={st.key} onClick={() => onPick(st.key)} className="pmo-focusable"
+                <button className="pmo-focusable pmo-btn" key={st.key} onClick={() => onPick(st.key)} className="pmo-focusable"
                   style={{
                     display:"flex", alignItems:"center", gap:10, padding:"6px 9px",
                     background: on ? T.rowActive : "transparent", border:"none",
@@ -1380,11 +1380,11 @@ function BreakdownSection({ T, session }) {
           )}
           {isPMO && editing && (
             <div style={{ display:"flex", gap:7 }}>
-              <button onClick={saveTargets} disabled={saving}
+              <button className="pmo-focusable pmo-btn" onClick={saveTargets} disabled={saving}
                 style={{ padding:"6px 15px", background:NAVY, border:"none", borderRadius:R.md, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                 {saving?"Saving…":"Save Targets"}
               </button>
-              <button onClick={()=>setEditing(false)}
+              <button className="pmo-focusable pmo-btn" onClick={()=>setEditing(false)}
                 style={{ padding:"6px 11px", background:"none", border:`1px solid ${T.border}`, borderRadius:R.md, color:T.muted, fontSize:12, cursor:"pointer" }}>
                 Cancel
               </button>
@@ -2018,14 +2018,14 @@ function CommandCenter({ T, session, onSelectProject }) {
       <div style={{ display:"flex", gap:4, borderBottom:"2px solid "+T.border, paddingBottom:2 }}>
         {[0,1,2,3].map(i => <div key={i} className="pmo-skeleton" style={{ width:120, height:32, borderRadius:R.sm, background:T.card2 }} />)}
       </div>
-      <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
+      <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
         {[0,1,2,3,4].map(i => (
           <div key={i} className="pmo-skeleton" style={{ flex:1, height:100, borderRadius:R.lg, background:T.card, border:"1px solid "+T.border }} />
         ))}
       </div>
     </div>
   );
-  if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color={ROSE} /><span style={{ color:ROSE, fontSize:13 }}>{err}</span><button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
+  if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color={ROSE} /><span style={{ color:ROSE, fontSize:13 }}>{err}</span><button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
   if (!data) return null;
 
   const d = data;
@@ -2153,7 +2153,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         </div>
       )}
       {activeTab === "budgeting" && (
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
           <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
@@ -2164,7 +2164,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         </div>
       )}
       {activeTab === "pipeline" && (
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
           <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
           <EditableKCard dashData={d} Icon={Landmark} index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
@@ -2180,7 +2180,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         </ChartErrorBoundary>
       )}
       {activeTab === "execution" && (
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={Activity} index={0} T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
           <EditableKCard dashData={d} Icon={Clock} index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
@@ -2220,7 +2220,7 @@ function CommandCenter({ T, session, onSelectProject }) {
         );
       })()}
       {activeTab === "financials" && (
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
           <EditableKCard dashData={d} Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
           <EditableKCard dashData={d} Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
@@ -2877,8 +2877,8 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
               </div>
             </label>
             <div style={{display:"flex",gap:10}}>
-              <button onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
-              <button onClick={onClose} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
+              <button className="pmo-focusable pmo-btn" onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
+              <button className="pmo-focusable pmo-btn" onClick={onClose} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
             </div>
           </>
         )}
@@ -3707,8 +3707,8 @@ function ProjectsPage({ T, session, onSelectProject }) {
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.card,border:"1px solid rgba(248,113,113,0.4)",borderRadius:R.md,padding:"12px 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"center",gap:14,fontSize:13,whiteSpace:"nowrap"}}>
           <span style={{color:T.danger, display:"flex", alignItems:"center", gap:6}}><AlertTriangle size={14}/>Delete <strong>{confirmDel.code && confirmDel.code !== "-" ? confirmDel.code : "this project"}</strong>?</span>
           {confirmDel.comments>0&&<span style={{color:T.muted}}>({confirmDel.comments} comment{confirmDel.comments!==1?"s":""} will also be deleted)</span>}
-          <button onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:ROSE,border:"none",borderRadius:R.sm,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
-          <button onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
+          <button className="pmo-focusable pmo-btn" onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:ROSE,border:"none",borderRadius:R.sm,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
+          <button className="pmo-focusable pmo-btn" onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
         </div>
       )}
 
@@ -3894,7 +3894,7 @@ function CampusPage({ T, session, onSelectProject }) {
               Showing <strong style={{color:T.text}}>{CARD_FILTERS[activeCard].label}</strong> — {visible.length} project{visible.length===1?"":"s"}
               {sel ? ` in ${sel}` : ""}
             </span>
-            <button onClick={()=>setActiveCard(null)}
+            <button className="pmo-focusable pmo-btn" onClick={()=>setActiveCard(null)}
               style={{marginLeft:"auto",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,padding:"4px 10px",cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>
               ✕ Clear
             </button>
@@ -3921,7 +3921,7 @@ function CampusPage({ T, session, onSelectProject }) {
                 <tr key={p.id}>
                   <td style={{...td,color:T.dim}}>{i+1}</td>
                   <td style={td}>
-                    <button onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:(T.goldText || GOLD),fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
+                    <button className="pmo-focusable pmo-btn" onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:(T.goldText || GOLD),fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
                   </td>
                   <td style={{...td,minWidth:220}}>{p.name}</td>
                   <td style={{...td,color:T.muted}}>{p.campus || "—"}</td>
@@ -3987,7 +3987,7 @@ function SettingsPage({ T, session }) {
   };
 
   const Btn = ({ onClick, loading, disabled, children, variant="primary" }) => (
-    <button onClick={onClick} disabled={loading || disabled} style={{
+    <button className="pmo-focusable pmo-btn" onClick={onClick} disabled={loading || disabled} style={{
       padding:"10px 22px", borderRadius:R.md, border:"none", cursor: loading||disabled ? "default" : "pointer",
       fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
       background: loading||disabled ? T.muted : variant==="primary" ? NAVY : "transparent",
@@ -4091,7 +4091,7 @@ function SettingsPage({ T, session }) {
             <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&changePassword()}
               placeholder="Enter new password" style={inp} />
-            <button onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
+            <button className="pmo-focusable pmo-btn" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
               <Eye size={15} />
             </button>
           </div>
@@ -4101,7 +4101,7 @@ function SettingsPage({ T, session }) {
             <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&changePassword()}
               placeholder="Re-enter new password" style={inp} />
-            <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
+            <button className="pmo-focusable pmo-btn" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
               <Eye size={15} />
             </button>
           </div>
@@ -4330,7 +4330,7 @@ function PerformancePage({ T, session, onSelectProject }) {
       {/* ── Filter bar ── */}
       <div style={{ padding:"10px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:6, flexShrink:0, alignItems:"center" }}>
         {FILTERS.map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)} style={{
+          <button className="pmo-focusable pmo-btn" key={f.id} onClick={() => setFilter(f.id)} style={{
             padding:"4px 12px", borderRadius:R.pill, border:`1px solid ${filter===f.id ? GOLD : T.border}`,
             background: filter===f.id ? "rgba(216,152,64,0.12)" : T.card2,
             color: filter===f.id ? GOLD : T.muted,
@@ -4352,7 +4352,7 @@ function PerformancePage({ T, session, onSelectProject }) {
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
           <AlertCircle color={ROSE} />
           <span style={{ color:ROSE, fontSize:13 }}>{err}</span>
-          <button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
+          <button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.dim, fontSize:13 }}>
@@ -4556,7 +4556,7 @@ function ProjectAttachments({ T, session, projectId }) {
         {canManage && (
           <>
             <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)} />
-            <button onClick={()=>fileInputRef.current?.click()} disabled={uploading}
+            <button className="pmo-focusable pmo-btn" onClick={()=>fileInputRef.current?.click()} disabled={uploading}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", background:uploading?T.muted:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:11.5, fontWeight:700, cursor:uploading?"default":"pointer", fontFamily:TYPE.body.fontFamily }}>
               <Upload size={12}/> {uploading ? "Uploading…" : "Upload"}
             </button>
@@ -4608,7 +4608,7 @@ function ProjectAttachments({ T, session, projectId }) {
               </div>
               <Download size={13} color={T.dim} style={{flexShrink:0}}/>
               {canManage && (
-                <button onClick={e=>{e.stopPropagation(); handleDelete(att);}}
+                <button className="pmo-focusable pmo-btn" onClick={e=>{e.stopPropagation(); handleDelete(att);}}
                   style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:4, flexShrink:0 }}
                   title="Delete">
                   <Trash2 size={13}/>
@@ -5094,7 +5094,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                 </div>
               </div>
               {session?.role==="pmo" && !assigningPM && (
-                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
+                <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Change PM
                 </button>
               )}
@@ -5103,7 +5103,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             <>
               <div style={{textAlign:"center", color:T.dim, fontSize:13, padding:"20px 0 14px"}}>No project manager assigned yet.</div>
               {session?.role==="pmo" && !assigningPM && (
-                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
+                <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Assign Project Manager
                 </button>
               )}
@@ -5119,10 +5119,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                 ))}
               </select>
               <div style={{display:"flex", gap:8}}>
-                <button onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
+                <button className="pmo-focusable pmo-btn" onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   {savingPM?"Saving…":"Assign"}
                 </button>
-                <button onClick={()=>{setAssigningPM(false);setSelectedPM("");}} style={{flex:1, padding:"8px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer"}}>
+                <button className="pmo-focusable pmo-btn" onClick={()=>{setAssigningPM(false);setSelectedPM("");}} style={{flex:1, padding:"8px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer"}}>
                   Cancel
                 </button>
               </div>
@@ -5184,16 +5184,16 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
               <div style={{ flex:1, fontSize:11, color:T.dim, wordBreak:"break-all", lineHeight:1.5, fontFamily:"monospace", background:T.inputBg, padding:"6px 10px", borderRadius:R.sm, border:`1px solid ${T.inputBorder}` }}>
                 {inviteLink.length > 90 ? inviteLink.slice(0,90)+"…" : inviteLink}
               </div>
-              <button onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:R.sm, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?"#2DD4BF":T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
+              <button className="pmo-focusable pmo-btn" onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:R.sm, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?"#2DD4BF":T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
                 {copied?"✓ Copied":"Copy"}
               </button>
             </div>
             <div style={{ fontSize:11, color:T.dim, marginTop:8, lineHeight:1.5 }}>Link expires in 24 hours. User clicks it → sets password → logs in with their username.</div>
           </div>
         )}
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{inviteLink?"Close":"Cancel"}</button>
-          {!inviteLink && <button onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{creating?"Creating user…":"Send Invite"}</button>}
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+          <button className="pmo-focusable pmo-btn" onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{inviteLink?"Close":"Cancel"}</button>
+          {!inviteLink && <button className="pmo-focusable pmo-btn" onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{creating?"Creating user…":"Send Invite"}</button>}
         </div>
         {!inviteLink && <div style={{ marginTop:14, fontSize:11, color:T.dim, lineHeight:1.6 }}>You'll get the invite link regardless of whether the email arrives.</div>}
       </div>
@@ -5230,8 +5230,8 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
           {filtered.length === 0 && <div style={{ padding:"20px", textAlign:"center", color:T.dim, fontSize:13 }}>No projects match.</div>}
         </div>
         <div style={{ display:"flex", gap:10, marginTop:18 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
-          <button onClick={onSave} disabled={saving} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:saving?T.muted:NAVY, color:"#fff", cursor:saving?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>
+          <button className="pmo-focusable pmo-btn" onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
+          <button className="pmo-focusable pmo-btn" onClick={onSave} disabled={saving} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:saving?T.muted:NAVY, color:"#fff", cursor:saving?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>
             {saving ? "Saving…" : `Save ${selectedIds.size} Assignment${selectedIds.size !== 1 ? "s" : ""}`}
           </button>
         </div>
@@ -5409,7 +5409,7 @@ function UserManagementPage({ T, session }) {
           {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
         </div>
         <div style={{ marginLeft:"auto" }}>
-          <button onClick={() => { setShowCreate(true); setCreateStatus(null); }} style={{
+          <button className="pmo-focusable pmo-btn" onClick={() => { setShowCreate(true); setCreateStatus(null); }} style={{
             display:"flex", alignItems:"center", gap:7, padding:"8px 18px", background:NAVY, color:"#fff",
             border:"none", borderRadius:R.md, cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
             boxShadow:"0 3px 12px rgba(24,80,120,0.3)",
@@ -5492,12 +5492,12 @@ function UserManagementPage({ T, session }) {
                       {!me && (
                         <div style={{ display:"flex", gap:8, justifyContent:"flex-end", alignItems:"center" }}>
                           {u.role === "project_manager" && (
-                            <button onClick={() => openAssign(u)} style={{ padding:"5px 12px", borderRadius:R.sm, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+                            <button className="pmo-focusable pmo-btn" onClick={() => openAssign(u)} style={{ padding:"5px 12px", borderRadius:R.sm, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                               Assign Projects
                             </button>
                           )}
                           {u.role !== "pmo" && (
-                            <button onClick={() => toggleActive(u)} style={{
+                            <button className="pmo-focusable pmo-btn" onClick={() => toggleActive(u)} style={{
                               padding:"5px 12px", borderRadius:R.sm, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily,
                               border:`1px solid ${u.is_active?"rgba(248,113,113,0.4)":"rgba(45,212,191,0.4)"}`,
                               background:"none", color:u.is_active?"#F87171":EMERALD,
@@ -5509,15 +5509,15 @@ function UserManagementPage({ T, session }) {
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                                 <span style={{ fontSize:11, color:T.muted }}>Sure?</span>
-                                <button onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
+                                <button className="pmo-focusable pmo-btn" onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
                                   {deleting === u.id ? "Deleting…" : "Yes, Delete"}
                                 </button>
-                                <button onClick={() => setConfirmDelete(null)} style={{ padding:"5px 8px", borderRadius:R.sm, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+                                <button className="pmo-focusable pmo-btn" onClick={() => setConfirmDelete(null)} style={{ padding:"5px 8px", borderRadius:R.sm, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                                   Cancel
                                 </button>
                               </div>
                             ) : (
-                              <button onClick={() => setConfirmDelete(u.id)} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid rgba(248,113,113,0.3)", background:"none", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, opacity:0.7 }}>
+                              <button className="pmo-focusable pmo-btn" onClick={() => setConfirmDelete(u.id)} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid rgba(248,113,113,0.3)", background:"none", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, opacity:0.7 }}>
                                 Delete
                               </button>
                             )
@@ -5632,13 +5632,13 @@ function RestoreSnapshotButton({ T, session, entry }) {
       {state === "confirming" ? (
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <span style={{fontSize:11,color:ROSE}}>Replace ALL current projects with this snapshot?</span>
-          <button onClick={restore} style={{padding:"3px 10px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:R.sm,color:ROSE,fontSize:11,fontWeight:700,cursor:"pointer"}}>Yes, Restore</button>
-          <button onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
+          <button className="pmo-focusable pmo-btn" onClick={restore} style={{padding:"3px 10px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:R.sm,color:ROSE,fontSize:11,fontWeight:700,cursor:"pointer"}}>Yes, Restore</button>
+          <button className="pmo-focusable pmo-btn" onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
         </div>
       ) : state === "restoring" ? (
         <div style={{...TYPE.caption, color:T.positive, display:"flex", alignItems:"center", gap:5}}><Spinner size={11} color={T.positive} />{msg}</div>
       ) : (
-        <button onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:R.sm,color:GOLD,fontSize:11,cursor:"pointer"}}>
+        <button className="pmo-focusable pmo-btn" onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:R.sm,color:GOLD,fontSize:11,cursor:"pointer"}}>
           📦 Restore this version ({entry.details.imported} projects)
         </button>
       )}
@@ -5762,7 +5762,7 @@ function ActivityLogPage({ T, session }) {
         </div>
 
         {hasFilters && (
-          <button onClick={clearFilters} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"6px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>
+          <button className="pmo-focusable pmo-btn" onClick={clearFilters} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"6px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>
             Clear filters
           </button>
         )}
@@ -5780,7 +5780,7 @@ function ActivityLogPage({ T, session }) {
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
           <AlertCircle color={ROSE}/>
           <span style={{ color:ROSE, fontSize:13 }}>{err}</span>
-          <button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
+          <button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
         </div>
       ) : entries.length === 0 ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10, color:T.dim }}>
@@ -5794,7 +5794,7 @@ function ActivityLogPage({ T, session }) {
               : "Actions taken in the portal — project updates, user management, comments — will appear here automatically."}
           </div>
           {hasFilters && (
-            <button onClick={clearFilters} style={{ marginTop:4, padding:"7px 18px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12, fontFamily:TYPE.body.fontFamily }}>
+            <button className="pmo-focusable pmo-btn" onClick={clearFilters} style={{ marginTop:4, padding:"7px 18px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12, fontFamily:TYPE.body.fontFamily }}>
               Clear filters
             </button>
           )}
@@ -5893,14 +5893,14 @@ function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
           <span style={{ fontSize:10, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"2px 8px", borderRadius:R.pill }}>{rc.label}</span>
           <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{timeAgo(comment.created_at)}</span>
           {onDelete && (
-            <button onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:ROSE, display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
+            <button className="pmo-focusable pmo-btn" onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:ROSE, display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
               <Trash2 size={13} />
             </button>
           )}
         </div>
         <div style={{ fontSize:13.5, color:T.text, lineHeight:1.65, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{comment.body}</div>
         {!depth && onReply && (
-          <button onClick={() => onReply(comment)} style={{ marginTop:7, background:"none", border:"none", cursor:"pointer", fontSize:11, color:T.muted, padding:0, fontFamily:TYPE.body.fontFamily }}>
+          <button className="pmo-focusable pmo-btn" onClick={() => onReply(comment)} style={{ marginTop:7, background:"none", border:"none", cursor:"pointer", fontSize:11, color:T.muted, padding:0, fontFamily:TYPE.body.fontFamily }}>
             ↩ Reply
           </button>
         )}
@@ -5923,7 +5923,7 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
       {replyingTo && (
         <div style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", background:T.card2, borderRadius:R.sm, marginBottom:8, fontSize:12, color:T.muted }}>
           <span>↩ Replying to <strong style={{ color:T.text }}>{replyingTo.author_name || replyingTo.user_profiles?.full_name || replyingTo.user_profiles?.username || "Deleted User"}</strong></span>
-          <button onClick={onCancelReply} style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", color:T.dim, fontSize:16, padding:0, lineHeight:1 }}>×</button>
+          <button className="pmo-focusable pmo-btn" onClick={onCancelReply} style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", color:T.dim, fontSize:16, padding:0, lineHeight:1 }}>×</button>
         </div>
       )}
       <textarea value={value} onChange={e => onChange(e.target.value)}
@@ -5933,7 +5933,7 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
         style={{ width:"100%", background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", resize:"vertical", boxSizing:"border-box" }}
       />
       <div style={{ display:"flex", justifyContent:"flex-end", marginTop:8 }}>
-        <button onClick={onPost} disabled={posting || !value.trim()} style={{
+        <button className="pmo-focusable pmo-btn" onClick={onPost} disabled={posting || !value.trim()} style={{
           padding:"7px 20px", borderRadius:R.sm, border:"none",
           background: posting||!value.trim() ? T.muted : NAVY,
           color:"#fff", cursor:posting||!value.trim()?"default":"pointer",
@@ -6140,7 +6140,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
           ] : [
             { id:"all", label:"My Projects" },
           ]).map(tab => (
-            <button key={tab.id} onClick={() => setView(tab.id)} style={{
+            <button className="pmo-focusable pmo-btn" key={tab.id} onClick={() => setView(tab.id)} style={{
               flex:1, padding:"11px 0", background:"none", border:"none", borderBottom:`2px solid ${view===tab.id?GOLD:"transparent"}`,
               color:view===tab.id?GOLD:T.muted, fontSize:12.5, fontWeight:view===tab.id?700:400,
               cursor:"pointer", fontFamily:TYPE.body.fontFamily, display:"flex", alignItems:"center", justifyContent:"center", gap:6,
@@ -6328,7 +6328,7 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
       </div>
       {desc && <div style={{ fontSize:10, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
       {isPMO && (
-        <button onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
+        <button className="pmo-focusable pmo-btn" onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
       )}
     </div>
   );
@@ -6365,7 +6365,7 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
       </div>
       {desc && <div style={{ fontSize:10, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
       {isPMO && (
-        <button onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
+        <button className="pmo-focusable pmo-btn" onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
       )}
     </div>
   );
@@ -6503,7 +6503,7 @@ function TeamPage({ T, session }) {
         <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:`${SP.xl}px ${SP.xxl}px`, boxShadow:T.shadow, borderTop:`2px solid ${BRAND.gold}` }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>About Us</div>
-            {isPMO && <button onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
+            {isPMO && <button className="pmo-focusable pmo-btn" onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
           </div>
           <div style={{ display:"flex", gap:24, alignItems:"flex-start" }}>
             <img src={LOGO} alt="Riphah" style={{ width:90, flexShrink:0, opacity:.8, filter:T===DK?"brightness(0) invert(1)":"none" }} />
@@ -6585,7 +6585,7 @@ function TeamPage({ T, session }) {
         <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"22px 26px", marginBottom:8 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>Contact Us</div>
-            {isPMO && <button onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
+            {isPMO && <button className="pmo-focusable pmo-btn" onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 32px" }}>
             {Object.entries(CONTACT_LABELS).map(([key, label]) => {
@@ -6683,19 +6683,19 @@ function ChangePasswordModal({ T, session, onClose }) {
           <label style={lbl}>New Password</label>
           <div style={{ position:"relative" }}>
             <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} placeholder="At least 8 characters" style={inp} />
-            <button onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
+            <button className="pmo-focusable pmo-btn" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
           </div>
         </div>
         <div style={{ marginBottom:22 }}>
           <label style={lbl}>Confirm Password</label>
           <div style={{ position:"relative" }}>
             <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} style={inp} />
-            <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
+            <button className="pmo-focusable pmo-btn" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
           </div>
         </div>
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(168px, 1fr))" }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{status?.ok?"Close":"Cancel"}</button>
-          {!status?.ok && <button onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{loading?"Changing…":"Change Password"}</button>}
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+          <button className="pmo-focusable pmo-btn" onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{status?.ok?"Close":"Cancel"}</button>
+          {!status?.ok && <button className="pmo-focusable pmo-btn" onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{loading?"Changing…":"Change Password"}</button>}
         </div>
       </div>
     </div>
@@ -6712,7 +6712,7 @@ function SessionExpiredModal({ T, onSignIn }) {
         <div style={{ fontSize:14, color:T.muted, lineHeight:1.8, marginBottom:30 }}>
           Your session expired after 1 hour.<br/>Please sign in again to continue.
         </div>
-        <button onClick={onSignIn} style={{ width:"100%", padding:"13px", background:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
+        <button className="pmo-focusable pmo-btn" onClick={onSignIn} style={{ width:"100%", padding:"13px", background:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
           Sign In Again
         </button>
       </div>
@@ -6809,17 +6809,17 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
             <label style={{ display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, marginBottom:7, textTransform:"uppercase" }}>New Password</label>
             <div style={{ position:"relative" }}>
               <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} placeholder="At least 8 characters" style={inp} />
-              <button onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
+              <button className="pmo-focusable pmo-btn" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
           <div style={{ marginBottom:26 }}>
             <label style={{ display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, marginBottom:7, textTransform:"uppercase" }}>Confirm Password</label>
             <div style={{ position:"relative" }}>
               <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} style={inp} />
-              <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
+              <button className="pmo-focusable pmo-btn" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
-          <button onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
+          <button className="pmo-focusable pmo-btn" onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
             {loading ? "Setting password…" : type==="invite" ? "Set Password & Enter Portal" : "Set New Password"}
           </button>
         </div>
@@ -6927,7 +6927,7 @@ function Login({ T, dark, onLogin }) {
               <label style={{ display:"block", fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:8 }}>Username</label>
               <input value={resetUser} onChange={e=>setResetUser(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleReset()} placeholder="Your username" style={{ ...fieldStyle, paddingLeft:14 }} />
             </div>
-            <button onClick={handleReset} disabled={resetStatus==="sending"} style={{ width:"100%", padding:"13px", background:"linear-gradient(135deg,#E8A020,#C87820)", border:"none", borderRadius:R.md, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:14 }}>
+            <button className="pmo-focusable pmo-btn" onClick={handleReset} disabled={resetStatus==="sending"} style={{ width:"100%", padding:"13px", background:"linear-gradient(135deg,#E8A020,#C87820)", border:"none", borderRadius:R.md, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:14 }}>
               {resetStatus==="sending" ? "Sending…" : "Send Reset Link"}
             </button>
           </>
@@ -7068,7 +7068,7 @@ function Login({ T, dark, onLogin }) {
             <label style={{ display:"block", fontSize:10.5, fontWeight:700, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:7 }}>Password</label>
             <div style={{ position:"relative" }}>
               <input type={show?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="••••••••" style={{ ...fieldStyle, paddingLeft:14, paddingRight:42 }} />
-              <button onClick={()=>setShow(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.4)", display:"flex", padding:0 }}><Eye size={15}/></button>
+              <button className="pmo-focusable pmo-btn" onClick={()=>setShow(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.4)", display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
 
@@ -7082,7 +7082,7 @@ function Login({ T, dark, onLogin }) {
           </div>
 
           {/* Sign In button */}
-          <button onClick={handleLogin} disabled={loading} style={{
+          <button className="pmo-focusable pmo-btn" onClick={handleLogin} disabled={loading} style={{
             width:"100%", padding:"13px 20px",
             background: loading ? "rgba(216,152,64,0.4)" : "linear-gradient(135deg,#E8A828,#C47818)",
             border:"none", borderRadius:R.md, color:"#fff",
