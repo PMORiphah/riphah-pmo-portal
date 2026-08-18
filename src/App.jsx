@@ -463,36 +463,77 @@ function DeadlineAlertPopups({ T, session }) {
   const p = queue[idx];
   const overdue = p.days_remaining < 0;
   const urgent = !overdue && p.days_remaining <= 7;
-  const badgeColor = overdue ? "#E4576B" : urgent ? "#E2A83D" : "#185078";
+  const badgeColor = overdue ? T.danger : urgent ? T.warning : T.info;
   const daysLabel = overdue ? `${Math.abs(p.days_remaining)} day${Math.abs(p.days_remaining)===1?"":"s"} OVERDUE`
     : p.days_remaining === 0 ? "Due today"
     : `${p.days_remaining} day${p.days_remaining===1?"":"s"} remaining`;
 
   return (
-    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
-      <div className="pmo-card-in" style={{ width:420, background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, boxShadow:T.shadow, overflow:"hidden" }}>
-        <div style={{ background:badgeColor, padding:"14px 22px", display:"flex", alignItems:"center", gap:10 }}>
-          <AlertTriangle size={17} color="#fff" />
-          <span style={{ color:"#fff", fontWeight:700, fontSize:13, letterSpacing:0.3 }}>DEADLINE ALERT</span>
-          {queue.length > 1 && <span style={{ marginLeft:"auto", color:"rgba(255,255,255,0.85)", fontSize:11.5 }}>{idx+1} of {queue.length}</span>}
-        </div>
-        <div style={{ padding:"22px 22px 18px" }}>
-          <div style={{ display:"inline-block", background:badgeColor+"20", color:badgeColor, fontSize:11, fontWeight:700, padding:"3px 11px", borderRadius:R.pill, marginBottom:12 }}>
-            {daysLabel.toUpperCase()}
+    <div style={{
+      position:"fixed", inset:0, zIndex:1300,
+      background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)",
+      backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:SP.xl,
+      animation:"pmoFade .18s ease",
+    }}>
+      <div className="pmo-scale" role="dialog" aria-modal="true" style={{
+        width:460, maxWidth:"100%", background:T.surface,
+        border:`1px solid ${T.border}`, borderRadius:R.xl,
+        boxShadow:T.shadowLg, overflow:"hidden",
+      }}>
+        {/* Severity band rather than a solid red bar: the alert should read as
+            urgent, not alarming, and it sits inside an executive dashboard. */}
+        <div style={{
+          display:"flex", alignItems:"center", gap:SP.md,
+          padding:`${SP.md}px ${SP.xl}px`,
+          background:`linear-gradient(90deg, ${badgeColor}${T.washStrong}, transparent)`,
+          borderBottom:`1px solid ${badgeColor}44`,
+        }}>
+          <div style={{
+            width:30, height:30, borderRadius:R.sm, flexShrink:0,
+            background:`${badgeColor}${T.badge}`, border:`1px solid ${badgeColor}44`,
+            display:"flex", alignItems:"center", justifyContent:"center",
+          }}>
+            <AlertTriangle size={15} color={badgeColor} strokeWidth={2} />
           </div>
-          <div style={{ fontSize:11, color:T.dim, fontFamily:"monospace", marginBottom:4 }}>{p.code || "-"}</div>
-          <div style={{ fontSize:16, fontWeight:700, color:T.text, lineHeight:1.35, marginBottom:14 }}>{p.name}</div>
-          <div style={{ fontSize:12.5, color:T.muted, lineHeight:1.8 }}>
-            <div>Campus: <span style={{color:T.text}}>{p.campus || "Unspecified"}</span></div>
-            <div>Stage: <span style={{color:T.text}}>{p.workflow_stage}</span></div>
-            <div>Planned End Date: <span style={{color:T.text}}>{p.end_date}</span></div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ ...TYPE.label, color:T.textOf(badgeColor) }}>Deadline alert</div>
+            <div style={{ ...TYPE.caption, color:T.muted, marginTop:1 }}>
+              {idx + 1} of {queue.length}
+            </div>
           </div>
         </div>
-        <div style={{ padding:"14px 22px", borderTop:"1px solid "+T.border, display:"flex", justifyContent:"flex-end" }}>
-          <button className="pmo-focusable pmo-btn" onClick={() => setIdx(i => i + 1)}
-            style={{ padding:"8px 18px", background:NAVY, border:"none", borderRadius:R.md, color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+
+        <div style={{ padding:`${SP.lg}px ${SP.xl}px` }}>
+          <Badge T={T} color={badgeColor} style={{ marginBottom:SP.md }}>{daysLabel}</Badge>
+          {p.code && p.code !== "-" && (
+            <div style={{ ...TYPE.mono, color:T.muted, marginBottom:4 }}>{p.code}</div>
+          )}
+          <div style={{ ...TYPE.h2, color:T.text, lineHeight:1.35, marginBottom:SP.md }}>
+            {p.name}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"auto 1fr", gap:`6px ${SP.md}px` }}>
+            {[
+              ["Campus", p.campus_name || "—"],
+              ["Stage", STAGE_META[p.workflow_stage]?.label || p.workflow_stage || "—"],
+              ["Planned end", p.end_date || "—"],
+            ].map(([k, v]) => (
+              <div key={k} style={{ display:"contents" }}>
+                <span style={{ ...TYPE.caption, color:T.muted }}>{k}</span>
+                <span style={{ ...TYPE.bodySm, color:T.text }}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{
+          display:"flex", justifyContent:"flex-end", gap:SP.sm,
+          padding:`${SP.md}px ${SP.xl}px`, borderTop:`1px solid ${T.border}`,
+          background:T.pageAlt,
+        }}>
+          <Button T={T} variant="primary" onClick={() => setIdx(i => i + 1)}>
             {idx + 1 < queue.length ? "Next" : "Dismiss"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -3977,6 +4018,7 @@ function CampusPage({ T, session, onSelectProject }) {
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 function SettingsPage({ T, session }) {
+  const vpS = useViewport();
   // ── helpers ──────────────────────────────────────────────────────────────
   const Msg = ({ status }) => {
     if (!status) return null;
@@ -4106,8 +4148,12 @@ function SettingsPage({ T, session }) {
   return (
     <div className="pmo-scroll" style={{ flex:1, overflow:"auto",
       padding:`${SP.xl}px ${SP.xxl}px`, backgroundImage:T.ambient }}>
-      <div style={{ maxWidth:760 }}>
-      <Surface T={T} pad={SP.md} style={{ marginBottom:SP.xl }}>
+      <div style={{
+        maxWidth:1180,
+        display:"grid", alignItems:"start", gap:SP.lg,
+        gridTemplateColumns: vpS.width >= 1100 ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)",
+      }}>
+      <Surface T={T} pad={SP.md} style={{ gridColumn:"1 / -1" }}>
         <div style={{ ...TYPE.bodySm, color:T.muted }}>
           Signed in as <span style={{ color:T.text, fontWeight:600 }}>{session.username}</span>
           <span style={{ color:T.dim }}> · {session.role?.replace("_", " ")}</span>
@@ -5439,11 +5485,7 @@ function UserManagementPage({ T, session }) {
           {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
         </div>
         <div style={{ marginLeft:"auto" }}>
-          <button className="pmo-focusable pmo-btn" onClick={() => { setShowCreate(true); setCreateStatus(null); }} style={{
-            display:"flex", alignItems:"center", gap:7, padding:"8px 18px", background:NAVY, color:"#fff",
-            border:"none", borderRadius:R.md, cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
-            boxShadow:"0 3px 12px rgba(24,80,120,0.3)",
-          }}>+ Create User</button>
+          <Button T={T} variant="primary" icon={Plus} onClick={() => { setShowCreate(true); setCreateStatus(null); }}>Create user</Button>
         </div>
       </div>
 
@@ -5522,34 +5564,27 @@ function UserManagementPage({ T, session }) {
                       {!me && (
                         <div style={{ display:"flex", gap:8, justifyContent:"flex-end", alignItems:"center" }}>
                           {u.role === "project_manager" && (
-                            <button className="pmo-focusable pmo-btn" onClick={() => openAssign(u)} style={{ padding:"5px 12px", borderRadius:R.sm, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
-                              Assign Projects
-                            </button>
+                            <Button T={T} variant="ghost" size="sm" icon={FolderKanban} onClick={() => openAssign(u)}>Assign</Button>
                           )}
                           {u.role !== "pmo" && (
-                            <button className="pmo-focusable pmo-btn" onClick={() => toggleActive(u)} style={{
-                              padding:"5px 12px", borderRadius:R.sm, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily,
-                              border:`1px solid ${u.is_active?"rgba(248,113,113,0.4)":"rgba(45,212,191,0.4)"}`,
-                              background:"none", color:u.is_active?"#F87171":EMERALD,
-                            }}>
+                            <Button T={T} variant="ghost" size="sm" tone={u.is_active ? undefined : T.positive}
+                              onClick={() => toggleActive(u)}
+                              title={u.is_active ? "Suspend this account — reversible" : "Restore access for this account"}>
                               {u.is_active ? "Deactivate" : "Reactivate"}
-                            </button>
+                            </Button>
                           )}
                           {u.role !== "pmo" && (
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                                <span style={{ fontSize:11, color:T.muted }}>Sure?</span>
+                                <span style={{ ...TYPE.caption, color:T.danger, fontWeight:600 }}>Permanent —</span>
                                 <button className="pmo-focusable pmo-btn" onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
                                   {deleting === u.id ? "Deleting…" : "Yes, Delete"}
                                 </button>
-                                <button className="pmo-focusable pmo-btn" onClick={() => setConfirmDelete(null)} style={{ padding:"5px 8px", borderRadius:R.sm, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
-                                  Cancel
-                                </button>
+                                <Button T={T} variant="ghost" size="sm" onClick={() => setConfirmDelete(null)}>Cancel</Button>
                               </div>
                             ) : (
-                              <button className="pmo-focusable pmo-btn" onClick={() => setConfirmDelete(u.id)} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid rgba(248,113,113,0.3)", background:"none", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, opacity:0.7 }}>
-                                Delete
-                              </button>
+                              <Button T={T} variant="danger" size="sm" icon={Trash2}
+                                onClick={() => setConfirmDelete(u.id)}>Delete</Button>
                             )
                           )}
                         </div>
@@ -7148,6 +7183,7 @@ const PAGE_TITLES = {
   cashflow: { title:"Project Cashflows & Timelines", subtitle:"Monthly CAPEX cashflow and scheduling view" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
   team: { title:"Team & About",    subtitle:"PMO team and portal information" },
+  users:{ title:"User Management", subtitle:"Accounts, roles and project assignments" },
   log:  { title:"Activity Log",    subtitle:"Immutable audit trail" },
   set:  { title:"Settings",        subtitle:"Portal configuration" },
 };
@@ -7610,6 +7646,13 @@ export default function App() {
 
   const T = dark ? DK : LT;
   const vp = useViewport();
+  // Native date pickers read their chrome from color-scheme; set it per theme
+  // so the calendar popup matches the rest of the product.
+  useEffect(() => {
+    const r = document.documentElement.style;
+    r.setProperty("--pmo-scheme", dark ? "dark" : "light");
+    r.setProperty("--pmo-date-filter", dark ? "invert(1)" : "none");
+  }, [dark]);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [navMobileOpen, setNavMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
