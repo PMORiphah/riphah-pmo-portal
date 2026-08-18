@@ -555,7 +555,10 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     <div
       className={onCardClick && !editing ? "pmo-in pmo-lift" : "pmo-in"}
       style={{ animationDelay:(160 + index*55)+"ms", flex: featured ? 1.22 : 1, minWidth:0,
-        display:"flex", position:"relative" }}
+        display:"flex", position:"relative",
+        // Sibling cards are also positioned, so without this the next card in
+        // the DOM paints over this one's insight layer.
+        zIndex: hover && !editing ? 30 : undefined }}
       onClick={() => { if (!editing && onCardClick) onCardClick(); }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
     >
@@ -2115,7 +2118,10 @@ function CommandCenter({ T, session, onSelectProject }) {
       {/* ── TAB BAR ── */}
       {/* Entrance order (§21): header → tabs → KPI strip → chart, each offset
           by ~60ms. Total under 900ms, so nobody waits on the animation. */}
-      <div className="pmo-in" style={{ flexShrink:0, animationDelay:"90ms" }}>
+      <div className="pmo-in" style={{
+        flexShrink:0, animationDelay:"90ms",
+        position:"relative", zIndex:40,
+      }}>
         <TabsUI T={T} tabs={TABS} active={activeTab} onChange={switchTab} isMobile={vp.isCompact} />
       </div>
 
