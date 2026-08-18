@@ -2021,6 +2021,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
   // §10 — the hero's lighting follows the pointer, so the executive block
   // responds to attention rather than sitting inert.
   const heroLight = useCursorLight(true);
+  const [heroHot, setHeroHot] = useState(false);
   const [data,         setData]         = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
@@ -2218,10 +2219,11 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
         );
 
         return (
-          <div className="pmo-in pmo-hero pmo-hot"
+          <div className={`pmo-in pmo-hero${heroHot ? " pmo-hot" : ""}`}
             ref={heroLight.ref}
             onMouseMove={heroLight.onMouseMove}
-            onMouseLeave={heroLight.onMouseLeave}
+            onMouseEnter={() => setHeroHot(true)}
+            onMouseLeave={() => { setHeroHot(false); heroLight.onMouseLeave(); }}
             style={{
             animationDelay:"0ms",
             background:T.hero, borderRadius:R.xl,
