@@ -4554,7 +4554,13 @@ function PerformancePage({ T, session, onSelectProject }) {
         </div>
       ) : (
         <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
-          <table style={{ ...tableStyles(T).table, minWidth:1120 }}>
+          <table style={{ ...tableStyles(T).tableFixed }}>
+            <colgroup>
+              {[220,86,76,76,76,76,66,66,76,86,86,104,104].map((w,i)=>{
+                const tot=1198;
+                return <col key={i} style={{ width:`${(w/tot)*100}%` }} />;
+              })}
+            </colgroup>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <th style={{ ...th, position:"sticky", left:0, zIndex:3, minWidth:220, borderRight:`1px solid ${T.border}` }}>Project</th>
