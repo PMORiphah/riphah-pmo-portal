@@ -4406,33 +4406,6 @@ function CashflowPage({ T, dark }) {
   );
 }
 
-function CashflowPage({ T, dark }) {
-  const frame = useRef(null);
-  // The src was hardcoded to the production URL, so the preview build loaded
-  // production's copy of this file. A relative path keeps each deployment
-  // self-contained.
-  const src = `cashflow-dashboard.html?theme=${dark ? "dark" : "light"}`;
-
-  // Push theme changes to the frame so the tab flips with the rest of the app
-  // instead of only picking up the theme it was first loaded with.
-  useEffect(() => {
-    try {
-      frame.current?.contentWindow?.postMessage({ pmoTheme: dark ? "dark" : "light" }, "*");
-    } catch (_) {}
-  }, [dark]);
-
-  return (
-    <div style={{ flex:1, display:"flex", overflow:"hidden", background:T?.page }}>
-      <iframe
-        ref={frame}
-        src={src}
-        title="Project Cashflows & Timelines"
-        style={{ flex:1, border:"none", width:"100%", height:"100%" }}
-      />
-    </div>
-  );
-}
-
 function PerformancePage({ T, session, onSelectProject }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
