@@ -4783,10 +4783,12 @@ function ProjectAttachments({ T, session, projectId }) {
 
       {loading ? (
         <div style={{ fontSize:12, color:T.dim, padding:"8px 0" }}>Loading…</div>
-      ) : items.length === 0 ? (
-        <div style={{ fontSize:12, color:T.dim, padding:"8px 0" }}>
-          No attachments yet{canManage ? " — click Upload to add one." : "."}
-        </div>
+      ): items.length === 0 ? (
+        <EmptyState T={T} icon={FileText} compact tone={T.info}
+          title="No documents yet"
+          message={canManage
+            ? "PDDs, approvals and correspondence attached to this project appear here. Use Upload to add the first one."
+            : "PDDs, approvals and correspondence attached to this project will appear here once the PMO uploads them."} />
       ) : (
         <div style={{ display:"grid", gap:SP.sm,
           gridTemplateColumns:"repeat(auto-fill, minmax(min(280px,100%), 1fr))" }}>
