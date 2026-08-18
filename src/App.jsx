@@ -784,12 +784,18 @@ const KCARD_META = {
 };
 
 function KCard({ T, label, value, sub, accent, featured, onClick, isSelected, index = 0, Icon, dashData }) {
-  const meta = KCARD_META[label] || {};
+  // Looked up at render rather than module load, and normalised so a label that
+  // differs only in case or spacing still resolves. Falls back to a generic
+  // icon so a card can never render with an empty tile.
+  const norm = String(label || "").trim().toLowerCase();
+  const meta = KCARD_META[label]
+    || Object.entries(KCARD_META).find(([k]) => k.toLowerCase() === norm)?.[1]
+    || {};
   return (
     <EditableKCard
       T={T} label={label} value={value} sub={sub}
       accent={accent} featured={featured}
-      Icon={Icon || meta.Icon}
+      Icon={Icon || meta.Icon || BarChart3}
       kpiKey={meta.key}
       dashData={dashData}
       canEdit={false}
@@ -3850,7 +3856,7 @@ function CampusPage({ T, session, onSelectProject }) {
     };
   }, [filtered]);
 
-  const good={EMERALD}, warn={AMBER}, bad={ROSE};
+  const good = EMERALD, warn = AMBER, bad = ROSE;
 
   // Each KPI card maps to a predicate over the campus-filtered rows, so clicking
   // a card drills the list down to exactly the projects it counted.
