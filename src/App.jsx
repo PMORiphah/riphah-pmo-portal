@@ -1452,7 +1452,7 @@ function DonutChart({ slices, T }) {
 const ORG_COLORS  = { Riphah:GOLD, Trust:EMERALD };
 const SEG_ICONS   = { Academic:Layers, Academics:Layers, Healthcare:Activity,
                       Management:Shield, Investment:Wallet, Infrastructure:Building2 };
-const SEG_COLORS  = { Academic:T.textOf(DATA.info), Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
+const SEG_COLORS  = { Academic:DATA.info, Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
 const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
 
 function BreakdownSection({ T, session }) {
