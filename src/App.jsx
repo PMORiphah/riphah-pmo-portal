@@ -337,6 +337,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
 function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu,
                  unreadCount = 0, onBellClick, actions, onSearch, quickActions }) {
   const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
+  const [searchHot, setSearchHot] = useState(false);
   return (
     <div style={{
       minHeight:62, flexShrink:0, display:"flex", alignItems:"center",
@@ -373,13 +374,19 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
         <IconButton T={T} icon={Search} onClick={onSearch} title="Search projects" />
       ) : (
         <button onClick={onSearch} className="pmo-focusable" title="Search projects"
+          onMouseEnter={() => setSearchHot(true)} onMouseLeave={() => setSearchHot(false)}
           style={{
             display:"flex", alignItems:"center", gap:SP.sm, padding:"7px 10px 7px 11px",
-            background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
-            color:T.muted, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontSize:12.5,
-            minWidth:210, transition:`border-color ${MOTION.fast}`,
+            background: searchHot ? T.rowHover : T.inputBg,
+            border:`1px solid ${searchHot ? T.borderAccent : T.inputBorder}`,
+            borderRadius:R.sm,
+            color: searchHot ? T.text : T.muted,
+            cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontSize:12.5,
+            minWidth:210,
+            boxShadow: searchHot ? T.glowSoft(T.blue) : "none",
+            transition:`border-color ${MOTION.fast}, background ${MOTION.fast}, color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
           }}>
-          <Search size={13} />
+          <Search size={13} color={searchHot ? T.blueBright : undefined} />
           <span style={{ flex:1, textAlign:"left" }}>Search projects…</span>
           <kbd style={{ ...TYPE.caption, border:`1px solid ${T.border}`, borderRadius:4,
             padding:"1px 5px", color:T.dim, background:T.pageAlt }}>{mac ? "⌘K" : "Ctrl K"}</kbd>
@@ -755,15 +762,29 @@ const chartBaseOptions = (T) => ({
   maintainAspectRatio: false,
   plugins: {
     legend: { display: false },
+    // Matched to the Recharts tooltip (see ChartTooltip in charts.jsx) so the
+    // three remaining chart.js charts read as the same product: same surface,
+    // same hairline, same radius, same type. §12 rules out anything that looks
+    // like a chart library's stock tooltip.
     tooltip: {
-      backgroundColor: T.mode === "light" ? "#101E3B" : T.card2,
-      titleColor: "#fff", bodyColor: T.mode === "light" ? "#DCE4F2" : T.text,
-      titleFont: { family: "Inter", weight: "700", size: 12 },
-      bodyFont: { family: "Inter", size: 12 },
-      padding: 10, cornerRadius: 8, displayColors: false,
-      borderColor: T.border, borderWidth: 1,
+      backgroundColor: T.mode === "dark" ? "rgba(20,36,60,0.97)" : "rgba(255,255,255,0.98)",
+      titleColor: T.muted,
+      bodyColor: T.text,
+      titleFont: { family: "Inter", weight: "600", size: 10, lineHeight: 1.4 },
+      bodyFont:  { family: "Inter", weight: "700", size: 12 },
+      titleMarginBottom: 6,
+      padding: { top: 9, bottom: 9, left: 13, right: 13 },
+      cornerRadius: R.md,
+      displayColors: true, boxWidth: 8, boxHeight: 8, boxPadding: 5, usePointStyle: true,
+      borderColor: T.borderStrong, borderWidth: 1,
+      caretSize: 5,
     },
   },
+  // Hover emphasis (§11/§12): the nearest element highlights across the whole
+  // index rather than only under the cursor, and animates rather than snapping.
+  interaction: { mode: "index", intersect: false },
+  hover: { mode: "index", intersect: false, animationDuration: 180 },
+  animation: { duration: 850, easing: "easeOutCubic" },
   scales: {
     x: { grid: { color: T.border, drawBorder: false }, ticks: { color: T.muted, font: { family: "Inter", size: 11 } } },
     y: { grid: { color: T.border, drawBorder: false }, ticks: { color: T.muted, font: { family: "Inter", size: 11 } } },
@@ -2056,8 +2077,16 @@ function CommandCenter({ T, session, onSelectProject }) {
         const spi = perfStatus(d.portfolio_spi);
         const noData = health.key === "nodata";
 
+        const IDX_INSIGHT = {
+          CPI: "Cost Performance Index — earned value against actual cost. Below 1.00 means the portfolio is spending ahead of the work delivered.",
+          SPI: "Schedule Performance Index — earned value against planned value. Below 1.00 means the portfolio is behind plan.",
+        };
         const Index = ({ label, value, status, hint }) => (
-          <div style={{ position:"relative", minWidth:96 }}>
+          <WithInsight T={T} side="bottom" align="left" width={268}
+            tone={value == null ? T.neutral : status.color}
+            title={label} line={IDX_INSIGHT[label]}
+            stat={value == null ? "No project reports both a baseline and actuals yet" : `${status.label} · threshold 0.95`}>
+          <div style={{ position:"relative", minWidth:96, cursor:"help" }}>
             <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:6 }}>{label}</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
               <span style={{ ...TYPE.metricXL, color: value == null ? "rgba(255,255,255,0.35)" : "#fff" }}>
@@ -2069,6 +2098,7 @@ function CommandCenter({ T, session, onSelectProject }) {
             </div>
             <div style={{ ...TYPE.caption, color:"rgba(255,255,255,0.5)", marginTop:3 }}>{hint}</div>
           </div>
+          </WithInsight>
         );
 
         return (
