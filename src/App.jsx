@@ -1178,10 +1178,10 @@ function PipelineFunnelChart({ T, d, height = 300 }) {
   const stages = [
     { label:"PDD Not Submitted", value:d.pdd_not_submitted_count||0, color:T.muted },
     { label:"PDD Submitted",     value:d.pdds_submitted||0,          color:DATA.info },
-    { label:"DF Review",         value:d.in_df||0,                   color:GOLD },
+    { label:"DF Review",         value:d.in_df||0,                   color:(T.goldText || GOLD) },
     { label:"ED Review",         value:d.in_ed||0,                   color:GOLD_DEEP },
-    { label:"MT Review",         value:d.in_mt||0,                   color:VIOLET },
-    { label:"Approved",          value:d.approved_count||0,          color:EMERALD },
+    { label:"MT Review",         value:d.in_mt||0,                   color:T.textOf(VIOLET) },
+    { label:"Approved",          value:d.approved_count||0,          color:T.textOf(EMERALD) },
   ];
   const data = {
     labels: stages.map(s=>s.label),
@@ -1611,7 +1611,7 @@ function BreakdownSection({ T, session }) {
                       <div style={{ fontSize:11, color:T.dim }}>{data.count} projects · {fy === "__all__" ? "All FY" : fy}</div>
                     </div>
                   </div>
-                  {isOver && <span style={{ fontSize:10, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"3px 9px", borderRadius:R.pill }}>OVER TARGET</span>}
+                  {isOver && <span style={{ fontSize:10, fontWeight:700, background:`${ROSE}20`, color:T.textOf(ROSE), padding:"3px 9px", borderRadius:R.pill }}>OVER TARGET</span>}
                 </div>
 
                 <div style={{ display:"flex", alignItems:"baseline", gap:10, position:"relative" }}>
@@ -1712,7 +1712,7 @@ function BreakdownSection({ T, session }) {
                     {plannedAbs>0 && !editing && (
                       <div style={{ fontSize:12, color:isOver?ROSE:T.muted, marginBottom:9, position:"relative" }}>
                         Target: {fmtM(plannedAbs)}
-                        {isOver && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:`${ROSE}20`, padding:"1px 6px", borderRadius:R.pill, marginLeft:6 }}>OVER</span>}
+                        {isOver && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(ROSE), background:`${ROSE}20`, padding:"1px 6px", borderRadius:R.pill, marginLeft:6 }}>OVER</span>}
                       </div>
                     )}
 
@@ -1813,7 +1813,7 @@ function CarryForwardList({ T, session }) {
             {rows.length} projects
           </span>
         </div>
-        <span style={{ fontSize:11, color:GOLD, fontWeight:700 }}>PKR {fmtM(total)} total</span>
+        <span style={{ fontSize:11, color:(T.goldText || GOLD), fontWeight:700 }}>PKR {fmtM(total)} total</span>
       </div>
       <div style={{ overflowX:"auto", maxHeight:480, overflowY:"auto" }}>
         <table style={tableStyles(T).table}>
@@ -1833,7 +1833,7 @@ function CarryForwardList({ T, session }) {
                 <td style={{...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted}}>{r.code || "-"}</td>
                 <td style={{...td, fontWeight:500}}>{r.name}</td>
                 <td style={{...td, color:T.muted}}>{r.region || "—"}</td>
-                <td style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600}}>{fmtM(r.amount)}</td>
+                <td style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600}}>{fmtM(r.amount)}</td>
               </tr>
             ))}
           </tbody>
@@ -1855,7 +1855,7 @@ function CarryForwardList({ T, session }) {
         ))}
         <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0 2px", marginTop:6, borderTop:"1px solid "+T.border, fontSize:14.5 }}>
           <span style={{ color:T.text, fontWeight:700 }}>Carry Forward 2026</span>
-          <span style={{ color:GOLD, fontWeight:800, fontVariantNumeric:"tabular-nums" }}>{Math.round(carryForward2026).toLocaleString()}</span>
+          <span style={{ color:(T.goldText || GOLD), fontWeight:800, fontVariantNumeric:"tabular-nums" }}>{Math.round(carryForward2026).toLocaleString()}</span>
         </div>
       </div>
     </div>
@@ -1925,29 +1925,29 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ ...td, color:T.dim }}>{i+1}</td>
                 <td style={{ ...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted, whiteSpace:"nowrap" }}>
-                  {p.is_carry_forward && <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 4px", borderRadius:3, marginRight:5 }}>CF</span>}
+                  {p.is_carry_forward && <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:(T.goldText || GOLD), padding:"1px 4px", borderRadius:3, marginRight:5 }}>CF</span>}
                   {p.code || "-"}
                 </td>
                 <td style={{ ...td, maxWidth:260, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:500 }}>{p.name}</td>
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.segments?.name||"—"}</td>
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.sectors?.name||"—"}</td>
-                <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600 }}>{fmtM(p.bac)}</td>
+                <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600 }}>{fmtM(p.bac)}</td>
                 {tab === "budgeting" && activeCard === "df_recommended" && (
-                  <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600 }}>{fmtM(p.df_recommended_amount)}</td>
+                  <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600 }}>{fmtM(p.df_recommended_amount)}</td>
                 )}
                 <td style={td}><StageBadge T={T} stage={p.workflow_stage}/></td>
                 {tab === "execution" && (
                   <td style={td}>
-                    {p.manual_schedule_flag === "on_time"  && <span style={{ fontSize:10, fontWeight:700, color:EMERALD, background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>On Time</span>}
-                    {p.manual_schedule_flag === "delayed"  && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Delayed</span>}
+                    {p.manual_schedule_flag === "on_time"  && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(EMERALD), background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>On Time</span>}
+                    {p.manual_schedule_flag === "delayed"  && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(ROSE), background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Delayed</span>}
                     {p.manual_schedule_flag === "not_started" && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                     {!p.manual_schedule_flag && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                   </td>
                 )}
                 {tab === "execution" && (
                   <td style={td}>
-                    {p.manual_budget_flag === "within" && <span style={{ fontSize:10, fontWeight:700, color:EMERALD, background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Within</span>}
-                    {p.manual_budget_flag === "over"   && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Over</span>}
+                    {p.manual_budget_flag === "within" && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(EMERALD), background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Within</span>}
+                    {p.manual_budget_flag === "over"   && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(ROSE), background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Over</span>}
                     {p.manual_budget_flag === "not_started" && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                     {!p.manual_budget_flag && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                   </td>
@@ -2111,7 +2111,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
       </div>
     </div>
   );
-  if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color={ROSE} /><span style={{ color:ROSE, fontSize:13 }}>{err}</span><button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
+  if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color={ROSE} /><span style={{ color:T.textOf(ROSE), fontSize:13 }}>{err}</span><button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
   if (!data) return null;
 
   const d = data;
@@ -2991,7 +2991,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             </div>
 
             {/* Deletion warning */}
-            <div style={{background:"rgba(248,113,113,0.07)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:ROSE,lineHeight:1.8}}>
+            <div style={{background:"rgba(248,113,113,0.07)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:T.textOf(ROSE),lineHeight:1.8}}>
               <strong>This will permanently replace all existing data:</strong><br/>
               • {counts.projects} existing projects will be deleted<br/>
               • <strong>{counts.comments} discussion comments</strong> will be deleted<br/>
@@ -3000,7 +3000,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
             {/* New lookups */}
             {totalNew>0&&(
-              <div style={{background:"rgba(216,152,64,0.07)",border:"1px solid rgba(216,152,64,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:GOLD,lineHeight:1.8}}>
+              <div style={{background:"rgba(216,152,64,0.07)",border:"1px solid rgba(216,152,64,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:(T.goldText || GOLD),lineHeight:1.8}}>
                 <strong>✦ Auto-creating {totalNew} new values:</strong><br/>
                 {newL.sectors.length>0&&<span>Sectors: {newL.sectors.join(", ")}<br/></span>}
                 {newL.regions.length>0&&<span>Regions: {newL.regions.join(", ")}<br/></span>}
@@ -3013,8 +3013,8 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             {/* Parse errors */}
             {errors.length>0&&(
               <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,maxHeight:110,overflow:"auto"}}>
-                <div style={{fontSize:11,fontWeight:700,color:ROSE,marginBottom:5,textTransform:"uppercase",letterSpacing:1}}>Errors — rows skipped</div>
-                {errors.map((e,i)=><div key={i} style={{fontSize:12,color:ROSE,lineHeight:1.7}}>• {e}</div>)}
+                <div style={{fontSize:11,fontWeight:700,color:T.textOf(ROSE),marginBottom:5,textTransform:"uppercase",letterSpacing:1}}>Errors — rows skipped</div>
+                {errors.map((e,i)=><div key={i} style={{fontSize:12,color:T.textOf(ROSE),lineHeight:1.7}}>• {e}</div>)}
               </div>
             )}
 
@@ -3918,7 +3918,7 @@ function CampusPage({ T, session, onSelectProject }) {
   const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:R.sm,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
 
   if (loading) return <div style={{color:T.muted,fontSize:13,padding:20}}>Loading campuses…</div>;
-  if (err)     return <div style={{color:ROSE,fontSize:13,padding:20}}>{err}</div>;
+  if (err)     return <div style={{color:T.textOf(ROSE),fontSize:13,padding:20}}>{err}</div>;
 
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -4457,7 +4457,7 @@ function PerformancePage({ T, session, onSelectProject }) {
       ) : err ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
           <AlertCircle color={ROSE} />
-          <span style={{ color:ROSE, fontSize:13 }}>{err}</span>
+          <span style={{ color:T.textOf(ROSE), fontSize:13 }}>{err}</span>
           <button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
         </div>
       ) : filtered.length === 0 ? (
@@ -4502,7 +4502,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                     <td style={{ ...td, position:"sticky", left:0, background:stickyBg, zIndex:1, borderRight:`1px solid ${T.border}`, minWidth:220 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                         {r.is_carry_forward && (
-                          <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 5px", borderRadius:4, flexShrink:0 }}>CF</span>
+                          <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:(T.goldText || GOLD), padding:"1px 5px", borderRadius:4, flexShrink:0 }}>CF</span>
                         )}
                         <div>
                           <div style={{ fontSize:10.5, color:T.dim, fontFamily:"monospace" }}>{r.code || "-"}</div>
@@ -4683,7 +4683,7 @@ function ProjectAttachments({ T, session, projectId }) {
               <div style={{ width:pct+"%", height:"100%", background:barColor, borderRadius:3, transition:"width .4s" }}/>
             </div>
             {pct >= 80 && (
-              <div style={{ fontSize:10.5, color:AMBER, marginTop:5 }}>
+              <div style={{ fontSize:10.5, color:T.textOf(AMBER), marginTop:5 }}>
                 Approaching the Free-tier storage limit — consider upgrading to Supabase Pro before this fills up.
               </div>
             )}
@@ -4691,7 +4691,7 @@ function ProjectAttachments({ T, session, projectId }) {
         );
       })()}
 
-      {err && <div style={{ fontSize:11.5, color:ROSE, marginBottom:10 }}>{err}</div>}
+      {err && <div style={{ fontSize:11.5, color:T.textOf(ROSE), marginBottom:10 }}>{err}</div>}
 
       {loading ? (
         <div style={{ fontSize:12, color:T.dim, padding:"8px 0" }}>Loading…</div>
@@ -4926,7 +4926,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   };
 
   if (loading) return <div style={{flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13}}>Loading project…</div>;
-  if (err)     return <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10}}><AlertCircle color={ROSE}/><span style={{color:ROSE,fontSize:13}}>{err}</span></div>;
+  if (err)     return <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10}}><AlertCircle color={ROSE}/><span style={{color:T.textOf(ROSE),fontSize:13}}>{err}</span></div>;
   if (!evm || !details) return null;
 
   // Formatters
@@ -5523,7 +5523,7 @@ function UserManagementPage({ T, session }) {
       {loading ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading users…</div>
       ) : err ? (
-        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:ROSE, fontSize:13 }}>{err}</div>
+        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.textOf(ROSE), fontSize:13 }}>{err}</div>
       ) : (
         <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
           <table style={tableStyles(T).table}>
@@ -5585,7 +5585,7 @@ function UserManagementPage({ T, session }) {
                       </span>
                     </td>
                     <td style={{ ...td, fontSize:12, color:T.muted }}>
-                      {u.role === "pmo"   ? <span style={{ color:GOLD, fontSize:11, fontWeight:600 }}>All projects</span> :
+                      {u.role === "pmo"   ? <span style={{ color:(T.goldText || GOLD), fontSize:11, fontWeight:600 }}>All projects</span> :
                        u.role === "guest" ? <span style={{ color:T.muted, fontSize:11 }}>All projects (can comment)</span> :
                        assigns.length === 0 ? <span style={{ color:T.dim, fontSize:11 }}>None assigned</span> :
                        <span style={{ color:T.text, fontSize:12 }}>{assigns.length} project{assigns.length!==1?"s":""}</span>}
@@ -5607,7 +5607,7 @@ function UserManagementPage({ T, session }) {
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                                 <span style={{ ...TYPE.caption, color:T.danger, fontWeight:600 }}>Permanent —</span>
-                                <button className="pmo-focusable pmo-btn" onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:ROSE, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
+                                <button className="pmo-focusable pmo-btn" onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:T.textOf(ROSE), fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
                                   {deleting === u.id ? "Deleting…" : "Yes, Delete"}
                                 </button>
                                 <Button T={T} variant="ghost" size="sm" onClick={() => setConfirmDelete(null)}>Cancel</Button>
@@ -5719,21 +5719,21 @@ function RestoreSnapshotButton({ T, session, entry }) {
     } catch(e) { setMsg(e.message); setState("error"); }
   };
 
-  if (state === "done") return <div style={{marginTop:6,fontSize:11,color:EMERALD}}>✓ Restored — refresh Projects tab to see changes.</div>;
-  if (state === "error") return <div style={{marginTop:6,fontSize:11,color:ROSE}}>✗ {msg}</div>;
+  if (state === "done") return <div style={{marginTop:6,fontSize:11,color:T.textOf(EMERALD)}}>✓ Restored — refresh Projects tab to see changes.</div>;
+  if (state === "error") return <div style={{marginTop:6,fontSize:11,color:T.textOf(ROSE)}}>✗ {msg}</div>;
 
   return (
     <div style={{marginTop:6}}>
       {state === "confirming" ? (
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:ROSE}}>Replace ALL current projects with this snapshot?</span>
-          <button className="pmo-focusable pmo-btn" onClick={restore} style={{padding:"3px 10px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:R.sm,color:ROSE,fontSize:11,fontWeight:700,cursor:"pointer"}}>Yes, Restore</button>
+          <span style={{fontSize:11,color:T.textOf(ROSE)}}>Replace ALL current projects with this snapshot?</span>
+          <button className="pmo-focusable pmo-btn" onClick={restore} style={{padding:"3px 10px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:R.sm,color:T.textOf(ROSE),fontSize:11,fontWeight:700,cursor:"pointer"}}>Yes, Restore</button>
           <button className="pmo-focusable pmo-btn" onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
         </div>
       ) : state === "restoring" ? (
         <div style={{...TYPE.caption, color:T.positive, display:"flex", alignItems:"center", gap:5}}><Spinner size={11} color={T.positive} />{msg}</div>
       ) : (
-        <button className="pmo-focusable pmo-btn" onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:R.sm,color:GOLD,fontSize:11,cursor:"pointer"}}>
+        <button className="pmo-focusable pmo-btn" onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:R.sm,color:(T.goldText || GOLD),fontSize:11,cursor:"pointer"}}>
           📦 Restore this version ({entry.details.imported} projects)
         </button>
       )}
@@ -5862,7 +5862,7 @@ function ActivityLogPage({ T, session }) {
 
         <div style={{ marginLeft:"auto", fontSize:11, color:T.dim }}>
           {loading ? "Loading…" : `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`}
-          {entries.length === 500 && <span style={{ color:GOLD }}> · showing latest 500</span>}
+          {entries.length === 500 && <span style={{ color:(T.goldText || GOLD) }}> · showing latest 500</span>}
         </div>
       </div>
 
@@ -5872,7 +5872,7 @@ function ActivityLogPage({ T, session }) {
       ) : err ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
           <AlertCircle color={ROSE}/>
-          <span style={{ color:ROSE, fontSize:13 }}>{err}</span>
+          <span style={{ color:T.textOf(ROSE), fontSize:13 }}>{err}</span>
           <button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
         </div>
       ) : entries.length === 0 ? (
@@ -5986,7 +5986,7 @@ function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
           <span style={{ fontSize:10, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"2px 8px", borderRadius:R.pill }}>{rc.label}</span>
           <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{timeAgo(comment.created_at)}</span>
           {onDelete && (
-            <button className="pmo-focusable pmo-btn" onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:ROSE, display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
+            <button className="pmo-focusable pmo-btn" onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:T.textOf(ROSE), display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
               <Trash2 size={13} />
             </button>
           )}
@@ -6272,7 +6272,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                   {cm.unread > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:ROSE, flexShrink:0 }} />}
                   <span style={{ fontSize:10, color:T.dim, fontFamily:"monospace", flexShrink:0 }}>{p.code || "-"}</span>
                   {cm.unread > 0 && (
-                    <span style={{ marginLeft:"auto", fontSize:10, fontWeight:700, color:ROSE, background:"rgba(248,113,113,0.12)", padding:"1px 6px", borderRadius:R.pill }}>
+                    <span style={{ marginLeft:"auto", fontSize:10, fontWeight:700, color:T.textOf(ROSE), background:"rgba(248,113,113,0.12)", padding:"1px 6px", borderRadius:R.pill }}>
                       {cm.unread} new
                     </span>
                   )}
@@ -6415,7 +6415,7 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
           fontSize:isLg?18:13, fontWeight:700, color:"#fff",
         }}>{init}</div>
       )}
-      <div style={{ fontSize:10, fontWeight:700, color:GOLD, textTransform:"uppercase", letterSpacing:1.4, marginBottom:3 }}>{title}</div>
+      <div style={{ fontSize:10, fontWeight:700, color:(T.goldText || GOLD), textTransform:"uppercase", letterSpacing:1.4, marginBottom:3 }}>{title}</div>
       <div style={{ fontSize:isLg?13:11.5, fontWeight:700, color:T.text, lineHeight:1.25, marginBottom:desc?4:0 }}>
         {name || <span style={{ color:T.dim, fontStyle:"italic", fontWeight:400, fontSize:10 }}>{isPMO?"Click ✏ to add":"—"}</span>}
       </div>
@@ -6452,7 +6452,7 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
           fontSize:big?17:13, fontWeight:700, color:"#fff",
         }}>{init}</div>
       )}
-      <div style={{ fontSize:10, fontWeight:700, color:GOLD, textTransform:"uppercase", letterSpacing:1.3, marginBottom:3 }}>{title}</div>
+      <div style={{ fontSize:10, fontWeight:700, color:(T.goldText || GOLD), textTransform:"uppercase", letterSpacing:1.3, marginBottom:3 }}>{title}</div>
       <div style={{ fontSize:big?13:11.5, fontWeight:700, color:T.text, lineHeight:1.25, marginBottom:desc?4:0 }}>
         {name || <span style={{ color:T.dim, fontStyle:"italic", fontWeight:400, fontSize:10 }}>{isPMO?"Click ✏ to add":"—"}</span>}
       </div>
@@ -7006,11 +7006,11 @@ function Login({ T, dark, onLogin }) {
         <div style={{ fontSize:20, fontWeight:700, color:"#fff", marginBottom:6 }}>Reset Password</div>
         <div style={{ fontSize:13, color:"rgba(255,255,255,0.4)", marginBottom:24 }}>Enter your username and we'll send a reset link.</div>
         {resetStatus === "sent" ? (
-          <div style={{ padding:"14px", background:"rgba(45,212,191,0.1)", border:"1px solid rgba(45,212,191,0.3)", borderRadius:R.md, color:EMERALD, fontSize:13, textAlign:"center", marginBottom:20 }}>
+          <div style={{ padding:"14px", background:"rgba(45,212,191,0.1)", border:"1px solid rgba(45,212,191,0.3)", borderRadius:R.md, color:T.textOf(EMERALD), fontSize:13, textAlign:"center", marginBottom:20 }}>
             ✓ Reset link sent — check your email inbox.
           </div>
         ) : resetStatus === "error" ? (
-          <div style={{ padding:"14px", background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:R.md, color:ROSE, fontSize:13, textAlign:"center", marginBottom:20 }}>
+          <div style={{ padding:"14px", background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:R.md, color:T.textOf(ROSE), fontSize:13, textAlign:"center", marginBottom:20 }}>
             Username not found. Contact the PMO.
           </div>
         ) : null}
@@ -7063,7 +7063,7 @@ function Login({ T, dark, onLogin }) {
 
         {/* Label */}
         <div style={{ marginBottom:20 }}>
-          <span style={{ fontSize:11, fontWeight:700, letterSpacing:3, textTransform:"uppercase", color:GOLD }}>
+          <span style={{ fontSize:11, fontWeight:700, letterSpacing:3, textTransform:"uppercase", color:(T.goldText || GOLD) }}>
             Capital Project Monitoring
           </span>
           <div style={{ width:40, height:2, background:GOLD, marginTop:10 }} />
@@ -7072,7 +7072,7 @@ function Login({ T, dark, onLogin }) {
         {/* Heading */}
         <div style={{ fontSize:54, fontWeight:800, lineHeight:1.1, marginBottom:22, color:"#fff", letterSpacing:-1, textShadow:"0 2px 24px rgba(0,0,0,0.5)" }}>
           Project<br />Management<br />Office{" "}
-          <span style={{ color:GOLD }}>Portal</span>
+          <span style={{ color:(T.goldText || GOLD) }}>Portal</span>
         </div>
 
         {/* Description */}
@@ -7105,7 +7105,7 @@ function Login({ T, dark, onLogin }) {
 
         {/* Footer credit */}
         <div style={{ position:"absolute", bottom:32, left:72, fontSize:11.5, color:"rgba(255,255,255,0.4)", display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ color:GOLD, fontSize:13 }}>✦</span>
+          <span style={{ color:(T.goldText || GOLD), fontSize:13 }}>✦</span>
           Designed & Developed by the Project Management Office — Riphah International University
         </div>
       </div>
