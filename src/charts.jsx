@@ -5,6 +5,7 @@
 //  axis treatment, one tooltip and one animation curve (§29).
 //  Charts read theme tokens; they never define their own palette.
 // ─────────────────────────────────────────────────────────────────────────────
+import { useState } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
@@ -24,11 +25,11 @@ export function ChartTooltip({ T, active, payload, label, fmt, footer }) {
   if (!active || !payload?.length) return null;
   const f = fmt || ((v) => v);
   return (
-    <div style={{
+    <div className="pmo-rise" style={{
       background: T.mode === "dark" ? "rgba(20,36,60,0.97)" : "rgba(255,255,255,0.98)",
       border:`1px solid ${T.borderStrong}`,
       borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
-      boxShadow:T.shadowLg, minWidth:150,
+      boxShadow:T.shadowLg, minWidth:158,
       backdropFilter:"blur(8px)", WebkitBackdropFilter:"blur(8px)",
     }}>
       <div style={{ ...TYPE.label, color:T.muted, marginBottom:6 }}>{label}</div>
@@ -66,10 +67,23 @@ export function ChartTooltip({ T, active, payload, label, fmt, footer }) {
 // Dashed planned line over a filled actual area, hover crosshair, variance in
 // the tooltip (§10).
 export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
+  // Series emphasis (§11, §12): hovering the legend — or a point on one series —
+  // brings that series forward and quiets the other. Dimming rather than hiding,
+  // so the comparison is never lost.
+  const [focus, setFocus] = useState(null);
+  const dim = (key) => (focus && focus !== key ? 0.22 : 1);
+  const emph = (key) => (focus === key ? 1 : focus ? 0.6 : 1);
+
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top:8, right:isMobile?4:12, left:isMobile?-14:-6, bottom:0 }}>
+      <AreaChart data={data} margin={{ top:8, right:isMobile?4:12, left:isMobile?-14:-6, bottom:0 }}
+        onMouseLeave={() => setFocus(null)}>
         <defs>
+          {/* Soft halo applied to the active data point (§12) */}
+          <filter id="pmoDotGlow" x="-70%" y="-70%" width="240%" height="240%">
+            <feGaussianBlur stdDeviation="3" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
           <linearGradient id="pmoActualFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%"   stopColor={T.positive} stopOpacity={0.32} />
             <stop offset="100%" stopColor={T.positive} stopOpacity={0} />
@@ -98,16 +112,28 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
           )}
         />
         <Legend verticalAlign="top" align="right" height={26} iconType="plainline" iconSize={14}
-          wrapperStyle={{ ...TYPE.caption, color:T.muted, paddingBottom:6 }} />
+          wrapperStyle={{ ...TYPE.caption, color:T.muted, paddingBottom:6, cursor:"pointer" }}
+          onMouseEnter={(e) => setFocus(e?.dataKey || null)}
+          onMouseLeave={() => setFocus(null)} />
 
         <Area type="monotone" dataKey="planned" name="Planned" stroke={T.info}
-          strokeWidth={1.75} strokeDasharray="5 4" fill="url(#pmoPlannedFill)"
-          dot={false} activeDot={{ r:4, strokeWidth:2, stroke:T.surface }}
-          animationDuration={900} />
+          strokeWidth={focus === "planned" ? 2.5 : 1.75} strokeDasharray="5 4"
+          fill="url(#pmoPlannedFill)" fillOpacity={dim("planned")}
+          strokeOpacity={emph("planned")}
+          dot={false}
+          activeDot={{ r:5, strokeWidth:2, stroke:T.surface, fill:T.info, filter:"url(#pmoDotGlow)" }}
+          onMouseEnter={() => setFocus("planned")}
+          animationDuration={900}
+          style={{ transition:"stroke-opacity .2s, stroke-width .2s" }} />
         <Area type="monotone" dataKey="actual" name="Actual" stroke={T.positive}
-          strokeWidth={2.25} fill="url(#pmoActualFill)"
-          dot={false} activeDot={{ r:5, strokeWidth:2, stroke:T.surface }}
-          animationDuration={1100} />
+          strokeWidth={focus === "actual" ? 3 : 2.25}
+          fill="url(#pmoActualFill)" fillOpacity={dim("actual")}
+          strokeOpacity={emph("actual")}
+          dot={false}
+          activeDot={{ r:6, strokeWidth:2, stroke:T.surface, fill:T.positive, filter:"url(#pmoDotGlow)" }}
+          onMouseEnter={() => setFocus("actual")}
+          animationDuration={1100}
+          style={{ transition:"stroke-opacity .2s, stroke-width .2s" }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -117,11 +143,16 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
 // Centre label carries the total so the chart answers a question on its own.
 export function Donut({ T, data, height = 230, total, totalLabel, onSlice, activeKey, fmt }) {
   const shown = data.filter(d => d.value > 0);
+  const [hoverKey, setHoverKey] = useState(null);
   return (
     <div style={{ position:"relative", width:"100%", height }}>
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <defs>
+            <filter id="pmoSliceGlow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="2.5" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
             {data.map((d, i) => (
               <linearGradient key={i} id={`pmoSlice${i}`} x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%"   stopColor={d.color} stopOpacity={0.95} />
@@ -138,11 +169,17 @@ export function Donut({ T, data, height = 230, total, totalLabel, onSlice, activ
           >
             {shown.map((d, i) => {
               const idx = data.findIndex(x => x.key === d.key);
-              const dim = activeKey && activeKey !== d.key;
+              const other = (activeKey && activeKey !== d.key) || (hoverKey && hoverKey !== d.key);
+              const lead  = hoverKey === d.key || activeKey === d.key;
               return (
                 <Cell key={i} fill={`url(#pmoSlice${idx})`}
-                  opacity={dim ? 0.28 : 1}
-                  style={{ cursor:onSlice ? "pointer" : "default", transition:"opacity 200ms" }} />
+                  opacity={other ? 0.25 : 1}
+                  stroke={lead ? d.color : "none"} strokeWidth={lead ? 2 : 0}
+                  onMouseEnter={() => setHoverKey(d.key)}
+                  onMouseLeave={() => setHoverKey(null)}
+                  style={{ cursor:onSlice ? "pointer" : "default",
+                    transition:"opacity 200ms, stroke-width 200ms",
+                    filter: lead ? "url(#pmoSliceGlow)" : "none" }} />
               );
             })}
           </Pie>
