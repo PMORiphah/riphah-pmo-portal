@@ -924,34 +924,49 @@ function StrategicPriorityStackedBar({ T, byStrat, height = 340 }) {
   );
 }
 
-function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320 }) {
-  const sorted = useMemo(() => [...rows].filter(r => (r[field]||0) > 0).sort((a,b)=>(b[field]||0)-(a[field]||0)).slice(0,10).reverse(), [rows, field]);
-  const data = {
-    labels: sorted.map(r => r.name.length > 42 ? r.name.slice(0,40)+"…" : r.name),
-    datasets: [{
-      data: sorted.map(r => (r[field]||0)/1e6),
-      backgroundColor: color, borderRadius: 5, borderSkipped: false,
-      barThickness: 18,
-    }],
-  };
-  const options = {
-    ...chartBaseOptions(T), indexAxis: "y",
-    plugins: {
-      ...chartBaseOptions(T).plugins,
-      tooltip: { ...chartBaseOptions(T).plugins.tooltip, callbacks: { label: (ctx) => `PKR ${valueFmt(ctx.parsed.x*1e6)}` } },
-    },
-    scales: {
-      x: { ...chartBaseOptions(T).scales.x, ticks: { ...chartBaseOptions(T).scales.x.ticks, callback: (v) => v+"M" } },
-      y: { ...chartBaseOptions(T).scales.y, grid: { display:false } },
-    },
-  };
-  // Bare grey text in an empty panel reads as a failure; state what is missing.
-  if (sorted.length === 0) return (
+function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320, onSelectProject }) {
+  // Was a chart.js horizontal bar: every bar the same flat gold, project names
+  // clipped to 40 characters, and the figure only visible on hover. Rebuilt on
+  // the same ranked treatment as the rest of the Overview tab, so a reader can
+  // compare these against the organisation and segment rows without switching
+  // visual language mid-page.
+  const items = useMemo(() => {
+    const top = [...rows]
+      .filter(r => (r[field] || 0) > 0)
+      .sort((a, b) => (b[field] || 0) - (a[field] || 0))
+      .slice(0, 10);
+    const peak = top.length ? (top[0][field] || 0) : 0;
+    return top.map((r, i) => ({
+      key: r.id || r.code || `${i}`,
+      // Full name — a ranked row gives the label the whole width, which is why
+      // truncating to 40 characters is no longer necessary.
+      label: r.name,
+      value: r[field] || 0,
+      // Rank shading rather than one flat colour: the eye gets an ordering cue
+      // from tone as well as from length.
+      color: color,
+      opacityStep: peak > 0 ? (r[field] || 0) / peak : 1,
+      meta: [r.code && r.code !== "-" ? r.code : null, STAGE_META[r.workflow_stage]?.label]
+        .filter(Boolean).join(" · "),
+      _id: r.id,
+    }));
+  }, [rows, field, color]);
+
+  if (items.length === 0) return (
     <EmptyState T={T} icon={BarChart3} compact tone={T.info}
       title="Nothing recorded yet"
       message="No project currently carries a value for this figure. This chart fills in as the PMO records the data." />
   );
-  return <div style={{height}}><Bar data={data} options={options} /></div>;
+
+  return (
+    <RankedBars
+      T={T} items={items} fmt={valueFmt} showTarget={false} barH={9}
+      onPick={onSelectProject ? (k) => {
+        const hit = items.find(x => x.key === k);
+        if (hit?._id) onSelectProject(hit._id);
+      } : undefined}
+    />
+  );
 }
 
 // Approvals pipeline funnel — rendered as a horizontal bar in fixed stage
@@ -2256,7 +2271,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
       {activeTab === "financials" && (
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · Payments Pending</div>
-          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} /></ChartErrorBoundary>
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} onSelectProject={onSelectProject} /></ChartErrorBoundary>
         </div>
       )}
 
@@ -2282,7 +2297,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
       {activeTab === "budgeting" && (
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · DF Recommended Budget</div>
-          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} /></ChartErrorBoundary>
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} onSelectProject={onSelectProject} /></ChartErrorBoundary>
         </div>
       )}
 
