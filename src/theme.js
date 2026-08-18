@@ -395,7 +395,7 @@ export const KPI_INSIGHT = {
   pdds_submitted:  (d) => "PDDs submitted and awaiting initial PMO review.",
   in_df:           (d) => "Under review by the Director Finance.",
   in_ed:           (d) => "Under review by the Executive Director.",
-  in_mt:           (d) => "With the Management Team / Chancellor for final sanction.",
+  in_mt:           (d) => "With the Managing Trustee for final sanction.",
 
   // ── Project Health tab ────────────────────────────────────────────────────
   active_projects: (d) => "Approved projects currently in execution.",
@@ -428,7 +428,7 @@ export const KPI_INSIGHT_PLAIN = {
   pdds_submitted:  () => "PDDs submitted and awaiting initial PMO review.",
   in_df:           () => "Under review by the Director Finance.",
   in_ed:           () => "Under review by the Executive Director.",
-  in_mt:           () => "With the Management Team / Chancellor for final sanction.",
+  in_mt:           () => "With the Managing Trustee for final sanction.",
   active_projects: () => "Approved projects currently in execution.",
   on_schedule:     () => "Projects tracking at or ahead of plan (SPI 0.95 or better).",
   delayed:         () => "Projects running behind their planned schedule (SPI below 0.95).",
@@ -473,7 +473,7 @@ export const STAGE_HINT = {
   identified:       "PDD submitted and with the PMO for initial review.",
   df_review:        "Currently under Director Finance review.",
   ed_review:        "Currently with the Executive Director for review.",
-  mt_review:        "Currently with the Management Team / Chancellor.",
+  mt_review:        "Currently with the Managing Trustee for final sanction.",
   approved:         "Sanctioned for execution.",
   closed:           "Completed and handed over.",
 };
