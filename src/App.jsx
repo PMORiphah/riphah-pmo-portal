@@ -724,8 +724,11 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
               )}
             </div>
 
-            <div style={{ ...TYPE[valSize], color: accent || T.text, whiteSpace:"nowrap",
-              overflow:"hidden", textOverflow:"ellipsis" }}>{shownVal}</div>
+            {/* Fill, border and glow keep the saturated accent; only the text
+                resolves to the AA-safe variant, which matters on light cards
+                where raw gold reads at ~2:1. */}
+            <div style={{ ...TYPE[valSize], color: accent ? T.textOf(accent) : T.text,
+              whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{shownVal}</div>
 
             {sub && (
               <div style={{ ...TYPE.caption, color: hover ? T.textSoft : T.muted,
@@ -2195,7 +2198,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:7 }}>Portfolio health</div>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <StatusDot color={health.color} size={10} pulse={!noData} />
-                <span style={{ ...TYPE.display, fontSize: vp.isCompact ? 24 : 30, color:health.color }}>{health.label}</span>
+                <span style={{ ...TYPE.display, fontSize: vp.isCompact ? 24 : 30, color:T.textOf(health.color) }}>{health.label}</span>
               </div>
               <div style={{ ...TYPE.bodySm, color:T.heroFgSoft, marginTop:6, maxWidth:330, lineHeight:1.45 }}>
                 {health.note}
