@@ -67,6 +67,17 @@ export const injectGlobals = () => {
       animation: pmoSheen 1.1s cubic-bezier(.3,.7,.4,1) 1;
     }
 
+    /* Baseline interaction for controls not yet migrated to <Button>. Subtle
+       by design: it should read as the same product, not compete with the
+       primitives. */
+    .pmo-btn { transition: filter 140ms ease, transform 90ms ease, opacity 140ms ease; }
+    .pmo-btn:hover:not(:disabled)  { filter: brightness(1.14); }
+    .pmo-btn:active:not(:disabled) { transform: scale(.975); }
+    .pmo-btn:disabled { opacity:.5; cursor:not-allowed; }
+
+    /* Native controls respond to the pointer too */
+    .pmo-select:hover:not(:disabled) { border-color: rgba(124,149,175,.55) !important; }
+
     /* Focus: always visible, never the default browser ring (§34) */
     .pmo-focusable:focus-visible {
       outline: 2px solid ${"#4A9BE0"};
@@ -95,6 +106,7 @@ export const injectGlobals = () => {
 
     @media (prefers-reduced-motion: reduce) {
       .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
+      .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
       .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
       .pmo-card-in,.pmo-fade-in,.pmo-pulse-dot,.pmo-mesh { animation:none !important; }
