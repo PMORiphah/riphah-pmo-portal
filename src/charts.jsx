@@ -8,9 +8,9 @@
 import { useState } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar,
-  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
+  PieChart, Pie, Cell, Sector, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
 } from "recharts";
-import { TYPE, SP, R, CATEGORICAL } from "./theme.js";
+import { TYPE, SP, R, MOTION, CATEGORICAL } from "./theme.js";
 
 const axisStyle = (T) => ({
   fontSize: 10.5,
@@ -274,3 +274,157 @@ export function CategoryBars({ T, data, height = 300, fmt, color, horizontal, on
 }
 
 export { CATEGORICAL, ReferenceLine };
+
+
+// ─── SHARE DONUT ─────────────────────────────────────────────────────────────
+// Composition for a small number of categories. The earlier donut on this
+// dashboard failed because it printed every label around the ring, so three
+// slices produced overlapping text — the labels live in the legend here and the
+// ring carries nothing but the data.
+//
+// The centre is the working part: at rest it holds the total, and on hover it
+// becomes a readout for whichever slice you're pointing at. That means the
+// chart answers "what's the split?" and "how much is that one?" without a
+// tooltip covering the thing you're looking at.
+export function ShareDonut({
+  T, data, total, totalLabel = "Total", fmt = (v) => v,
+  height = 300, onPick, activeKey,
+}) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const rows = (data || []).filter(d => (d.value || 0) > 0);
+  if (!rows.length) return null;
+
+  const sum = rows.reduce((a, b) => a + (b.value || 0), 0);
+  const active = hoverIdx != null ? rows[hoverIdx] : null;
+  const activePct = active ? ((active.value / sum) * 100) : null;
+
+  // Grows the hovered slice and gives it a soft outer arc — depth without
+  // moving the other slices, so the shape stays readable while you explore it.
+  const renderActive = (props) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+      <g>
+        <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 7}
+          startAngle={startAngle} endAngle={endAngle} fill={fill} />
+        <Sector cx={cx} cy={cy} innerRadius={outerRadius + 11} outerRadius={outerRadius + 14}
+          startAngle={startAngle} endAngle={endAngle} fill={fill} opacity={0.5} />
+      </g>
+    );
+  };
+
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:SP.xxl, flexWrap:"wrap" }}>
+      <div style={{ position:"relative", width:height, height, flexShrink:0, maxWidth:"100%" }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <defs>
+              {rows.map((d, i) => (
+                <linearGradient key={i} id={`pmoShare${i}`} x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%"   stopColor={d.color} stopOpacity={1} />
+                  <stop offset="100%" stopColor={d.color} stopOpacity={0.62} />
+                </linearGradient>
+              ))}
+              <filter id="pmoShareGlow" x="-25%" y="-25%" width="150%" height="150%">
+                <feGaussianBlur stdDeviation="4" result="b" />
+                <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+            <Pie
+              data={rows} dataKey="value" nameKey="name"
+              innerRadius="62%" outerRadius="86%"
+              paddingAngle={rows.length > 1 ? 2.5 : 0}
+              cornerRadius={4}
+              stroke="none"
+              startAngle={90} endAngle={-270}
+              animationDuration={1000} animationEasing="ease-out"
+              activeIndex={hoverIdx ?? undefined}
+              activeShape={renderActive}
+              onMouseEnter={(_, i) => setHoverIdx(i)}
+              onMouseLeave={() => setHoverIdx(null)}
+              onClick={(e) => onPick?.(e?.payload?.key)}
+            >
+              {rows.map((d, i) => (
+                <Cell key={i} fill={`url(#pmoShare${i})`}
+                  opacity={hoverIdx != null && hoverIdx !== i ? 0.3
+                        : activeKey && activeKey !== d.key ? 0.3 : 1}
+                  style={{ cursor:onPick ? "pointer" : "default",
+                    transition:"opacity 220ms", outline:"none",
+                    filter: hoverIdx === i ? "url(#pmoShareGlow)" : "none" }} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+
+        {/* Centre readout — total at rest, slice detail on hover */}
+        <div style={{
+          position:"absolute", inset:0, display:"flex", flexDirection:"column",
+          alignItems:"center", justifyContent:"center", pointerEvents:"none",
+          padding:"0 18%", textAlign:"center",
+        }}>
+          {active ? (
+            <>
+              <div style={{ ...TYPE.metric, color: T.textOf ? T.textOf(active.color) : active.color,
+                transition:`color ${MOTION.fast}` }}>{fmt(active.value)}</div>
+              <div style={{ ...TYPE.caption, color:T.textSoft, marginTop:4, lineHeight:1.35 }}>
+                {active.name}
+              </div>
+              <div style={{ ...TYPE.label, color:T.muted, marginTop:5 }}>
+                {activePct.toFixed(1)}% of total
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ ...TYPE.metric, color:T.text }}>{total ?? fmt(sum)}</div>
+              <div style={{ ...TYPE.label, color:T.muted, marginTop:5 }}>{totalLabel}</div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Legend carries every label, so the ring never has text on it */}
+      <div style={{ flex:1, minWidth:230, display:"flex", flexDirection:"column", gap:2 }}>
+        {rows.map((d, i) => {
+          const pct = (d.value / sum) * 100;
+          const on  = hoverIdx === i || activeKey === d.key;
+          const dim = (hoverIdx != null && hoverIdx !== i) || (activeKey && activeKey !== d.key);
+          return (
+            <div key={d.key || i}
+              onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}
+              onClick={() => onPick?.(d.key)}
+              style={{
+                display:"flex", alignItems:"center", gap:SP.md,
+                padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+                background: on ? T.rowHover : "transparent",
+                opacity: dim ? 0.5 : 1,
+                cursor: onPick ? "pointer" : "default",
+                transition:`background ${MOTION.fast}, opacity ${MOTION.base}`,
+              }}>
+              <span style={{
+                width:10, height:10, borderRadius:3, background:d.color, flexShrink:0,
+                boxShadow: on ? `0 0 10px -1px ${d.color}` : "none",
+                transition:`box-shadow ${MOTION.base}`,
+              }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div title={d.name} style={{
+                  ...TYPE.bodySm, color: on ? T.text : T.textSoft, fontWeight: on ? 600 : 500,
+                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                }}>{d.name}</div>
+                {d.meta && (
+                  <div style={{ ...TYPE.caption, color:T.dim, marginTop:1 }}>{d.meta}</div>
+                )}
+              </div>
+              <div style={{ textAlign:"right", flexShrink:0 }}>
+                <div style={{ ...TYPE.bodySm, fontWeight:700,
+                  color: T.textOf ? T.textOf(d.color) : d.color,
+                  fontVariantNumeric:"tabular-nums" }}>{fmt(d.value)}</div>
+                <div style={{ ...TYPE.caption, color:T.muted, fontVariantNumeric:"tabular-nums" }}>
+                  {pct.toFixed(1)}%
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
