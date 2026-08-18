@@ -7888,6 +7888,12 @@ export default function App() {
           onSearch={() => setSearchOpen(true)}
           quickActions={quickActions}
         />
+        {/* §67 — keyed on the destination so React remounts the region and the
+            entrance animation plays. 240ms and a few pixels: the application
+            should feel fast, never like it is playing a transition at you. */}
+        <div key={selectedProjectId ? `p:${selectedProjectId}` : effectivePage}
+          className="pmo-page"
+          style={{ flex:1, minHeight:0, display:"flex", flexDirection:"column" }}>
         {selectedProjectId ? (
           <ProjectDetailPage
             T={T} session={session}
@@ -7910,6 +7916,7 @@ export default function App() {
             {effectivePage === "set"  && <SettingsPage T={T} session={session} />}
           </>
         )}
+        </div>
       </div>
       {showChangePassword && session && (
         <ChangePasswordModal T={T} session={session} onClose={() => setShowChangePassword(false)} />
