@@ -351,13 +351,16 @@ export function IconButton({ T, icon:Icon, onClick, title, tone, size = 15, acti
 // ─── INPUTS ──────────────────────────────────────────────────────────────────
 export function Input({ T, icon:Icon, value, onChange, placeholder, onClear, size = "md", full, style, ...rest }) {
   const [focus, setFocus] = useState(false);
+  const [hover, setHover] = useState(false);
   const pad = size === "sm" ? "5px 9px" : "8px 12px";
   const fs  = size === "sm" ? 11.5 : 13;
   return (
-    <div style={{
+    <div
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
       display:"flex", alignItems:"center", gap:7, padding:pad,
       background:T.inputBg,
-      border:`1px solid ${focus ? T.inputFocus : value ? T.borderStrong : T.inputBorder}`,
+      border:`1px solid ${focus ? T.inputFocus : hover ? T.borderStrong : value ? T.borderStrong : T.inputBorder}`,
       borderRadius:R.sm,
       boxShadow: focus ? `0 0 0 3px ${T.inputFocus}22` : "none",
       transition:`border-color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
@@ -832,5 +835,43 @@ export function WithInsight({ T, title, line, stat, tone, side, align, width, ch
       <InsightTip T={T} show={on} title={title} line={line} stat={stat}
         tone={tone} side={side} align={align} width={width} />
     </span>
+  );
+}
+
+
+// ─── SECTION ─────────────────────────────────────────────────────────────────
+// Wraps a major dashboard block (§13). Two jobs:
+//   · responds to interaction — lifts fractionally and warms its border, so a
+//     section the reader is working in is visibly the active one;
+//   · carries its own atmospheric gradient (§17), painted behind the content at
+//     very low opacity. Per-section rather than one page-wide wash, which is
+//     what gives the dashboard depth instead of a flat tint.
+export function Section({ T, tone, children, style, pad = SP.lg, glow = true, className = "" }) {
+  const [hot, setHot] = useState(false);
+  const c = tone || T.blue;
+  return (
+    <div
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      className={className}
+      style={{
+        position:"relative", overflow:"hidden",
+        background:T.surface,
+        border:`1px solid ${hot ? T.borderStrong : T.border}`,
+        borderRadius:R.lg, padding:pad,
+        boxShadow: hot ? T.shadowLg : T.shadow,
+        transform: hot ? "translateY(-1px)" : "none",
+        transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, transform ${MOTION.base}`,
+        ...style,
+      }}>
+      {glow && (
+        <div aria-hidden="true" className="pmo-drift" style={{
+          position:"absolute", top:"-40%", right:"-6%", width:340, height:340,
+          borderRadius:"50%", pointerEvents:"none",
+          background:`radial-gradient(circle, ${c}${T.mode === "dark" ? "12" : "0C"} 0%, transparent 68%)`,
+          opacity: hot ? 1 : 0.65, transition:`opacity ${MOTION.slow}`,
+        }} />
+      )}
+      <div style={{ position:"relative" }}>{children}</div>
+    </div>
   );
 }
