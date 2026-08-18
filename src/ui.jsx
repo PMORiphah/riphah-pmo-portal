@@ -8,7 +8,7 @@
 //  why light and dark both come out right without per-component branching.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef, useCallback } from "react";
-import { TYPE, SP, R, MOTION } from "./theme.js";
+import { TYPE, SP, R, MOTION, AURORA } from "./theme.js";
 
 // ─── FONTS + GLOBAL MOTION ───────────────────────────────────────────────────
 export const injectGlobals = () => {
@@ -63,6 +63,7 @@ export const injectGlobals = () => {
     .pmo-aurora i:nth-child(1){ animation: pmoAurora1 34s ease-in-out infinite; }
     .pmo-aurora i:nth-child(2){ animation: pmoAurora2 46s ease-in-out infinite; }
     .pmo-aurora i:nth-child(3){ animation: pmoAurora3 28s ease-in-out infinite; }
+    .pmo-aurora i:nth-child(4){ animation: pmoAurora2 39s ease-in-out infinite reverse; }
 
     /* A single hairline of light drifting down a surface. */
     .pmo-scan::after {
@@ -97,6 +98,12 @@ export const injectGlobals = () => {
     .pmo-hot .pmo-ico-pulse{ animation: pmoBreathe 1.6s ease-in-out infinite; }
     .pmo-hot .pmo-ico-shift{ animation: pmoShift .45s ease; }
     .pmo-hot .pmo-ico-glow { filter: drop-shadow(0 0 5px currentColor); transition: filter .3s ease; }
+
+    /* §51 — cursor-responsive light. Positioned from --mx/--my, which the
+       hook writes directly to the node so pointer movement never re-renders. */
+    .pmo-cursor-light { position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+      opacity:0; transition:opacity .35s ease; }
+    .pmo-hot .pmo-cursor-light { opacity:1; }
 
     /* A single slow sheen crossing a card on hover. One pass, then done. */
     .pmo-sheen { position:absolute; inset:0; pointer-events:none; overflow:hidden; border-radius:inherit; opacity:0; transition:opacity .2s ease; }
@@ -269,25 +276,62 @@ export const SectionTitle = ({ T, title, sub, right, icon:Icon }) => (
   </div>
 );
 
+// ─── CURSOR LIGHT (§51) ──────────────────────────────────────────────────────
+// A soft radial highlight that follows the pointer inside a surface. The
+// signature is "light reacting to the user", not a torch beam — so the opacity
+// is low, the radius is large, and it fades in rather than snapping on.
+//
+// Implemented with CSS custom properties written directly to the node, so
+// moving the pointer never triggers a React render. That is what keeps it
+// affordable on a page holding seven cards and three charts (§76).
+export function useCursorLight(enabled = true) {
+  const ref = useRef(null);
+  const raf = useRef(null);
+
+  const onMove = useCallback((e) => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el) return;
+    if (raf.current) return;                 // coalesce to one write per frame
+    raf.current = requestAnimationFrame(() => {
+      raf.current = null;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", `${((e.clientX - r.left) / r.width) * 100}%`);
+      el.style.setProperty("--my", `${((e.clientY - r.top) / r.height) * 100}%`);
+    });
+  }, [enabled]);
+
+  const onLeave = useCallback(() => {
+    const el = ref.current;
+    if (el) { el.style.setProperty("--mx", "50%"); el.style.setProperty("--my", "50%"); }
+  }, []);
+
+  useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
+  return { ref, onMouseMove: onMove, onMouseLeave: onLeave };
+}
+
 // ─── SURFACE ─────────────────────────────────────────────────────────────────
 // The one card in the product. `tone` tints it; `raised` lifts it; `interactive`
 // makes it respond to the pointer.
 export function Surface({
   T, tone, raised, interactive, selected, pad = SP.lg, radius = R.lg,
-  children, style, onClick, className = "", title, ...rest
+  children, style, onClick, className = "", title, light = false, ...rest
 }) {
   const [hover, setHover] = useState(false);
+  const cl = useCursorLight(light);
   const accent = tone || null;
   const bg = raised ? T.surfaceRaised : T.surface;
 
   return (
     <div
       {...rest}
+      ref={light ? cl.ref : undefined}
       title={title}
       onClick={onClick}
+      onMouseMove={light ? cl.onMouseMove : undefined}
       onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className={`${interactive ? "pmo-lift " : ""}${className}`}
+      onMouseLeave={() => { setHover(false); if (light) cl.onMouseLeave(); }}
+      className={`${interactive ? "pmo-lift " : ""}${hover && light ? "pmo-hot " : ""}${className}`}
       style={{
         background: accent
           ? `linear-gradient(160deg, ${bg} 0%, ${bg} 62%, ${accent}${T.wash} 100%)`
@@ -305,6 +349,11 @@ export function Surface({
         ...style,
       }}
     >
+      {light && (
+        <span className="pmo-cursor-light" style={{
+          background:`radial-gradient(420px circle at var(--mx,50%) var(--my,50%), ${T.cursorLight}, transparent 70%)`,
+        }} />
+      )}
       {children}
     </div>
   );
@@ -857,22 +906,44 @@ export function Metric({ T, value, size = "metric", color, prefix, animate = tru
 // The component enforces the second constraint by simply not having room for
 // more — there is no scroll and no expansion.
 export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", align = "left", width = 250 }) {
+  // §83 — flip and shift away from the viewport edge rather than clipping.
+  // Measured after mount, so the panel is positioned against where it actually
+  // landed rather than where it was expected to.
+  const box = useRef(null);
+  const [adj, setAdj] = useState(null);
+  useEffect(() => {
+    if (!show) { setAdj(null); return; }
+    const el = box.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 12;
+    const next = {};
+    if (r.right > window.innerWidth - pad)  next.shiftX = -(r.right - (window.innerWidth - pad));
+    if (r.left < pad)                        next.shiftX = pad - r.left;
+    if (r.bottom > window.innerHeight - pad && side === "bottom") next.flipY = true;
+    if (r.top < pad && side === "top")       next.flipY = true;
+    setAdj(Object.keys(next).length ? next : null);
+  }, [show, side, align, width]);
+
   if (!show) return null;
   const c = tone || T.blueBright;
+  const effSide = adj?.flipY ? (side === "bottom" ? "top" : "bottom") : side;
   const pos = {
     bottom: { top:"calc(100% + 9px)", ...(align === "center" ? { left:"50%", transform:"translateX(-50%)" } : align === "right" ? { right:0 } : { left:0 }) },
     top:    { bottom:"calc(100% + 9px)", ...(align === "center" ? { left:"50%", transform:"translateX(-50%)" } : { left:0 }) },
     right:  { left:"calc(100% + 10px)", top:"50%", transform:"translateY(-50%)" },
-  }[side];
+  }[effSide];
 
   return (
-    <div className="pmo-rise" role="tooltip" style={{
+    <div ref={box} className="pmo-rise" role="tooltip" style={{
       position:"absolute", ...pos, zIndex:200, width, maxWidth:"78vw",
-      background: T.mode === "dark" ? "rgba(20,36,60,0.97)" : "rgba(255,255,255,0.99)",
+      // L4 in the depth system (§04): a floating layer, distinct from cards.
+      background: T.surfaceFloat,
       border:`1px solid ${T.borderStrong}`,
       borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
       boxShadow:T.shadowLg, pointerEvents:"none",
-      backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)",
+      backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+      marginLeft: adj?.shiftX ? `${adj.shiftX}px` : undefined,
     }}>
       {/* Accent edge ties the tip to whatever it is describing */}
       <div style={{ position:"absolute", left:0, top:8, bottom:8, width:2,
@@ -1318,18 +1389,7 @@ export function TargetCard({
 // at 5-8%. Enough that the screen is never dead; far too faint to compete with
 // a number someone is reading off it.
 export function Aurora({ T }) {
-  const dark = T.mode === "dark";
-  const blobs = dark
-    ? [
-        { c:"rgba(44,123,196,0.44)",  w:"62vw", h:"62vw", top:"-22%", left:"-12%" },
-        { c:"rgba(34,196,168,0.28)",  w:"50vw", h:"50vw", top:"38%",  left:"58%" },
-        { c:"rgba(139,127,217,0.26)", w:"44vw", h:"44vw", top:"72%",  left:"6%" },
-      ]
-    : [
-        { c:"rgba(44,123,196,0.26)",  w:"62vw", h:"62vw", top:"-24%", left:"-14%" },
-        { c:"rgba(34,196,168,0.20)",  w:"50vw", h:"50vw", top:"36%",  left:"60%" },
-        { c:"rgba(224,169,74,0.14)",  w:"42vw", h:"42vw", top:"74%",  left:"8%" },
-      ];
+  const blobs = AURORA[T.mode === "dark" ? "dark" : "light"];
   return (
     <div className="pmo-aurora" aria-hidden="true">
       {blobs.map((b, i) => (
