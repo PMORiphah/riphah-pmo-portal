@@ -485,3 +485,34 @@ export const PRIORITY_HINT = {
   third_priority: "Lower priority — subject to available budget.",
   carry_forward:  "Carried over from the previous fiscal year.",
 };
+
+
+// ─── RANK RAMP ───────────────────────────────────────────────────────────────
+// A ranked list drawn in one colour makes ten rows of near-identical length
+// hard to separate, and ten gold bars breaks §2's rule that gold is an accent
+// rather than the theme. This walks a curated brand ramp across the ranks, so
+// position in the list is legible from hue as well as bar length.
+//
+// The ramp stays inside the Riphah family — deep blue through to teal — which
+// is what keeps it reading as institutional rather than as a rainbow chart.
+const _hex = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+const _mix = (a, b, t) => {
+  const A = _hex(a), B = _hex(b);
+  return "#" + [0, 1, 2]
+    .map(i => Math.round(A[i] + (B[i] - A[i]) * t).toString(16).padStart(2, "0"))
+    .join("").toUpperCase();
+};
+
+export const RANK_RAMP = ["#2C5FA8", "#2C7BC4", "#4A9BE0", "#2BC0D4", "#22C4A8"];
+
+/** Colour for rank `i` of `n`, walked across RANK_RAMP. */
+export const rampColor = (i, n, stops = RANK_RAMP) => {
+  if (n <= 1) return stops[0];
+  const pos = (i / (n - 1)) * (stops.length - 1);
+  const lo = Math.floor(pos), hi = Math.min(stops.length - 1, lo + 1);
+  return _mix(stops[lo], stops[hi], pos - lo);
+};
+
+// Amber ramp for anything flagged as pending or at risk, so those lists stay
+// legible as "needs attention" rather than borrowing the neutral blue ramp.
+export const ALERT_RAMP = ["#B8842E", "#E0A94A", "#E8A63C", "#E2725B", "#F0637D"];
