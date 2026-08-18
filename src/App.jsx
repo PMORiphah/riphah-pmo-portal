@@ -23,7 +23,7 @@ import {
   Metric, CountUp, useCountUp, Stack, Inline, SectionTitle, Spinner,
   InsightTip, WithInsight, Section,
   pageBody, pageBar, cardStyle, tableStyles,
-  RankedBars, ShareStrip,
+  RankedBars, ShareStrip, ProgressRing, TargetCard,
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -1424,6 +1424,8 @@ function DonutChart({ slices, T }) {
 
 // ─── BREAKDOWN SECTION ────────────────────────────────────────────────────────
 const ORG_COLORS  = { Riphah:GOLD, Trust:EMERALD };
+const SEG_ICONS   = { Academic:Layers, Academics:Layers, Healthcare:Activity,
+                      Management:Shield, Investment:Wallet, Infrastructure:Building2 };
 const SEG_COLORS  = { Academic:DATA.info, Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
 const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
 
@@ -1705,19 +1707,36 @@ function BreakdownSection({ T, session }) {
               key:name, label:name, color:ORG_COLORS[name] || DATA.info,
               value:data.released || 0,
               target:(orgTgts[name]?.bac || 0) * 1e6,
-              meta:`${data.count || 0} projects`,
+              meta:`${data.count || 0} projects · All FY`,
+              Icon: name === "Trust" ? Landmark : Building2,
             }));
 
           return (
-            <div style={{ display:"grid", gap:SP.xl,
-              gridTemplateColumns: vpB.width >= 1180 ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)" }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:SP.xl }}>
+              {/* Organisations — the two big splits, side by side */}
               <div>
                 <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>By organisation</div>
-                <RankedBars T={T} items={orgRows} fmt={fmtM} />
+                <div style={{ display:"grid", gap:SP.md,
+                  gridTemplateColumns: vpB.width >= 900 ? "repeat(2, minmax(0,1fr))" : "minmax(0,1fr)" }}>
+                  {orgRows.map((r, i) => (
+                    <TargetCard key={r.key} T={T} index={i}
+                      name={r.label} icon={r.Icon} meta={r.meta}
+                      value={r.value} target={r.target} color={r.color} fmt={fmtM} />
+                  ))}
+                </div>
               </div>
+
+              {/* Segments — same treatment, compact, as many across as fit */}
               <div>
                 <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>By segment</div>
-                <RankedBars T={T} items={segmentRows} fmt={fmtM} />
+                <div style={{ display:"grid", gap:SP.md,
+                  gridTemplateColumns:"repeat(auto-fit, minmax(min(250px, 100%), 1fr))" }}>
+                  {segmentRows.map((r, i) => (
+                    <TargetCard key={r.key} T={T} index={i + 2} compact
+                      name={r.label} icon={SEG_ICONS[r.label] || Layers} meta={r.meta}
+                      value={r.value} target={r.target} color={r.color} fmt={fmtM} />
+                  ))}
+                </div>
               </div>
             </div>
           );
