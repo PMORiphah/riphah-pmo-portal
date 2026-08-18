@@ -201,6 +201,9 @@ const LIGHT_TEXT_MAP = {
   [DATA.warning]:DATA_TEXT_LIGHT.warning,   [DATA.danger]:DATA_TEXT_LIGHT.danger,
   [DATA.neutral]:DATA_TEXT_LIGHT.neutral,   [DATA.violet]:DATA_TEXT_LIGHT.violet,
   [DATA.cyan]:DATA_TEXT_LIGHT.cyan,         [BRAND.gold]:"#96681A",
+  // Hues that appear only in the categorical palettes (SEG_COLORS, STRAT_PAL).
+  "#5B9FE8":"#1F70B4", "#F472B6":"#B31E63", "#FBBF24":"#8A6207",
+  "#818CF8":"#4A55CE", "#6EE7B7":"#0F7A55",
   [BRAND.blue]:"#276EAF",
 };
 
