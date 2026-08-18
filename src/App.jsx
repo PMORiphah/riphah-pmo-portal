@@ -759,27 +759,44 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   );
 }
 
-function KCard({ T, label, value, sub, accent, featured, onClick, isSelected }) {
-  const valFontSize = String(value).length > 8 ? 19 : String(value).length > 5 ? 24 : 28;
-  const clickable = typeof onClick === "function";
+// ─── KCARD ───────────────────────────────────────────────────────────────────
+// Campus/Sites and the Performance page rendered their KPI strips through a
+// separate, plainer card: no hover lift, no accent glow, no icon, no contextual
+// insight, no entrance stagger. Two implementations of the same object meant
+// the same metric looked alive on one page and inert on another.
+//
+// This is now a thin wrapper over the one card in the product. It resolves the
+// icon and insight key from the label, so the Campus strip gains everything the
+// dashboard strip has without every call site being rewritten.
+const KCARD_META = {
+  "PDDs Not Submitted": { key:"pdd_not_submitted", Icon:FileText },
+  "PDDs Submitted":     { key:"pdds_submitted",    Icon:ClipboardList },
+  "DF Review":          { key:"in_df",             Icon:Landmark },
+  "ED Review":          { key:"in_ed",             Icon:Shield },
+  "MT Review":          { key:"in_mt",             Icon:Users },
+  "Approved":           { key:"approved",          Icon:CheckCircle },
+  "Active Projects":    { key:"active_projects",   Icon:Activity },
+  "On Schedule":        { key:"on_schedule",       Icon:CheckCircle },
+  "Delayed":            { key:"delayed",           Icon:Clock },
+  "Over Budget":        { key:"over_budget",       Icon:AlertTriangle },
+  "Change in Scope":    { key:"scope_change",      Icon:RefreshCw },
+  "Closed":             { key:"closed",            Icon:PauseCircle },
+};
+
+function KCard({ T, label, value, sub, accent, featured, onClick, isSelected, index = 0, Icon, dashData }) {
+  const meta = KCARD_META[label] || {};
   return (
-    <div
-      onClick={onClick}
-      title={clickable ? (isSelected ? "Click to clear filter" : "Click to see these projects") : undefined}
-      style={{
-        flex:1, background:T.card,
-        border:"1px solid "+(isSelected ? (accent||GOLD) : T.border),
-        borderRadius:R.md, padding:"15px 18px",
-        borderTop: featured ? "3px solid "+(accent||GOLD) : "3px solid "+T.border+"60",
-        minWidth:0,
-        cursor: clickable ? "pointer" : "default",
-        boxShadow: isSelected ? `0 0 0 1px ${accent||GOLD}55` : "none",
-        transition:"border-color .15s, box-shadow .15s",
-      }}>
-      <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:8, fontWeight:600, opacity:0.6 }}>{label}</div>
-      <div style={{ fontSize:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:TYPE.display.fontFamily, lineHeight:1.1 }}>{value}</div>
-      {sub && <div style={{ fontSize:11, color:T.muted, marginTop:5, lineHeight:1.4 }}>{sub}</div>}
-    </div>
+    <EditableKCard
+      T={T} label={label} value={value} sub={sub}
+      accent={accent} featured={featured}
+      Icon={Icon || meta.Icon}
+      kpiKey={meta.key}
+      dashData={dashData}
+      canEdit={false}
+      index={index}
+      onCardClick={onClick}
+      isSelected={isSelected}
+    />
   );
 }
 
@@ -3910,12 +3927,12 @@ function CampusPage({ T, session, onSelectProject }) {
       <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Approvals</div>
         <div style={{display:"flex",gap:10}}>
-          <KCard T={T} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" onClick={()=>toggleCard("pddNot")}   isSelected={activeCard==="pddNot"} />
-          <KCard T={T} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review"      onClick={()=>toggleCard("pddSub")}   isSelected={activeCard==="pddSub"} />
-          <KCard T={T} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} onClick={()=>toggleCard("df")} isSelected={activeCard==="df"} />
-          <KCard T={T} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} onClick={()=>toggleCard("ed")} isSelected={activeCard==="ed"} />
-          <KCard T={T} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
-          <KCard T={T} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured onClick={()=>toggleCard("approved")} isSelected={activeCard==="approved"} />
+          <KCard index={0} T={T} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" onClick={()=>toggleCard("pddNot")}   isSelected={activeCard==="pddNot"} />
+          <KCard index={1} T={T} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review"      onClick={()=>toggleCard("pddSub")}   isSelected={activeCard==="pddSub"} />
+          <KCard index={2} T={T} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} onClick={()=>toggleCard("df")} isSelected={activeCard==="df"} />
+          <KCard index={3} T={T} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} onClick={()=>toggleCard("ed")} isSelected={activeCard==="ed"} />
+          <KCard index={4} T={T} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
+          <KCard index={5} T={T} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured onClick={()=>toggleCard("approved")} isSelected={activeCard==="approved"} />
         </div>
       </div>
 
@@ -3923,11 +3940,11 @@ function CampusPage({ T, session, onSelectProject }) {
       <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Execution</div>
         <div style={{display:"flex",gap:10}}>
-          <KCard T={T} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured onClick={()=>toggleCard("active")}  isSelected={activeCard==="active"} />
-          <KCard T={T} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good}    onClick={()=>toggleCard("onTime")}  isSelected={activeCard==="onTime"} />
-          <KCard T={T} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn}    onClick={()=>toggleCard("delayed")} isSelected={activeCard==="delayed"} />
-          <KCard T={T} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad}     onClick={()=>toggleCard("over")}    isSelected={activeCard==="over"} />
-          <KCard T={T} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} onClick={()=>toggleCard("closed")} isSelected={activeCard==="closed"} />
+          <KCard index={6} T={T} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured onClick={()=>toggleCard("active")}  isSelected={activeCard==="active"} />
+          <KCard index={0} T={T} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good}    onClick={()=>toggleCard("onTime")}  isSelected={activeCard==="onTime"} />
+          <KCard index={1} T={T} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn}    onClick={()=>toggleCard("delayed")} isSelected={activeCard==="delayed"} />
+          <KCard index={2} T={T} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad}     onClick={()=>toggleCard("over")}    isSelected={activeCard==="over"} />
+          <KCard index={3} T={T} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} onClick={()=>toggleCard("closed")} isSelected={activeCard==="closed"} />
         </div>
       </div>
 
