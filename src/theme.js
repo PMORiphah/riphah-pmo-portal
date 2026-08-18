@@ -211,11 +211,11 @@ const LIGHT_TEXT_MAP = {
   [DATA.positive]:DATA_TEXT_LIGHT.positive, [DATA.info]:DATA_TEXT_LIGHT.info,
   [DATA.warning]:DATA_TEXT_LIGHT.warning,   [DATA.danger]:DATA_TEXT_LIGHT.danger,
   [DATA.neutral]:DATA_TEXT_LIGHT.neutral,   [DATA.violet]:DATA_TEXT_LIGHT.violet,
-  [DATA.cyan]:DATA_TEXT_LIGHT.cyan,         [BRAND.gold]:"#96681A",
+  [DATA.cyan]:DATA_TEXT_LIGHT.cyan,         [BRAND.gold]:"#7E5716",
   // Hues that appear only in the categorical palettes (SEG_COLORS, STRAT_PAL).
-  "#5B9FE8":"#1F70B4", "#F472B6":"#B31E63", "#FBBF24":"#8A6207",
+  "#5B9FE8":"#1A5F99", "#F472B6":"#B31E63", "#FBBF24":"#8A6207",
   "#818CF8":"#4A55CE", "#6EE7B7":"#0F7A55",
-  [BRAND.blue]:"#276EAF",
+  [BRAND.blue]:"#205A8F",
 };
 
 const LIGHT = {
@@ -282,7 +282,7 @@ const LIGHT = {
 
   // Resolve a semantic colour to its AA-safe text equivalent.
   textOf: (c) => LIGHT_TEXT_MAP[c] || c,
-  goldText: "#96681A",
+  goldText: "#7E5716",
 
   ambient:"radial-gradient(ellipse 1100px 620px at 12% -8%, rgba(44,123,196,0.07), transparent 62%), radial-gradient(ellipse 900px 520px at 96% 4%, rgba(34,196,168,0.05), transparent 58%)",
 
