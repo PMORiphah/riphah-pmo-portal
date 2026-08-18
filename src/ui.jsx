@@ -38,6 +38,46 @@ export const injectGlobals = () => {
     @keyframes pmoShift   { 0%{transform:translate(0,0)} 45%{transform:translate(1.5px,-1.5px)} 100%{transform:translate(0,0)} }
     @keyframes pmoSheen   { 0%{transform:translateX(-120%)} 100%{transform:translateX(220%)} }
 
+    /* ── AMBIENT LIFE ──────────────────────────────────────────────────
+       Everything else in this file responds to the pointer. These run
+       continuously, so the screen is never completely still — which is the
+       difference between "polished" and "alive". All are slow (18–46s) and
+       low-contrast: perceptible at the edge of vision, never distracting from
+       a figure you are reading. */
+    @keyframes pmoAurora1 { 0%,100%{transform:translate(0,0) scale(1)}
+                            33%{transform:translate(6%,-4%) scale(1.14)}
+                            66%{transform:translate(-4%,5%) scale(0.94)} }
+    @keyframes pmoAurora2 { 0%,100%{transform:translate(0,0) scale(1.05)}
+                            40%{transform:translate(-7%,4%) scale(0.92)}
+                            75%{transform:translate(5%,6%) scale(1.16)} }
+    @keyframes pmoAurora3 { 0%,100%{transform:translate(0,0) scale(0.96)}
+                            50%{transform:translate(4%,-6%) scale(1.2)} }
+    @keyframes pmoScan    { 0%{transform:translateY(-100%)} 100%{transform:translateY(900%)} }
+    @keyframes pmoBreathe2{ 0%,100%{opacity:.55} 50%{opacity:1} }
+    @keyframes pmoTrace   { 0%{stroke-dashoffset:var(--len)} 100%{stroke-dashoffset:0} }
+    @keyframes pmoOrbit   { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+    @keyframes pmoGrow    { from{transform:scaleX(0)} to{transform:scaleX(1)} }
+
+    .pmo-aurora   { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+    .pmo-aurora i { position:absolute; display:block; border-radius:50%; filter:blur(60px); }
+    .pmo-aurora i:nth-child(1){ animation: pmoAurora1 34s ease-in-out infinite; }
+    .pmo-aurora i:nth-child(2){ animation: pmoAurora2 46s ease-in-out infinite; }
+    .pmo-aurora i:nth-child(3){ animation: pmoAurora3 28s ease-in-out infinite; }
+
+    /* A single hairline of light drifting down a surface. */
+    .pmo-scan::after {
+      content:""; position:absolute; left:0; right:0; height:22%;
+      background:linear-gradient(180deg, transparent, rgba(120,180,255,.055), transparent);
+      animation: pmoScan 9s linear infinite; pointer-events:none;
+    }
+    .pmo-breathe { animation: pmoBreathe2 4.5s ease-in-out infinite; }
+    .pmo-grow    { animation: pmoGrow 900ms cubic-bezier(.16,1,.3,1) backwards; transform-origin:left; }
+
+    /* Sections arrive as they enter the viewport rather than all at once. */
+    .pmo-reveal   { opacity:0; transform:translateY(14px);
+                    transition: opacity .55s cubic-bezier(.16,1,.3,1), transform .55s cubic-bezier(.16,1,.3,1); }
+    .pmo-reveal.in{ opacity:1; transform:none; }
+
     .pmo-in      { animation: pmoIn .34s ${MOTION.ease} backwards; }
     .pmo-fade    { animation: pmoFade .28s ease backwards; }
     .pmo-scale   { animation: pmoScaleIn .2s ${MOTION.ease}; }
@@ -118,6 +158,7 @@ export const injectGlobals = () => {
 
     @media (prefers-reduced-motion: reduce) {
       .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
+      .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
       .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
@@ -1262,6 +1303,90 @@ export function TargetCard({
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── AURORA ──────────────────────────────────────────────────────────────────
+// A slow-moving field of light behind the entire application. Fixed rather than
+// per-page so it persists across navigation — the room stays lit while you move
+// between pages, instead of the background restarting each time.
+//
+// Deliberately calibrated: dark mode reads at roughly 8-14% opacity, light mode
+// at 5-8%. Enough that the screen is never dead; far too faint to compete with
+// a number someone is reading off it.
+export function Aurora({ T }) {
+  const dark = T.mode === "dark";
+  const blobs = dark
+    ? [
+        { c:"rgba(44,123,196,0.22)",  w:"58vw", h:"58vw", top:"-22%", left:"-12%" },
+        { c:"rgba(34,196,168,0.14)",  w:"46vw", h:"46vw", top:"38%",  left:"58%" },
+        { c:"rgba(139,127,217,0.13)", w:"40vw", h:"40vw", top:"72%",  left:"6%" },
+      ]
+    : [
+        { c:"rgba(44,123,196,0.13)",  w:"58vw", h:"58vw", top:"-24%", left:"-14%" },
+        { c:"rgba(34,196,168,0.10)",  w:"46vw", h:"46vw", top:"36%",  left:"60%" },
+        { c:"rgba(224,169,74,0.07)",  w:"38vw", h:"38vw", top:"74%",  left:"8%" },
+      ];
+  return (
+    <div className="pmo-aurora" aria-hidden="true">
+      {blobs.map((b, i) => (
+        <i key={i} style={{ background:`radial-gradient(circle, ${b.c} 0%, transparent 68%)`,
+          width:b.w, height:b.h, top:b.top, left:b.left }} />
+      ))}
+    </div>
+  );
+}
+
+// ─── SCROLL REVEAL ───────────────────────────────────────────────────────────
+// Sections settle in as they reach the viewport. Rewards scrolling with motion
+// instead of animating everything once on load and then going still.
+export function useReveal() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (!("IntersectionObserver" in window)) { el.classList.add("in"); return; }
+    const io = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) { el.classList.add("in"); io.disconnect(); } },
+      { rootMargin: "0px 0px -8% 0px", threshold: 0.06 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return ref;
+}
+
+export function Reveal({ children, delay = 0, style, className = "" }) {
+  const ref = useReveal();
+  return (
+    <div ref={ref} className={`pmo-reveal ${className}`}
+      style={{ transitionDelay:`${delay}ms`, ...style }}>{children}</div>
+  );
+}
+
+// ─── SPARK BAR ───────────────────────────────────────────────────────────────
+// A KPI card's share of the portfolio, drawn as a hairline under the figure. At
+// rest it gives each card something of its own to say beyond the number; it
+// also stops seven identical rectangles from reading as wallpaper.
+export function SparkBar({ T, value, total, color, delay = 0, height = 3 }) {
+  const [w, setW] = useState(0);
+  const pct = total > 0 ? Math.max(0, Math.min(100, (value / total) * 100)) : 0;
+  useEffect(() => { const t = setTimeout(() => setW(pct), 260 + delay); return () => clearTimeout(t); }, [pct, delay]);
+  if (!total || !isFinite(pct)) return null;
+  const c = color || T.info;
+  return (
+    <div style={{ marginTop:9 }}>
+      <div style={{ height, borderRadius:R.pill, overflow:"hidden",
+        background: T.mode === "dark" ? "rgba(255,255,255,0.055)" : "rgba(16,42,71,0.06)" }}>
+        <div className="pmo-breathe" style={{
+          height:"100%", width:`${w}%`, borderRadius:R.pill,
+          background:`linear-gradient(90deg, ${c}77, ${c})`,
+          boxShadow:`0 0 8px -2px ${c}`,
+          transition:`width 1100ms ${MOTION.ease}`,
+        }} />
       </div>
     </div>
   );
