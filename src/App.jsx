@@ -258,7 +258,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
               </div>
               <div style={{
                 display:"inline-flex", alignItems:"center", marginTop:3,
-                fontSize:9.5, fontWeight:600, letterSpacing:"0.06em", textTransform:"uppercase",
+                fontSize:10, fontWeight:600, letterSpacing:"0.06em", textTransform:"uppercase",
                 color:BRAND.gold, background:BRAND.gold+"1E", padding:"1.5px 7px", borderRadius:R.pill,
               }}>{session?.role?.replace("_", " ") || "—"}</div>
             </div>
@@ -1265,7 +1265,7 @@ function BreakdownSection({ T, session }) {
           <div style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2 }}>Portfolio Breakdown · Planned vs Actual</div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <select value={fy} onChange={e=>setFy(e.target.value)}
+          <select value={fy} onChange={e=>setFy(e.target.value)} className="pmo-select"
             style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}>
             <option value="__all__">All Fiscal Years</option>
             {allFYs.map(f=><option key={f} value={f}>{f}</option>)}
@@ -1423,7 +1423,7 @@ function BreakdownSection({ T, session }) {
                       <div style={{ fontSize:11, color:T.dim }}>{data.count} projects · {fy === "__all__" ? "All FY" : fy}</div>
                     </div>
                   </div>
-                  {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"3px 9px", borderRadius:R.pill }}>OVER TARGET</span>}
+                  {isOver && <span style={{ fontSize:10, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"3px 9px", borderRadius:R.pill }}>OVER TARGET</span>}
                 </div>
 
                 <div style={{ display:"flex", alignItems:"baseline", gap:10, position:"relative" }}>
@@ -1737,7 +1737,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ ...td, color:T.dim }}>{i+1}</td>
                 <td style={{ ...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted, whiteSpace:"nowrap" }}>
-                  {p.is_carry_forward && <span style={{ fontSize:8, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 4px", borderRadius:3, marginRight:5 }}>CF</span>}
+                  {p.is_carry_forward && <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 4px", borderRadius:3, marginRight:5 }}>CF</span>}
                   {p.code || "-"}
                 </td>
                 <td style={{ ...td, maxWidth:260, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:500 }}>{p.name}</td>
@@ -3119,7 +3119,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
         <span style={{ display:"inline-flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>
           {p.is_carry_forward && (
             <span title="Carried forward from a prior fiscal year" style={{
-              ...TYPE.caption, fontWeight:700, fontSize:9, letterSpacing:"0.05em",
+              ...TYPE.caption, fontWeight:700, fontSize:10, letterSpacing:"0.05em",
               background:T.violet + T.badge, color:T.violet, padding:"1px 5px", borderRadius:R.sm }}>CF</span>
           )}
           <span style={{ ...TYPE.mono, color: hovered ? T.text : T.textSoft }}>{p.code || "—"}</span>
@@ -4228,7 +4228,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                     <td style={{ ...td, position:"sticky", left:0, background:stickyBg, zIndex:1, borderRight:`1px solid ${T.border}`, minWidth:220 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                         {r.is_carry_forward && (
-                          <span style={{ fontSize:9, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 5px", borderRadius:4, flexShrink:0 }}>CF</span>
+                          <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 5px", borderRadius:4, flexShrink:0 }}>CF</span>
                         )}
                         <div>
                           <div style={{ fontSize:10.5, color:T.dim, fontFamily:"monospace" }}>{r.code || "-"}</div>
@@ -4886,9 +4886,9 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                   {label:"Actual Cost",   value:fmtM(evm.amount_released),sub:"AC = Released"},
                 ].map(({label,value,sub}) => (
                   <div key={label} style={{background:T.card2, borderRadius:R.md, padding:"10px", textAlign:"center"}}>
-                    <div style={{fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1, marginBottom:4}}>{label}</div>
+                    <div style={{fontSize:10, color:T.dim, textTransform:"uppercase", letterSpacing:1, marginBottom:4}}>{label}</div>
                     <div style={{fontSize:17, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily}}>{value}</div>
-                    <div style={{fontSize:9, color:T.dim, marginTop:3}}>{sub}</div>
+                    <div style={{fontSize:10, color:T.dim, marginTop:3}}>{sub}</div>
                   </div>
                 ))}
               </div>
@@ -6154,11 +6154,11 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
           fontSize:isLg?18:13, fontWeight:700, color:"#fff",
         }}>{init}</div>
       )}
-      <div style={{ fontSize:9, fontWeight:700, color:GOLD, textTransform:"uppercase", letterSpacing:1.4, marginBottom:3 }}>{title}</div>
+      <div style={{ fontSize:10, fontWeight:700, color:GOLD, textTransform:"uppercase", letterSpacing:1.4, marginBottom:3 }}>{title}</div>
       <div style={{ fontSize:isLg?13:11.5, fontWeight:700, color:T.text, lineHeight:1.25, marginBottom:desc?4:0 }}>
         {name || <span style={{ color:T.dim, fontStyle:"italic", fontWeight:400, fontSize:10 }}>{isPMO?"Click ✏ to add":"—"}</span>}
       </div>
-      {desc && <div style={{ fontSize:9.5, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
+      {desc && <div style={{ fontSize:10, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
       {isPMO && (
         <button onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
       )}
@@ -6191,11 +6191,11 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
           fontSize:big?17:13, fontWeight:700, color:"#fff",
         }}>{init}</div>
       )}
-      <div style={{ fontSize:9, fontWeight:700, color:GOLD, textTransform:"uppercase", letterSpacing:1.3, marginBottom:3 }}>{title}</div>
+      <div style={{ fontSize:10, fontWeight:700, color:GOLD, textTransform:"uppercase", letterSpacing:1.3, marginBottom:3 }}>{title}</div>
       <div style={{ fontSize:big?13:11.5, fontWeight:700, color:T.text, lineHeight:1.25, marginBottom:desc?4:0 }}>
         {name || <span style={{ color:T.dim, fontStyle:"italic", fontWeight:400, fontSize:10 }}>{isPMO?"Click ✏ to add":"—"}</span>}
       </div>
-      {desc && <div style={{ fontSize:9.5, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
+      {desc && <div style={{ fontSize:10, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
       {isPMO && (
         <button onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
       )}
@@ -6353,7 +6353,7 @@ function TeamPage({ T, session }) {
         {/* ── Our Team ── */}
         <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"22px 26px" }}>
           <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
-            Our Team {isPMO && <span style={{ fontSize:9, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
+            Our Team {isPMO && <span style={{ fontSize:10, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
           </div>
 
           {/* Org chart: SVG lines + absolutely-positioned cards */}
@@ -6837,7 +6837,7 @@ function Login({ T, dark, onLogin }) {
                 display:"flex", alignItems:"center", justifyContent:"center", fontSize:19,
               }}>{f.icon}</div>
               <div style={{ fontSize:11.5, fontWeight:700, color:"#fff", textAlign:"center" }}>{f.title}</div>
-              <div style={{ fontSize:9.5, color:"rgba(255,255,255,0.5)", textAlign:"center" }}>{f.sub}</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", textAlign:"center" }}>{f.sub}</div>
             </div>
           ))}
         </div>
