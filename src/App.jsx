@@ -21,6 +21,7 @@ import {
   EmptyState, Modal, Tooltip as TooltipUI, ArchMotif as ArchMotifUI, Ambient, Tabs as TabsUI,
   Metric, CountUp, useCountUp, Stack, Inline, SectionTitle, Spinner,
   InsightTip, WithInsight, Section,
+  pageBody, pageBar, cardStyle, tableStyles,
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -1414,7 +1415,7 @@ function BreakdownSection({ T, session }) {
   if (loading) return null;
 
   const SectionCard = ({ title, children, note }) => (
-    <div className="pmo-card-in" style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow, position:"relative", overflow:"hidden" }}>
+    <div className="pmo-card-in" style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 24px", boxShadow:T.shadow, position:"relative", overflow:"hidden" }}>
       <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:note?4:18 }}>{title}</div>
       {note && <div style={{ fontSize:11, color:T.dim, marginBottom:14 }}>{note}</div>}
       {children}
@@ -1763,8 +1764,8 @@ function CarryForwardList({ T, session }) {
     return () => { cancelled = true; };
   }, [session.access_token]);
 
-  const th = { padding:"9px 12px", fontSize:10, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1.5, textAlign:"left", borderBottom:"1px solid "+T.border, whiteSpace:"nowrap", opacity:0.65 };
-  const td = { padding:"11px 12px", fontSize:12.5, color:T.text, borderBottom:"1px solid "+T.border+"80", verticalAlign:"middle" };
+  const th = tableStyles(T).th;
+  const td = tableStyles(T).td;
 
   if (loading) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>Loading…</div>;
   if (rows.length === 0) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No carry-forward projects on record.</div>;
@@ -1792,7 +1793,7 @@ function CarryForwardList({ T, session }) {
         <span style={{ fontSize:11, color:GOLD, fontWeight:700 }}>PKR {fmtM(total)} total</span>
       </div>
       <div style={{ overflowX:"auto", maxHeight:480, overflowY:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <table style={tableStyles(T).table}>
           <thead>
             <tr>
               <th style={th}>#</th>
@@ -1855,8 +1856,8 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
   };
   const filterLabel = activeCard ? (cardLabels[tab]?.[activeCard] || "All") : "All";
 
-  const th = { padding:"9px 12px", fontSize:10, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1.5, textAlign:"left", borderBottom:"1px solid "+T.border, whiteSpace:"nowrap", opacity:0.65 };
-  const td = { padding:"11px 12px", fontSize:12.5, color:T.text, borderBottom:"1px solid "+T.border+"80", verticalAlign:"middle" };
+  const th = tableStyles(T).th;
+  const td = tableStyles(T).td;
 
   return (
     <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, overflow:"hidden" }}>
@@ -1876,7 +1877,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
 
       {/* Table */}
       <div style={{ overflowX:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <table style={tableStyles(T).table}>
           <thead>
             <tr style={{ background:T.mainBg+"80" }}>
               <th style={{ ...th, width:40 }}>#</th>
@@ -2959,7 +2960,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             {/* Stats row */}
             <div style={{display:"flex",gap:10,marginBottom:16}}>
               {[{l:"To Import",v:parsed.length,c:EMERALD},{l:"Parse Errors",v:errors.length,c:errors.length?"#F87171":T.dim},{l:"New Lookups",v:totalNew,c:totalNew?GOLD:T.dim}].map((s,i)=>(
-                <div key={i} style={{flex:1,background:T.card2,border:`1px solid ${T.border}`,borderRadius:R.md,padding:"12px",textAlign:"center"}}>
+                <div key={i} style={{flex:1,background:T.surfaceRaised,border:`1px solid ${T.border}`,borderRadius:R.md,boxShadow:T.shadow,padding:"12px",textAlign:"center"}}>
                   <div style={{fontSize:24,fontWeight:700,color:s.c,fontFamily:TYPE.display.fontFamily}}>{s.v}</div>
                   <div style={{fontSize:11,color:T.muted,marginTop:3}}>{s.l}</div>
                 </div>
@@ -4036,7 +4037,7 @@ function SettingsPage({ T, session }) {
   };
 
   const SectionCard = ({ title, children }) => (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"24px 28px", marginBottom:20 }}>
+    <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"24px 28px", marginBottom:20 }}>
       <div style={{ fontSize:13, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>
         {title}
       </div>
@@ -4373,7 +4374,7 @@ function PerformancePage({ T, session, onSelectProject }) {
   const tdr = { ...td, textAlign:"right", fontVariantNumeric:"tabular-nums" };
 
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
 
       {/* ── Portfolio EVM strip ── */}
       {/* Fixed-width cells with dividers broke below ~1200px; a wrapping grid
@@ -4435,8 +4436,8 @@ function PerformancePage({ T, session, onSelectProject }) {
           No projects match this filter.
         </div>
       ) : (
-        <div style={{ flex:1, overflow:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
+          <table style={tableStyles(T).table}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <th style={{ ...th, position:"sticky", left:0, zIndex:3, minWidth:220, borderRight:`1px solid ${T.border}` }}>Project</th>
@@ -4624,7 +4625,7 @@ function ProjectAttachments({ T, session, projectId }) {
   };
 
   return (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"20px 22px" }}>
+    <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 22px" }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
         <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>
           Attachments {items.length > 0 && <span style={{opacity:.6}}>({items.length})</span>}
@@ -4915,7 +4916,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const MS = { done:{icon:"✓",c:EMERALD}, in_progress:{icon:"◉",c:GOLD}, pending:{icon:"○",c:T.dim} };
 
   const Card = ({title, children}) => (
-    <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"20px 22px"}}>
+    <div style={{background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 22px"}}>
       <div style={{fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${T.border}`}}>
         {title}
       </div>
@@ -5252,7 +5253,7 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
           </div>
         )}
         {inviteLink && (
-          <div style={{ marginBottom:18, background:T.card2, border:`1px solid ${T.border}`, borderRadius:R.md, padding:"14px 16px" }}>
+          <div style={{ marginBottom:18, background:T.surfaceRaised, border:`1px solid ${T.border}`, borderRadius:R.md, boxShadow:T.shadow, padding:"14px 16px" }}>
             <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>
               📋 Invite Link — share this if email doesn't arrive
             </div>
@@ -5476,11 +5477,10 @@ function UserManagementPage({ T, session }) {
   const td  = { padding:"12px 16px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" };
 
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
 
       {/* Header */}
-      <div style={{ padding:`${SP.sm}px ${SP.xl}px`, borderBottom:`1px solid ${T.border}`,
-        background:T.surface, display:"flex", alignItems:"center", gap:SP.md, flexShrink:0 }}>
+      <div style={{ ...pageBar(T), gap:SP.md }}>
         <div style={{ ...TYPE.bodySm, color:T.muted }}>
           {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
         </div>
@@ -5495,8 +5495,8 @@ function UserManagementPage({ T, session }) {
       ) : err ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:ROSE, fontSize:13 }}>{err}</div>
       ) : (
-        <div style={{ flex:1, overflow:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
+          <table style={tableStyles(T).table}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <th style={th}>Username</th>
@@ -5802,12 +5802,10 @@ function ActivityLogPage({ T, session }) {
   };
 
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
 
       {/* ── Filter bar ── */}
-      <div style={{ padding:`${SP.sm}px ${SP.xl}px`, borderBottom:`1px solid ${T.border}`,
-        background:T.surface, display:"flex", gap:SP.sm, flexShrink:0,
-        alignItems:"center", flexWrap:"wrap" }}>
+      <div style={pageBar(T)}>
 
         <select value={actionFilter} onChange={e=>setActionFilter(e.target.value)} style={sel}>
           {ACTION_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
@@ -5865,8 +5863,8 @@ function ActivityLogPage({ T, session }) {
           )}
         </div>
       ) : (
-        <div style={{ flex:1, overflow:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
+          <table style={tableStyles(T).table}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 20px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap", minWidth:150 }}>Timestamp</th>
@@ -6221,7 +6219,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
         </div>
 
         {/* Project list */}
-        <div style={{ flex:1, overflow:"auto" }}>
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
           {displayProjects.length === 0 ? (
             <div style={{ padding:"24px 16px", textAlign:"center", color:T.dim, fontSize:12, lineHeight:1.7 }}>
               {view==="inbox"
@@ -6372,7 +6370,7 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
   return (
     <div style={{
       position:"absolute", left:L.left, top:L.top, width:L.w,
-      background:T.card, border:`1px solid ${T.border}`, borderRadius:R.md,
+      background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.md, boxShadow:T.shadow,
       padding:isLg?"16px 14px 12px":"12px 12px 10px", textAlign:"center",
       boxShadow:`0 ${isLg?4:2}px ${isLg?14:8}px rgba(0,0,0,0.12)`,
     }}>
@@ -6410,7 +6408,7 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
   return (
     <div style={{
       position:"relative",
-      background:T.card, border:`1px solid ${T.border}`, borderRadius:R.md,
+      background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.md, boxShadow:T.shadow,
       padding: big ? "16px 14px 12px" : "12px 12px 10px", textAlign:"center",
       boxShadow:`0 ${big?4:2}px ${big?14:8}px rgba(0,0,0,0.12)`,
     }}>
@@ -6584,7 +6582,7 @@ function TeamPage({ T, session }) {
         </div>
 
         {/* ── Our Team ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"22px 26px" }}>
+        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px" }}>
           <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             Our Team {isPMO && <span style={{ fontSize:10, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
           </div>
@@ -6647,7 +6645,7 @@ function TeamPage({ T, session }) {
         </div>
 
         {/* ── Contact Us ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:"22px 26px", marginBottom:8 }}>
+        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px", marginBottom:8 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>Contact Us</div>
             {isPMO && <button className="pmo-focusable pmo-btn" onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
@@ -6855,7 +6853,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
 
       {/* Form */}
       <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <div style={{ width:380, background:T.card, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:"40px 42px",
+        <div style={{ width:380, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, boxShadow:T.shadow, padding:"40px 42px",
           boxShadow:dark?"0 24px 80px rgba(0,0,0,0.45)":"0 8px 40px rgba(24,80,120,0.1)" }}>
           <div style={{ fontSize:23, fontWeight:700, color:T.text, marginBottom:6, fontFamily:TYPE.display.fontFamily }}>
             {type==="invite" ? "Set your password" : "Choose a new password"}
