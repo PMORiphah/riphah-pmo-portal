@@ -394,6 +394,80 @@ footer{
 [data-theme="dark"] .card,
 [data-theme="dark"] .panel { background: var(--surface) !important; border-color: var(--line) !important; }
 [data-theme="dark"] body { background: var(--bg) !important; color: var(--ink); }
+
+/* ── §43 · Portal harmonisation ─────────────────────────────────────────
+   Chrome matched to the React portal: card elevation and hairlines, button
+   interaction language, tooltip surface, and the same ambient field so this
+   tab belongs to the same ecosystem rather than looking embedded. */
+
+/* Ambient atmosphere, matching the portal's aurora at a calmer amplitude. */
+body { position: relative; }
+body::before {
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(58vw 58vw at -8% -18%, var(--amb-a), transparent 66%),
+    radial-gradient(48vw 48vw at 104% 42%, var(--amb-b), transparent 64%);
+}
+:root        { --amb-a: rgba(44,123,196,0.10); --amb-b: rgba(34,196,168,0.07); }
+[data-theme="dark"] { --amb-a: rgba(44,123,196,0.20); --amb-b: rgba(34,196,168,0.13); }
+
+/* Cards lift and warm on interaction, exactly as portal sections do. */
+.card, .panel {
+  border-radius: var(--r-lg) !important;
+  box-shadow: var(--shadow) !important;
+  transition: transform .22s cubic-bezier(.2,.8,.3,1),
+              box-shadow .22s cubic-bezier(.2,.8,.3,1),
+              border-color .22s cubic-bezier(.2,.8,.3,1);
+}
+.card:hover, .panel:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg) !important;
+  border-color: var(--line-strong) !important;
+}
+
+/* One button language across both codebases. */
+button, .btn, .btn-sm, .btn-gold {
+  transition: filter .14s ease, transform .09s ease, box-shadow .22s ease !important;
+}
+button:hover:not(:disabled), .btn:hover, .btn-gold:hover { filter: brightness(1.10); }
+button:active:not(:disabled), .btn:active, .btn-gold:active { transform: scale(.975); }
+button:disabled { opacity:.5; cursor:not-allowed; }
+
+/* Focus ring identical to the portal's. */
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
+  outline: 2px solid var(--navy-700) !important;
+  outline-offset: 2px !important;
+  border-radius: var(--r-sm);
+}
+
+/* Tabs: the portal's sliding-accent treatment. */
+.tab-btn { position: relative; transition: color .14s ease, background .22s ease; }
+.tab-btn::after {
+  content:""; position:absolute; left:12px; right:12px; bottom:0; height:2px;
+  border-radius:2px; background:linear-gradient(90deg, var(--navy-700), var(--gold));
+  transform: scaleX(0); transform-origin:left;
+  transition: transform .22s cubic-bezier(.2,.8,.3,1);
+}
+.tab-btn.active::after { transform: scaleX(1); box-shadow: 0 0 10px -1px var(--gold); }
+.tab-btn:hover:not(.active) { background: rgba(125,160,200,.08); }
+
+/* Native controls get the portal's chevron and hover response. */
+select {
+  appearance:none; -webkit-appearance:none;
+  background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237C95AF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; padding-right:26px;
+  transition: border-color .14s ease;
+}
+select:hover { border-color: var(--line-strong) !important; }
+
+/* Respect reduced motion, as the portal does. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation:none !important; transition-duration:.01ms !important; }
+}
+
+/* Keep content above the ambient layer. */
+.topbar, .tabs, main, section, .card, .panel, .filterbar { position: relative; z-index: 1; }
+
 </style>
 
 <script>
@@ -731,6 +805,10 @@ const CHART_LINE = () => getComputedStyle(document.documentElement).getPropertyV
 if (window.Chart) {
   Chart.defaults.color = CHART_MUTED();
   Chart.defaults.borderColor = CHART_LINE();
+  Chart.defaults.font.family = 'Inter, sans-serif';
+  Chart.defaults.plugins.legend.labels.usePointStyle = true;
+  Chart.defaults.plugins.legend.labels.boxWidth = 8;
+  Chart.defaults.plugins.legend.labels.padding = 14;
 }
 const PALETTE = ["#4A9BE0","#22C4A8","#8B7FD9","#E8A63C","#2BD4D4","#F0637D","#2C7BC4","#E0A94A","#1FAE8E","#B4573F","#5A9BD5","#8AA6C9"];
 
