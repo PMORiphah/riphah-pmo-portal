@@ -532,6 +532,12 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     budgeted:"pmo-ico-tick", budgeted_projects:"pmo-ico-tick", payments_made:"pmo-ico-tick",
     non_budgeted:"pmo-ico-pulse", non_budgeted_projects:"pmo-ico-pulse", payments_pending:"pmo-ico-pulse",
     carry_forward:"pmo-ico-shift", total_projects:"pmo-ico-glow",
+    pdd_not_submitted:"pmo-ico-pulse", pdds_submitted:"pmo-ico-up",
+    in_df:"pmo-ico-shift", in_ed:"pmo-ico-shift", in_mt:"pmo-ico-shift",
+    active_projects:"pmo-ico-glow", on_schedule:"pmo-ico-tick",
+    delayed:"pmo-ico-pulse", over_budget:"pmo-ico-pulse",
+    scope_change:"pmo-ico-shift", closed:"pmo-ico-tick",
+    budget_released:"pmo-ico-up", remaining_capex:"pmo-ico-up",
   };
   const iconAnim = ICON_ANIM[kpiKey] || "pmo-ico-glow";
   // Short explanation of what this metric means, with live figures where the
