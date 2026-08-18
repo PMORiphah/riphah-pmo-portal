@@ -44,8 +44,8 @@ export const DATA = {
 // through this map in light mode. Values were computed by darkening each hue in
 // HLS until it cleared 4.5:1 on #FFFFFF — not eyeballed.
 export const DATA_TEXT_LIGHT = {
-  positive:"#157A69", info:"#1F70B4", warning:"#986412", danger:"#D81539",
-  neutral:"#4F6884", violet:"#6B5CCE", cyan:"#197B7B",
+  positive:"#126A5B", info:"#1A5F99", warning:"#82560F", danger:"#B3112F",
+  neutral:"#485F77", violet:"#5846C8", cyan:"#166B6B",
 };
 
 // Ordered ramp for categorical series (segments, organisations) so charts pick
