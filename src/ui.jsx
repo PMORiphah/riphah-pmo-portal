@@ -417,7 +417,8 @@ export function Select({ T, value, onChange, children, size = "md", full, active
 }
 
 // ─── BADGES ──────────────────────────────────────────────────────────────────
-export function Badge({ T, color, children, size = "md", dot, style }) {
+export function Badge({ T, color, children, size = "md", dot, style, hint, hintTitle }) {
+  const [hot, setHot] = useState(false);
   const c = color || T.neutral;
   // Fill and dot keep the full-saturation hue; the label uses the AA-safe
   // variant, which matters on light surfaces where the raw hue reads at ~2:1.
@@ -425,18 +426,32 @@ export function Badge({ T, color, children, size = "md", dot, style }) {
   const s = size === "sm"
     ? { fontSize:10.5, padding:"2px 8px" }
     : { fontSize:11.5, padding:"3px 10px" };
-  return (
-    <span style={{
-      display:"inline-flex", alignItems:"center", gap:5,
-      padding:s.padding, borderRadius:R.pill,
-      background:`${c}${T.badge}`, color:fg,
-      fontFamily:TYPE.body.fontFamily, fontSize:s.fontSize, fontWeight:600,
-      whiteSpace:"nowrap", lineHeight:1.5,
-      border:`1px solid ${c}22`,
-      ...style,
-    }}>
+  const pill = (
+    <span
+      onMouseEnter={hint ? () => setHot(true) : undefined}
+      onMouseLeave={hint ? () => setHot(false) : undefined}
+      style={{
+        display:"inline-flex", alignItems:"center", gap:5,
+        padding:s.padding, borderRadius:R.pill,
+        background: hot ? `${c}${T.washStrong}` : `${c}${T.badge}`,
+        color:fg,
+        fontFamily:TYPE.body.fontFamily, fontSize:s.fontSize, fontWeight:600,
+        whiteSpace:"nowrap", lineHeight:1.5,
+        border:`1px solid ${c}${hot ? "5C" : "22"}`,
+        cursor: hint ? "help" : "inherit",
+        transition:`background ${MOTION.fast}, border-color ${MOTION.fast}`,
+        ...style,
+      }}>
       {dot && <span style={{ width:5, height:5, borderRadius:"50%", background:c, flexShrink:0 }} />}
       {children}
+    </span>
+  );
+  if (!hint) return pill;
+  return (
+    <span style={{ position:"relative", display:"inline-flex" }}>
+      {pill}
+      <InsightTip T={T} show={hot} tone={c} side="top" align="left"
+        width={230} title={hintTitle} line={hint} />
     </span>
   );
 }
@@ -664,6 +679,7 @@ export const Ambient = ({ T }) => (
 export function Tabs({ T, tabs, active, onChange, isMobile }) {
   const wrap = useRef(null);
   const [ind, setInd] = useState({ left:0, width:0 });
+  const [hover, setHover] = useState(null);
 
   const measure = useCallback(() => {
     const el = wrap.current?.querySelector(`[data-tab="${active}"]`);
@@ -681,41 +697,68 @@ export function Tabs({ T, tabs, active, onChange, isMobile }) {
     <div ref={wrap} className="pmo-scroll" style={{
       display:"flex", gap:2, position:"relative",
       borderBottom:`1px solid ${T.border}`,
-      overflowX:"auto", overflowY:"hidden", flexShrink:0,
+      // visible so tab previews aren't clipped; horizontal scroll is handled by
+      // the parent on narrow screens instead.
+      overflow:"visible", flexShrink:0,
     }}>
       {tabs.map((t) => {
-        const on = t.id === active;
+        const on   = t.id === active;
+        const hot  = hover === t.id;
         return (
-          <button key={t.id} data-tab={t.id} onClick={() => onChange(t.id)}
-            className="pmo-focusable"
-            style={{
-              display:"flex", alignItems:"center", gap:7,
-              padding: isMobile ? "9px 13px" : "10px 17px",
-              background:"transparent", border:"none", cursor:"pointer",
-              fontFamily:TYPE.body.fontFamily,
-              fontSize: isMobile ? 12 : 12.5,
-              fontWeight: on ? 600 : 500,
-              color: on ? T.text : T.muted,
-              whiteSpace:"nowrap",
-              transition:`color ${MOTION.fast}`,
-            }}>
-            {t.Icon && <t.Icon size={14} strokeWidth={2} color={on ? T.blueBright : T.dim} />}
-            {t.label}
-            {t.count != null && (
-              <span style={{
-                ...TYPE.caption, fontWeight:600,
-                padding:"1px 6px", borderRadius:R.pill,
-                background: on ? T.blue+T.badge : T.mode === "dark" ? "rgba(255,255,255,0.06)" : "rgba(16,42,71,0.06)",
-                color: on ? T.blueBright : T.dim,
-              }}>{t.count}</span>
+          <div key={t.id} style={{ position:"relative", display:"flex" }}
+            onMouseEnter={() => setHover(t.id)} onMouseLeave={() => setHover(null)}>
+            <button data-tab={t.id} onClick={() => onChange(t.id)}
+              onFocus={() => setHover(t.id)} onBlur={() => setHover(null)}
+              className={`pmo-focusable ${hot ? "pmo-hot" : ""}`}
+              style={{
+                display:"flex", alignItems:"center", gap:7,
+                padding: isMobile ? "9px 13px" : "10px 17px",
+                // A soft surface grows behind the tab on hover, and the active
+                // tab keeps a permanent one — so "current" and "about to be
+                // current" are distinguishable at a glance (§9).
+                background: on
+                  ? `linear-gradient(180deg, ${T.blue}${T.wash}, transparent)`
+                  : hot ? T.rowHover : "transparent",
+                borderRadius: `${R.sm}px ${R.sm}px 0 0`,
+                border:"none", cursor:"pointer",
+                fontFamily:TYPE.body.fontFamily,
+                fontSize: isMobile ? 12 : 12.5,
+                fontWeight: on ? 700 : hot ? 600 : 500,
+                color: on ? T.text : hot ? T.text : T.muted,
+                whiteSpace:"nowrap",
+                transition:`color ${MOTION.fast}, background ${MOTION.base}, font-weight ${MOTION.fast}`,
+              }}>
+              {t.Icon && (
+                <t.Icon className={hot ? "pmo-ico-glow" : ""} size={14} strokeWidth={on ? 2.2 : 2}
+                  color={on ? T.gold : hot ? T.blueBright : T.dim}
+                  style={{ transition:`color ${MOTION.fast}` }} />
+              )}
+              {t.label}
+              {t.count != null && (
+                <span style={{
+                  ...TYPE.caption, fontWeight:600,
+                  padding:"1px 6px", borderRadius:R.pill,
+                  background: on ? T.blue+T.badge : hot ? T.blue+T.wash
+                    : T.mode === "dark" ? "rgba(255,255,255,0.06)" : "rgba(16,42,71,0.06)",
+                  color: on ? T.blueBright : T.dim,
+                  transition:`background ${MOTION.fast}`,
+                }}>{t.count}</span>
+              )}
+            </button>
+            {/* Live preview of what the section contains (§8) */}
+            {t.insight && (
+              <InsightTip T={T} show={hot} side="bottom" align="left" width={252}
+                tone={on ? T.gold : T.blueBright}
+                title={t.insight.title} line={t.insight.line} stat={t.insight.stat} />
             )}
-          </button>
+          </div>
         );
       })}
       <div style={{
         position:"absolute", bottom:-1, height:2, borderRadius:2,
         left:ind.left, width:ind.width,
         background:`linear-gradient(90deg, ${T.blue}, ${T.gold})`,
+        boxShadow:`0 0 10px -1px ${T.gold}80`,
         transition:`left ${MOTION.base}, width ${MOTION.base}`,
       }} />
     </div>
