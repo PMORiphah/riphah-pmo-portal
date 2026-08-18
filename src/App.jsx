@@ -1129,7 +1129,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
     { key:"pdds_submitted",    label:"PDD Submitted",     short:"Submitted",     value:d.pdds_submitted || 0,          note:"With the PMO" },
     { key:"in_df",             label:"DF Review",         short:"DF",            value:d.in_df || 0,                   note:"Director Finance" },
     { key:"in_ed",             label:"ED Review",         short:"ED",            value:d.in_ed || 0,                   note:"Executive Director" },
-    { key:"in_mt",             label:"MT Review",         short:"MT",            value:d.in_mt || 0,                   note:"Management Team" },
+    { key:"in_mt",             label:"MT Review",         short:"MT",            value:d.in_mt || 0,                   note:"Managing Trustee" },
     { key:"approved",          label:"Approved",          short:"Approved",      value:d.approved_count || 0,          note:"Sanctioned" },
   ].map((st, i) => ({ ...st, color: STAGE_META[STAGE_ORDER[i]]?.color || T.neutral }));
 
@@ -2286,7 +2286,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
           <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
           <EditableKCard dashData={d} Icon={Landmark} index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
           <EditableKCard dashData={d} Icon={Shield} index={3} T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
-          <EditableKCard dashData={d} Icon={Users} index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Management Team")} />
+          <EditableKCard dashData={d} Icon={Users} index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Managing Trustee")} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved"       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
         </div>
       )}
@@ -4014,7 +4014,7 @@ function CampusPage({ T, session, onSelectProject }) {
           <KCard index={1} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review"      onClick={()=>toggleCard("pddSub")}   isSelected={activeCard==="pddSub"} />
           <KCard index={2} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} onClick={()=>toggleCard("df")} isSelected={activeCard==="df"} />
           <KCard index={3} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} onClick={()=>toggleCard("ed")} isSelected={activeCard==="ed"} />
-          <KCard index={4} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
+          <KCard index={4} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="MT Review"          value={String(k.mt)}       sub="With Managing Trustee"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
           <KCard index={5} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured onClick={()=>toggleCard("approved")} isSelected={activeCard==="approved"} />
         </div>
       </div>
