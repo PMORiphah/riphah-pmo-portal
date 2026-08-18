@@ -112,7 +112,12 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
           )}
         />
         <Legend verticalAlign="top" align="right" height={26} iconType="plainline" iconSize={14}
-          wrapperStyle={{ ...TYPE.caption, color:T.muted, paddingBottom:6, cursor:"pointer" }}
+          wrapperStyle={{ ...TYPE.caption, paddingBottom:6, cursor:"pointer" }}
+          formatter={(value, entry) => (
+            <span style={{ ...TYPE.caption,
+              color: T.textOf ? T.textOf(entry?.color) : T.muted,
+              fontWeight: focus === entry?.dataKey ? 700 : 500 }}>{value}</span>
+          )}
           onMouseEnter={(e) => setFocus(e?.dataKey || null)}
           onMouseLeave={() => setFocus(null)} />
 
