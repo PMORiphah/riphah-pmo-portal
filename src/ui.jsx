@@ -1488,8 +1488,8 @@ export function ProgressRing({
           fontVariantNumeric:"tabular-nums",
         }}>{label ?? `${pct.toFixed(1)}%`}</span>
         {sublabel && (
-          <span style={{ ...TYPE.caption, fontSize:8.5, color:T.muted, marginTop:2,
-            letterSpacing:"0.06em", textTransform:"uppercase" }}>{sublabel}</span>
+          <span style={{ ...TYPE.caption, fontSize:10, color:T.muted, marginTop:2,
+            letterSpacing:"0.05em", textTransform:"uppercase" }}>{sublabel}</span>
         )}
       </div>
     </div>
