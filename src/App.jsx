@@ -562,7 +562,7 @@ function DeadlineAlertPopups({ T, session }) {
   );
 }
 
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden }) {
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false }) {
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
   const [eSub,    setESub]    = useState("");
@@ -583,12 +583,18 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     setSaving(true);
     // lockSub cards (live counts, not editable labels) never persist a sub
     // override — only the number can be manually corrected.
-    await onSave(kpiKey, {
-      value: eVal,
-      sub: lockSub ? "" : eSub,
-      // Blank means "use the generated default" rather than "no hover text".
-      insight: eIns.trim(),
-    });
+    // insightOnly cards (Campus/Sites) may edit the wording but not the
+    // figures: their values are filtered to the selected campus, so writing one
+    // back as a portfolio-wide override would be wrong. Undefined here leaves
+    // the existing value/sub untouched rather than clearing them.
+    await onSave(kpiKey, insightOnly
+      ? { insight: eIns.trim() }
+      : {
+          value: eVal,
+          sub: lockSub ? "" : eSub,
+          // Blank means "use the generated default" rather than "no hover text".
+          insight: eIns.trim(),
+        });
     setSaving(false); setEditing(false);
   };
 
@@ -677,11 +683,21 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
         {editing ? (
           <div>
             <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>{label}</div>
-            <Input T={T} size="sm" full value={eVal} onChange={e => setEVal(e.target.value)}
-              placeholder="Value" style={{ marginBottom:6 }} />
-            {!lockSub && (
-              <Input T={T} size="sm" full value={eSub} onChange={e => setESub(e.target.value)}
-                placeholder="Sub-label" style={{ marginBottom:6 }} />
+            {!insightOnly && (
+              <>
+                <Input T={T} size="sm" full value={eVal} onChange={e => setEVal(e.target.value)}
+                  placeholder="Value" style={{ marginBottom:6 }} />
+                {!lockSub && (
+                  <Input T={T} size="sm" full value={eSub} onChange={e => setESub(e.target.value)}
+                    placeholder="Sub-label" style={{ marginBottom:6 }} />
+                )}
+              </>
+            )}
+            {insightOnly && (
+              <div style={{ ...TYPE.caption, color:T.muted, marginBottom:6, lineHeight:1.45 }}>
+                Editing the hover text. This wording is shared with the same
+                metric on the dashboard.
+              </div>
             )}
             {/* Hover text. Blank falls back to the generated description, so
                 the PMO only writes copy where the default is wrong. */}
@@ -689,9 +705,9 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
               placeholder="Hover text (leave blank for default)" style={{ marginBottom:SP.sm }} />
             <div style={{ display:"flex", gap:5 }}>
               <Button T={T} variant="primary" size="sm" onClick={save} loading={saving} full>Save</Button>
-              <Button T={T} variant="accent" tone={T.positive} size="sm"
+              {!insightOnly && <Button T={T} variant="accent" tone={T.positive} size="sm"
                 onClick={async () => { setSaving(true); await onSave(kpiKey, { value:"", sub: lockSub ? "" : eSub, insight: eIns.trim() }); setSaving(false); setEditing(false); }}
-                title="Reset the number to the live calculated value — keeps your labels">Live</Button>
+                title="Reset the number to the live calculated value — keeps your labels">Live</Button>}
               <Button T={T} variant="ghost" size="sm" onClick={cancel} title="Cancel">✕</Button>
             </div>
           </div>
@@ -783,7 +799,8 @@ const KCARD_META = {
   "Closed":             { key:"closed",            Icon:PauseCircle },
 };
 
-function KCard({ T, label, value, sub, accent, featured, onClick, isSelected, index = 0, Icon, dashData }) {
+function KCard({ T, label, value, sub, accent, featured, onClick, isSelected, index = 0, Icon, dashData,
+                canEdit = false, insightOverride, onSaveInsight }) {
   // Looked up at render rather than module load, and normalised so a label that
   // differs only in case or spacing still resolves. Falls back to a generic
   // icon so a card can never render with an empty tile.
@@ -791,6 +808,8 @@ function KCard({ T, label, value, sub, accent, featured, onClick, isSelected, in
   const meta = KCARD_META[label]
     || Object.entries(KCARD_META).find(([k]) => k.toLowerCase() === norm)?.[1]
     || {};
+  const ov = insightOverride?.[meta.key];
+  const ovText = ov?.insight && ov.insight !== "" ? ov.insight : null;
   return (
     <EditableKCard
       T={T} label={label} value={value} sub={sub}
@@ -798,7 +817,10 @@ function KCard({ T, label, value, sub, accent, featured, onClick, isSelected, in
       Icon={Icon || meta.Icon || BarChart3}
       kpiKey={meta.key}
       dashData={dashData}
-      canEdit={false}
+      canEdit={canEdit}
+      insightOnly
+      insightOverride={ovText}
+      onSave={onSaveInsight}
       index={index}
       onCardClick={onClick}
       isSelected={isSelected}
@@ -3856,6 +3878,33 @@ function CampusPage({ T, session, onSelectProject }) {
     };
   }, [filtered]);
 
+  // Hover-text overrides live in the same `dashboard_kpis` settings row the
+  // dashboard uses, keyed by the same metric keys — so a correction made here
+  // fixes the wording on the dashboard too, and vice versa. One definition of
+  // what "DF Review" means, editable from wherever you noticed it was wrong.
+  const isPMOUser = session?.role === "pmo";
+  const [kpiOv, setKpiOv] = useState({});
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/settings?select=value&key=eq.dashboard_kpis", {}, session.access_token)
+      .then(rows => { if (alive && rows?.[0]?.value) setKpiOv(rows[0].value); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
+
+  const saveCardInsight = useCallback(async (key, patch) => {
+    // Merge rather than replace: the dashboard's value/sub overrides for this
+    // same key must survive a wording edit made from Campus.
+    const next = { ...kpiOv, [key]: { ...(kpiOv[key] || {}), ...patch } };
+    await supa("/rest/v1/settings?key=eq.dashboard_kpis", {
+      method: "PATCH",
+      body: JSON.stringify({ value: next }),
+      headers: { "Prefer": "return=minimal" },
+    }, session.access_token);
+    setKpiOv(next);
+  }, [kpiOv, session?.access_token]);
+
   const good = EMERALD, warn = AMBER, bad = ROSE;
 
   // Each KPI card maps to a predicate over the campus-filtered rows, so clicking
@@ -3933,12 +3982,12 @@ function CampusPage({ T, session, onSelectProject }) {
       <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Approvals</div>
         <div style={{display:"flex",gap:10}}>
-          <KCard index={0} T={T} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" onClick={()=>toggleCard("pddNot")}   isSelected={activeCard==="pddNot"} />
-          <KCard index={1} T={T} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review"      onClick={()=>toggleCard("pddSub")}   isSelected={activeCard==="pddSub"} />
-          <KCard index={2} T={T} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} onClick={()=>toggleCard("df")} isSelected={activeCard==="df"} />
-          <KCard index={3} T={T} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} onClick={()=>toggleCard("ed")} isSelected={activeCard==="ed"} />
-          <KCard index={4} T={T} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
-          <KCard index={5} T={T} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured onClick={()=>toggleCard("approved")} isSelected={activeCard==="approved"} />
+          <KCard index={0} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" onClick={()=>toggleCard("pddNot")}   isSelected={activeCard==="pddNot"} />
+          <KCard index={1} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review"      onClick={()=>toggleCard("pddSub")}   isSelected={activeCard==="pddSub"} />
+          <KCard index={2} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} onClick={()=>toggleCard("df")} isSelected={activeCard==="df"} />
+          <KCard index={3} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} onClick={()=>toggleCard("ed")} isSelected={activeCard==="ed"} />
+          <KCard index={4} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
+          <KCard index={5} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured onClick={()=>toggleCard("approved")} isSelected={activeCard==="approved"} />
         </div>
       </div>
 
@@ -3946,11 +3995,11 @@ function CampusPage({ T, session, onSelectProject }) {
       <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Execution</div>
         <div style={{display:"flex",gap:10}}>
-          <KCard index={6} T={T} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured onClick={()=>toggleCard("active")}  isSelected={activeCard==="active"} />
-          <KCard index={0} T={T} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good}    onClick={()=>toggleCard("onTime")}  isSelected={activeCard==="onTime"} />
-          <KCard index={1} T={T} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn}    onClick={()=>toggleCard("delayed")} isSelected={activeCard==="delayed"} />
-          <KCard index={2} T={T} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad}     onClick={()=>toggleCard("over")}    isSelected={activeCard==="over"} />
-          <KCard index={3} T={T} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} onClick={()=>toggleCard("closed")} isSelected={activeCard==="closed"} />
+          <KCard index={6} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured onClick={()=>toggleCard("active")}  isSelected={activeCard==="active"} />
+          <KCard index={0} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good}    onClick={()=>toggleCard("onTime")}  isSelected={activeCard==="onTime"} />
+          <KCard index={1} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn}    onClick={()=>toggleCard("delayed")} isSelected={activeCard==="delayed"} />
+          <KCard index={2} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad}     onClick={()=>toggleCard("over")}    isSelected={activeCard==="over"} />
+          <KCard index={3} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} onClick={()=>toggleCard("closed")} isSelected={activeCard==="closed"} />
         </div>
       </div>
 
