@@ -136,9 +136,9 @@ const DARK = {
 
   // Text
   text:          "#E8F0FA",
-  textSoft:      "#A9BED4",
-  muted:         "#7C95AF",
-  dim:           "#7089A6",
+  textSoft:      "#BACBDC",
+  muted:         "#A2B4C6",
+  dim:           "#9FB0C3",
   onAccent:      "#FFFFFF",
 
   // Inputs
@@ -183,9 +183,9 @@ const DARK = {
   hero:        "linear-gradient(135deg, #14304E 0%, #0E2340 44%, #0A1729 100%)",
   heroBorder:  "rgba(255,255,255,0.08)",
   heroFg:      "#FFFFFF",
-  heroFgSoft:  "rgba(255,255,255,0.62)",
-  heroFgMuted: "rgba(255,255,255,0.55)",
-  heroFgDim:   "rgba(255,255,255,0.40)",
+  heroFgSoft:  "rgba(255,255,255,0.74)",
+  heroFgMuted: "rgba(255,255,255,0.68)",
+  heroFgDim:   "rgba(255,255,255,0.52)",
   heroDivider: "rgba(255,255,255,0.16)",
   heroAccent:  BRAND.gold,
   heroMotifA:  "rgba(255,255,255,0.035)",
