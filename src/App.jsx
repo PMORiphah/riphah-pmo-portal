@@ -709,6 +709,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
                   </div>
                 )}
                 <div style={{ ...TYPE.label, color:T.muted, minWidth:0, lineHeight:1.3,
+                  letterSpacing:"0.07em",
                   display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical",
                   overflow:"hidden" }} title={label}>{label}</div>
               </div>
