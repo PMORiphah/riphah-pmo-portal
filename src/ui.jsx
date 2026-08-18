@@ -91,6 +91,18 @@ export const injectGlobals = () => {
       background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237C95AF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
       background-repeat:no-repeat; background-position:right 10px center; padding-right:26px !important;
     }
+    /* Native date fields: the OS widget is the last stock control in the
+       product. Tint the picker indicator so it reads as ours. */
+    input[type="date"] {
+      color-scheme: var(--pmo-scheme, dark);
+      font-family: 'Inter', sans-serif;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      opacity:.55; cursor:pointer; transition:opacity 140ms ease;
+      filter: var(--pmo-date-filter, invert(1));
+    }
+    input[type="date"]:hover::-webkit-calendar-picker-indicator { opacity:1; }
+
     .pmo-scroll::-webkit-scrollbar { width:10px; height:10px; }
     .pmo-scroll::-webkit-scrollbar-track { background:transparent; }
     .pmo-scroll::-webkit-scrollbar-thumb { background:rgba(124,149,175,.28); border-radius:99px; border:2px solid transparent; background-clip:content-box; }
