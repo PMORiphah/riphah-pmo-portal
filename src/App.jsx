@@ -2158,7 +2158,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
                 <span style={{ ...TYPE.caption, fontWeight:700, color:status.color }}>{status.label}</span>
               )}
             </div>
-            <div style={{ ...TYPE.caption, color:"rgba(255,255,255,0.5)", marginTop:3 }}>{hint}</div>
+            <div style={{ ...TYPE.caption, color:T.heroFgMuted, marginTop:3 }}>{hint}</div>
           </div>
           </WithInsight>
         );
@@ -2167,42 +2167,42 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
           <div className="pmo-in" style={{
             animationDelay:"0ms",
             background:T.hero, borderRadius:R.xl,
+            border:`1px solid ${T.heroBorder}`,
             // The dashboard body is a column flex with overflow:auto — without
             // flexShrink:0 the browser crushes this block instead of scrolling.
             flexShrink:0,
             padding: vp.isCompact ? `${SP.lg}px ${SP.lg}px` : `${SP.xl}px ${SP.xxl}px`,
             display:"flex", alignItems:"center", flexWrap:"wrap",
             gap: vp.isCompact ? SP.lg : SP.xxl,
-            boxShadow:T.shadowLg, position:"relative", overflow:"hidden",
-            border:"1px solid rgba(255,255,255,0.08)",
+            boxShadow:T.shadow, position:"relative", overflow:"hidden",
           }}>
             {/* Ambient depth — barely visible, never competes with the figures */}
             <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
               <div style={{ position:"absolute", top:"-45%", right:"-4%", width:360, height:360, borderRadius:"50%",
-                background:`radial-gradient(circle, ${BRAND.blueBright}26 0%, transparent 68%)` }} />
+                background:`radial-gradient(circle, ${T.heroGlowA} 0%, transparent 68%)` }} />
               <div style={{ position:"absolute", bottom:"-55%", left:"22%", width:300, height:300, borderRadius:"50%",
-                background:`radial-gradient(circle, ${DATA.positive}18 0%, transparent 70%)` }} />
+                background:`radial-gradient(circle, ${T.heroGlowB} 0%, transparent 70%)` }} />
             </div>
             {/* Institutional signature — the one decorative element in the header */}
             <svg width="240" height="150" viewBox="0 0 230 140" aria-hidden="true"
               style={{ position:"absolute", right:0, bottom:0, pointerEvents:"none" }}>
-              <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill="#fff" opacity="0.035" />
-              <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={BRAND.gold} opacity="0.075" />
+              <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill={T.heroMotifA} />
+              <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={T.heroMotifB} />
             </svg>
 
             {/* Health verdict */}
             <div style={{ position:"relative", minWidth:230, flex:"1 1 240px" }}>
-              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:7 }}>Portfolio health</div>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:7 }}>Portfolio health</div>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <StatusDot color={health.color} size={10} pulse={!noData} />
                 <span style={{ ...TYPE.display, fontSize: vp.isCompact ? 24 : 30, color:health.color }}>{health.label}</span>
               </div>
-              <div style={{ ...TYPE.bodySm, color:"rgba(255,255,255,0.6)", marginTop:6, maxWidth:330, lineHeight:1.45 }}>
+              <div style={{ ...TYPE.bodySm, color:T.heroFgSoft, marginTop:6, maxWidth:330, lineHeight:1.45 }}>
                 {health.note}
               </div>
             </div>
 
-            {!vp.isCompact && <div style={{ width:1, alignSelf:"stretch", background:"rgba(255,255,255,0.14)" }} />}
+            {!vp.isCompact && <div style={{ width:1, alignSelf:"stretch", background:T.heroDivider }} />}
 
             <Index label="CPI" value={d.portfolio_cpi > 0 ? d.portfolio_cpi : null} status={cpi} hint="Cost performance" />
             <Index label="SPI" value={d.portfolio_spi > 0 ? d.portfolio_spi : null} status={spi} hint="Schedule performance" />
@@ -2214,12 +2214,12 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
               stat={`${d.total_projects} projects · ${d.approved_count} approved · ${fmtM(d.budget_consumed)} released`}
               style={{ marginLeft: vp.isCompact ? 0 : "auto" }}>
             <div style={{ textAlign: vp.isCompact ? "left" : "right", position:"relative", cursor:"help" }}>
-              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:6 }}>Total CAPEX portfolio</div>
-              <div style={{ ...TYPE.metricXL, fontSize: vp.isCompact ? 26 : 32, color:BRAND.gold }}>
-                <span style={{ ...TYPE.caption, fontWeight:600, color:"rgba(255,255,255,0.55)", marginRight:6 }}>PKR</span>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:6 }}>Total CAPEX portfolio</div>
+              <div style={{ ...TYPE.metricXL, fontSize: vp.isCompact ? 26 : 32, color:T.heroAccent }}>
+                <span style={{ ...TYPE.caption, fontWeight:600, color:T.heroFgMuted, marginRight:6 }}>PKR</span>
                 <AnimatedNumber value={fmtM(d.total_capex)} />
               </div>
-              <div style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)", marginTop:4 }}>
+              <div style={{ ...TYPE.caption, color:T.heroFgMuted, marginTop:4 }}>
                 {d.total_projects} projects · {fyLabel}
               </div>
             </div>
@@ -3435,39 +3435,40 @@ function ProjectsPage({ T, session, onSelectProject }) {
           answers "how much money is in what I'm looking at". */}
       <div className="pmo-fade" style={{
         flexShrink:0, background:T.hero, position:"relative", overflow:"hidden",
+        borderBottom:`1px solid ${T.heroBorder}`,
         padding: vpP.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.md}px ${SP.xxl}px`,
         display:"flex", alignItems:"center", gap: vpP.isCompact ? SP.lg : SP.xxl, flexWrap:"wrap",
       }}>
         <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
           <div style={{ position:"absolute", top:"-70%", right:"7%", width:260, height:260, borderRadius:"50%",
-            background:`radial-gradient(circle, ${BRAND.blueBright}1F 0%, transparent 68%)` }} />
+            background:`radial-gradient(circle, ${T.heroGlowA} 0%, transparent 68%)` }} />
         </div>
         <div style={{ position:"relative" }}>
-          <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>
+          <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>
             {activeFilterCount || search.trim() ? "In this view" : "All projects"}
           </div>
           <div style={{ display:"flex", alignItems:"baseline", gap:7 }}>
-            <span style={{ ...TYPE.metric, color:"#fff" }}>{sorted.length}</span>
-            <span style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)" }}>of {rows.length}</span>
+            <span style={{ ...TYPE.metric, color:T.heroFg }}>{sorted.length}</span>
+            <span style={{ ...TYPE.caption, color:T.heroFgMuted }}>of {rows.length}</span>
           </div>
         </div>
         <div style={{ position:"relative" }}>
-          <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>DF Recommended</div>
-          <div style={{ ...TYPE.metricSm, color:"#fff" }}>PKR {fmtM(summary.df)}</div>
+          <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>DF Recommended</div>
+          <div style={{ ...TYPE.metricSm, color:T.heroFg }}>PKR {fmtM(summary.df)}</div>
         </div>
         <div style={{ position:"relative" }}>
-          <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>Approved Budget</div>
-          <div style={{ ...TYPE.metricSm, color:BRAND.gold }}>PKR {fmtM(summary.bac)}</div>
+          <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved Budget</div>
+          <div style={{ ...TYPE.metricSm, color:T.heroAccent }}>PKR {fmtM(summary.bac)}</div>
         </div>
         {!vpP.isCompact && (
           <div style={{ marginLeft:"auto", display:"flex", gap:SP.xl, position:"relative" }}>
             <div style={{ textAlign:"right" }}>
-              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>Approved</div>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved</div>
               <div style={{ ...TYPE.metricSm, color:T.positive }}>{summary.approved}</div>
             </div>
             <div style={{ textAlign:"right" }}>
-              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:4 }}>Carry fwd</div>
-              <div style={{ ...TYPE.metricSm, color:"#fff" }}>{summary.cf}</div>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Carry fwd</div>
+              <div style={{ ...TYPE.metricSm, color:T.heroFg }}>{summary.cf}</div>
             </div>
           </div>
         )}
@@ -4968,17 +4969,18 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       {/* Everything an officer needs to identify and situate the project,
           without scrolling: who it is, where it sits, and what it's worth. */}
       <div style={{
-        background:T.hero, padding: vpD.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.lg}px ${SP.xxl}px`,
+        background:T.hero, borderBottom:`1px solid ${T.heroBorder}`,
+        padding: vpD.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.lg}px ${SP.xxl}px`,
         position:"relative", overflow:"hidden", flexShrink:0,
       }}>
         <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
           <div style={{ position:"absolute", top:"-60%", right:"4%", width:320, height:320, borderRadius:"50%",
-            background:`radial-gradient(circle, ${BRAND.blueBright}22 0%, transparent 68%)` }} />
+            background:`radial-gradient(circle, ${T.heroGlowA} 0%, transparent 68%)` }} />
         </div>
 
         <button onClick={onBack} className="pmo-focusable" style={{
           display:"inline-flex", alignItems:"center", gap:5, background:"none", border:"none",
-          cursor:"pointer", color:"rgba(255,255,255,0.62)", ...TYPE.caption,
+          cursor:"pointer", color:T.heroFgSoft, ...TYPE.caption,
           marginBottom:SP.md, padding:0, position:"relative",
         }}>
           <ChevronRight size={13} style={{ transform:"rotate(180deg)" }} />
@@ -4988,10 +4990,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
           gap:SP.lg, flexWrap:"wrap", position:"relative" }}>
           <div style={{ minWidth:0, flex:"1 1 320px" }}>
-            <div style={{ ...TYPE.mono, color:"rgba(255,255,255,0.55)", marginBottom:5 }}>
+            <div style={{ ...TYPE.mono, color:T.heroFgMuted, marginBottom:5 }}>
               {evm.code && evm.code !== "-" ? evm.code : "No project ID assigned"}
             </div>
-            <h2 style={{ ...TYPE.display, fontSize: vpD.isCompact ? 21 : 27, color:"#fff",
+            <h2 style={{ ...TYPE.display, fontSize: vpD.isCompact ? 21 : 27, color:T.heroFg,
               margin:0, lineHeight:1.2 }}>{evm.name}</h2>
             <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:SP.md, flexWrap:"wrap" }}>
               <Badge T={T} color={STAGE_META[evm.workflow_stage]?.color || T.neutral}>
@@ -5004,22 +5006,22 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
               )}
               {evm.is_carry_forward && <Badge T={T} color={T.violet}>Carry forward</Badge>}
               {details.fiscal_year && (
-                <span style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)" }}>{details.fiscal_year}</span>
+                <span style={{ ...TYPE.caption, color:T.heroFgMuted }}>{details.fiscal_year}</span>
               )}
               {details.segments?.name && (
-                <span style={{ ...TYPE.caption, color:"rgba(255,255,255,0.55)" }}>· {details.segments.name}</span>
+                <span style={{ ...TYPE.caption, color:T.heroFgMuted }}>· {details.segments.name}</span>
               )}
             </div>
           </div>
 
           <div style={{ display:"flex", gap:SP.xl, alignItems:"flex-start", flexWrap:"wrap" }}>
             <div>
-              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.6)", marginBottom:4 }}>DF Recommended</div>
-              <div style={{ ...TYPE.metricSm, color:"#fff" }}>{fmtM(details.df_recommended_amount)}</div>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>DF Recommended</div>
+              <div style={{ ...TYPE.metricSm, color:T.heroFg }}>{fmtM(details.df_recommended_amount)}</div>
             </div>
             <div>
-              <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.6)", marginBottom:4 }}>Approved budget</div>
-              <div style={{ ...TYPE.metricSm, color: +evm.bac > 0 ? BRAND.gold : "rgba(255,255,255,0.4)" }}>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved budget</div>
+              <div style={{ ...TYPE.metricSm, color: +evm.bac > 0 ? BRAND.gold : T.heroFgDim }}>
                 {fmtM(evm.bac)}
               </div>
             </div>
