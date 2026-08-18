@@ -24,6 +24,7 @@ import {
   InsightTip, WithInsight, Section,
   pageBody, pageBar, cardStyle, tableStyles,
   RankedBars, ShareStrip, ProgressRing, TargetCard,
+  Aurora, Reveal, SparkBar,
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -617,6 +618,17 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     budget_released:"pmo-ico-up", remaining_capex:"pmo-ico-up",
   };
   const iconAnim = ICON_ANIM[kpiKey] || "pmo-ico-glow";
+  // Numeric share of the portfolio for the spark bar. Parsed from the displayed
+  // figure so it works for both live values and PMO overrides.
+  const numOf = (v) => {
+    const m = String(v ?? "").replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : 0;
+  };
+  const shareOf    = numOf(value);
+  const shareTotal = (() => {
+    const t = numOf(dashData?.total_capex ? (+dashData.total_capex / 1e6) : 0);
+    return String(value).includes("M") && t > 0 ? t : (dashData?.total_projects || 0);
+  })();
   // Short explanation of what this metric means, with live figures where the
   // copy references them. Never fabricated — see KPI_INSIGHT in theme.js.
   const KEY_ALIAS = {
@@ -754,6 +766,11 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
               <div style={{ ...TYPE.caption, color: hover ? T.textSoft : T.muted,
                 marginTop:6, lineHeight:1.4, transition:`color ${MOTION.base}` }}>{sub}</div>
             )}
+
+            {/* Share of the portfolio, drawn as a living hairline. Seven cards
+                of identical shape read as wallpaper; this gives each one a
+                proportion of its own and keeps the strip moving at rest. */}
+            {shareOf > 0 && <SparkBar T={T} value={shareOf} total={shareTotal} color={clr} delay={index * 60} />}
 
 
 
@@ -1694,7 +1711,7 @@ function BreakdownSection({ T, session }) {
           rendered a full green bar identical to one at 54%. Everything now sits
           on ONE shared scale against its target, so bar length means the same
           thing in every row and the shortfall is visible as distance. */}
-      <Section T={T} tone={T.info} pad={SP.lg}>
+      <Reveal><Section T={T} tone={T.info} pad={SP.lg}>
         <SectionTitle T={T} icon={Landmark}
           title="Release against target"
           sub="Every organisation and segment on one scale — solid is released, the dashed ghost is target"
@@ -1754,14 +1771,14 @@ function BreakdownSection({ T, session }) {
           </div>
           <ShareStrip T={T} items={shareRows} fmt={fmtM} />
         </div>
-      </Section>
+      </Section></Reveal>
 
       {/* ── STRATEGIC PRIORITY ────────────────────────────────────────────
           Was a vertical stacked column with three categories and a great deal
           of empty air above them; the labels were truncated because vertical
           bars give a label only its own width. Horizontal bars give each label
           the full row. */}
-      <Section T={T} tone={T.violet} pad={SP.lg}>
+      <Reveal delay={60}><Section T={T} tone={T.violet} pad={SP.lg}>
         <SectionTitle T={T} icon={Layers}
           title="By strategic priority"
           sub="Share of approved budget by strategic priority — hover a slice for its detail" />
@@ -1779,7 +1796,7 @@ function BreakdownSection({ T, session }) {
             title="No strategic priorities recorded"
             message="Import projects with the Strategic Priority column filled in and they'll rank here." />
         )}
-      </Section>
+      </Section></Reveal>
     </div>
   );
 }
@@ -2202,6 +2219,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
             boxShadow:T.shadow, position:"relative", overflow:"hidden",
           }}>
             {/* Ambient depth — barely visible, never competes with the figures */}
+            <div className="pmo-scan" style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden", borderRadius:R.xl }} />
             <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
               <div style={{ position:"absolute", top:"-45%", right:"-4%", width:360, height:360, borderRadius:"50%",
                 background:`radial-gradient(circle, ${T.heroGlowA} 0%, transparent 68%)` }} />
@@ -2226,6 +2244,56 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
                 {health.note}
               </div>
             </div>
+
+            {/* The hero had a large dead band between the health verdict and
+                the indices. It now carries the portfolio's actual movement —
+                where the 106 projects sit in the approval flow — which is both
+                the most useful thing to show there and the thing that makes the
+                block feel occupied rather than padded. */}
+            {!vp.isCompact && (() => {
+              const flow = STAGE_ORDER.map(k => ({
+                key:k, label:STAGE_META[k].short, color:STAGE_META[k].color,
+                n: k === "pdd_not_submitted" ? (d.pdd_not_submitted_count || 0)
+                 : k === "identified"        ? (d.pdds_submitted || 0)
+                 : k === "df_review"         ? (d.in_df || 0)
+                 : k === "ed_review"         ? (d.in_ed || 0)
+                 : k === "mt_review"         ? (d.in_mt || 0)
+                 : (d.approved_count || 0),
+              }));
+              const tot = flow.reduce((a, b) => a + b.n, 0) || 1;
+              return (
+                <div style={{ flex:"1 1 300px", minWidth:220, position:"relative", padding:`0 ${SP.lg}px` }}>
+                  <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:9 }}>Approval flow</div>
+                  <div style={{ display:"flex", gap:3, alignItems:"flex-end", height:38 }}>
+                    {flow.map((f, i) => {
+                      const h = Math.max(6, (f.n / tot) * 100);
+                      return (
+                        <div key={f.key} title={`${STAGE_META[f.key].label} — ${f.n}`}
+                          style={{ flex:1, display:"flex", flexDirection:"column",
+                            alignItems:"center", gap:4, minWidth:0 }}>
+                          <div className="pmo-grow" style={{
+                            width:"100%", height:`${h}%`, borderRadius:3,
+                            background:`linear-gradient(180deg, ${f.color}, ${f.color}88)`,
+                            boxShadow:`0 0 10px -3px ${f.color}`,
+                            animationDelay:`${420 + i * 90}ms`,
+                          }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display:"flex", gap:3, marginTop:6 }}>
+                    {flow.map(f => (
+                      <div key={f.key} style={{ flex:1, textAlign:"center", minWidth:0 }}>
+                        <div style={{ ...TYPE.caption, fontSize:9.5, fontWeight:700,
+                          color:T.heroFg, fontVariantNumeric:"tabular-nums" }}>{f.n}</div>
+                        <div style={{ ...TYPE.caption, fontSize:8.5, color:T.heroFgDim,
+                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {!vp.isCompact && <div style={{ width:1, alignSelf:"stretch", background:T.heroDivider }} />}
 
@@ -7819,7 +7887,11 @@ export default function App() {
         onClose={() => setSearchOpen(false)}
         onSelect={(id) => openProject(id)}
       />
-    <div style={{ display:"flex", height:"100vh", fontFamily:TYPE.body.fontFamily, background:T.page, color:T.text }}>
+    <div style={{ display:"flex", height:"100vh", fontFamily:TYPE.body.fontFamily,
+      background:T.page, color:T.text, position:"relative" }}>
+      {/* Continuous ambient light behind everything, fixed so it persists as
+          you move between pages rather than restarting each time. */}
+      <Aurora T={T} />
       <Sidebar
         T={T} page={effectivePage} setPage={navigateToPage} session={session}
         unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)}
