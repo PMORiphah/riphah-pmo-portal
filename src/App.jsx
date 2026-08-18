@@ -20,7 +20,7 @@ import {
   Badge, StatusDot, Progress, Skeleton, SkeletonCard, SkeletonChart, SkeletonRows,
   EmptyState, Modal, Tooltip as TooltipUI, ArchMotif as ArchMotifUI, Ambient, Tabs as TabsUI,
   Metric, CountUp, useCountUp, Stack, Inline, SectionTitle, Spinner,
-  InsightTip, WithInsight,
+  InsightTip, WithInsight, Section,
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -901,7 +901,7 @@ function FinancialFlow({ T, d, isCompact }) {
   const pending = +d.payments_pending_amount || 0;
 
   return (
-    <Surface T={T} pad={SP.lg} style={{ flexShrink:0 }}>
+    <Section T={T} tone={T.gold} pad={SP.lg} style={{ flexShrink:0 }}>
       <SectionTitle
         T={T} icon={Wallet}
         title="Where the money is"
@@ -913,8 +913,20 @@ function FinancialFlow({ T, d, isCompact }) {
           const pct  = (st.value / base) * 100;
           const prev = i === 0 ? null : steps[i - 1].value;
           const drop = prev == null ? null : prev - st.value;
+          const last = i === steps.length - 1;
           return (
-            <div key={st.key}>
+            <div key={st.key} style={{ position:"relative" }}>
+              {/* Connective cue (§22): a short rail from each stage down to the
+                  next, tinted from this stage's colour to the following one, so
+                  the four figures read as money moving through the system
+                  rather than four unrelated bars. */}
+              {!last && (
+                <span aria-hidden="true" style={{
+                  position:"absolute", left:4, top:"100%", height:SP.md, width:2,
+                  background:`linear-gradient(180deg, ${st.color}99, ${steps[i+1].color}55)`,
+                  borderRadius:2,
+                }} />
+              )}
               <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between",
                 gap:SP.md, marginBottom:6, flexWrap:"wrap" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:9, minWidth:0 }}>
@@ -954,7 +966,7 @@ function FinancialFlow({ T, d, isCompact }) {
           {" "}A commitment stage (POs raised) is not recorded in the portal, so it is not shown.
         </span>
       </div>
-    </Surface>
+    </Section>
   );
 }
 
@@ -981,7 +993,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
     .map(st => ({ key:st.key, name:st.label, value:st.value, color:st.color }));
 
   return (
-    <Surface T={T} pad={SP.lg} style={{ flexShrink:0 }}>
+    <Section T={T} tone={T.info} pad={SP.lg} style={{ flexShrink:0 }}>
       <SectionTitle
         T={T} icon={ClipboardList}
         title="Approvals pipeline"
@@ -1072,7 +1084,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
           </div>
         </div>
       )}
-    </Surface>
+    </Section>
   );
 }
 
@@ -1358,16 +1370,13 @@ function BreakdownSection({ T, session }) {
           <div style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2 }}>Portfolio Breakdown · Planned vs Actual</div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <select value={fy} onChange={e=>setFy(e.target.value)} className="pmo-select"
+          <select value={fy} onChange={e=>setFy(e.target.value)} className="pmo-select pmo-focusable"
             style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}>
             <option value="__all__">All Fiscal Years</option>
             {allFYs.map(f=><option key={f} value={f}>{f}</option>)}
           </select>
           {isPMO && !editing && (
-            <button onClick={startEdit}
-              style={{ padding:"6px 14px", background:"none", border:`1px solid ${T.border}`, borderRadius:R.md, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, display:"flex", alignItems:"center", gap:6, transition:"border-color .15s, color .15s" }}>
-              <Edit2 size={11}/> Set Targets
-            </button>
+            <Button T={T} variant="ghost" size="sm" icon={Edit2} onClick={startEdit}>Set Targets</Button>
           )}
           {isPMO && editing && (
             <div style={{ display:"flex", gap:7 }}>
@@ -2107,7 +2116,12 @@ function CommandCenter({ T, session, onSelectProject }) {
             <Index label="SPI" value={d.portfolio_spi > 0 ? d.portfolio_spi : null} status={spi} hint="Schedule performance" />
 
             {/* Financial position */}
-            <div style={{ marginLeft: vp.isCompact ? 0 : "auto", textAlign: vp.isCompact ? "left" : "right", position:"relative" }}>
+            <WithInsight T={T} side="bottom" align="right" width={264} tone={BRAND.gold}
+              title="Total CAPEX portfolio"
+              line={KPI_INSIGHT.total_capex(d)}
+              stat={`${d.total_projects} projects · ${d.approved_count} approved · ${fmtM(d.budget_consumed)} released`}
+              style={{ marginLeft: vp.isCompact ? 0 : "auto" }}>
+            <div style={{ textAlign: vp.isCompact ? "left" : "right", position:"relative", cursor:"help" }}>
               <div style={{ ...TYPE.label, color:"rgba(255,255,255,0.62)", marginBottom:6 }}>Total CAPEX portfolio</div>
               <div style={{ ...TYPE.metricXL, fontSize: vp.isCompact ? 26 : 32, color:BRAND.gold }}>
                 <span style={{ ...TYPE.caption, fontWeight:600, color:"rgba(255,255,255,0.55)", marginRight:6 }}>PKR</span>
@@ -2117,6 +2131,7 @@ function CommandCenter({ T, session, onSelectProject }) {
                 {d.total_projects} projects · FY 2026-27
               </div>
             </div>
+            </WithInsight>
           </div>
         );
       })()}
