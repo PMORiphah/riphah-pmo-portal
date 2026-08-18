@@ -175,8 +175,23 @@ const DARK = {
 
   // Ambient background — barely visible, never competes with data (§32)
   ambient:"radial-gradient(ellipse 1100px 620px at 12% -8%, rgba(44,123,196,0.10), transparent 62%), radial-gradient(ellipse 900px 520px at 96% 4%, rgba(34,196,168,0.055), transparent 58%)",
-  // Executive hero surface
-  hero:   "linear-gradient(135deg, #14304E 0%, #0E2340 44%, #0A1729 100%)",
+
+  // ── Executive hero ────────────────────────────────────────────────────
+  // Dark mode: a deep navy field with white type. Its foregrounds are tokens
+  // rather than literals so light mode can invert the relationship instead of
+  // inheriting a dark slab.
+  hero:        "linear-gradient(135deg, #14304E 0%, #0E2340 44%, #0A1729 100%)",
+  heroBorder:  "rgba(255,255,255,0.08)",
+  heroFg:      "#FFFFFF",
+  heroFgSoft:  "rgba(255,255,255,0.62)",
+  heroFgMuted: "rgba(255,255,255,0.55)",
+  heroFgDim:   "rgba(255,255,255,0.40)",
+  heroDivider: "rgba(255,255,255,0.16)",
+  heroAccent:  BRAND.gold,
+  heroMotifA:  "rgba(255,255,255,0.035)",
+  heroMotifB:  "rgba(224,169,74,0.075)",
+  heroGlowA:   "rgba(74,155,224,0.15)",
+  heroGlowB:   "rgba(34,196,168,0.09)",
   glass:  "rgba(19,35,57,0.72)",
 };
 
@@ -248,7 +263,24 @@ const LIGHT = {
   goldText: "#96681A",
 
   ambient:"radial-gradient(ellipse 1100px 620px at 12% -8%, rgba(44,123,196,0.07), transparent 62%), radial-gradient(ellipse 900px 520px at 96% 4%, rgba(34,196,168,0.05), transparent 58%)",
-  hero:   "linear-gradient(135deg, #14304E 0%, #0E2340 44%, #0A1729 100%)",
+
+  // ── Executive hero, light ─────────────────────────────────────────────
+  // A dark navy block dropped into a bright, airy page reads as a leftover —
+  // the same error the sidebar had. Light mode gets its own hero: a luminous
+  // white-to-blue field with Riphah-blue type and a deep-gold headline figure,
+  // so it sits ON the page rather than punching a hole in it (§16, §18).
+  hero:        "linear-gradient(135deg, #FFFFFF 0%, #F5F9FE 42%, #E7F0FB 100%)",
+  heroBorder:  "#DCE7F4",
+  heroFg:      "#0C1E33",
+  heroFgSoft:  "#4A6076",
+  heroFgMuted: "#5B6E83",
+  heroFgDim:   "#8095AB",
+  heroDivider: "#DCE7F4",
+  heroAccent:  "#96681A",
+  heroMotifA:  "rgba(18,60,92,0.05)",
+  heroMotifB:  "rgba(224,169,74,0.14)",
+  heroGlowA:   "rgba(44,123,196,0.10)",
+  heroGlowB:   "rgba(34,196,168,0.07)",
   glass:  "rgba(255,255,255,0.78)",
 };
 
