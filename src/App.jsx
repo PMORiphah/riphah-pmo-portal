@@ -27,6 +27,7 @@ import {
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
+  ShareDonut,
 } from "./charts.jsx";
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement,
@@ -1744,9 +1745,16 @@ function BreakdownSection({ T, session }) {
       <Section T={T} tone={T.violet} pad={SP.lg}>
         <SectionTitle T={T} icon={Layers}
           title="By strategic priority"
-          sub="Approved budget per strategic priority — ranked, largest first" />
+          sub="Share of approved budget by strategic priority — hover a slice for its detail" />
         {stratRows.length > 0 ? (
-          <RankedBars T={T} items={stratRows} fmt={fmtM} showTarget={false} />
+          <ShareDonut
+            T={T}
+            data={stratRows.map(r => ({ ...r, name:r.label }))}
+            total={fmtM(stratRows.reduce((a, r) => a + (r.value || 0), 0))}
+            totalLabel="Approved budget"
+            fmt={fmtM}
+            height={vpB.isCompact ? 240 : 290}
+          />
         ) : (
           <EmptyState T={T} icon={Layers} compact
             title="No strategic priorities recorded"
