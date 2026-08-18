@@ -37,6 +37,17 @@ export const DATA = {
   cyan:      "#2BD4D4",
 };
 
+// Text-safe variants. The palette above is tuned for dark surfaces; measured on
+// white, every one of those hues falls below the 4.5:1 WCAG AA floor for text
+// (teal 2.2:1, gold 2.1:1, cyan 1.8:1). So a colour used as a FILL or BORDER
+// keeps its full saturation, while the same colour used as TEXT resolves
+// through this map in light mode. Values were computed by darkening each hue in
+// HLS until it cleared 4.5:1 on #FFFFFF — not eyeballed.
+export const DATA_TEXT_LIGHT = {
+  positive:"#178370", info:"#2178C1", warning:"#A16A13", danger:"#E6163C",
+  neutral:"#5D7999", violet:"#7667D2", cyan:"#1B8383",
+};
+
 // Ordered ramp for categorical series (segments, organisations) so charts pick
 // colours deterministically instead of each chart choosing its own palette.
 export const CATEGORICAL = [
@@ -153,11 +164,25 @@ const DARK = {
   ring:          "40",   // focus / selection ring
   glow:          "55",
 
+  // On dark surfaces the base palette already clears AA, so text variants are
+  // the same values.
+  textOf: (c) => c,
+  goldText: BRAND.gold,
+
   // Ambient background — barely visible, never competes with data (§32)
   ambient:"radial-gradient(ellipse 1100px 620px at 12% -8%, rgba(44,123,196,0.10), transparent 62%), radial-gradient(ellipse 900px 520px at 96% 4%, rgba(34,196,168,0.055), transparent 58%)",
   // Executive hero surface
   hero:   "linear-gradient(135deg, #14304E 0%, #0E2340 44%, #0A1729 100%)",
   glass:  "rgba(19,35,57,0.72)",
+};
+
+// Lookup from full-saturation hue -> AA-safe text hue, used by LIGHT.textOf.
+const LIGHT_TEXT_MAP = {
+  [DATA.positive]:DATA_TEXT_LIGHT.positive, [DATA.info]:DATA_TEXT_LIGHT.info,
+  [DATA.warning]:DATA_TEXT_LIGHT.warning,   [DATA.danger]:DATA_TEXT_LIGHT.danger,
+  [DATA.neutral]:DATA_TEXT_LIGHT.neutral,   [DATA.violet]:DATA_TEXT_LIGHT.violet,
+  [DATA.cyan]:DATA_TEXT_LIGHT.cyan,         [BRAND.gold]:"#9A6B1A",
+  [BRAND.blue]:"#2B78C0",
 };
 
 const LIGHT = {
@@ -186,8 +211,8 @@ const LIGHT = {
 
   text:          "#0C1E33",
   textSoft:      "#41576F",
-  muted:         "#64798F",
-  dim:           "#7B8EA3",
+  muted:         "#62768C",
+  dim:           "#63778D",
   onAccent:      "#FFFFFF",
 
   inputBg:       "#F7FAFD",
@@ -210,6 +235,10 @@ const LIGHT = {
   badge:         "1F",
   ring:          "4D",
   glow:          "38",
+
+  // Resolve a semantic colour to its AA-safe text equivalent.
+  textOf: (c) => LIGHT_TEXT_MAP[c] || c,
+  goldText: "#9A6B1A",
 
   ambient:"radial-gradient(ellipse 1100px 620px at 12% -8%, rgba(44,123,196,0.07), transparent 62%), radial-gradient(ellipse 900px 520px at 96% 4%, rgba(34,196,168,0.05), transparent 58%)",
   hero:   "linear-gradient(135deg, #14304E 0%, #0E2340 44%, #0A1729 100%)",
