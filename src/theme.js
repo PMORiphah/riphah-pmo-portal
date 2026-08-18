@@ -356,6 +356,26 @@ export const KPI_INSIGHT = {
   payments_pending:(d) => "Approved payments awaiting transfer.",
 };
 
+// Used when the PMO has manually overridden a card's value. The count-bearing
+// defaults above interpolate live figures, which then contradict the override —
+// e.g. a card reading "1166.33M from 272 proposals" paired with an insight
+// saying "across 106 proposals". These say what the metric means and nothing
+// that could disagree with a hand-entered number.
+export const KPI_INSIGHT_PLAIN = {
+  su_requested:  () => "Total value requested across CAPEX proposals for FY 2026-27.",
+  df_recommended:() => "Portfolio value recommended after Director Finance review.",
+  approved:      () => "Budget sanctioned for execution.",
+  budgeted:      () => "Projects carrying an approved budget allocation.",
+  non_budgeted:  () => "Approved projects still awaiting a budget allocation.",
+  carry_forward: () => "Budget carried forward from the previous fiscal year.",
+  total_projects:() => "Every CAPEX project currently tracked in the portfolio.",
+  total_capex:   () => "Combined value of the portfolio at its current approval stage.",
+  released:      () => "Funds transferred to projects and available to spend.",
+  remaining:     () => "Portfolio value not yet released to projects.",
+  payments_made: () => "Payments confirmed by Finance against released funds.",
+  payments_pending:() => "Approved payments awaiting transfer.",
+};
+
 // Tab descriptions plus a live figure, so the preview says something true about
 // the portfolio rather than restating the tab name (§8).
 export const TAB_INSIGHT = {
