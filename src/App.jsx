@@ -974,13 +974,13 @@ function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320 }) 
 // than implied.
 function FinancialFlow({ T, d, isCompact }) {
   const steps = [
-    { key:"df",       label:"DF Recommended", value:+d.df_recommended_total || 0, color:T.info,
+    { key:"df",       label:"DF Recommended", value:+d.df_recommended_total || 0, color:T.textOf(T.info),
       note:"After Finance Director review" },
     { key:"approved", label:"Approved",       value:+d.approved_total || 0,       color:BRAND.blue,
       note:"Sanctioned for execution" },
-    { key:"released", label:"Released",       value:+d.budget_consumed || 0,      color:T.positive,
+    { key:"released", label:"Released",       value:+d.budget_consumed || 0,      color:T.textOf(T.positive),
       note:"Funds transferred to projects" },
-    { key:"paid",     label:"Paid",           value:+d.payments_made_total || 0,  color:T.cyan,
+    { key:"paid",     label:"Paid",           value:+d.payments_made_total || 0,  color:T.textOf(T.cyan),
       note:"Finance-confirmed payments" },
   ];
   const base = steps[0].value || 1;
@@ -2492,7 +2492,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         {err && (
           <div style={{marginBottom:SP.md, padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
             background:`${T.danger}${T.wash}`, border:`1px solid ${T.danger}44`,
-            color:T.danger, ...TYPE.bodySm, display:"flex", gap:8, alignItems:"flex-start"}}>
+            color:T.textOf(T.danger), ...TYPE.bodySm, display:"flex", gap:8, alignItems:"flex-start"}}>
             <AlertCircle size={14} style={{marginTop:1, flexShrink:0}} />{err}
           </div>
         )}
@@ -3019,7 +3019,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             )}
 
             {/* Progress */}
-            {progress&&<div style={{background:`${T.positive}${T.wash}`,border:`1px solid ${T.positive}44`,borderRadius:R.md,padding:`${SP.sm}px ${SP.md}px`,marginBottom:SP.md,...TYPE.bodySm,color:T.positive,display:"flex",alignItems:"center",gap:7}}><Spinner size={13} color={T.positive} />{progress}</div>}
+            {progress&&<div style={{background:`${T.positive}${T.wash}`,border:`1px solid ${T.positive}44`,borderRadius:R.md,padding:`${SP.sm}px ${SP.md}px`,marginBottom:SP.md,...TYPE.bodySm,color:T.textOf(T.positive),display:"flex",alignItems:"center",gap:7}}><Spinner size={13} color={T.positive} />{progress}</div>}
 
             <div style={{display:"flex", gap:SP.sm, justifyContent:"flex-end"}}>
               <Button T={T} variant="ghost" onClick={onClose} disabled={importing}>Cancel</Button>
@@ -3353,7 +3353,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
           {p.is_carry_forward && (
             <span title="Carried forward from a prior fiscal year" style={{
               ...TYPE.caption, fontWeight:700, fontSize:10, letterSpacing:"0.05em",
-              background:T.violet + T.badge, color:T.violet, padding:"1px 5px", borderRadius:R.sm }}>CF</span>
+              background:T.violet + T.badge, color:T.textOf(T.violet), padding:"1px 5px", borderRadius:R.sm }}>CF</span>
           )}
           <span style={{ ...TYPE.mono, color: hovered ? T.text : T.textSoft }}>{p.code || "—"}</span>
         </span>
@@ -3467,7 +3467,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
           <div style={{ marginLeft:"auto", display:"flex", gap:SP.xl, position:"relative" }}>
             <div style={{ textAlign:"right" }}>
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved</div>
-              <div style={{ ...TYPE.metricSm, color:T.positive }}>{summary.approved}</div>
+              <div style={{ ...TYPE.metricSm, color:T.textOf(T.positive) }}>{summary.approved}</div>
             </div>
             <div style={{ textAlign:"right" }}>
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Carry fwd</div>
@@ -3801,7 +3801,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
       {/* Delete confirmation banner with comment count */}
       {confirmDel&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.card,border:"1px solid rgba(248,113,113,0.4)",borderRadius:R.md,padding:"12px 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"center",gap:14,fontSize:13,whiteSpace:"nowrap"}}>
-          <span style={{color:T.danger, display:"flex", alignItems:"center", gap:6}}><AlertTriangle size={14}/>Delete <strong>{confirmDel.code && confirmDel.code !== "-" ? confirmDel.code : "this project"}</strong>?</span>
+          <span style={{color:T.textOf(T.danger), display:"flex", alignItems:"center", gap:6}}><AlertTriangle size={14}/>Delete <strong>{confirmDel.code && confirmDel.code !== "-" ? confirmDel.code : "this project"}</strong>?</span>
           {confirmDel.comments>0&&<span style={{color:T.muted}}>({confirmDel.comments} comment{confirmDel.comments!==1?"s":""} will also be deleted)</span>}
           <button className="pmo-focusable pmo-btn" onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:ROSE,border:"none",borderRadius:R.sm,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
           <button className="pmo-focusable pmo-btn" onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
@@ -4836,7 +4836,7 @@ function ProjectTimeline({ T, p, evm, isCompact }) {
                 <div style={{ ...TYPE.h3, color: x.value ? (x.warn ? T.danger : T.text) : T.dim }}>
                   {x.value || "Not set"}
                 </div>
-                {x.warn && <div style={{ ...TYPE.caption, color:T.danger, marginTop:2 }}>Past due</div>}
+                {x.warn && <div style={{ ...TYPE.caption, color:T.textOf(T.danger), marginTop:2 }}>Past due</div>}
               </div>
             ))}
           </div>
@@ -5606,7 +5606,7 @@ function UserManagementPage({ T, session }) {
                           {u.role !== "pmo" && (
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                                <span style={{ ...TYPE.caption, color:T.danger, fontWeight:600 }}>Permanent —</span>
+                                <span style={{ ...TYPE.caption, color:T.textOf(T.danger), fontWeight:600 }}>Permanent —</span>
                                 <button className="pmo-focusable pmo-btn" onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:T.textOf(ROSE), fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
                                   {deleting === u.id ? "Deleting…" : "Yes, Delete"}
                                 </button>
@@ -5731,7 +5731,7 @@ function RestoreSnapshotButton({ T, session, entry }) {
           <button className="pmo-focusable pmo-btn" onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
         </div>
       ) : state === "restoring" ? (
-        <div style={{...TYPE.caption, color:T.positive, display:"flex", alignItems:"center", gap:5}}><Spinner size={11} color={T.positive} />{msg}</div>
+        <div style={{...TYPE.caption, color:T.textOf(T.positive), display:"flex", alignItems:"center", gap:5}}><Spinner size={11} color={T.positive} />{msg}</div>
       ) : (
         <button className="pmo-focusable pmo-btn" onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:R.sm,color:(T.goldText || GOLD),fontSize:11,cursor:"pointer"}}>
           📦 Restore this version ({entry.details.imported} projects)
