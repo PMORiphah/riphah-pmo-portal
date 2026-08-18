@@ -24,7 +24,7 @@ import {
   InsightTip, WithInsight, Section,
   pageBody, pageBar, cardStyle, tableStyles,
   RankedBars, ShareStrip, ProgressRing, TargetCard,
-  Aurora, Reveal, SparkBar,
+  Aurora, Reveal, SparkBar, useCursorLight,
 } from "./ui.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -618,6 +618,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     budget_released:"pmo-ico-up", remaining_capex:"pmo-ico-up",
   };
   const iconAnim = ICON_ANIM[kpiKey] || "pmo-ico-glow";
+  const cl = useCursorLight(true);   // §51
   // Numeric share of the portfolio for the spark bar. Parsed from the displayed
   // figure so it works for both live values and PMO overrides.
   const numOf = (v) => {
@@ -655,9 +656,13 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
         // the DOM paints over this one's insight layer.
         zIndex: hover && !editing ? 30 : undefined }}
       onClick={() => { if (!editing && onCardClick) onCardClick(); }}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => { setHover(false); cl.onMouseLeave(); }}
     >
-      <div className={hover && !editing ? "pmo-hot" : ""} style={{
+      <div
+        ref={cl.ref}
+        onMouseMove={cl.onMouseMove}
+        className={hover && !editing ? "pmo-hot" : ""} style={{
         flex:1, minWidth:0, position:"relative",
         // The sheen needs clipping; the insight tip must escape it. Clip the
         // sheen at its own layer instead of the card.
@@ -674,8 +679,12 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
                  : T.shadow,
         transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, background ${MOTION.base}`,
       }}>
-        {/* One slow sheen pass on hover — the "expensive" cue (§5) */}
+        {/* One slow sheen pass on hover — the "expensive" cue (§52) */}
         <span className="pmo-sheen" />
+        {/* Light following the pointer inside the card (§51) */}
+        <span className="pmo-cursor-light" style={{
+          background:`radial-gradient(340px circle at var(--mx,50%) var(--my,50%), ${T.cursorLight}, transparent 68%)`,
+        }} />
 
         {/* Contextual insight (§2–§4). Floating rather than in-card: expanding
             the card in place clipped longer copy and made the hovered card
@@ -2009,6 +2018,9 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
 // ─── COMMAND CENTER ───────────────────────────────────────────────────────────
 function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) {
   const vp = useViewport();
+  // §10 — the hero's lighting follows the pointer, so the executive block
+  // responds to attention rather than sitting inert.
+  const heroLight = useCursorLight(true);
   const [data,         setData]         = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
@@ -2206,7 +2218,11 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
         );
 
         return (
-          <div className="pmo-in" style={{
+          <div className="pmo-in pmo-hero pmo-hot"
+            ref={heroLight.ref}
+            onMouseMove={heroLight.onMouseMove}
+            onMouseLeave={heroLight.onMouseLeave}
+            style={{
             animationDelay:"0ms",
             background:T.hero, borderRadius:R.xl,
             border:`1px solid ${T.heroBorder}`,
@@ -2220,6 +2236,9 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
           }}>
             {/* Ambient depth — barely visible, never competes with the figures */}
             <div className="pmo-scan" style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden", borderRadius:R.xl }} />
+            <span className="pmo-cursor-light" style={{
+              background:`radial-gradient(620px circle at var(--mx,50%) var(--my,50%), ${T.cursorLightHero}, transparent 66%)`,
+            }} />
             <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
               <div style={{ position:"absolute", top:"-45%", right:"-4%", width:360, height:360, borderRadius:"50%",
                 background:`radial-gradient(circle, ${T.heroGlowA} 0%, transparent 68%)` }} />
