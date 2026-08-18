@@ -1747,7 +1747,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 {tab === "budgeting" && activeCard === "df_recommended" && (
                   <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600 }}>{fmtM(p.df_recommended_amount)}</td>
                 )}
-                <td style={td}><StageBadge stage={p.workflow_stage}/></td>
+                <td style={td}><StageBadge T={T} stage={p.workflow_stage}/></td>
                 {tab === "execution" && (
                   <td style={td}>
                     {p.manual_schedule_flag === "on_time"  && <span style={{ fontSize:10, fontWeight:700, color:EMERALD, background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>On Time</span>}
@@ -2151,15 +2151,27 @@ const STAGE_FILTERS = [
   { id:"cf",         label:"Carry Forward" },
 ];
 
-function StageBadge({ stage, size = 11 }) {
-  const s = STAGE[stage] || { label:stage, light:"#aaa", dark:"rgba(170,170,170,0.15)" };
+function StageBadge({ T, stage, size }) {
+  // Routes through the shared Badge so stage pills inherit the AA-safe text
+  // colour in light mode. Previously it read STAGE.light directly, which is
+  // tuned for dark surfaces and measured ~2.3:1 on white.
+  const meta = STAGE_META[stage];
+  if (!T) {
+    const s = STAGE[stage] || { label:stage, light:"#aaa", dark:"rgba(170,170,170,0.15)" };
+    return (
+      <span style={{
+        display:"inline-flex", alignItems:"center", padding:"2px 8px", borderRadius:20,
+        background:s.dark, color:s.light, fontSize:size || 11, fontWeight:600, whiteSpace:"nowrap",
+      }}>{s.label}</span>
+    );
+  }
   return (
-    <span style={{
-      display:"inline-flex", alignItems:"center", padding:"2px 8px", borderRadius:R.pill,
-      background:s.dark, color:s.light, fontSize:size, fontWeight:600, whiteSpace:"nowrap",
-    }}>{s.label}</span>
+    <Badge T={T} color={meta?.color || T.neutral} size="sm">
+      {meta?.label || stage || "—"}
+    </Badge>
   );
 }
+
 
 // ─── PROJECT FORM MODAL (add / edit) ─────────────────────────────────────────
 const Sec = ({T,title})=><div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",margin:"14px 0 10px",paddingBottom:6,borderBottom:`1px solid ${T.border}`}}>{title}</div>;
@@ -3761,11 +3773,11 @@ function CampusPage({ T, session, onSelectProject }) {
                   <td style={{...td,textAlign:"right"}}>{fmtM(p.bac)}</td>
                   <td style={td}>
                     <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
-                      <span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY[p.priority]||"#aaa"}}/>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY_META[p.priority]?.color||T.dim}}/>
                       <span style={{fontSize:12,color:T.muted}}>{PRIORITY_LABEL[p.priority]||"—"}</span>
                     </span>
                   </td>
-                  <td style={td}><StageBadge stage={p.workflow_stage}/></td>
+                  <td style={td}><StageBadge T={T} stage={p.workflow_stage}/></td>
                 </tr>
               ))}
             </tbody>
