@@ -57,6 +57,14 @@ export const injectGlobals = () => {
     @keyframes pmoTrace   { 0%{stroke-dashoffset:var(--len)} 100%{stroke-dashoffset:0} }
     @keyframes pmoOrbit   { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
     @keyframes pmoGrow    { from{transform:scaleX(0)} to{transform:scaleX(1)} }
+    /* §67 — page transition. Short and directional: the application should
+       always feel fast, so this is 240ms and a few pixels, never a fade the
+       reader has to wait through. */
+    @keyframes pmoPageIn  { from{opacity:0; transform:translateY(8px) scale(.995)}
+                            to{opacity:1; transform:none} }
+    /* §18 — tab content arrives from the direction of travel. */
+    @keyframes pmoPanelR  { from{opacity:0; transform:translateX(12px)} to{opacity:1; transform:none} }
+    @keyframes pmoPanelL  { from{opacity:0; transform:translateX(-12px)} to{opacity:1; transform:none} }
 
     .pmo-aurora   { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
     .pmo-aurora i { position:absolute; display:block; border-radius:50%; filter:blur(60px); }
@@ -75,6 +83,10 @@ export const injectGlobals = () => {
     .pmo-grow    { animation: pmoGrow 900ms cubic-bezier(.16,1,.3,1) backwards; transform-origin:left; }
 
     /* Sections arrive as they enter the viewport rather than all at once. */
+    .pmo-page     { animation: pmoPageIn 240ms cubic-bezier(.16,1,.3,1); }
+    .pmo-panel-r  { animation: pmoPanelR 260ms cubic-bezier(.16,1,.3,1); }
+    .pmo-panel-l  { animation: pmoPanelL 260ms cubic-bezier(.16,1,.3,1); }
+
     .pmo-reveal   { opacity:0; transform:translateY(14px);
                     transition: opacity .55s cubic-bezier(.16,1,.3,1), transform .55s cubic-bezier(.16,1,.3,1); }
     .pmo-reveal.in{ opacity:1; transform:none; }
@@ -166,6 +178,7 @@ export const injectGlobals = () => {
     @media (prefers-reduced-motion: reduce) {
       .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
       .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
+      .pmo-page,.pmo-panel-r,.pmo-panel-l,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
       .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
@@ -793,7 +806,7 @@ export const Ambient = ({ T }) => (
 
 // ─── TABS ────────────────────────────────────────────────────────────────────
 // Animated underline that slides between tabs rather than cutting (§18).
-export function Tabs({ T, tabs, active, onChange, isMobile }) {
+export function Tabs({ T, tabs, active, onChange, isMobile, onDirection }) {
   const wrap = useRef(null);
   const [ind, setInd] = useState({ left:0, width:0 });
   const [hover, setHover] = useState(null);
@@ -825,7 +838,15 @@ export function Tabs({ T, tabs, active, onChange, isMobile }) {
           <div key={t.id} style={{ position:"relative", display:"flex",
             zIndex: hot ? 20 : undefined }}
             onMouseEnter={() => setHover(t.id)} onMouseLeave={() => setHover(null)}>
-            <button data-tab={t.id} onClick={() => onChange(t.id)}
+            <button data-tab={t.id}
+              onClick={() => {
+                // §18 — hand the caller the direction of travel so content can
+                // enter from the side the reader moved toward.
+                const from = tabs.findIndex(x => x.id === active);
+                const to   = tabs.findIndex(x => x.id === t.id);
+                onDirection?.(to > from ? "r" : "l");
+                onChange(t.id);
+              }}
               onFocus={() => setHover(t.id)} onBlur={() => setHover(null)}
               className={`pmo-focusable ${hot ? "pmo-hot" : ""}`}
               style={{
