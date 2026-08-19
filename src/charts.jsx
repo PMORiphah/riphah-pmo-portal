@@ -126,7 +126,8 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
           fill="url(#pmoPlannedFill)" fillOpacity={dim("planned")}
           strokeOpacity={emph("planned")}
           dot={false}
-          activeDot={{ r:5, strokeWidth:2, stroke:T.surface, fill:T.info, filter:"url(#pmoDotGlow)" }}
+          activeDot={{ r:6, strokeWidth:2, stroke:T.surface, fill:T.info,
+            filter:"url(#pmoDotGlow)" }}
           onMouseEnter={() => setFocus("planned")}
           animationDuration={900}
           style={{ transition:"stroke-opacity .2s, stroke-width .2s" }} />
@@ -135,7 +136,8 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
           fill="url(#pmoActualFill)" fillOpacity={dim("actual")}
           strokeOpacity={emph("actual")}
           dot={false}
-          activeDot={{ r:6, strokeWidth:2, stroke:T.surface, fill:T.positive, filter:"url(#pmoDotGlow)" }}
+          activeDot={{ r:7, strokeWidth:2, stroke:T.surface, fill:T.positive,
+            filter:"url(#pmoDotGlow)", className:"pmo-live-dot" }}
           onMouseEnter={() => setFocus("actual")}
           animationDuration={1100}
           style={{ transition:"stroke-opacity .2s, stroke-width .2s" }} />
