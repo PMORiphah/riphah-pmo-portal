@@ -586,3 +586,52 @@ export const AURORA = {
     { c:"rgba(44,123,196,0.10)",  w:"32vw", h:"32vw", top:"10%",  left:"76%" },
   ],
 };
+
+
+// ─── PORTFOLIO INSIGHTS (§22) ────────────────────────────────────────────────
+// Short observations generated from the live figures, shown beneath the section
+// they describe. The rule is the same one that governs everything else here:
+// every number is read from the data, none is invented, and nothing is shown
+// unless it is actually true of this portfolio right now.
+//
+// Returns at most one per section — an interface that comments on everything
+// stops being read.
+export function portfolioInsights(d) {
+  if (!d) return {};
+  const M = (v) => `PKR ${((+v || 0) / 1e6).toFixed(1)}M`;
+  const total = +d.total_projects || 0;
+  const planned = +d.df_recommended_total || 0;
+  const released = +d.budget_consumed || 0;
+  const pct = planned > 0 ? (released / planned) * 100 : 0;
+  const notSubmitted = +d.pdd_not_submitted_count || 0;
+  const inReview = (+d.in_df || 0) + (+d.in_ed || 0) + (+d.in_mt || 0);
+  const approved = +d.approved_count || 0;
+
+  const out = {};
+
+  if (planned > 0) {
+    out.release = {
+      tone: pct < 10 ? "attention" : pct < 50 ? "watch" : "good",
+      title: pct < 10 ? "Release is well behind plan" : "Portfolio release progress",
+      body: `${M(released)} released against ${M(planned)} planned — ${pct.toFixed(1)}% of the recommended portfolio.`,
+    };
+  }
+
+  if (total > 0 && notSubmitted / total > 0.5) {
+    out.pipeline = {
+      tone: "attention",
+      title: "The pipeline is held before submission",
+      body: `${notSubmitted} of ${total} projects are awaiting PDD submission. ${inReview} ${inReview === 1 ? "is" : "are"} with a reviewer and ${approved} ${approved === 1 ? "has" : "have"} been approved.`,
+    };
+  }
+
+  if (approved > 0 && total > 0) {
+    out.approval = {
+      tone: approved / total < 0.05 ? "watch" : "good",
+      title: "Sanctioned for execution",
+      body: `${approved} of ${total} projects approved, carrying ${M(d.approved_total)} of budget.`,
+    };
+  }
+
+  return out;
+}
