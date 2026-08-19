@@ -132,6 +132,28 @@ export const injectGlobals = () => {
     @keyframes pmoLivePulse { 0%,100%{opacity:.55; transform:scale(1)}
                               50%{opacity:1; transform:scale(1.18)} }
     .pmo-live-dot { animation: pmoLivePulse 2.8s ease-in-out infinite; }
+
+    /* The portfolio verdict is the single most important line on the screen and
+       it was rendering as flat grey text. It now carries its status colour and
+       a slow luminance pulse — the headline breathing, not blinking. */
+    @keyframes pmoVerdict {
+      0%,100% { filter: drop-shadow(0 0 10px var(--vg)) brightness(1); }
+      50%     { filter: drop-shadow(0 0 22px var(--vg)) brightness(1.13); }
+    }
+    .pmo-verdict { animation: pmoVerdict 3.6s ease-in-out infinite; will-change: filter; }
+
+    /* The status dot ahead of it, with an expanding ring so the state reads as
+       live rather than printed. */
+    @keyframes pmoRing {
+      0%   { transform: scale(1);   opacity:.65; }
+      70%  { transform: scale(2.6); opacity:0; }
+      100% { transform: scale(2.6); opacity:0; }
+    }
+    .pmo-verdict-dot { position:relative; }
+    .pmo-verdict-dot::after {
+      content:""; position:absolute; inset:0; border-radius:50%;
+      background:inherit; animation: pmoRing 3.6s cubic-bezier(.2,.7,.3,1) infinite;
+    }
     .pmo-awaiting { animation: pmoLivePulse 4.2s ease-in-out infinite; }
 
     /* §5 — after a while without input the room quietens; movement wakes it. */
@@ -298,7 +320,7 @@ export const injectGlobals = () => {
       .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
       .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
       .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
-      .pmo-live-dot,.pmo-awaiting,.pmo-near,.pmo-near::before,.pmo-worldlight,
+      .pmo-live-dot,.pmo-awaiting,.pmo-verdict,.pmo-verdict-dot::after,.pmo-near,.pmo-near::before,.pmo-worldlight,
       .pmo-world,.pmo-aurora,.pmo-tilt > *,.pmo-tilt .pmo-ico-layer,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
