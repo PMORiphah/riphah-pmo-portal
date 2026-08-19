@@ -134,6 +134,33 @@ export const injectGlobals = () => {
     }
     .pmo-crest-ring { animation: pmoCrestRing 4.2s ease-in-out infinite; }
 
+    /* §25 — the success transition. The scene advances rather than cutting:
+       the card confirms, the world brightens, and the whole frame eases
+       forward as the dashboard takes over. 520ms end to end — cinematic, but
+       nobody is waiting on it. */
+    @keyframes pmoSignInOut {
+      0%   { opacity:1; transform: scale(1); filter: brightness(1); }
+      35%  { opacity:1; transform: scale(1.012); filter: brightness(1.16); }
+      100% { opacity:0; transform: scale(1.055); filter: brightness(1.3); }
+    }
+    .pmo-signin-out { animation: pmoSignInOut 520ms cubic-bezier(.4,0,.2,1) forwards; }
+
+    /* The card leaves slightly ahead of the scene, so it reads as handing over
+       rather than everything fading together. */
+    @keyframes pmoCardOut {
+      0%   { opacity:1; transform: translateY(0) scale(1); }
+      100% { opacity:0; transform: translateY(-10px) scale(.97); }
+    }
+    .pmo-card-out { animation: pmoCardOut 380ms cubic-bezier(.4,0,.2,1) forwards; }
+
+    /* A single confirming flash on the button before it goes. */
+    @keyframes pmoConfirm {
+      0%   { box-shadow: 0 6px 24px rgba(216,152,64,.45); }
+      45%  { box-shadow: 0 0 0 6px rgba(34,196,168,.28), 0 10px 34px rgba(34,196,168,.5); }
+      100% { box-shadow: 0 0 0 14px rgba(34,196,168,0), 0 6px 24px rgba(34,196,168,.2); }
+    }
+    .pmo-confirm { animation: pmoConfirm 420ms ease-out forwards; }
+
     /* §23 — a light sweep across the sign-in button, on hover only. */
     @keyframes pmoSweep { 0% { transform: translateX(-130%) skewX(-18deg); }
                           100% { transform: translateX(240%) skewX(-18deg); } }
@@ -382,6 +409,7 @@ export const injectGlobals = () => {
       .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
       .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
       .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
+      .pmo-signin-out,.pmo-card-out,.pmo-confirm,
       .pmo-mote,.pmo-lp1,.pmo-lp2,.pmo-lp3,.pmo-li,.pmo-crest-ring,.pmo-sweep::after,.pmo-field-focus,
       .pmo-live-dot,.pmo-awaiting,.pmo-verdict,.pmo-verdict-dot::after,.pmo-near,.pmo-near::before,.pmo-worldlight,
       .pmo-world,.pmo-aurora,.pmo-tilt > *,.pmo-tilt .pmo-ico-layer,
