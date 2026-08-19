@@ -2363,7 +2363,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
             <div style={{ position:"relative", minWidth:230, flex:"1 1 240px" }}>
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:7 }}>Portfolio health</div>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                <StatusDot color={health.color} size={10} pulse={!noData} />
+                <StatusDot color={health.color} size={10} ring />
                 <span className="pmo-verdict" style={{
                   ...TYPE.display, fontSize: vp.isCompact ? 24 : 30,
                   // On the hero the surface is dark in both themes, so the
