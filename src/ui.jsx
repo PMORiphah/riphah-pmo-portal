@@ -1291,7 +1291,7 @@ export function Metric({ T, value, size = "metric", color, prefix, animate = tru
 // §4 asked for "premium, not a boring tooltip"; §3 asked for one or two lines.
 // The component enforces the second constraint by simply not having room for
 // more — there is no scroll and no expansion.
-export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", align = "left", width = 250 }) {
+export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", align = "left", width = 250, anchorRect = null }) {
   // §83 — flip and shift away from the viewport edge rather than clipping.
   // Measured after mount, so the panel is positioned against where it actually
   // landed rather than where it was expected to.
@@ -1314,6 +1314,48 @@ export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", 
   if (!show) return null;
   const c = tone || T.blueBright;
   const effSide = adj?.flipY ? (side === "bottom" ? "top" : "bottom") : side;
+
+  if (anchorRect) {
+    const GAP = 9, PAD = 12;
+    const vw = typeof window !== "undefined" ? window.innerWidth  : 1200;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    const below = anchorRect.bottom + GAP;
+    const est   = 96;                       // enough to decide which way to open
+    const up    = below + est > vh - PAD;
+
+    let left = align === "right"  ? anchorRect.right - width
+             : align === "center" ? anchorRect.left + anchorRect.width / 2 - width / 2
+             : anchorRect.left;
+    left = Math.max(PAD, Math.min(left, vw - width - PAD));
+
+    const fixedStyle = side === "right"
+      ? { left: Math.min(anchorRect.right + 10, vw - width - PAD),
+          top:  Math.max(PAD, anchorRect.top + anchorRect.height / 2 - 34) }
+      : up ? { left, bottom: Math.max(PAD, vh - anchorRect.top + GAP) }
+           : { left, top: below };
+
+    return (
+      <div ref={box} className="pmo-rise" role="tooltip" style={{
+        position:"fixed", ...fixedStyle, zIndex:1450, width, maxWidth:"78vw",
+        background:T.surfaceFloat,
+        border:`1px solid ${T.borderStrong}`,
+        borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
+        boxShadow:T.shadowLg, pointerEvents:"none",
+        backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+      }}>
+        {title && (
+          <div style={{ ...TYPE.label, color: tone ? (T.textOf ? T.textOf(tone) : tone) : T.muted,
+            marginBottom:3 }}>{title}</div>
+        )}
+        <div style={{ ...TYPE.caption, color:T.text, lineHeight:1.5 }}>{line}</div>
+        {stat && (
+          <div style={{ ...TYPE.caption, color:T.muted, marginTop:4,
+            paddingTop:4, borderTop:`1px solid ${T.border}` }}>{stat}</div>
+        )}
+      </div>
+    );
+  }
+
   const pos = {
     bottom: { top:"calc(100% + 9px)", ...(align === "center" ? { left:"50%", transform:"translateX(-50%)" } : align === "right" ? { right:0 } : { left:0 }) },
     top:    { bottom:"calc(100% + 9px)", ...(align === "center" ? { left:"50%", transform:"translateX(-50%)" } : { left:0 }) },
@@ -1347,15 +1389,30 @@ export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", 
 // Wraps any element so it reveals an InsightTip on hover or keyboard focus.
 export function WithInsight({ T, title, line, stat, tone, side, align, width, children, style }) {
   const [on, setOn] = useState(false);
+  const [rect, setRect] = useState(null);
+  const anchor = useRef(null);
+
+  const show = useCallback(() => {
+    const el = anchor.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      setRect({ top:r.top, left:r.left, right:r.right, bottom:r.bottom,
+                width:r.width, height:r.height });
+    }
+    setOn(true);
+  }, []);
+  const hide = useCallback(() => setOn(false), []);
+
   if (!line) return children;
   return (
     <span
-      onMouseEnter={() => setOn(true)} onMouseLeave={() => setOn(false)}
-      onFocus={() => setOn(true)} onBlur={() => setOn(false)}
+      ref={anchor}
+      onMouseEnter={show} onMouseLeave={hide}
+      onFocus={show} onBlur={hide}
       style={{ position:"relative", display:"inline-flex", ...style }}>
       {children}
       <InsightTip T={T} show={on} title={title} line={line} stat={stat}
-        tone={tone} side={side} align={align} width={width} />
+        tone={tone} side={side} align={align} width={width} anchorRect={rect} />
     </span>
   );
 }
