@@ -1984,3 +1984,127 @@ export function InsightNote({ T, insight, style }) {
     </div>
   );
 }
+
+
+// ─── MICRO TREND ─────────────────────────────────────────────────────────────
+// A sparkline inside a KPI card, drawn from real data.
+//
+// The obvious version of this — a trend line showing the metric over time — is
+// not available here: only four of 106 projects record a budget release date,
+// across two months. Drawing a curve from that would be invention.
+//
+// What IS real is the portfolio's build-up by project start month: 11 months of
+// genuine data. So the line shows the measure accumulating as projects come on
+// stream, and the hover text says exactly that. Same visual language as a trend
+// sparkline, no fabricated history.
+export function MicroTrend({ T, points, color, height = 26, delay = 0, filled = true }) {
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setDrawn(true), 320 + delay); return () => clearTimeout(t); }, [delay]);
+
+  if (!points || points.length < 2) return null;
+  const c = color || T.info;
+  const max = Math.max(...points, 1);
+  const min = Math.min(...points, 0);
+  const span = max - min || 1;
+  const W = 100, H = height;
+
+  const xy = points.map((v, i) => [
+    (i / (points.length - 1)) * W,
+    H - ((v - min) / span) * (H - 3) - 1.5,
+  ]);
+  // A light smoothing pass — a straight polyline across 11 points reads as a
+  // saw, which suggests volatility the data does not have.
+  const path = xy.reduce((acc, [x, y], i, a) => {
+    if (i === 0) return `M ${x} ${y}`;
+    const [px, py] = a[i - 1];
+    const cx = (px + x) / 2;
+    return `${acc} C ${cx} ${py}, ${cx} ${y}, ${x} ${y}`;
+  }, "");
+  const area = `${path} L ${W} ${H} L 0 ${H} Z`;
+  const uid = `mt${String(c).replace(/[^a-zA-Z0-9]/g, "")}${Math.round(height)}`;
+  const last = xy[xy.length - 1];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={height} preserveAspectRatio="none"
+      style={{ display:"block", overflow:"visible", opacity: drawn ? 1 : 0,
+        transition:"opacity .5s ease" }} aria-hidden="true">
+      <defs>
+        <linearGradient id={uid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={c} stopOpacity="0.30" />
+          <stop offset="100%" stopColor={c} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {filled && <path d={area} fill={`url(#${uid})`} />}
+      <path d={path} fill="none" stroke={c} strokeWidth="1.6"
+        strokeLinecap="round" strokeLinejoin="round"
+        pathLength="1"
+        strokeDasharray="1" strokeDashoffset={drawn ? 0 : 1}
+        style={{ transition:`stroke-dashoffset 1200ms ${MOTION.ease}` }} />
+      {/* The newest point, so the eye lands on where the portfolio is now. */}
+      <circle cx={last[0]} cy={last[1]} r="2.1" fill={c}
+        style={{ opacity: drawn ? 1 : 0, transition:"opacity .4s ease .9s" }} />
+    </svg>
+  );
+}
+
+
+// ─── AMBIENT RIBBON ──────────────────────────────────────────────────────────
+// Abstract flowing light for the empty lower half of the sidebar. Purely
+// decorative — it carries no data and claims none, which is why it lives in the
+// one region of the interface where nothing is being reported.
+//
+// Drawn as SVG rather than an image so it takes both themes, scales to any
+// height, and costs nothing to ship.
+export function AmbientRibbon({ T, height = 200 }) {
+  const dark = T.mode === "dark";
+  const bands = dark
+    ? [["#2C7BC4", .55], ["#22C4A8", .45], ["#8B7FD9", .38], ["#E0A94A", .30]]
+    : [["#2C7BC4", .28], ["#2BD4D4", .24], ["#8B7FD9", .20], ["#E0A94A", .22]];
+
+  return (
+    <div aria-hidden="true" style={{
+      position:"relative", height, flexShrink:0, overflow:"hidden",
+      maskImage:"linear-gradient(180deg, transparent, #000 24%, #000 78%, transparent)",
+      WebkitMaskImage:"linear-gradient(180deg, transparent, #000 24%, #000 78%, transparent)",
+    }}>
+      <svg viewBox="0 0 200 220" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"
+        style={{ display:"block" }}>
+        <defs>
+          <filter id="ribbonBlur" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="7" />
+          </filter>
+          {bands.map(([c], i) => (
+            <linearGradient key={i} id={`rb${i}`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%"   stopColor={c} stopOpacity="0" />
+              <stop offset="45%"  stopColor={c} stopOpacity="1" />
+              <stop offset="100%" stopColor={c} stopOpacity="0" />
+            </linearGradient>
+          ))}
+        </defs>
+
+        <g filter="url(#ribbonBlur)">
+          {bands.map(([c, o], i) => (
+            <path key={i}
+              className="pmo-drift"
+              style={{ animationDuration: `${34 + i * 11}s`, animationDelay: `${-i * 7}s`,
+                       transformOrigin: "center" }}
+              d={`M -20 ${150 + i * 12}
+                  C 40 ${96 + i * 16}, 80 ${186 - i * 13}, 140 ${118 + i * 10}
+                  S 190 ${72 + i * 15}, 220 ${104 + i * 12}`}
+              fill="none" stroke={`url(#rb${i})`} strokeWidth={2.4 + i * 0.7}
+              opacity={o} strokeLinecap="round" />
+          ))}
+        </g>
+
+        {/* A scatter of slow motes, which is what gives the ribbons air. */}
+        {[[36,74],[68,132],[112,92],[150,158],[92,186],[164,116],[52,166],[128,60]].map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 1.6 : 1}
+            fill={bands[i % bands.length][0]}
+            opacity={dark ? 0.55 : 0.4}
+            className="pmo-live-dot"
+            style={{ animationDuration: `${5 + (i % 4) * 1.7}s`, animationDelay: `${-i * 0.8}s` }} />
+        ))}
+      </svg>
+    </div>
+  );
+}
