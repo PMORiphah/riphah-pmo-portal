@@ -1743,7 +1743,11 @@ function BreakdownSection({ T, session }) {
               </div>
             </div>
 
-            <InsightNote T={T} insight={portfolioInsights(d).release} style={{ marginBottom:SP.md }} />
+            <InsightNote T={T} style={{ marginBottom:SP.md }} insight={planTotal > 0 ? {
+              tone: pct < 10 ? "attention" : pct < 50 ? "watch" : "good",
+              title: pct < 10 ? "Release is well behind plan" : "Portfolio release progress",
+              body: `${fmtM(actTotal)} released against ${fmtM(planTotal)} planned — ${pct.toFixed(1)}% of the recommended portfolio.`,
+            } : null} />
 
             <PlannedActualChart T={T} data={data} height={vpB.isCompact ? 210 : 280}
               isMobile={vpB.isCompact} fmt={(v) => fmtM(v)} />
@@ -8151,7 +8155,7 @@ export default function App() {
   useEffect(() => {
     if (!session?.access_token) return;
     let alive = true;
-    supa("/rest/v1/dashboard_summary?select=*", {}, session.access_token)
+    supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token)
       .then(rows => {
         const d = Array.isArray(rows) ? rows[0] : rows;
         if (!alive || !d) return;
