@@ -625,7 +625,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   const cl = useCursorLight(true);   // §51
   const nearRef = useNear();          // §1 proximity · §7 anticipation · §8 dwell
   // §2 — what this card is ABOUT, so related things elsewhere can respond.
-  const focusKey = kpiKey ? `metric:${KEY_ALIAS?.[kpiKey] || kpiKey}` : null;
+  const focusKey = kpiKey ? `metric:${kpiKey}` : null;
   const src = useFocusSource(focusKey);
   // Numeric share of the portfolio for the spark bar. Parsed from the displayed
   // figure so it works for both live values and PMO overrides.
