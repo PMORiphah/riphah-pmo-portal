@@ -71,10 +71,15 @@ export const injectGlobals = () => {
 
     .pmo-aurora   { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
     .pmo-aurora i { position:absolute; display:block; border-radius:50%; filter:blur(60px); }
-    .pmo-aurora i:nth-child(1){ animation: pmoAurora1 34s ease-in-out infinite; }
-    .pmo-aurora i:nth-child(2){ animation: pmoAurora2 46s ease-in-out infinite; }
-    .pmo-aurora i:nth-child(3){ animation: pmoAurora3 28s ease-in-out infinite; }
-    .pmo-aurora i:nth-child(4){ animation: pmoAurora2 39s ease-in-out infinite reverse; }
+    /* §11 — prime-ish, mutually indivisible durations with offset delays, so
+       the combined field never visibly repeats. The brain detects a loop within
+       about three cycles and stops reading it as alive; with these periods the
+       pattern does not recur for hours. */
+    .pmo-aurora i { transition: transform 1.4s cubic-bezier(.16,1,.3,1); }
+    .pmo-aurora i:nth-child(1){ animation: pmoAurora1 37s ease-in-out infinite;   animation-delay:  -3s; }
+    .pmo-aurora i:nth-child(2){ animation: pmoAurora2 53s ease-in-out infinite;   animation-delay: -19s; }
+    .pmo-aurora i:nth-child(3){ animation: pmoAurora3 29s ease-in-out infinite;   animation-delay:  -7s; }
+    .pmo-aurora i:nth-child(4){ animation: pmoAurora2 43s ease-in-out infinite reverse; animation-delay: -31s; }
 
     /* A single hairline of light drifting down a surface. */
     .pmo-scan::after {
@@ -87,6 +92,66 @@ export const injectGlobals = () => {
 
     /* Sections arrive as they enter the viewport rather than all at once. */
     .pmo-kenburns { animation: pmoKenBurns 40s ease-in-out infinite; will-change:transform; }
+
+    /* ══ LIVING SURFACE ══════════════════════════════════════════════════
+       Everything below reads --near, --px/--py, --idle and --dwell, which the
+       presence layer publishes globally. No JavaScript runs per element and no
+       React render is triggered — which is what makes it affordable for the
+       whole page to be aware of the pointer rather than one card at a time. */
+
+    /* §1 §7 — surfaces wake as the pointer approaches, and earlier on the side
+       you are travelling toward. At --near 0 this is identical to resting. */
+    .pmo-near {
+      --near: 0;
+      transition: transform .5s cubic-bezier(.16,1,.3,1),
+                  box-shadow .5s cubic-bezier(.16,1,.3,1),
+                  border-color .5s cubic-bezier(.16,1,.3,1);
+      transform: translateY(calc(var(--near) * -3px));
+    }
+    /* §3 — light leans toward the pointer instead of sitting in the middle. */
+    .pmo-near::before {
+      content:""; position:absolute; inset:0; border-radius:inherit;
+      pointer-events:none; z-index:0;
+      background: radial-gradient(circle 320px at var(--lx,50%) var(--ly,50%),
+                  var(--near-light, rgba(120,175,240,.13)), transparent 68%);
+      opacity: calc(var(--near) * .9);
+      transition: opacity .45s ease;
+    }
+    /* §8 — resting near something deepens its response beyond passing over. */
+    .pmo-near { --dwell-boost: calc(var(--dwell, 0) * var(--near) * 0.5); }
+
+    /* §2 — relational response. An element describing the same thing as the
+       one under the pointer brightens; unrelated ones step back, so the
+       interface visibly knows what relates to what. */
+    .pmo-rel-on  { filter: saturate(1.14) brightness(1.06); }
+    .pmo-rel-off { opacity:.52; filter: saturate(.72); }
+    .pmo-rel-on, .pmo-rel-off { transition: opacity .28s ease, filter .28s ease; }
+
+    /* §10 — only things that MEAN live, pending or awaiting you breathe.
+       Motion becomes a channel of meaning rather than decoration. */
+    @keyframes pmoLivePulse { 0%,100%{opacity:.55; transform:scale(1)}
+                              50%{opacity:1; transform:scale(1.18)} }
+    .pmo-live-dot { animation: pmoLivePulse 2.8s ease-in-out infinite; }
+    .pmo-awaiting { animation: pmoLivePulse 4.2s ease-in-out infinite; }
+
+    /* §5 — after a while without input the room quietens; movement wakes it. */
+    html[data-idle="1"] .pmo-aurora i { animation-duration: 78s, 78s; opacity:.72; }
+    html[data-idle="1"] .pmo-live-dot { animation-duration: 5.2s; }
+    .pmo-aurora i, .pmo-live-dot { transition: opacity 2.4s ease; }
+
+    /* §3 — a global light whose source is your cursor. One environment
+       responding, rather than fifteen widgets each with their own lamp. */
+    .pmo-worldlight {
+      position:fixed; inset:0; pointer-events:none; z-index:1;
+      background: radial-gradient(circle 46vw at var(--px,50%) var(--py,40%),
+                  var(--world-light, rgba(120,175,240,.055)), transparent 62%);
+      transition: background .28s ease, opacity 1.6s ease;
+      opacity: calc(1 - var(--idle, 0) * .45);
+    }
+
+    /* §12 — the atmosphere trails the content as you scroll, which is what
+       produces real depth rather than a flat backdrop. */
+    .pmo-parallax { will-change: transform; }
     .pmo-page     { animation: pmoPageIn 240ms cubic-bezier(.16,1,.3,1); }
     .pmo-panel-r  { animation: pmoPanelR 260ms cubic-bezier(.16,1,.3,1); }
     .pmo-panel-l  { animation: pmoPanelL 260ms cubic-bezier(.16,1,.3,1); }
@@ -183,6 +248,7 @@ export const injectGlobals = () => {
       .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
       .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
       .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
+      .pmo-live-dot,.pmo-awaiting,.pmo-near,.pmo-near::before,.pmo-worldlight,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
       .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
@@ -1588,10 +1654,26 @@ export function TargetCard({
 // Deliberately calibrated: dark mode reads at roughly 8-14% opacity, light mode
 // at 5-8%. Enough that the screen is never dead; far too faint to compete with
 // a number someone is reading off it.
-export function Aurora({ T }) {
+export function Aurora({ T, mood = "neutral" }) {
   const blobs = AURORA[T.mode === "dark" ? "dark" : "light"];
+  // §9 — portfolio state tints the whole atmosphere. Applied as a hue rotation
+  // and saturation shift over the existing fields rather than swapping colours,
+  // so the environment shifts mood without changing its identity.
+  const MOOD = {
+    attention: { filter:"hue-rotate(-16deg) saturate(1.22)", extra:"rgba(232,166,60,0.10)" },
+    healthy:   { filter:"hue-rotate(10deg) saturate(1.10)",  extra:"rgba(34,196,168,0.09)" },
+    neutral:   { filter:"none",                              extra:null },
+  }[mood] || { filter:"none", extra:null };
   return (
-    <div className="pmo-aurora" aria-hidden="true">
+    <div className="pmo-aurora" aria-hidden="true"
+      style={{ filter: MOOD.filter, transition:"filter 3.5s ease" }}>
+      {MOOD.extra && (
+        <i className="pmo-parallax" style={{
+          background:`radial-gradient(circle, ${MOOD.extra} 0%, transparent 66%)`,
+          width:"46vw", height:"46vw", top:"22%", left:"30%",
+          animation:"pmoAurora3 61s ease-in-out infinite", animationDelay:"-11s",
+        }} />
+      )}
       {blobs.map((b, i) => (
         <i key={i} style={{ background:`radial-gradient(circle, ${b.c} 0%, transparent 68%)`,
           width:b.w, height:b.h, top:b.top, left:b.left }} />
