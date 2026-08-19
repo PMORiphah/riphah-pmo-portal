@@ -285,10 +285,18 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
         )}
       </nav>
 
-      {/* The sidebar's lower half is empty on every screen. Abstract light
-          rather than data — this is the one region reporting nothing, which is
-          why decoration is defensible here and nowhere else. */}
-      {!mini && <AmbientRibbon T={T} height={210} />}
+
+      {/* Abstract light behind the sidebar's lower region. Absolutely
+          positioned and pointer-transparent: navigation must never lose space
+          to decoration, which is exactly what happened when this was in flow. */}
+      {!mini && (
+        <div aria-hidden="true" style={{
+          position:"absolute", left:0, right:0, bottom:64, height:230,
+          pointerEvents:"none", zIndex:0, opacity:.9,
+        }}>
+          <AmbientRibbon T={T} height={230} />
+        </div>
+      )}
 
       {/* User */}
       <div style={{ borderTop:`1px solid ${T.sidebarBorder}`, padding: mini ? "12px 10px" : "13px 15px", position:"relative" }}>
@@ -392,21 +400,6 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
           </div>
         )}
       </div>
-      {/* Data freshness — the last time anything in the portfolio actually
-          changed, not the last time this page was loaded. */}
-      {freshness && !isCompact && (
-        <div style={{
-          display:"flex", flexDirection:"column", alignItems:"flex-end",
-          padding:`3px ${SP.md}px 3px 0`, marginRight:SP.xs,
-          borderRight:`1px solid ${T.border}`,
-        }}>
-          <span style={{ ...TYPE.caption, fontSize:9.5, color:T.dim,
-            textTransform:"uppercase", letterSpacing:"0.06em" }}>Last updated</span>
-          <span style={{ ...TYPE.bodySm, fontWeight:600, color:T.textSoft,
-            whiteSpace:"nowrap" }}>{freshness}</span>
-        </div>
-      )}
-
       {/* §15 — the interface remembering you. Information rather than
           atmosphere: it says what has had time to move since you were last in. */}
       {sinceLabel && !isCompact && (
@@ -2371,7 +2364,14 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:7 }}>Portfolio health</div>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <StatusDot color={health.color} size={10} pulse={!noData} />
-                <span style={{ ...TYPE.display, fontSize: vp.isCompact ? 24 : 30, color:T.textOf(health.color) }}>{health.label}</span>
+                <span className="pmo-verdict" style={{
+                  ...TYPE.display, fontSize: vp.isCompact ? 24 : 30,
+                  // On the hero the surface is dark in both themes, so the
+                  // saturated hue is the readable one — textOf would darken it
+                  // against a field it is not sitting on.
+                  color: T.mode === "dark" ? health.color : T.textOf(health.color),
+                  "--vg": `${health.color}66`,
+                }}>{health.label}</span>
               </div>
               <div style={{ ...TYPE.bodySm, color:T.heroFgSoft, marginTop:6, maxWidth:330, lineHeight:1.45 }}>
                 {health.note}
