@@ -3899,6 +3899,14 @@ function CampusPage({ T, session, onSelectProject }) {
   const [sel,      setSel]      = useState("");
   const [activeCard, setActiveCard] = useState(null);
   const [q,        setQ]        = useState("");
+  // Per-column filters, mirroring the Projects register so the two tables
+  // behave identically rather than one being searchable and the other filterable.
+  const [fCode,  setFCode]  = useState("");
+  const [fName,  setFName]  = useState("");
+  const [fSite,  setFSite]  = useState("");
+  const [fPri,   setFPri]   = useState("");
+  const [fStage, setFStage] = useState("");
+  const [hoverRow, setHoverRow] = useState(null);
   const [loading,  setLoading]  = useState(true);
   const [err,      setErr]      = useState(null);
 
@@ -3939,8 +3947,16 @@ function CampusPage({ T, session, onSelectProject }) {
       const s = q.toLowerCase();
       out = out.filter(r => (r.code||"").toLowerCase().includes(s) || (r.name||"").toLowerCase().includes(s));
     }
+    if (fCode.trim())  out = out.filter(r => (r.code||"").toLowerCase().includes(fCode.toLowerCase()));
+    if (fName.trim())  out = out.filter(r => (r.name||"").toLowerCase().includes(fName.toLowerCase()));
+    if (fSite)         out = out.filter(r => (r.campus || UNASSIGNED) === fSite);
+    if (fPri)          out = out.filter(r => r.priority === fPri);
+    if (fStage)        out = out.filter(r => r.workflow_stage === fStage);
     return sortRealCodeFirst(out);
-  }, [rows, sel, q]);
+  }, [rows, sel, q, fCode, fName, fSite, fPri, fStage]);
+
+  const colFilterCount = [fCode, fName, fSite, fPri, fStage].filter(Boolean).length;
+  const clearColFilters = () => { setFCode(""); setFName(""); setFSite(""); setFPri(""); setFStage(""); };
 
   const k = useMemo(() => {
     const active = st => filtered.filter(r => r.workflow_stage===st && !r.is_carry_forward).length;
@@ -4113,17 +4129,95 @@ function CampusPage({ T, session, onSelectProject }) {
                 <th style={{...th, minWidth:104}}>Priority</th>
                 <th style={th}>Stage</th>
               </tr>
+              {/* Filter band, pinned directly beneath the headers so the
+                  controls visibly belong to the columns they filter. */}
+              <tr>
+                {(() => {
+                  const fc = { padding:"5px 8px", background:T.surfaceRaised,
+                    position:"sticky", top:36, zIndex:2,
+                    boxShadow:`inset 0 -2px 0 ${colFilterCount > 0 ? BRAND.gold + "99" : T.border}` };
+                  return (
+                    <>
+                      <td style={fc} />
+                      <td style={fc}>
+                        <Input T={T} size="sm" full value={fCode}
+                          onChange={e=>setFCode(e.target.value)} placeholder="Filter ID…" />
+                      </td>
+                      <td style={fc}>
+                        <Input T={T} size="sm" full value={fName}
+                          onChange={e=>setFName(e.target.value)} placeholder="Filter name…" />
+                      </td>
+                      <td style={fc}>
+                        <Select T={T} size="sm" full active={!!fSite} value={fSite}
+                          onChange={e=>setFSite(e.target.value)}>
+                          <option value="">All sites</option>
+                          {campusOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                        </Select>
+                      </td>
+                      <td style={fc} /><td style={fc} />
+                      <td style={fc}>
+                        <Select T={T} size="sm" full active={!!fPri} value={fPri}
+                          onChange={e=>setFPri(e.target.value)}>
+                          <option value="">All</option>
+                          {Object.entries(PRIORITY_META).filter(([k])=>k!=="first_priority")
+                            .map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                        </Select>
+                      </td>
+                      <td style={fc}>
+                        <Select T={T} size="sm" full active={!!fStage} value={fStage}
+                          onChange={e=>setFStage(e.target.value)}>
+                          <option value="">All stages</option>
+                          {STAGE_ORDER.map(k => <option key={k} value={k}>{STAGE_META[k].label}</option>)}
+                        </Select>
+                      </td>
+                    </>
+                  );
+                })()}
+              </tr>
             </thead>
             <tbody>
               {visible.length===0 ? (
                 <tr><td colSpan={8} style={{...td,textAlign:"center",color:T.dim,padding:"28px 12px"}}>No projects match this filter.</td></tr>
-              ) : visible.map((p,i) => (
-                <tr key={p.id}>
-                  <td style={{...td,color:T.dim}}>{i+1}</td>
+              ) : visible.map((p,i) => {
+                const hovered = hoverRow === p.id;
+                const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+                return (
+                <tr key={p.id}
+                  onClick={() => onSelectProject?.(p.id)}
+                  onMouseEnter={() => setHoverRow(p.id)}
+                  onMouseLeave={() => setHoverRow(null)}
+                  style={{
+                    cursor: onSelectProject ? "pointer" : "default",
+                    background: hovered
+                      ? `linear-gradient(90deg, ${pClr}14, ${T.rowHover} 22%)`
+                      : i % 2 === 0 ? "transparent" : T.rowAlt,
+                    transition:`background ${MOTION.fast}`,
+                  }}>
+                  <td style={{...td, color:T.dim,
+                    boxShadow: hovered ? `inset 3px 0 0 ${pClr}` : "none",
+                    transition:`box-shadow ${MOTION.fast}` }}>{i+1}</td>
                   <td style={td}>
-                    <button className="pmo-focusable pmo-btn" onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:(T.goldText || GOLD),fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
+                    <button className="pmo-focusable pmo-btn"
+                      onClick={(e)=>{ e.stopPropagation(); onSelectProject?.(p.id); }} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:(T.goldText || GOLD),fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
                   </td>
-                  <td style={{...td,minWidth:220}}>{p.name}</td>
+                  <td style={{...td, minWidth:220, position:"relative"}}>
+                    {p.name}
+                    {hovered && onSelectProject && (
+                      <>
+                        <span aria-hidden="true" style={{
+                          position:"absolute", right:0, top:0, bottom:0, width:92,
+                          background:`linear-gradient(90deg, transparent, ${T.surface} 55%)`,
+                          pointerEvents:"none" }} />
+                        <span className="pmo-rise" style={{
+                          position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
+                          display:"inline-flex", alignItems:"center", gap:3,
+                          ...TYPE.caption, fontWeight:700, color:T.blueBright,
+                          background:T.surfaceRaised, borderRadius:R.pill,
+                          padding:"2px 8px", border:`1px solid ${T.blueBright}44`,
+                          pointerEvents:"none" }}>Open <ChevronRight size={11} /></span>
+                      </>
+                    )}
+                  </td>
                   <td style={{...td,color:T.muted}}>{p.campus || "—"}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtM(p.df_recommended_amount)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtM(p.bac)}</td>
@@ -4135,7 +4229,7 @@ function CampusPage({ T, session, onSelectProject }) {
                   </td>
                   <td style={td}><StageBadge T={T} stage={p.workflow_stage}/></td>
                 </tr>
-              ))}
+              ); })}
             </tbody>
           </table>
         </div>
