@@ -1183,6 +1183,9 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
   ].map((st, i) => ({ ...st, color: STAGE_META[STAGE_ORDER[i]]?.color || T.neutral }));
 
   const total = stages.reduce((a, b) => a + b.value, 0) || 1;
+  // Stages where work is sitting with a named person, waiting on them to act.
+  // Those breathe; submitted-and-done or not-yet-started stages do not (§10).
+  const AWAITING = new Set(["df_review", "ed_review", "mt_review"]);
   const inReview = stages.slice(2, 5).reduce((a, b) => a + b.value, 0);
 
   // The bottleneck is the stage holding the most work that has not yet cleared.
@@ -1221,7 +1224,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
                 textAlign:"left", opacity: dim ? 0.42 : 1,
                 transition:`opacity ${MOTION.base}`,
               }}>
-              <div style={{
+              <div className={AWAITING.has(st.key) && st.value > 0 ? "pmo-awaiting" : ""} style={{
                 height:38, borderRadius:R.sm, position:"relative", overflow:"hidden",
                 background:`linear-gradient(180deg, ${st.color}${T.washStrong}, ${st.color}${T.wash})`,
                 border:`1px solid ${on ? st.color : st.color + "44"}`,
@@ -7001,7 +7004,7 @@ function TeamPage({ T, session }) {
       <div style={{ maxWidth:820, margin:"0 auto", display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* ── About Us ── */}
-        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:`${SP.xl}px ${SP.xxl}px`, boxShadow:T.shadow, borderTop:`2px solid ${BRAND.gold}` }}>
+        <div className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.gold}14`, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:`${SP.xl}px ${SP.xxl}px`, boxShadow:T.shadow, borderTop:`2px solid ${BRAND.gold}` }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>About Us</div>
             {isPMO && <button className="pmo-focusable pmo-btn" onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
@@ -7020,7 +7023,7 @@ function TeamPage({ T, session }) {
         </div>
 
         {/* ── Our Team ── */}
-        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px" }}>
+        <div className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.blue}16`, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px" }}>
           <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             Our Team {isPMO && <span style={{ fontSize:10, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
           </div>
