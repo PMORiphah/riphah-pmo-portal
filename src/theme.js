@@ -401,7 +401,7 @@ export const PRIORITY_META = {
 export const healthOf = (cpi, spi) => {
   const has = (v) => v != null && isFinite(v) && v > 0;
   if (!has(cpi) && !has(spi))
-    return { key:"nodata", label:"Insufficient Data", color:DATA.neutral,
+    return { key:"nodata", label:"Insufficient Data", color:DATA.warning,
              note:"No project has both a baseline and actuals recorded yet." };
   const worst = Math.min(has(cpi) ? cpi : 9, has(spi) ? spi : 9);
   if (worst >= 0.95) return { key:"healthy",  label:"Healthy",            color:DATA.positive, note:"Cost and schedule are tracking to plan." };
