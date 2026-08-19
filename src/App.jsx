@@ -7468,13 +7468,16 @@ function LoginFeature({ Icon, title, sub, tip, first }) {
 function Login({ T, dark, onLogin }) {
   // §5 — pointer parallax across the sign-in layers. Publishes a normalised
   // offset that each layer scales by its own depth.
-  const parallax = useLoginParallax();
+  const reducedMotion = typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const parallax = useLoginParallax(!reducedMotion);
   const cardLight = useCursorLight(true);          // §14
   const [cardHot, setCardHot] = useState(false);   // §13
   const [focusField, setFocusField] = useState(null);
   const [hoverField, setHoverField] = useState(null);
   const [btnHot, setBtnHot] = useState(false);
   const [btnDown, setBtnDown] = useState(false);
+  const vpL = useViewport();
   const anyFocus = focusField !== null;            // §16
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
@@ -7641,7 +7644,7 @@ function Login({ T, dark, onLogin }) {
       {/* §26 — drifting motes. Two parallax depths above the glow, so they read
           as being in front of the atmosphere rather than painted on it. */}
       <div className="pmo-lp3" style={{ position:"absolute", inset:0, zIndex:0, pointerEvents:"none" }}>
-        <LoginAtmosphere />
+        <LoginAtmosphere reduced={reducedMotion} />
       </div>
 
       {/* Dark veil for overall readability */}
@@ -7716,7 +7719,11 @@ function Login({ T, dark, onLogin }) {
       </div>
 
       {/* ── RIGHT PANEL — Glass card ─────────────────────────────────────── */}
-      <div className="pmo-li" style={{ width:480, display:"flex", alignItems:"center", justifyContent:"center", padding:36, position:"relative", zIndex:1, animationDelay:"500ms" }}>
+      <div className="pmo-li" style={{
+        width: vpL.width < 900 ? "100%" : 480,
+        display:"flex", alignItems:"center", justifyContent:"center",
+        padding: vpL.width < 640 ? 20 : 36,
+        position:"relative", zIndex:1, animationDelay:"500ms" }}>
         <div
           ref={cardLight.ref}
           onMouseMove={cardLight.onMouseMove}
