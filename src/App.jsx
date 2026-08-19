@@ -7721,8 +7721,9 @@ function Login({ T, dark, onLogin }) {
       {/* ── RIGHT PANEL — Glass card ─────────────────────────────────────── */}
       <div className="pmo-li" style={{
         width: vpL.width < 900 ? "100%" : 480,
+        flex: vpL.width < 900 ? "1 1 100%" : "0 0 480px",
         display:"flex", alignItems:"center", justifyContent:"center",
-        padding: vpL.width < 640 ? 20 : 36,
+        padding: vpL.width < 640 ? 18 : 36,
         position:"relative", zIndex:1, animationDelay:"500ms" }}>
         <div
           ref={cardLight.ref}
@@ -7730,7 +7731,8 @@ function Login({ T, dark, onLogin }) {
           onMouseEnter={() => setCardHot(true)}
           onMouseLeave={() => { setCardHot(false); cardLight.onMouseLeave(); }}
           style={{
-            width:"100%", maxWidth:400,
+            width:"100%", maxWidth: vpL.width < 900 ? 420 : 400,
+            minWidth: 0,
             // §12 — layered depth: shadow, outer glow, glass, inner highlight.
             background: cardHot ? "rgba(9,19,42,0.78)" : "rgba(8,16,36,0.72)",
             backdropFilter:"blur(30px) saturate(150%)", WebkitBackdropFilter:"blur(30px) saturate(150%)",
