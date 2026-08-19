@@ -1791,3 +1791,86 @@ export function SparkBar({ T, value, total, color, delay = 0, height = 3 }) {
     </div>
   );
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SORTABLE TABLE HEADER
+   ═══════════════════════════════════════════════════════════════════════════
+   Projects had sorting; Campus, Performance, User Management and Activity Log
+   did not. Rather than four implementations, this is the one header — so a
+   column sorts the same way, looks the same and announces itself the same,
+   whichever table it is in.
+
+   `order` lets a column sort by meaning rather than alphabet: an approval stage
+   should run PDD → DF → ED → MT → Approved, never "Approved" first because A
+   comes before D.
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function useTableSort(rows, accessors, initial = null) {
+  const [sort, setSort] = useState(initial);
+
+  const sorted = useMemo(() => {
+    if (!sort?.key) return rows;
+    const fn = accessors[sort.key];
+    if (!fn) return rows;
+    const mul = sort.dir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const x = fn(a), y = fn(b);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;          // blanks always sink, either direction
+      if (y == null) return -1;
+      if (typeof x === "number" && typeof y === "number") return (x - y) * mul;
+      return String(x).localeCompare(String(y), undefined, { numeric: true }) * mul;
+    });
+  }, [rows, sort, accessors]);
+
+  const toggle = useCallback((key) => {
+    setSort(s => s?.key === key
+      ? (s.dir === "asc" ? { key, dir: "desc" } : null)   // asc → desc → off
+      : { key, dir: "asc" });
+  }, []);
+
+  return { sorted, sort, toggle };
+}
+
+export function SortHeader({ T, label, sortKey, sort, onToggle, align = "left", style, minWidth }) {
+  const [hot, setHot] = useState(false);
+  const on = sort?.key === sortKey;
+  const dir = on ? sort.dir : null;
+  return (
+    <th
+      onClick={() => sortKey && onToggle(sortKey)}
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      title={sortKey ? `Sort by ${label}${on ? (dir === "asc" ? " (descending)" : " (clear)") : ""}` : undefined}
+      aria-sort={on ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      style={{
+        ...TYPE.label,
+        color: on ? T.text : hot ? T.textSoft : T.muted,
+        textAlign: align, padding: "10px 12px 8px", whiteSpace: "nowrap",
+        background: T.surfaceRaised,
+        boxShadow: `inset 0 -1px 0 ${on ? T.blueBright : T.border}`,
+        position: "sticky", top: 0, zIndex: 2,
+        cursor: sortKey ? "pointer" : "default", userSelect: "none",
+        minWidth,
+        transition: `color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
+        ...style,
+      }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4,
+        flexDirection: align === "right" ? "row-reverse" : "row" }}>
+        {label}
+        {sortKey && (
+          <span style={{
+            display: "inline-flex", opacity: on ? 1 : hot ? 0.6 : 0.22,
+            color: on ? T.blueBright : T.dim,
+            transform: dir === "desc" ? "rotate(180deg)" : "none",
+            transition: `opacity ${MOTION.fast}, transform ${MOTION.base}`,
+          }}>
+            <svg width="9" height="9" viewBox="0 0 10 6" fill="none">
+              <path d="M1 5l4-4 4 4" stroke="currentColor" strokeWidth="1.6"
+                strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        )}
+      </span>
+    </th>
+  );
+}
