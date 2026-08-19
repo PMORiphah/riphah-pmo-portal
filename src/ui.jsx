@@ -2058,8 +2058,8 @@ export function MicroTrend({ T, points, color, height = 26, delay = 0, filled = 
 export function AmbientRibbon({ T, height = 200 }) {
   const dark = T.mode === "dark";
   const bands = dark
-    ? [["#2C7BC4", .55], ["#22C4A8", .45], ["#8B7FD9", .38], ["#E0A94A", .30]]
-    : [["#2C7BC4", .28], ["#2BD4D4", .24], ["#8B7FD9", .20], ["#E0A94A", .22]];
+    ? [["#3E93DC", .95], ["#22C4A8", .85], ["#9B8DE8", .72], ["#E0A94A", .62]]
+    : [["#2C7BC4", .55], ["#2BD4D4", .48], ["#8B7FD9", .40], ["#E0A94A", .45]];
 
   return (
     <div aria-hidden="true" style={{
@@ -2071,7 +2071,7 @@ export function AmbientRibbon({ T, height = 200 }) {
         style={{ display:"block" }}>
         <defs>
           <filter id="ribbonBlur" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="7" />
+            <feGaussianBlur stdDeviation="4.5" />
           </filter>
           {bands.map(([c], i) => (
             <linearGradient key={i} id={`rb${i}`} x1="0" y1="0" x2="1" y2="1">
@@ -2091,7 +2091,7 @@ export function AmbientRibbon({ T, height = 200 }) {
               d={`M -20 ${150 + i * 12}
                   C 40 ${96 + i * 16}, 80 ${186 - i * 13}, 140 ${118 + i * 10}
                   S 190 ${72 + i * 15}, 220 ${104 + i * 12}`}
-              fill="none" stroke={`url(#rb${i})`} strokeWidth={2.4 + i * 0.7}
+              fill="none" stroke={`url(#rb${i})`} strokeWidth={3.4 + i * 1.1}
               opacity={o} strokeLinecap="round" />
           ))}
         </g>
@@ -2100,7 +2100,7 @@ export function AmbientRibbon({ T, height = 200 }) {
         {[[36,74],[68,132],[112,92],[150,158],[92,186],[164,116],[52,166],[128,60]].map(([x, y], i) => (
           <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 1.6 : 1}
             fill={bands[i % bands.length][0]}
-            opacity={dark ? 0.55 : 0.4}
+            opacity={dark ? 0.85 : 0.6}
             className="pmo-live-dot"
             style={{ animationDuration: `${5 + (i % 4) * 1.7}s`, animationDelay: `${-i * 0.8}s` }} />
         ))}
