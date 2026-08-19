@@ -152,7 +152,8 @@ export const injectGlobals = () => {
     .pmo-verdict-dot { position:relative; }
     .pmo-verdict-dot::after {
       content:""; position:absolute; inset:0; border-radius:50%;
-      background:inherit; animation: pmoRing 3.6s cubic-bezier(.2,.7,.3,1) infinite;
+      background: var(--dot-c, currentColor);
+      animation: pmoRing 3.6s cubic-bezier(.2,.7,.3,1) infinite;
     }
     .pmo-awaiting { animation: pmoLivePulse 4.2s ease-in-out infinite; }
 
