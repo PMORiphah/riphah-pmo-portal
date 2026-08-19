@@ -2198,7 +2198,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
   ];
 
   return (
-    <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture, backgroundAttachment:"local" }}>
+    <div ref={scrollRef} style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture, backgroundAttachment:"local" }}>
 
       {/* ── EXECUTIVE HEADER ── */}
       {/* Top of the visual hierarchy (§30). States the portfolio's position in
