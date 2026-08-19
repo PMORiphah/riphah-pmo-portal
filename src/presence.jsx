@@ -255,24 +255,28 @@ export function useSetFocus() {
    Published as a CSS variable, so the transform happens on the compositor and
    scrolling stays smooth.
    ─────────────────────────────────────────────────────────────────────────── */
-export function useScrollParallax(targetRef) {
+export function useScrollParallax() {
   useEffect(() => {
-    const el = targetRef?.current;
-    if (!el) return;
     let raf = null;
-    const onScroll = () => {
+    // Captured at the window rather than bound to one container. Each page
+    // scrolls a different element, and binding by ref meant the listener
+    // attached to whichever container happened to be mounted — so it worked
+    // nowhere. Capture catches whatever is actually scrolling.
+    const onScroll = (e) => {
+      const t = e.target;
+      const top = t === document ? window.scrollY : (t?.scrollTop ?? 0);
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = null;
-        document.documentElement.style.setProperty("--scrolly", `${el.scrollTop * -0.055}px`);
+        document.documentElement.style.setProperty("--scrolly", `${top * -0.055}px`);
       });
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
     return () => {
-      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll, { capture: true });
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [targetRef]);
+  }, []);
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
