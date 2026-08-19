@@ -2034,8 +2034,6 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
 // ─── COMMAND CENTER ───────────────────────────────────────────────────────────
 function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) {
   const vp = useViewport();
-  const scrollRef = useRef(null);
-  useScrollParallax(scrollRef);   // §12
   // §10 — the hero's lighting follows the pointer, so the executive block
   // responds to attention rather than sitting inert.
   const heroLight = useCursorLight(true);
@@ -2198,7 +2196,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
   ];
 
   return (
-    <div ref={scrollRef} style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture, backgroundAttachment:"local" }}>
+    <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture, backgroundAttachment:"local" }}>
 
       {/* ── EXECUTIVE HEADER ── */}
       {/* Top of the visual hierarchy (§30). States the portfolio's position in
@@ -7943,6 +7941,7 @@ export default function App() {
   // publishing position, velocity, idle and dwell as CSS custom properties.
   usePresence();
   useProximityField();
+  useScrollParallax();   // §12
   // §9 — the atmosphere carries how the portfolio is actually doing: a warm
   // cast when something needs attention, cool when healthy. The environment
   // becomes about the data rather than decoration over it.
