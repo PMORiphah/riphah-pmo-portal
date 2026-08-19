@@ -4153,7 +4153,9 @@ function CampusPage({ T, session, onSelectProject }) {
             </button>
           </div>
         )}
-        <div style={{overflowX:"auto"}}>
+        {/* Settles in as it reaches the viewport — the table sits well below
+            the KPI strips, so it is genuinely below the fold. */}
+        <Reveal><div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,tableLayout:"fixed"}}>
             <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
               <tr>
@@ -4269,7 +4271,7 @@ function CampusPage({ T, session, onSelectProject }) {
               ); })}
             </tbody>
           </table>
-        </div>
+        </div></Reveal>
       </div>
       </div>
     </div>
