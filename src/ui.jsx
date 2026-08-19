@@ -1558,7 +1558,8 @@ export function ProgressRing({
   const tipX = cx + r * Math.cos(rad);
   const tipY = cx + r * Math.sin(rad);
 
-  const digits = `${pct.toFixed(pct >= 10 ? 0 : 1)}`.length;
+  const shown = pct >= 99.95 ? "100" : pct.toFixed(1);
+  const digits = shown.length;
   const fontSize = size >= 62 ? (digits > 3 ? 15 : 17) : (digits > 3 ? 12.5 : 14);
 
   return (
@@ -1609,7 +1610,7 @@ export function ProgressRing({
           fontFamily:TYPE.display.fontFamily, fontSize, fontWeight:700, lineHeight:1,
           color: T.textOf ? T.textOf(c) : c, fontVariantNumeric:"tabular-nums",
           letterSpacing:"-0.02em",
-        }}>{label ?? `${pct.toFixed(pct >= 10 ? 0 : 1)}%`}</span>
+        }}>{label ?? `${shown}%`}</span>
         {caption && (
           <span style={{ ...TYPE.caption, fontSize:9.5, color:T.dim, marginTop:2,
             letterSpacing:"0.04em", textTransform:"uppercase", whiteSpace:"nowrap" }}>{caption}</span>
