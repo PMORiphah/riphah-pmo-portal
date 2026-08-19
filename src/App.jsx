@@ -3165,6 +3165,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const [hiddenCols, setHiddenCols] = useState([]);
   const [showCols, setShowCols] = useState(false);
   const vpP = useViewport();
+  const summaryNear = useNear();   // the slice summary responds to approach
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -3535,9 +3536,10 @@ function ProjectsPage({ T, session, onSelectProject }) {
       {/* ── SLICE SUMMARY ── */}
       {/* Restates the portfolio for whatever is filtered, so the register always
           answers "how much money is in what I'm looking at". */}
-      <div className="pmo-fade" style={{
+      <div ref={summaryNear} className="pmo-fade pmo-near" style={{
         flexShrink:0, background:T.hero, position:"relative", overflow:"hidden",
         borderBottom:`1px solid ${T.heroBorder}`,
+        "--near-light": `${BRAND.gold}12`,
         padding: vpP.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.md}px ${SP.xxl}px`,
         display:"flex", alignItems:"center", gap: vpP.isCompact ? SP.lg : SP.xxl, flexWrap:"wrap",
       }}>
@@ -4570,6 +4572,7 @@ function PerformancePage({ T, session, onSelectProject }) {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("all");
   const [hoverId, setHoverId] = useState(null);
+  const evmNear = useNear();
   const PERF_SORT = useMemo(() => ({
     project: r => (r.name || "").toLowerCase(),
     done:    r => +r.pct_complete || 0,
@@ -4668,7 +4671,9 @@ function PerformancePage({ T, session, onSelectProject }) {
       {/* ── Portfolio EVM strip ── */}
       {/* Fixed-width cells with dividers broke below ~1200px; a wrapping grid
           keeps every figure legible at every width. */}
-      <div style={{
+      <div ref={evmNear} className="pmo-in pmo-near" style={{
+        position:"relative",
+        "--near-light": `${BRAND.blue}16`,
         padding:`${SP.md}px ${SP.xl}px`, borderBottom:`1px solid ${T.border}`,
         background:T.surface, flexShrink:0,
         display:"grid", gap:SP.md,
@@ -6380,6 +6385,8 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
 }
 
 function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChange }) {
+  const listNear = useNear();
+  const convNear = useNear();
   const [projects,       setProjects]       = useState([]);
   const [summary,        setSummary]        = useState([]); // {id, project_id, is_read_by_pmo, created_at, user_profiles:{role}}
   const [userAssignments,setUserAssignments]= useState(new Set());
@@ -6565,7 +6572,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
     <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
 
       {/* ── Left sidebar ── */}
-      <div style={{ width:280, flexShrink:0, display:"flex", flexDirection:"column", borderRight:`1px solid ${T.border}`, overflow:"hidden" }}>
+      <div ref={listNear} className="pmo-near pmo-in" style={{ position:"relative", "--near-light":`${BRAND.blue}14`, width:280, flexShrink:0, display:"flex", flexDirection:"column", borderRight:`1px solid ${T.border}`, overflow:"hidden" }}>
         {/* Tabs */}
         <div style={{ display:"flex", borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
           {(session.role === "pmo" ? [
@@ -6631,7 +6638,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       </div>
 
       {/* ── Right: thread ── */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
+      <div ref={convNear} className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.gold}10`, flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         {!selId ? (
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8, color:T.dim }}>
             <div style={{ width:44, height:44, borderRadius:R.lg, background:T.info+T.badge,
