@@ -486,6 +486,86 @@ select:hover { border-color: var(--line-strong) !important; }
   });
 })();
 </script>
+
+<style>
+/* ── §51/§1 · Living surface, ported to this codebase ────────────────────
+   The React presence layer cannot reach across an iframe boundary, so this is
+   a small standalone implementation with the same tuning: pointer-tracked
+   world light, cards that wake on approach, and an idle state. Roughly 40
+   lines rather than importing the framework. */
+:root { --px:50%; --py:40%; --near-range:190px; }
+
+#pmoWorldLight {
+  position:fixed; inset:0; pointer-events:none; z-index:0;
+  background: radial-gradient(circle 46vw at var(--px) var(--py),
+              var(--cf-world, rgba(44,123,196,.055)), transparent 62%);
+  transition: opacity 1.6s ease;
+}
+[data-theme="dark"] { --cf-world: rgba(120,175,240,.075); }
+html[data-idle="1"] #pmoWorldLight { opacity:.55; }
+
+.card, .panel { --near:0; position:relative; }
+.card::before, .panel::before {
+  content:""; position:absolute; inset:0; border-radius:inherit;
+  pointer-events:none; z-index:0;
+  background: radial-gradient(circle 320px at var(--lx,50%) var(--ly,50%),
+              rgba(120,175,240,.13), transparent 68%);
+  opacity: calc(var(--near) * .85);
+  transition: opacity .45s ease;
+}
+.card, .panel { transform: translateY(calc(var(--near) * -3px)); }
+.card > *, .panel > * { position:relative; z-index:1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .panel { transform:none !important; }
+  .card::before, .panel::before, #pmoWorldLight { display:none !important; }
+}
+</style>
+<script>
+/* Pointer presence. Coalesced to one write per frame; rects cached and only
+   re-measured on scroll or resize, so this stays cheap on a page with a dozen
+   cards and thirteen charts. */
+(function () {
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var root = document.documentElement, raf = null, idle = null, stamp = 0, cache = new WeakMap();
+  var light = document.createElement("div");
+  light.id = "pmoWorldLight"; light.setAttribute("aria-hidden", "true");
+  document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(light); });
+
+  function rectOf(el) {
+    var hit = cache.get(el);
+    if (hit && hit.s === stamp) return hit.r;
+    var r = el.getBoundingClientRect();
+    cache.set(el, { r: r, s: stamp });
+    return r;
+  }
+  function pass(x, y) {
+    root.style.setProperty("--px", (x / window.innerWidth * 100) + "%");
+    root.style.setProperty("--py", (y / window.innerHeight * 100) + "%");
+    var els = document.querySelectorAll(".card, .panel");
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i], r = rectOf(el);
+      if (!r.width) continue;
+      var dx = Math.max(0, Math.abs(x - (r.left + r.width / 2)) - r.width / 2);
+      var dy = Math.max(0, Math.abs(y - (r.top + r.height / 2)) - r.height / 2);
+      var d = Math.sqrt(dx * dx + dy * dy), RANGE = 190;
+      el.style.setProperty("--near", d > RANGE ? 0 : Math.pow(1 - d / RANGE, 1.7).toFixed(3));
+      el.style.setProperty("--lx", ((x - r.left) / r.width * 100) + "%");
+      el.style.setProperty("--ly", ((y - r.top) / r.height * 100) + "%");
+    }
+  }
+  window.addEventListener("pointermove", function (e) {
+    if (raf) return;
+    var x = e.clientX, y = e.clientY;
+    raf = requestAnimationFrame(function () { raf = null; pass(x, y); });
+    root.dataset.idle = "0";
+    clearTimeout(idle);
+    idle = setTimeout(function () { root.dataset.idle = "1"; }, 12000);
+  }, { passive: true });
+  window.addEventListener("scroll", function () { stamp++; }, { passive: true, capture: true });
+  window.addEventListener("resize", function () { stamp++; });
+})();
+</script>
 </head>
 <body>
 
