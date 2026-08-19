@@ -7469,6 +7469,13 @@ function Login({ T, dark, onLogin }) {
   // §5 — pointer parallax across the sign-in layers. Publishes a normalised
   // offset that each layer scales by its own depth.
   const parallax = useLoginParallax();
+  const cardLight = useCursorLight(true);          // §14
+  const [cardHot, setCardHot] = useState(false);   // §13
+  const [focusField, setFocusField] = useState(null);
+  const [hoverField, setHoverField] = useState(null);
+  const [btnHot, setBtnHot] = useState(false);
+  const [btnDown, setBtnDown] = useState(false);
+  const anyFocus = focusField !== null;            // §16
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [show, setShow] = useState(false);
@@ -7544,6 +7551,24 @@ function Login({ T, dark, onLogin }) {
     background:"rgba(255,255,255,0.06)", border:"1px solid rgba(100,160,255,0.2)",
     borderRadius:R.md, color:"#fff", fontSize:14, fontFamily:TYPE.body.fontFamily, outline:"none",
   };
+
+  // §17 — resting, hover and focus are three distinct states. Focus moves the
+  // border to Riphah gold with a soft ring; hover only brightens, so the two
+  // are never confused.
+  const fieldFor = (name) => ({
+    ...fieldStyle,
+    background: focusField === name ? "rgba(255,255,255,0.09)"
+              : hoverField === name ? "rgba(255,255,255,0.075)"
+              : "rgba(255,255,255,0.06)",
+    border: `1px solid ${
+      focusField === name ? "rgba(224,169,74,0.85)"
+      : hoverField === name ? "rgba(140,190,255,0.45)"
+      : "rgba(100,160,255,0.2)"}`,
+    boxShadow: focusField === name
+      ? "0 0 0 3px rgba(224,169,74,0.14), 0 0 22px -6px rgba(224,169,74,0.5)"
+      : "none",
+    transition:"background .22s ease, border-color .22s ease, box-shadow .22s ease",
+  });
 
   // ── Reset password screen ──────────────────────────────────────────────────
   if (mode === "reset") return (
@@ -7691,33 +7716,73 @@ function Login({ T, dark, onLogin }) {
       </div>
 
       {/* ── RIGHT PANEL — Glass card ─────────────────────────────────────── */}
-      <div style={{ width:480, display:"flex", alignItems:"center", justifyContent:"center", padding:36, position:"relative", zIndex:1 }}>
-        <div style={{
-          width:"100%", maxWidth:400,
-          background:"rgba(8,16,36,0.72)", backdropFilter:"blur(30px)", WebkitBackdropFilter:"blur(30px)",
-          border:"1px solid rgba(255,255,255,0.14)", borderRadius:R.xl,
-          padding:"38px 34px",
-          boxShadow:"0 32px 90px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.05)",
-          position:"relative",
-        }}>
+      <div className="pmo-li" style={{ width:480, display:"flex", alignItems:"center", justifyContent:"center", padding:36, position:"relative", zIndex:1, animationDelay:"500ms" }}>
+        <div
+          ref={cardLight.ref}
+          onMouseMove={cardLight.onMouseMove}
+          onMouseEnter={() => setCardHot(true)}
+          onMouseLeave={() => { setCardHot(false); cardLight.onMouseLeave(); }}
+          style={{
+            width:"100%", maxWidth:400,
+            // §12 — layered depth: shadow, outer glow, glass, inner highlight.
+            background: cardHot ? "rgba(9,19,42,0.78)" : "rgba(8,16,36,0.72)",
+            backdropFilter:"blur(30px) saturate(150%)", WebkitBackdropFilter:"blur(30px) saturate(150%)",
+            border:"1px solid transparent", borderRadius:R.xl,
+            padding:"38px 34px",
+            boxShadow: cardHot
+              ? "0 40px 110px rgba(0,0,0,0.62), 0 0 0 1px rgba(224,169,74,0.20), 0 0 60px -18px rgba(224,169,74,0.32), inset 0 1px 0 rgba(255,255,255,0.10)"
+              : "0 32px 90px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.10), inset 0 1px 0 rgba(255,255,255,0.06)",
+            transform: cardHot ? "translateY(-3px)" : "none",
+            transition:"transform .38s cubic-bezier(.16,1,.3,1), box-shadow .38s ease, background .38s ease",
+            position:"relative", overflow:"hidden",
+          }}>
+
+          {/* §12 — gradient hairline: blue into transparent into gold. */}
+          <span aria-hidden="true" style={{
+            position:"absolute", inset:0, borderRadius:R.xl, padding:1,
+            background:"linear-gradient(140deg, rgba(74,155,224,0.55), rgba(255,255,255,0.04) 46%, rgba(224,169,74,0.50))",
+            WebkitMask:"linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+            WebkitMaskComposite:"xor", maskComposite:"exclude",
+            opacity: cardHot ? 1 : 0.65, transition:"opacity .38s ease", pointerEvents:"none",
+          }} />
+
+          {/* §14 — a barely-visible light following the cursor. */}
+          <span aria-hidden="true" className="pmo-cursor-light" style={{
+            opacity: cardHot ? 1 : 0,
+            background:"radial-gradient(360px circle at var(--mx,50%) var(--my,50%), rgba(150,200,255,0.10), rgba(224,169,74,0.05) 42%, transparent 70%)",
+          }} />
           {/* Top glow line */}
           <div style={{ position:"absolute", top:-1, left:"15%", right:"15%", height:1, background:"linear-gradient(90deg,transparent,rgba(216,152,64,0.8),transparent)" }} />
 
           {/* Logo badge */}
           <div style={{ textAlign:"center", marginBottom:26 }}>
-            <div style={{
-              width:74, height:74, borderRadius:"50%",
-              background:"#193869",
-              border:"2.5px solid " + GOLD,
-              boxShadow:"0 0 24px rgba(216,152,64,0.45), 0 0 60px rgba(216,152,64,0.15)",
-              display:"inline-flex", alignItems:"center", justifyContent:"center",
-              marginBottom:16, overflow:"hidden",
-            }}>
-              <img src={CREST_LOGO} alt="" style={{ width:"84%", height:"84%", objectFit:"contain" }} />
+            {/* §15 — the existing crest, in a premium ring that slowly brightens
+                and dims. It never spins. */}
+            <div style={{ position:"relative", display:"inline-block", marginBottom:16 }}>
+              <span aria-hidden="true" className="pmo-crest-ring" style={{
+                position:"absolute", inset:-7, borderRadius:"50%",
+                border:`1px solid ${GOLD}`,
+                boxShadow:`0 0 26px ${GOLD}55, inset 0 0 18px ${GOLD}22`,
+              }} />
+              <div style={{
+                width:74, height:74, borderRadius:"50%",
+                background:"#193869",
+                border:"2.5px solid " + GOLD,
+                boxShadow:"0 0 24px rgba(216,152,64,0.45), 0 0 60px rgba(216,152,64,0.15)",
+                display:"inline-flex", alignItems:"center", justifyContent:"center",
+                overflow:"hidden", position:"relative",
+              }}>
+                <img src={CREST_LOGO} alt="" style={{ width:"84%", height:"84%", objectFit:"contain" }} />
+              </div>
             </div>
             <div style={{ fontSize:23, fontWeight:800, color:"#fff", letterSpacing:-0.5, fontFamily:TYPE.display.fontFamily }}>Welcome Back</div>
             <div style={{ fontSize:12.5, color:"rgba(255,255,255,0.5)", marginTop:5 }}>Sign in to continue to PMO Portal</div>
-            <div style={{ width:40, height:2, background:GOLD, margin:"13px auto 0", borderRadius:1 }} />
+            <div style={{
+              width: anyFocus ? 84 : 40, height:2, margin:"13px auto 0", borderRadius:1,
+              background:`linear-gradient(90deg, ${GOLD}00, ${GOLD}, ${GOLD}00)`,
+              boxShadow: anyFocus ? `0 0 14px ${GOLD}99` : "none",
+              transition:"width .45s cubic-bezier(.16,1,.3,1), box-shadow .45s ease",
+            }} />
           </div>
 
           {/* Error message */}
@@ -7732,7 +7797,11 @@ function Login({ T, dark, onLogin }) {
             <label style={{ display:"block", fontSize:10.5, fontWeight:700, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:7 }}>Username</label>
             <div style={{ position:"relative" }}>
               <span style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)", color:"rgba(255,255,255,0.32)", fontSize:15, pointerEvents:"none" }}>👤</span>
-              <input value={user} onChange={e=>setUser(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="Enter your username" style={fieldStyle} />
+              <input value={user} onChange={e=>setUser(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+                onFocus={()=>setFocusField("user")} onBlur={()=>setFocusField(null)}
+                onMouseEnter={()=>setHoverField("user")} onMouseLeave={()=>setHoverField(null)}
+                placeholder="Enter your username" style={fieldFor("user")} />
             </div>
           </div>
 
@@ -7740,7 +7809,9 @@ function Login({ T, dark, onLogin }) {
           <div style={{ marginBottom:15 }}>
             <label style={{ display:"block", fontSize:10.5, fontWeight:700, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:7 }}>Password</label>
             <div style={{ position:"relative" }}>
-              <input type={show?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="••••••••" style={{ ...fieldStyle, paddingLeft:14, paddingRight:42 }} />
+              <input type={show?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+                onFocus={()=>setFocusField("pass")} onBlur={()=>setFocusField(null)}
+                onMouseEnter={()=>setHoverField("pass")} onMouseLeave={()=>setHoverField(null)} placeholder="••••••••" style={{ ...fieldFor("pass"), paddingLeft:14, paddingRight:42 }} />
               <button className="pmo-focusable pmo-btn" onClick={()=>setShow(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.4)", display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
@@ -7748,25 +7819,77 @@ function Login({ T, dark, onLogin }) {
           {/* Remember + Forgot */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24 }}>
             <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:12.5, color:"rgba(255,255,255,0.5)" }}>
-              <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)} style={{ accentColor:GOLD, width:13, height:13 }} />
+              <span onClick={()=>setRemember(r=>!r)} role="checkbox" aria-checked={remember} tabIndex={0}
+                onKeyDown={e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); setRemember(r=>!r); } }}
+                className="pmo-focusable"
+                style={{
+                  width:17, height:17, borderRadius:5, flexShrink:0, cursor:"pointer",
+                  background: remember ? `linear-gradient(140deg, ${GOLD}, #C47818)` : "rgba(255,255,255,0.07)",
+                  border:`1px solid ${remember ? GOLD : "rgba(255,255,255,0.22)"}`,
+                  boxShadow: remember ? `0 0 14px -2px ${GOLD}88` : "none",
+                  display:"inline-flex", alignItems:"center", justifyContent:"center",
+                  transition:"all .22s cubic-bezier(.16,1,.3,1)",
+                }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                  style={{ opacity: remember ? 1 : 0, transform: remember ? "scale(1)" : "scale(.5)",
+                           transition:"opacity .2s ease, transform .24s cubic-bezier(.16,1,.3,1)" }}>
+                  <path d="M20 6 9 17l-5-5" stroke="#1A1206" strokeWidth="3.4"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
               Remember me
             </label>
             <span onClick={()=>{setMode("reset");setErr(null);}} style={{ fontSize:12.5, color:"rgba(216,152,64,0.95)", cursor:"pointer", fontWeight:600 }}>Forgot password?</span>
           </div>
 
-          {/* Sign In button */}
-          <button className="pmo-focusable pmo-btn" onClick={handleLogin} disabled={loading} style={{
-            width:"100%", padding:"13px 20px",
-            background: loading ? "rgba(216,152,64,0.4)" : "linear-gradient(135deg,#E8A828,#C47818)",
-            border:"none", borderRadius:R.md, color:"#fff",
-            fontSize:14.5, fontWeight:700, cursor:loading?"default":"pointer",
-            fontFamily:TYPE.body.fontFamily,
-            display:"flex", alignItems:"center", justifyContent:"center", gap:11,
-            boxShadow: loading ? "none" : "0 6px 24px rgba(216,152,64,0.45)",
-            transition:"all .2s",
-          }}>
-            {loading ? "Signing in…" : "Sign In"}
-            {!loading && <span style={{ width:27, height:27, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:15 }}>→</span>}
+          {/* §22 §23 §24 — the hero interaction. Gold gradient, a light sweep on
+              hover, a press compression, and an authenticating state that
+              replaces the label rather than showing a browser spinner. */}
+          <button className="pmo-focusable pmo-sweep" onClick={handleLogin} disabled={loading}
+            onMouseEnter={()=>setBtnHot(true)} onMouseLeave={()=>{setBtnHot(false); setBtnDown(false);}}
+            onMouseDown={()=>setBtnDown(true)} onMouseUp={()=>setBtnDown(false)}
+            style={{
+              width:"100%", padding:"13px 20px", position:"relative", overflow:"hidden",
+              background: loading
+                ? "linear-gradient(135deg, rgba(216,152,64,0.55), rgba(196,120,24,0.55))"
+                : btnHot ? "linear-gradient(135deg,#F2B63A,#D08A1E)"
+                         : "linear-gradient(135deg,#E8A828,#C47818)",
+              border:"none", borderRadius:R.md, color:"#1A1206",
+              fontSize:14.5, fontWeight:800, letterSpacing:.2,
+              cursor: loading ? "default" : "pointer",
+              fontFamily:TYPE.body.fontFamily,
+              display:"flex", alignItems:"center", justifyContent:"center", gap:11,
+              boxShadow: loading ? "none"
+                : btnDown ? "0 2px 10px rgba(216,152,64,0.40)"
+                : btnHot  ? "0 12px 34px -6px rgba(232,168,40,0.62), 0 0 0 1px rgba(255,255,255,0.16) inset"
+                          : "0 6px 24px rgba(216,152,64,0.45)",
+              transform: btnDown ? "translateY(1px) scale(.988)"
+                       : btnHot  ? "translateY(-2px)" : "none",
+              transition:"transform .18s cubic-bezier(.16,1,.3,1), box-shadow .26s ease, background .26s ease",
+            }}>
+            {loading ? (
+              <>
+                <span aria-hidden="true" style={{
+                  width:15, height:15, borderRadius:"50%",
+                  border:"2px solid rgba(26,18,6,0.28)", borderTopColor:"#1A1206",
+                  animation:"pmoSpin .7s linear infinite", display:"inline-block",
+                }} />
+                Authenticating…
+              </>
+            ) : (
+              <>
+                Sign In
+                <span style={{
+                  width:27, height:27, borderRadius:"50%",
+                  background:"rgba(26,18,6,0.16)", display:"flex",
+                  alignItems:"center", justifyContent:"center",
+                  transform: btnHot ? "translateX(3px)" : "none",
+                  transition:"transform .26s cubic-bezier(.16,1,.3,1)",
+                }}>
+                  <ArrowUpRight size={14} strokeWidth={2.6} />
+                </span>
+              </>
+            )}
           </button>
 
           {/* Security note */}
