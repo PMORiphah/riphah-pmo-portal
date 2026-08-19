@@ -2075,7 +2075,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
 }
 
 // ─── COMMAND CENTER ───────────────────────────────────────────────────────────
-function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) {
+function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", initialTab, initialCard }) {
   const vp = useViewport();
   // §10 — the hero's lighting follows the pointer, so the executive block
   // responds to attention rather than sitting inert.
@@ -2085,7 +2085,8 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [kpiOverrides, setKpiOverrides] = useState({});
-  const [activeTab,    setActiveTab]    = useState("budgeting");
+  const [activeTab,    setActiveTab]    = useState(initialTab || "budgeting");
+  useEffect(() => { if (initialTab) setActiveTab(initialTab); }, [initialTab]);
   const [activeCard,   setActiveCard]   = useState(null);
   const [dashProjects, setDashProjects] = useState([]);
 
@@ -7872,11 +7873,23 @@ function NotificationsDrawer({ T, session, open, onClose, onSelectProject, onGoT
 // The project list is fetched once on first open and cached for the session —
 // 106 rows is small enough that filtering client-side is instant, and it means
 // no request between keystrokes.
-function GlobalSearch({ T, session, open, onClose, onSelect }) {
+function GlobalSearch({ T, session, open, onClose, onSelect, onQuick }) {
   const [q, setQ]         = useState("");
   const [rows, setRows]   = useState(null);
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor]   = useState(0);
+
+  // §18 — recently opened projects, so returning to something you were just
+  // looking at costs one keystroke rather than retyping its name. Stored
+  // locally: this is navigation history, not portfolio data.
+  const [recent, setRecent] = useState([]);
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const raw = localStorage.getItem("pmo_recent_projects");
+      setRecent(raw ? JSON.parse(raw).slice(0, 4) : []);
+    } catch (_) { setRecent([]); }
+  }, [open]);
   const inputRef = useRef(null);
   const listRef  = useRef(null);
 
@@ -7921,14 +7934,60 @@ function GlobalSearch({ T, session, open, onClose, onSelect }) {
     return scored.slice(0, 40).map(x => x.p);
   }, [rows, q]);
 
+  // Quick actions are the destinations people reach for most, expressed as
+  // verbs. They filter out as soon as a query narrows to projects.
+  const QUICK_ACTIONS = useMemo(() => ([
+    { id:"qa-approved", label:"View approved projects",  hint:"Projects · Stage: Approved",
+      icon:CheckCircle, go:() => onQuick?.("approved") },
+    { id:"qa-pdd",      label:"View PDD status",          hint:"Dashboard · Approval pipeline",
+      icon:ClipboardList, go:() => onQuick?.("pdd") },
+    { id:"qa-payments", label:"View payment status",      hint:"Dashboard · Financial movement",
+      icon:Wallet, go:() => onQuick?.("payments") },
+    { id:"qa-health",   label:"View project health",      hint:"Dashboard · Delivery performance",
+      icon:Activity, go:() => onQuick?.("health") },
+  ]), [onQuick]);
+
+  const showIdle = !q.trim();
+  const actions  = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return QUICK_ACTIONS;
+    return QUICK_ACTIONS.filter(a => a.label.toLowerCase().includes(term));
+  }, [q, QUICK_ACTIONS]);
+
+  // One flat list so arrow keys move through actions and results seamlessly
+  // rather than the user having to know which section they are in.
+  const flat = useMemo(() => ([
+    ...actions.map(a => ({ kind:"action", ...a })),
+    ...(showIdle ? recent.map(r => ({ kind:"recent", ...r })) : []),
+    ...results.map(p => ({ kind:"project", p })),
+  ]), [actions, recent, results, showIdle]);
+
   useEffect(() => { setCursor(0); }, [q]);
 
-  const choose = useCallback((p) => { if (p) { onSelect(p.id); onClose(); } }, [onSelect, onClose]);
+  const choose = useCallback((p) => { if (p) { remember(p); onSelect(p.id); onClose(); } }, [onSelect, onClose]);
+
+  const pick = (item) => {
+    if (!item) return;
+    if (item.kind === "action")  { item.go?.(); onClose(); return; }
+    if (item.kind === "recent")  { remember(item); onSelect(item.id); onClose(); return; }
+    choose(item.p);
+  };
+
+  // Keep a short navigation history so returning somewhere costs one keystroke.
+  const remember = (p) => {
+    try {
+      const entry = { id:p.id, code:p.code, name:p.name };
+      const prev = JSON.parse(localStorage.getItem("pmo_recent_projects") || "[]")
+        .filter(x => x.id !== entry.id);
+      localStorage.setItem("pmo_recent_projects",
+        JSON.stringify([entry, ...prev].slice(0, 8)));
+    } catch (_) { /* private browsing — history simply does not persist */ }
+  };
 
   const onKey = (e) => {
-    if (e.key === "ArrowDown")      { e.preventDefault(); setCursor(c => Math.min(results.length - 1, c + 1)); }
+    if (e.key === "ArrowDown")      { e.preventDefault(); setCursor(c => Math.min(flat.length - 1, c + 1)); }
     else if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
-    else if (e.key === "Enter")     { e.preventDefault(); choose(results[cursor]); }
+    else if (e.key === "Enter")     { e.preventDefault(); pick(flat[cursor]); }
     else if (e.key === "Escape")    { e.preventDefault(); onClose(); }
   };
 
@@ -7982,7 +8041,85 @@ function GlobalSearch({ T, session, open, onClose, onSelect }) {
             </div>
           )}
 
-          {!loading && results.length === 0 && (
+          {/* §18 — Quick Actions. Verbs, not places: the things people open the
+              palette to do. They filter out as soon as a query narrows. */}
+          {!loading && actions.length > 0 && (
+            <>
+              <div style={{ ...TYPE.label, color:T.dim, padding:`${SP.sm}px ${SP.md}px 4px` }}>
+                Quick actions
+              </div>
+              {actions.map((a, i) => {
+                const on = i === cursor;
+                const Ico = a.icon;
+                return (
+                  <div key={a.id} data-idx={i}
+                    onMouseEnter={() => setCursor(i)} onClick={() => pick({ kind:"action", ...a })}
+                    style={{
+                      display:"flex", alignItems:"center", gap:SP.md,
+                      padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm, cursor:"pointer",
+                      background: on ? T.rowHover : "transparent",
+                      boxShadow: on ? `inset 2px 0 0 ${T.blueBright}` : "none",
+                      transition:`background ${MOTION.fast}`,
+                    }}>
+                    <div style={{
+                      width:26, height:26, borderRadius:R.sm, flexShrink:0,
+                      background:`${T.info}${T.badge}`, border:`1px solid ${T.info}33`,
+                      display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <Ico size={13} color={T.info} strokeWidth={2} />
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft,
+                        fontWeight: on ? 600 : 500 }}>{a.label}</div>
+                      <div style={{ ...TYPE.caption, color:T.dim, marginTop:1 }}>{a.hint}</div>
+                    </div>
+                    <ArrowUpRight size={13} color={on ? T.blueBright : T.dim} />
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* §18 — Recent. Only when idle: once a query is typed, results are
+              what matters and history is noise. */}
+          {!loading && showIdle && recent.length > 0 && (
+            <>
+              <div style={{ ...TYPE.label, color:T.dim,
+                padding:`${SP.md}px ${SP.md}px 4px` }}>Recent</div>
+              {recent.map((r, ri) => {
+                const i = actions.length + ri;
+                const on = i === cursor;
+                return (
+                  <div key={r.id} data-idx={i}
+                    onMouseEnter={() => setCursor(i)} onClick={() => pick({ kind:"recent", ...r })}
+                    style={{
+                      display:"flex", alignItems:"center", gap:SP.md,
+                      padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm, cursor:"pointer",
+                      background: on ? T.rowHover : "transparent",
+                      boxShadow: on ? `inset 2px 0 0 ${BRAND.gold}` : "none",
+                      transition:`background ${MOTION.fast}`,
+                    }}>
+                    <Clock size={13} color={on ? BRAND.gold : T.dim} style={{ flexShrink:0 }} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft,
+                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
+                      {r.code && r.code !== "-" && (
+                        <div style={{ ...TYPE.mono, fontSize:10.5, color:T.dim, marginTop:1 }}>{r.code}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {!loading && results.length > 0 && (
+            <div style={{ ...TYPE.label, color:T.dim,
+              padding:`${SP.md}px ${SP.md}px 4px` }}>
+              {showIdle ? "All projects" : `${results.length} match${results.length === 1 ? "" : "es"}`}
+            </div>
+          )}
+
+          {!loading && results.length === 0 && actions.length === 0 && (
             <EmptyState T={T} icon={Search} compact
               title={q.trim() ? "No projects match that" : "No projects to search"}
               message={q.trim()
@@ -7990,7 +8127,8 @@ function GlobalSearch({ T, session, open, onClose, onSelect }) {
                 : "The portfolio is empty."} />
           )}
 
-          {!loading && results.map((p, i) => {
+          {!loading && results.map((p, ri) => {
+            const i = actions.length + (showIdle ? recent.length : 0) + ri;
             const on = i === cursor;
             const st = STAGE_META[p.workflow_stage];
             const pClr = PRIORITY_META[p.priority]?.color;
@@ -8152,6 +8290,7 @@ export default function App() {
 
   // §17 — one lightweight read, shared by every navigation preview.
   const [navStats, setNavStats] = useState(null);
+  const [dashTab, setDashTab] = useState(null);   // §18 — set by quick actions
   useEffect(() => {
     if (!session?.access_token) return;
     let alive = true;
@@ -8280,6 +8419,19 @@ export default function App() {
         onGoToUpdates={() => navigateToPage("upd")}
       />
       <GlobalSearch
+        onQuick={(what) => {
+          // Quick actions land the user where the action actually happens,
+          // with the relevant view already selected.
+          const TAB = { approved:"budgeting", pdd:"pipeline",
+                        payments:"financials", health:"execution" }[what];
+          if (!TAB) return;
+          setSelectedProjectId(null);
+          setPage("cmd");
+          // Force a change even if the same tab is requested twice, so the
+          // dashboard re-seeds rather than silently ignoring it.
+          setDashTab(null);
+          requestAnimationFrame(() => setDashTab(TAB));
+        }}
         T={T} session={session} open={searchOpen}
         onClose={() => setSearchOpen(false)}
         onSelect={(id) => openProject(id)}
@@ -8333,7 +8485,7 @@ export default function App() {
           />
         ) : (
           <>
-            {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} fyLabel={portal.fy} />}
+            {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} fyLabel={portal.fy} initialTab={dashTab} />}
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "perf" && <PerformancePage T={T} session={session} onSelectProject={openProject} />}
