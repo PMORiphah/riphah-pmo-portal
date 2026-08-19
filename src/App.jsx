@@ -29,6 +29,7 @@ import {
 import {
   usePresence, useProximityField, useNear,
   FocusProvider, useFocusSource, useFocusTarget, useFocusKey, useSetFocus,
+  useScrollParallax, emitCausality, useSessionMemory,
 } from "./presence.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -2033,6 +2034,8 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
 // ─── COMMAND CENTER ───────────────────────────────────────────────────────────
 function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) {
   const vp = useViewport();
+  const scrollRef = useRef(null);
+  useScrollParallax(scrollRef);   // §12
   // §10 — the hero's lighting follows the pointer, so the executive block
   // responds to attention rather than sitting inert.
   const heroLight = useCursorLight(true);
@@ -2412,8 +2415,8 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27" }) 
         </ChartErrorBoundary>
       )}
 
-      {/* ── PROJECT LIST ── */}
-      <div id="dash-project-list">
+      {/* ── PROJECT LIST ── (§13 target for the causality pulse) */}
+      <div id="dash-project-list" data-filter-target>
         {showList && activeTab === "budgeting" && activeCard === "carry_forward" && (
           <CarryForwardList T={T} session={session} />
         )}
@@ -6458,7 +6461,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       </div>
 
       {/* ── Right: thread ── */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
+      <div className="pmo-world" style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         {!selId ? (
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8, color:T.dim }}>
             <div style={{ width:44, height:44, borderRadius:R.lg, background:T.info+T.badge,
@@ -7944,6 +7947,7 @@ export default function App() {
   // cast when something needs attention, cool when healthy. The environment
   // becomes about the data rather than decoration over it.
   const [ambientMood, setAmbientMood] = useState("neutral");
+  const { lastVisit } = useSessionMemory();   // §15
   // Native date pickers read their chrome from color-scheme; set it per theme
   // so the calendar popup matches the rest of the product.
   useEffect(() => {
@@ -7977,6 +7981,12 @@ export default function App() {
   }, [session?.access_token]);
   // ⌘K / Ctrl+K from anywhere. Bound at the document so it works regardless of
   // which page or control currently holds focus.
+  // §14 — rack focus: the application behind an overlay pulls back and softens.
+  useEffect(() => {
+    const anyOverlay = searchOpen || notifOpen || showChangePassword || sessionExpired;
+    document.documentElement.dataset.overlay = anyOverlay ? "1" : "0";
+  }, [searchOpen, notifOpen, showChangePassword, sessionExpired]);
+
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
