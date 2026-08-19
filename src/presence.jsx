@@ -243,3 +243,102 @@ export function useFocusKey() {
 export function useSetFocus() {
   return useContext(FocusCtx).setFocus;
 }
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   §12 — SCROLL PARALLAX
+
+   The atmosphere trails the content as you scroll, at roughly a fifth of its
+   rate. That difference in speed is what the eye reads as real depth; without
+   it the background is a flat sheet behind a moving page.
+
+   Published as a CSS variable, so the transform happens on the compositor and
+   scrolling stays smooth.
+   ─────────────────────────────────────────────────────────────────────────── */
+export function useScrollParallax(targetRef) {
+  useEffect(() => {
+    const el = targetRef?.current;
+    if (!el) return;
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        document.documentElement.style.setProperty("--scrolly", `${el.scrollTop * -0.055}px`);
+      });
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [targetRef]);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   §13 — VISIBLE CAUSALITY
+
+   When an action in one place changes something in another — clicking a
+   pipeline stage filters the table below it — a pulse travels from the cause to
+   the effect. Without it the list simply swaps contents and the connection has
+   to be inferred.
+   ─────────────────────────────────────────────────────────────────────────── */
+export function emitCausality(fromEl, toEl, color = "rgba(74,155,224,0.9)") {
+  if (!fromEl || !toEl || typeof document === "undefined") return;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const a = fromEl.getBoundingClientRect();
+  const b = toEl.getBoundingClientRect();
+  const x1 = a.left + a.width / 2, y1 = a.bottom;
+  const x2 = b.left + b.width / 2, y2 = b.top + 24;
+
+  const dot = document.createElement("div");
+  dot.setAttribute("aria-hidden", "true");
+  Object.assign(dot.style, {
+    position: "fixed", left: `${x1}px`, top: `${y1}px`,
+    width: "8px", height: "8px", borderRadius: "50%",
+    background: color, boxShadow: `0 0 14px 2px ${color}`,
+    pointerEvents: "none", zIndex: "1500",
+    transform: "translate(-50%,-50%) scale(.6)", opacity: "0",
+  });
+  document.body.appendChild(dot);
+  const anim = dot.animate(
+    [
+      { transform: "translate(-50%,-50%) scale(.6)", opacity: 0, offset: 0 },
+      { transform: "translate(-50%,-50%) scale(1)",  opacity: 1, offset: 0.15 },
+      { transform: `translate(calc(-50% + ${x2 - x1}px), calc(-50% + ${y2 - y1}px)) scale(1)`,
+        opacity: 1, offset: 0.78 },
+      { transform: `translate(calc(-50% + ${x2 - x1}px), calc(-50% + ${y2 - y1}px)) scale(2.4)`,
+        opacity: 0, offset: 1 },
+    ],
+    { duration: 620, easing: "cubic-bezier(.3,.7,.3,1)" }
+  );
+  anim.onfinish = () => dot.remove();
+  anim.oncancel = () => dot.remove();
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   §15 — SESSION MEMORY
+
+   The interface remembering you is a strong form of aliveness, and unlike most
+   of this file it is information rather than atmosphere: it tells you what has
+   moved since you were last here.
+   ─────────────────────────────────────────────────────────────────────────── */
+const VISIT_KEY = "pmo_last_visit";
+
+export function useSessionMemory() {
+  const [lastVisit, setLastVisit] = useState(null);
+  useEffect(() => {
+    try {
+      const prev = localStorage.getItem(VISIT_KEY);
+      if (prev) setLastVisit(new Date(prev));
+      localStorage.setItem(VISIT_KEY, new Date().toISOString());
+    } catch (_) { /* private browsing — the feature simply does not appear */ }
+  }, []);
+
+  const changedSince = useCallback((iso) => {
+    if (!lastVisit || !iso) return false;
+    return new Date(iso) > lastVisit;
+  }, [lastVisit]);
+
+  return { lastVisit, changedSince };
+}
