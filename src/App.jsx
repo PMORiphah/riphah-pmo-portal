@@ -25,6 +25,7 @@ import {
   pageBody, pageBar, cardStyle, tableStyles,
   RankedBars, ShareStrip, ProgressRing, TargetCard,
   Aurora, Reveal, SparkBar, useCursorLight,
+  useTableSort, SortHeader,
 } from "./ui.jsx";
 import {
   usePresence, useProximityField, useNear,
@@ -1585,13 +1586,25 @@ function BreakdownSection({ T, session }) {
 
   if (loading) return null;
 
-  const SectionCard = ({ title, children, note }) => (
-    <div className="pmo-card-in" style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 24px", boxShadow:T.shadow, position:"relative", overflow:"hidden" }}>
-      <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:note?4:18 }}>{title}</div>
-      {note && <div style={{ fontSize:11, color:T.dim, marginBottom:14 }}>{note}</div>}
-      {children}
-    </div>
-  );
+  const SectionCard = ({ title, children, note, index = 0 }) => {
+    const nref = useNear();
+    return (
+      <Reveal delay={index * 60}>
+        <div ref={nref} className="pmo-near pmo-card-in" style={{
+          position:"relative",
+          background:T.surface, border:`1px solid ${T.border}`,
+          borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 24px",
+          "--near-light": `${BRAND.gold}14`,
+        }}>
+          <div style={{ ...TYPE.label, color:T.muted, marginBottom: note ? 4 : 18,
+            position:"relative" }}>{title}</div>
+          {note && <div style={{ ...TYPE.caption, color:T.dim, marginBottom:14,
+            position:"relative" }}>{note}</div>}
+          <div style={{ position:"relative" }}>{children}</div>
+        </div>
+      </Reveal>
+    );
+  };
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -3907,6 +3920,18 @@ function CampusPage({ T, session, onSelectProject }) {
   const [fPri,   setFPri]   = useState("");
   const [fStage, setFStage] = useState("");
   const [hoverRow, setHoverRow] = useState(null);
+
+  // Sorting. Stage and priority sort by workflow order rather than alphabet —
+  // "Approved" must not lead simply because A precedes D.
+  const CAMPUS_SORT = useMemo(() => ({
+    code:     r => (r.code && r.code !== "-") ? r.code.toLowerCase() : null,
+    name:     r => (r.name || "").toLowerCase(),
+    campus:   r => (r.campus || "").toLowerCase(),
+    df:       r => +r.df_recommended_amount || 0,
+    bac:      r => +r.bac || 0,
+    priority: r => { const i = Object.keys(PRIORITY_META).indexOf(r.priority); return i < 0 ? 99 : i; },
+    stage:    r => { const i = STAGE_ORDER.indexOf(r.workflow_stage); return i < 0 ? 99 : i; },
+  }), []);
   const [loading,  setLoading]  = useState(true);
   const [err,      setErr]      = useState(null);
 
@@ -4024,10 +4049,11 @@ function CampusPage({ T, session, onSelectProject }) {
 
   const toggleCard = (id) => setActiveCard(c => c === id ? null : id);
 
-  const visible = useMemo(() => {
+  const preSort = useMemo(() => {
     if (!activeCard || !CARD_FILTERS[activeCard]) return filtered;
     return filtered.filter(CARD_FILTERS[activeCard].fn);
   }, [filtered, activeCard]);
+  const { sorted: visible, sort, toggle } = useTableSort(preSort, CAMPUS_SORT);
 
   const th = {...TYPE.label, color:T.muted, padding:"10px 12px 8px", whiteSpace:"nowrap",
     textAlign:"left", background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
@@ -4121,13 +4147,13 @@ function CampusPage({ T, session, onSelectProject }) {
             <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
               <tr>
                 <th style={{...th,width:44}}>#</th>
-                <th style={{...th, minWidth:118}}>Project ID</th>
-                <th style={th}>Project Name</th>
-                <th style={th}>Campus / Site</th>
-                <th style={{...th,textAlign:"right"}}>DF Rec Budget</th>
-                <th style={{...th,textAlign:"right"}}>Approved Budget</th>
-                <th style={{...th, minWidth:104}}>Priority</th>
-                <th style={th}>Stage</th>
+                <SortHeader T={T} label="Project ID"      sortKey="code"     sort={sort} onToggle={toggle} minWidth={118} />
+                <SortHeader T={T} label="Project Name"    sortKey="name"     sort={sort} onToggle={toggle} />
+                <SortHeader T={T} label="Campus / Site"   sortKey="campus"   sort={sort} onToggle={toggle} />
+                <SortHeader T={T} label="DF Rec Budget"   sortKey="df"       sort={sort} onToggle={toggle} align="right" />
+                <SortHeader T={T} label="Approved Budget" sortKey="bac"      sort={sort} onToggle={toggle} align="right" />
+                <SortHeader T={T} label="Priority"        sortKey="priority" sort={sort} onToggle={toggle} minWidth={104} />
+                <SortHeader T={T} label="Stage" sortKey="stage" sort={sort} onToggle={toggle} />
               </tr>
               {/* Filter band, pinned directly beneath the headers so the
                   controls visibly belong to the columns they filter. */}
@@ -4258,14 +4284,27 @@ function SettingsPage({ T, session }) {
     );
   };
 
-  const SectionCard = ({ title, children }) => (
-    <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"24px 28px", marginBottom:20 }}>
-      <div style={{ fontSize:13, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>
-        {title}
-      </div>
-      {children}
-    </div>
-  );
+  // Wrapped so every settings card joins the proximity field and settles in as
+  // it reaches the viewport, without each card being touched individually.
+  // Wrapped so every settings card joins the proximity field and settles in as
+  // it reaches the viewport, without each card being touched individually.
+  const SectionCard = ({ title, children, index = 0 }) => {
+    const nref = useNear();
+    return (
+      <Reveal delay={index * 55}>
+        <div ref={nref} className="pmo-near pmo-card-in" style={{
+          position:"relative",
+          background:T.surface, border:`1px solid ${T.border}`,
+          borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 24px",
+          "--near-light": `${T.blue}1A`,
+        }}>
+          <div style={{ ...TYPE.label, color:T.muted, marginBottom:18,
+            position:"relative" }}>{title}</div>
+          <div style={{ position:"relative" }}>{children}</div>
+        </div>
+      </Reveal>
+    );
+  };
 
   const Field = ({ label, hint, children }) => (
     <div style={{ marginBottom:18 }}>
@@ -4522,6 +4561,19 @@ function PerformancePage({ T, session, onSelectProject }) {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("all");
   const [hoverId, setHoverId] = useState(null);
+  const PERF_SORT = useMemo(() => ({
+    project: r => (r.name || "").toLowerCase(),
+    done:    r => +r.pct_complete || 0,
+    bac:     r => +r.bac || 0,
+    ev:      r => +r.ev  || 0,
+    pv:      r => +r.pv  || 0,
+    ac:      r => +r.ac  || 0,
+    cpi:     r => r.cpi == null ? null : +r.cpi,
+    spi:     r => r.spi == null ? null : +r.spi,
+    eac:     r => r.eac == null ? null : +r.eac,
+    cv:      r => r.cost_variance == null ? null : +r.cost_variance,
+    sv:      r => r.schedule_variance == null ? null : +r.schedule_variance,
+  }), []);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -4563,10 +4615,11 @@ function PerformancePage({ T, session, onSelectProject }) {
     { id:"closed",  label:"Closed",       fn: r => r.workflow_stage === "closed" },
   ].map(f => ({ ...f, count: rows.filter(f.fn).length })), [rows]);
 
-  const filtered = useMemo(() => {
+  const preSorted = useMemo(() => {
     const f = FILTERS.find(x => x.id === filter);
     return sortRealCodeFirst(f ? rows.filter(f.fn) : rows);
   }, [rows, filter, FILTERS]);
+  const { sorted: filtered, sort: psort, toggle: ptoggle } = useTableSort(preSorted, PERF_SORT);
 
   // Formatters
   const fmtM  = n => n == null ? "—" : (parseFloat(n) / 1e6).toFixed(1) + "M";
@@ -4674,16 +4727,16 @@ function PerformancePage({ T, session, onSelectProject }) {
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <th style={{ ...th, position:"sticky", left:0, zIndex:3, minWidth:220, borderRight:`1px solid ${T.border}` }}>Project</th>
-                <th style={{ ...th, textAlign:"center", minWidth:90 }}>% Done</th>
-                <th style={{ ...thr, minWidth:80 }}>BAC</th>
-                <th style={{ ...thr, minWidth:80 }}>EV</th>
-                <th style={{ ...thr, minWidth:80 }}>PV</th>
-                <th style={{ ...thr, minWidth:80 }}>AC</th>
-                <th style={{ ...thr, minWidth:70 }}>CPI</th>
-                <th style={{ ...thr, minWidth:70 }}>SPI</th>
-                <th style={{ ...thr, minWidth:80 }}>EAC</th>
-                <th style={{ ...thr, minWidth:90 }}>Cost Var.</th>
-                <th style={{ ...thr, minWidth:90 }}>Sched. Var.</th>
+                <SortHeader T={T} label="% Done" sortKey="done" sort={psort} onToggle={ptoggle} align="center" />
+                <SortHeader T={T} label="BAC" sortKey="bac" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="EV" sortKey="ev" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="PV" sortKey="pv" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="AC" sortKey="ac" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="CPI" sortKey="cpi" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="SPI" sortKey="spi" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="EAC" sortKey="eac" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="Cost Var." sortKey="cv" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="Sched. Var." sortKey="sv" sort={psort} onToggle={ptoggle} align="right" />
                 <th style={{ ...th,  minWidth:110 }}>Schedule</th>
                 <th style={{ ...th,  minWidth:110 }}>Budget</th>
               </tr>
@@ -5749,7 +5802,7 @@ function UserManagementPage({ T, session }) {
     <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
 
       {/* Header */}
-      <div style={{ ...pageBar(T), gap:SP.md }}>
+      <div className="pmo-in" style={{ ...pageBar(T), gap:SP.md }}>
         <div style={{ ...TYPE.bodySm, color:T.muted }}>
           {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
         </div>
@@ -6078,7 +6131,7 @@ function ActivityLogPage({ T, session }) {
     <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
 
       {/* ── Filter bar ── */}
-      <div style={pageBar(T)}>
+      <div className="pmo-in" style={pageBar(T)}>
 
         <Select T={T} value={actionFilter} onChange={e=>setActionFilter(e.target.value)} style={sel}>
           {ACTION_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
