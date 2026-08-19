@@ -6461,7 +6461,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       </div>
 
       {/* ── Right: thread ── */}
-      <div className="pmo-world" style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
+      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         {!selId ? (
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8, color:T.dim }}>
             <div style={{ width:44, height:44, borderRadius:R.lg, background:T.info+T.badge,
@@ -8067,7 +8067,8 @@ export default function App() {
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}
         isCompact={vp.isCompact} fyLabel={portal.fy}
       />
-      <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
+      {/* §14 — this column is the "world" that pulls back behind an overlay. */}
+      <div className="pmo-world" style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
         <TopBar
           T={T} title={pageInfo.title} subtitle={pageInfo.subtitle}
           dark={dark} setDark={setDark} onLogout={handleLogout}
