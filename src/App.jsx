@@ -14,7 +14,7 @@ import {
   DK, LT, BRAND, DATA, TYPE, SP, R, MOTION, CATEGORICAL,
   STAGE_META, STAGE_ORDER, PRIORITY_META, healthOf, perfStatus,
   KPI_INSIGHT, KPI_INSIGHT_PLAIN, TAB_INSIGHT, NAV_INSIGHT, STAGE_HINT, PRIORITY_HINT,
-  rampColor, RANK_RAMP, ALERT_RAMP,
+  rampColor, RANK_RAMP, ALERT_RAMP, portfolioInsights,
 } from "./theme.js";
 import {
   injectGlobals, useViewport, BP, Surface, Button, IconButton, Input, Select,
@@ -24,8 +24,8 @@ import {
   InsightTip, WithInsight, Section,
   pageBody, pageBar, cardStyle, tableStyles,
   RankedBars, ShareStrip, ProgressRing, TargetCard,
-  Aurora, Reveal, SparkBar, useCursorLight,
-  useTableSort, SortHeader,
+  Aurora, Reveal, SparkBar, useCursorLight, useCursorTilt,
+  useTableSort, SortHeader, InsightNote,
 } from "./ui.jsx";
 import {
   usePresence, useProximityField, useNear,
@@ -148,7 +148,7 @@ const PMO_NAV = [
 
 function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
-                  fyLabel = "FY 2026-27" }) {
+                  fyLabel = "FY 2026-27", navStats = null }) {
   const navItems = NAV.filter(n => {
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp")) return false;
@@ -163,6 +163,9 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
     const active = page === id;
     const [hover, setHover] = useState(false);
     const desc = NAV_INSIGHT[id];
+    // §17 — the preview reports the portfolio's actual state for that section,
+    // so hovering navigation tells you something rather than restating the label.
+    const stat = navStats?.[id] || null;
     const row = (
       <div
         onClick={() => { setPage(id); if (isCompact) setMobileOpen(false); }}
@@ -223,8 +226,8 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
         {row}
         {desc && (
-          <InsightTip T={T} show={hover && !active} side="right" width={214}
-            tone={BRAND.blueBright} line={desc} />
+          <InsightTip T={T} show={hover && !active} side="right" width={238}
+            tone={BRAND.blueBright} title={label} line={desc} stat={stat} />
         )}
       </div>
     );
@@ -632,6 +635,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   const iconAnim = ICON_ANIM[kpiKey] || "pmo-ico-glow";
   const cl = useCursorLight(true);   // §51
   const nearRef = useNear();          // §1 proximity · §7 anticipation · §8 dwell
+  const tilt = useCursorTilt(true);   // §4 — 1.5° lean toward the pointer
   // §2 — what this card is ABOUT, so related things elsewhere can respond.
   const focusKey = kpiKey ? `metric:${kpiKey}` : null;
   const src = useFocusSource(focusKey);
@@ -666,6 +670,9 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   return (
     <div
       className={onCardClick && !editing ? "pmo-in pmo-lift" : "pmo-in"}
+      className="pmo-tilt"
+      ref={tilt.ref}
+      onMouseMove={tilt.onMouseMove}
       style={{ animationDelay:(160 + index*55)+"ms", flex: featured ? 1.22 : 1, minWidth:0,
         display:"flex", position:"relative",
         // Sibling cards are also positioned, so without this the next card in
@@ -673,7 +680,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
         zIndex: hover && !editing ? 30 : undefined }}
       onClick={() => { if (!editing && onCardClick) onCardClick(); }}
       onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => { setHover(false); cl.onMouseLeave(); }}
+      onMouseLeave={() => { setHover(false); cl.onMouseLeave(); tilt.onMouseLeave(); }}
     >
       <div
         ref={(n) => { cl.ref.current = n; nearRef.current = n; }}
@@ -756,7 +763,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:SP.sm, marginBottom:SP.md }}>
               <div style={{ display:"flex", alignItems:"center", gap:SP.sm, minWidth:0 }}>
                 {Icon && (
-                  <div style={{
+                  <div className="pmo-ico-layer" style={{
                     width:28, height:28, borderRadius:R.sm, flexShrink:0,
                     background: hover ? `${clr}${T.washStrong}` : `${clr}${T.badge}`,
                     border:`1px solid ${clr}${hover ? "4D" : "26"}`,
@@ -1246,6 +1253,8 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
         })}
       </div>
 
+      <InsightNote T={T} insight={portfolioInsights(d).pipeline} />
+
       {/* Bottleneck, stated plainly (§5 micro-insights) */}
       <div style={{
         display:"flex", alignItems:"flex-start", gap:9, marginTop:SP.lg,
@@ -1719,14 +1728,22 @@ function BreakdownSection({ T, session }) {
                   <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Released</div>
                   <div style={{ ...TYPE.metricSm, color:T.textOf(T.positive) }}>{fmtM(actTotal)}</div>
                 </div>
-                <div>
+                <WithInsight T={T} side="bottom" align="right" width={264}
+                  tone={pct < 25 ? T.danger : T.positive}
+                  title="Portfolio release progress"
+                  line={`${fmtM(actTotal)} released against ${fmtM(planTotal)} planned.`}
+                  stat={`${pct.toFixed(1)}% of the recommended portfolio`}>
+                <div style={{ cursor:"help" }}>
                   <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Of plan</div>
                   <div style={{ ...TYPE.metricSm, color: T.textOf(pct < 25 ? T.danger : pct < 60 ? T.warning : T.positive) }}>
                     {pct.toFixed(1)}%
                   </div>
                 </div>
+                </WithInsight>
               </div>
             </div>
+
+            <InsightNote T={T} insight={portfolioInsights(d).release} style={{ marginBottom:SP.md }} />
 
             <PlannedActualChart T={T} data={data} height={vpB.isCompact ? 210 : 280}
               isMobile={vpB.isCompact} fmt={(v) => fmtM(v)} />
@@ -8128,6 +8145,29 @@ export default function App() {
   // becomes about the data rather than decoration over it.
   const [ambientMood, setAmbientMood] = useState("neutral");
   const { lastVisit, changedSince } = useSessionMemory();   // §15
+
+  // §17 — one lightweight read, shared by every navigation preview.
+  const [navStats, setNavStats] = useState(null);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/dashboard_summary?select=*", {}, session.access_token)
+      .then(rows => {
+        const d = Array.isArray(rows) ? rows[0] : rows;
+        if (!alive || !d) return;
+        const M = v => `PKR ${((+v || 0) / 1e6).toFixed(1)}M`;
+        setNavStats({
+          cmd:  `${d.total_projects} projects · ${M(d.total_capex)}`,
+          proj: `${d.total_projects} tracked · ${d.approved_count} approved`,
+          camp: `${d.total_projects} projects across all campuses`,
+          perf: d.approved_count ? `${d.approved_count} executing · CPI and SPI pending` : "No approved projects yet",
+          cashflow: "Monthly cashflow snapshot",
+          upd:  "Project comments and communications",
+        });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
   const sinceLabel = useMemo(() => {
     if (!lastVisit) return null;
     const mins = Math.round((Date.now() - lastVisit.getTime()) / 60000);
@@ -8245,6 +8285,11 @@ export default function App() {
       {/* Continuous ambient light behind everything, fixed so it persists as
           you move between pages rather than restarting each time. */}
       <Aurora T={T} mood={ambientMood} />
+      {/* §14 — technical grid at 2–3%. Registers subconsciously; invisible
+          if you look at it directly. */}
+      <div className="pmo-grid" aria-hidden="true" style={{
+        "--grid-c": T.mode === "dark" ? "rgba(140,180,230,0.030)" : "rgba(30,70,120,0.028)",
+      }} />
       {/* §3 — a global light source that is the cursor itself. */}
       <div className="pmo-worldlight" aria-hidden="true" style={{
         "--world-light": T.mode === "dark"
@@ -8255,7 +8300,7 @@ export default function App() {
         unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)}
         collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}
-        isCompact={vp.isCompact} fyLabel={portal.fy}
+        isCompact={vp.isCompact} fyLabel={portal.fy} navStats={navStats}
       />
       {/* §14 — this column is the "world" that pulls back behind an overlay. */}
       <div className="pmo-world" style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
