@@ -2109,6 +2109,11 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [kpiOverrides, setKpiOverrides] = useState({});
+  const [activeTab,    setActiveTab]    = useState(initialTab || "budgeting");
+  useEffect(() => { if (initialTab) setActiveTab(initialTab); }, [initialTab]);
+  const [activeCard,   setActiveCard]   = useState(null);
+  const [dashProjects, setDashProjects] = useState([]);
+
   // Real cumulative series by project start month — the only genuine time
   // dimension this data has. 11 months, built from `start_date`, so every KPI's
   // sparkline is describing something true rather than a decorative squiggle.
@@ -2136,10 +2141,6 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
     };
   }, [dashProjects]);
 
-  const [activeTab,    setActiveTab]    = useState(initialTab || "budgeting");
-  useEffect(() => { if (initialTab) setActiveTab(initialTab); }, [initialTab]);
-  const [activeCard,   setActiveCard]   = useState(null);
-  const [dashProjects, setDashProjects] = useState([]);
 
   // Approved / Budgeted / Non-Budgeted figures for the Overview tab. Computed
   // client-side from dashProjects since these aren't in the portfolio_dashboard
