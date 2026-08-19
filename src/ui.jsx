@@ -7,7 +7,7 @@
 //  All of them take `T` (the active theme) and read tokens from it, which is
 //  why light and dark both come out right without per-component branching.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { TYPE, SP, R, MOTION, AURORA } from "./theme.js";
 
 // ─── FONTS + GLOBAL MOTION ───────────────────────────────────────────────────
