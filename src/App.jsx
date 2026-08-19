@@ -7477,6 +7477,7 @@ function Login({ T, dark, onLogin }) {
   const [hoverField, setHoverField] = useState(null);
   const [btnHot, setBtnHot] = useState(false);
   const [btnDown, setBtnDown] = useState(false);
+  const [success, setSuccess] = useState(false);   // §25
   const vpL = useViewport();
   const anyFocus = focusField !== null;            // §16
   const [user, setUser] = useState("");
@@ -7524,7 +7525,15 @@ function Login({ T, dark, onLogin }) {
         expires_at: auth.expires_at,
       };
       try { if (remember) localStorage.setItem("pmo_session", JSON.stringify(session)); } catch(_) {}
-      onLogin(session);
+
+      // §25 — authentication has succeeded; play the hand-over before the
+      // dashboard mounts. Under reduced motion this is skipped entirely, and
+      // the timeout is the only thing standing between success and the portal,
+      // so it stays short.
+      if (reducedMotion) { onLogin(session); return; }
+      setSuccess(true);
+      setTimeout(() => onLogin(session), 460);
+      return;
     } catch(e) { setErr(e.message || "Sign in failed."); }
     setLoading(false);
   };
@@ -7608,7 +7617,9 @@ function Login({ T, dark, onLogin }) {
 
   // ── Main login screen ──────────────────────────────────────────────────────
   return (
-    <div ref={parallax} style={{ height:"100vh", display:"flex", position:"relative", overflow:"hidden", fontFamily:TYPE.body.fontFamily }}>
+    <div ref={parallax} className={success ? "pmo-signin-out" : ""}
+      style={{ height:"100vh", display:"flex", position:"relative", overflow:"hidden",
+        fontFamily:TYPE.body.fontFamily, transformOrigin:"58% 50%" }}>
 
       {/* Campus photograph. A very slow scale drift gives the still image the
           quality of a held camera shot rather than a wallpaper — it is the only
@@ -7736,6 +7747,7 @@ function Login({ T, dark, onLogin }) {
         padding: vpL.width < 640 ? 18 : 36,
         position:"relative", zIndex:1, animationDelay:"500ms" }}>
         <div
+          className={success ? "pmo-card-out" : ""}
           ref={cardLight.ref}
           onMouseMove={cardLight.onMouseMove}
           onMouseEnter={() => setCardHot(true)}
@@ -7864,7 +7876,8 @@ function Login({ T, dark, onLogin }) {
           {/* §22 §23 §24 — the hero interaction. Gold gradient, a light sweep on
               hover, a press compression, and an authenticating state that
               replaces the label rather than showing a browser spinner. */}
-          <button className="pmo-focusable pmo-sweep" onClick={handleLogin} disabled={loading}
+          <button className={`pmo-focusable pmo-sweep${success ? " pmo-confirm" : ""}`}
+            onClick={handleLogin} disabled={loading || success}
             onMouseEnter={()=>setBtnHot(true)} onMouseLeave={()=>{setBtnHot(false); setBtnDown(false);}}
             onMouseDown={()=>setBtnDown(true)} onMouseUp={()=>setBtnDown(false)}
             style={{
@@ -7886,7 +7899,12 @@ function Login({ T, dark, onLogin }) {
                        : btnHot  ? "translateY(-2px)" : "none",
               transition:"transform .18s cubic-bezier(.16,1,.3,1), box-shadow .26s ease, background .26s ease",
             }}>
-            {loading ? (
+            {success ? (
+              <>
+                <CheckCircle size={16} strokeWidth={2.6} />
+                Signed in
+              </>
+            ) : loading ? (
               <>
                 <span aria-hidden="true" style={{
                   width:15, height:15, borderRadius:"50%",
