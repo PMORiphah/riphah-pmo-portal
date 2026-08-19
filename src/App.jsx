@@ -25,7 +25,7 @@ import {
   pageBody, pageBar, cardStyle, tableStyles,
   RankedBars, ShareStrip, ProgressRing, TargetCard,
   Aurora, Reveal, SparkBar, useCursorLight, useCursorTilt,
-  useTableSort, SortHeader, InsightNote,
+  useTableSort, SortHeader, InsightNote, MicroTrend, AmbientRibbon,
 } from "./ui.jsx";
 import {
   usePresence, useProximityField, useNear,
@@ -285,6 +285,11 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
         )}
       </nav>
 
+      {/* The sidebar's lower half is empty on every screen. Abstract light
+          rather than data — this is the one region reporting nothing, which is
+          why decoration is defensible here and nowhere else. */}
+      {!mini && <AmbientRibbon T={T} height={210} />}
+
       {/* User */}
       <div style={{ borderTop:`1px solid ${T.sidebarBorder}`, padding: mini ? "12px 10px" : "13px 15px", position:"relative" }}>
         <div style={{ display:"flex", alignItems:"center", gap:11, justifyContent: mini ? "center" : "flex-start" }}>
@@ -362,7 +367,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
 // Glass header that reads as part of the page rather than a detached bar.
 function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu,
-                 unreadCount = 0, onBellClick, actions, onSearch, quickActions, sinceLabel }) {
+                 unreadCount = 0, onBellClick, actions, onSearch, quickActions, sinceLabel, freshness }) {
   const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
   const [searchHot, setSearchHot] = useState(false);
   return (
@@ -387,6 +392,21 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
           </div>
         )}
       </div>
+      {/* Data freshness — the last time anything in the portfolio actually
+          changed, not the last time this page was loaded. */}
+      {freshness && !isCompact && (
+        <div style={{
+          display:"flex", flexDirection:"column", alignItems:"flex-end",
+          padding:`3px ${SP.md}px 3px 0`, marginRight:SP.xs,
+          borderRight:`1px solid ${T.border}`,
+        }}>
+          <span style={{ ...TYPE.caption, fontSize:9.5, color:T.dim,
+            textTransform:"uppercase", letterSpacing:"0.06em" }}>Last updated</span>
+          <span style={{ ...TYPE.bodySm, fontWeight:600, color:T.textSoft,
+            whiteSpace:"nowrap" }}>{freshness}</span>
+        </div>
+      )}
+
       {/* §15 — the interface remembering you. Information rather than
           atmosphere: it says what has had time to move since you were last in. */}
       {sinceLabel && !isCompact && (
@@ -579,7 +599,7 @@ function DeadlineAlertPopups({ T, session }) {
   );
 }
 
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false }) {
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false, trendPoints = null }) {
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
   const [eSub,    setESub]    = useState("");
@@ -801,10 +821,14 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
                 marginTop:6, lineHeight:1.4, transition:`color ${MOTION.base}` }}>{sub}</div>
             )}
 
-            {/* Share of the portfolio, drawn as a living hairline. Seven cards
-                of identical shape read as wallpaper; this gives each one a
-                proportion of its own and keeps the strip moving at rest. */}
-            {shareOf > 0 && <SparkBar T={T} value={shareOf} total={shareTotal} color={clr} delay={index * 60} />}
+            {/* A real cumulative series where one exists, otherwise the share
+                hairline. Seven cards of identical shape read as wallpaper; this
+                gives each its own shape, drawn from actual data. */}
+            {trendPoints?.length > 1
+              ? <div style={{ marginTop:10, marginBottom:-2 }}>
+                  <MicroTrend T={T} points={trendPoints} color={clr} delay={index * 60} />
+                </div>
+              : shareOf > 0 && <SparkBar T={T} value={shareOf} total={shareTotal} color={clr} delay={index * 60} />}
 
 
 
@@ -2085,6 +2109,33 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [kpiOverrides, setKpiOverrides] = useState({});
+  // Real cumulative series by project start month — the only genuine time
+  // dimension this data has. 11 months, built from `start_date`, so every KPI's
+  // sparkline is describing something true rather than a decorative squiggle.
+  const trends = useMemo(() => {
+    if (!dashProjects?.length) return {};
+    const months = [...new Set(dashProjects.map(p => p.start_date?.slice(0, 7)).filter(Boolean))].sort();
+    if (months.length < 2) return {};
+    const cum = (pick, filter) => {
+      let run = 0;
+      return months.map(m => {
+        dashProjects.forEach(p => {
+          if (p.start_date?.slice(0, 7) === m && (!filter || filter(p))) run += (+pick(p) || 0);
+        });
+        return run;
+      });
+    };
+    return {
+      su_requested:   cum(p => p.su_requested_amount),
+      df_recommended: cum(p => p.df_recommended_amount),
+      approved:       cum(p => p.bac, p => p.workflow_stage === "approved"),
+      budgeted:       cum(p => p.bac, p => (+p.bac || 0) > 0),
+      non_budgeted:   cum(() => 1, p => !(+p.bac > 0) && p.workflow_stage === "approved"),
+      total_projects: cum(() => 1),
+      months,
+    };
+  }, [dashProjects]);
+
   const [activeTab,    setActiveTab]    = useState(initialTab || "budgeting");
   useEffect(() => { if (initialTab) setActiveTab(initialTab); }, [initialTab]);
   const [activeCard,   setActiveCard]   = useState(null);
@@ -2370,13 +2421,13 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       )}
       {activeTab === "budgeting" && (
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
-          <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
-          <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
+          <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested" trendPoints={trends.su_requested}    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
+          <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended" trendPoints={trends.df_recommended}  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard dashData={d} Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard dashData={d} Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard dashData={d} Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
-          <EditableKCard dashData={d} Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} onCardClick={() => toggleCard("total_projects")} isSelected={activeCard==="total_projects"} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
+          <EditableKCard dashData={d} Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects" trendPoints={trends.total_projects}  onSave={saveKPI} onCardClick={() => toggleCard("total_projects")} isSelected={activeCard==="total_projects"} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
       )}
       {activeTab === "pipeline" && (
@@ -2386,7 +2437,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           <EditableKCard dashData={d} Icon={Landmark} index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
           <EditableKCard dashData={d} Icon={Shield} index={3} T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
           <EditableKCard dashData={d} Icon={Users} index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Managing Trustee")} />
-          <EditableKCard dashData={d} Icon={CheckCircle} index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved"       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved" trendPoints={trends.approved}       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
         </div>
       )}
       {activeTab === "pipeline" && (
@@ -8291,6 +8342,28 @@ export default function App() {
   // §17 — one lightweight read, shared by every navigation preview.
   const [navStats, setNavStats] = useState(null);
   const [dashTab, setDashTab] = useState(null);   // §18 — set by quick actions
+
+  // Data freshness, read from the newest activity-log entry rather than the
+  // page-load time — it answers "how current is this?", not "when did I open it?".
+  const [freshness, setFreshness] = useState(null);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/activity_log?select=created_at&order=created_at.desc&limit=1", {}, session.access_token)
+      .then(rows => {
+        const iso = Array.isArray(rows) && rows[0]?.created_at;
+        if (!alive || !iso) return;
+        const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+        setFreshness(
+          mins < 1    ? "just now"
+          : mins < 60 ? `${mins}m ago`
+          : mins < 1440 ? `${Math.round(mins / 60)}h ago`
+          : `${Math.round(mins / 1440)}d ago`
+        );
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
   useEffect(() => {
     if (!session?.access_token) return;
     let alive = true;
@@ -8468,6 +8541,7 @@ export default function App() {
           onSearch={() => setSearchOpen(true)}
           quickActions={quickActions}
           sinceLabel={sinceLabel}
+          freshness={freshness}
         />
         {/* §67 — keyed on the destination so React remounts the region and the
             entrance animation plays. 240ms and a few pixels: the application
