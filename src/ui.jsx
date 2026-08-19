@@ -93,6 +93,67 @@ export const injectGlobals = () => {
     /* Sections arrive as they enter the viewport rather than all at once. */
     .pmo-kenburns { animation: pmoKenBurns 40s ease-in-out infinite; will-change:transform; }
 
+    /* ══ SIGN-IN ATMOSPHERE ══════════════════════════════════════════════
+       Everything here composites above the campus photograph. Transform and
+       opacity only — no layout properties are animated (§32). */
+    @keyframes pmoMote {
+      0%   { transform: translate3d(0,0,0) scale(.7); opacity:0; }
+      12%  { opacity:.9; }
+      50%  { transform: translate3d(14px,-34px,0) scale(1); opacity:.7; }
+      88%  { opacity:.5; }
+      100% { transform: translate3d(-8px,-72px,0) scale(.6); opacity:0; }
+    }
+    .pmo-mote {
+      position:absolute; border-radius:50%; display:block;
+      animation-name: pmoMote; animation-timing-function: ease-in-out;
+      animation-iteration-count: infinite; will-change: transform, opacity;
+    }
+
+    /* §5 — layered parallax. Each depth scales the same pointer offset, so the
+       scene reads as dimensional while nothing travels more than ~8px. */
+    .pmo-lp1 { transform: translate3d(calc(var(--lpx,0) * -3px),  calc(var(--lpy,0) * -3px),  0); }
+    .pmo-lp2 { transform: translate3d(calc(var(--lpx,0) * -6px),  calc(var(--lpy,0) * -5px),  0); }
+    .pmo-lp3 { transform: translate3d(calc(var(--lpx,0) * -9px),  calc(var(--lpy,0) * -7px),  0); }
+    .pmo-lp1,.pmo-lp2,.pmo-lp3 { transition: transform .7s cubic-bezier(.16,1,.3,1); }
+    .pmo-mote[data-depth="1"] { --mote-shift: -4px; }
+    .pmo-mote[data-depth="2"] { --mote-shift: -8px; }
+    .pmo-mote[data-depth="3"] { --mote-shift: -13px; }
+
+    /* §36 — staggered entrance. Nothing here gates interactivity; the form is
+       usable from the first frame. */
+    @keyframes pmoLoginIn {
+      from { opacity:0; transform: translate3d(0, 14px, 0); }
+      to   { opacity:1; transform: none; }
+    }
+    .pmo-li { animation: pmoLoginIn 620ms cubic-bezier(.16,1,.3,1) backwards; }
+
+    /* §15 — the crest ring breathes rather than spins. */
+    @keyframes pmoCrestRing {
+      0%,100% { opacity:.45; transform: scale(1); }
+      50%     { opacity:.95; transform: scale(1.045); }
+    }
+    .pmo-crest-ring { animation: pmoCrestRing 4.2s ease-in-out infinite; }
+
+    /* §23 — a light sweep across the sign-in button, on hover only. */
+    @keyframes pmoSweep { 0% { transform: translateX(-130%) skewX(-18deg); }
+                          100% { transform: translateX(240%) skewX(-18deg); } }
+    .pmo-sweep::after {
+      content:""; position:absolute; top:0; bottom:0; width:38%;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.42), transparent);
+      transform: translateX(-130%) skewX(-18deg); pointer-events:none;
+    }
+    .pmo-sweep:hover::after { animation: pmoSweep 780ms cubic-bezier(.3,.7,.4,1); }
+
+    /* §17 — a highlight travelling the focused field's border. */
+    @keyframes pmoFieldTrace { to { background-position: 200% 0; } }
+    .pmo-field-focus {
+      background-image: linear-gradient(90deg,
+        transparent, rgba(224,169,74,.75), rgba(74,155,224,.6), transparent);
+      background-size: 200% 2px; background-repeat: no-repeat;
+      background-position: -100% 0;
+      animation: pmoFieldTrace 1.4s ease-out forwards;
+    }
+
     /* ══ LIVING SURFACE ══════════════════════════════════════════════════
        Everything below reads --near, --px/--py, --idle and --dwell, which the
        presence layer publishes globally. No JavaScript runs per element and no
@@ -321,6 +382,7 @@ export const injectGlobals = () => {
       .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
       .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
       .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
+      .pmo-mote,.pmo-lp1,.pmo-lp2,.pmo-lp3,.pmo-li,.pmo-crest-ring,.pmo-sweep::after,.pmo-field-focus,
       .pmo-live-dot,.pmo-awaiting,.pmo-verdict,.pmo-verdict-dot::after,.pmo-near,.pmo-near::before,.pmo-worldlight,
       .pmo-world,.pmo-aurora,.pmo-tilt > *,.pmo-tilt .pmo-ico-layer,
       .pmo-btn:active,
@@ -2189,4 +2251,82 @@ export function AmbientRibbon({ T, height = 200 }) {
       </svg>
     </div>
   );
+}
+
+
+// ─── LOGIN ATMOSPHERE ────────────────────────────────────────────────────────
+// Layers that sit ABOVE the campus photograph and never replace it (§1). The
+// building stays the hero; everything here is light, depth and drift.
+//
+// Particles are DOM nodes rather than canvas: 26 of them, animated purely with
+// transform and opacity, which the compositor handles without touching layout
+// (§32). A canvas would cost more and buy nothing at this density.
+export function LoginAtmosphere({ reduced = false }) {
+  const motes = useMemo(() => {
+    // Deterministic scatter — a fixed arrangement rather than a random one that
+    // reshuffles on every render.
+    const seeded = (n) => {
+      const x = Math.sin(n * 12.9898) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    return Array.from({ length: 26 }, (_, i) => ({
+      left:  seeded(i + 1) * 100,
+      top:   seeded(i + 51) * 100,
+      size:  0.9 + seeded(i + 101) * 2.1,
+      dur:   16 + seeded(i + 151) * 26,
+      delay: -seeded(i + 201) * 30,
+      gold:  seeded(i + 251) > 0.72,
+      depth: 1 + Math.floor(seeded(i + 301) * 3),   // parallax layer
+    }));
+  }, []);
+
+  if (reduced) return null;
+
+  return (
+    <div aria-hidden="true" className="pmo-login-atmos" style={{
+      position:"absolute", inset:0, zIndex:0, overflow:"hidden", pointerEvents:"none",
+    }}>
+      {motes.map((m, i) => (
+        <span key={i} data-depth={m.depth} className="pmo-mote" style={{
+          left:`${m.left}%`, top:`${m.top}%`,
+          width:m.size, height:m.size,
+          background: m.gold ? "rgba(224,169,74,0.85)" : "rgba(168,206,255,0.8)",
+          boxShadow: m.gold
+            ? "0 0 6px 1px rgba(224,169,74,0.5)"
+            : "0 0 6px 1px rgba(140,190,255,0.45)",
+          animationDuration:`${m.dur}s`,
+          animationDelay:`${m.delay}s`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+/** Mouse parallax for the sign-in layers. Publishes a normalised pointer
+ *  offset; each layer scales it by its own depth, so the scene gains dimension
+ *  without anything moving more than a few pixels (§5). */
+export function useLoginParallax(enabled = true) {
+  const ref = useRef(null);
+  const raf = useRef(null);
+  useEffect(() => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el) return;
+    const onMove = (e) => {
+      if (raf.current) return;
+      raf.current = requestAnimationFrame(() => {
+        raf.current = null;
+        const x = (e.clientX / window.innerWidth  - 0.5) * 2;   // -1 … 1
+        const y = (e.clientY / window.innerHeight - 0.5) * 2;
+        el.style.setProperty("--lpx", x.toFixed(3));
+        el.style.setProperty("--lpy", y.toFixed(3));
+      });
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      if (raf.current) cancelAnimationFrame(raf.current);
+    };
+  }, [enabled]);
+  return ref;
 }
