@@ -2171,7 +2171,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       const [rows, settings, projs, metrics] = await Promise.all([
         supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token),
         supa("/rest/v1/settings?key=eq.dashboard_kpis&select=value", {}, session.access_token),
-        supa("/rest/v1/projects?select=id,code,name,bac,su_requested_amount,df_recommended_amount,amount_released,project_type,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
+        supa("/rest/v1/projects?select=id,start_date,code,name,bac,su_requested_amount,df_recommended_amount,amount_released,project_type,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
         supa("/rest/v1/project_metrics?select=id,schedule_flag,budget_flag,cpi,spi", {}, session.access_token),
       ]);
       setData(rows[0]);
