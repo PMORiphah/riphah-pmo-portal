@@ -26,6 +26,7 @@ import {
   RankedBars, ShareStrip, ProgressRing, TargetCard,
   Aurora, Reveal, SparkBar, useCursorLight, useCursorTilt,
   useTableSort, SortHeader, InsightNote, MicroTrend, AmbientRibbon,
+  LoginAtmosphere, useLoginParallax,
 } from "./ui.jsx";
 import {
   usePresence, useProximityField, useNear,
@@ -7416,7 +7417,58 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
+// A single sign-in claim: glass icon tile, hover response, and a small
+// tooltip carrying the fuller sentence (§9, §10).
+function LoginFeature({ Icon, title, sub, tip, first }) {
+  const [hot, setHot] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      style={{
+        position:"relative", display:"flex", flexDirection:"column", alignItems:"center",
+        padding:"14px 26px", gap:7, cursor:"default",
+        borderLeft: first ? "none" : "1px solid rgba(255,255,255,0.12)",
+      }}>
+      <div style={{
+        width:44, height:44, borderRadius:"50%",
+        background: hot ? "rgba(224,169,74,0.14)" : "rgba(4,10,24,0.55)",
+        backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)",
+        border:`1px solid rgba(216,152,64,${hot ? 0.72 : 0.35})`,
+        boxShadow: hot ? "0 0 22px -4px rgba(224,169,74,0.55)" : "none",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        transform: hot ? "translateY(-3px)" : "none",
+        transition:"all .3s cubic-bezier(.16,1,.3,1)",
+      }}>
+        <Icon size={18} color={hot ? "#F3D08A" : "rgba(255,255,255,0.82)"} strokeWidth={1.9}
+          style={{ transition:"color .3s ease" }} />
+      </div>
+      <div style={{ fontSize:11.5, fontWeight:700, textAlign:"center",
+        color: hot ? "#fff" : "rgba(255,255,255,0.92)", transition:"color .3s ease" }}>{title}</div>
+      <div style={{ fontSize:10, color:"rgba(255,255,255,0.55)", textAlign:"center" }}>{sub}</div>
+
+      {hot && (
+        <div className="pmo-rise" role="tooltip" style={{
+          position:"absolute", bottom:"calc(100% + 10px)", left:"50%",
+          transform:"translateX(-50%)", width:216, zIndex:5,
+          background:"rgba(10,22,40,0.92)",
+          border:"1px solid rgba(224,169,74,0.30)", borderRadius:10,
+          padding:"9px 12px", pointerEvents:"none",
+          backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+          boxShadow:"0 14px 40px -12px rgba(0,0,0,0.8)",
+        }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:1.2,
+            textTransform:"uppercase", color:"#E0A94A", marginBottom:3 }}>{title}</div>
+          <div style={{ fontSize:11.5, color:"rgba(255,255,255,0.86)", lineHeight:1.5 }}>{tip}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Login({ T, dark, onLogin }) {
+  // §5 — pointer parallax across the sign-in layers. Publishes a normalised
+  // offset that each layer scales by its own depth.
+  const parallax = useLoginParallax();
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [show, setShow] = useState(false);
@@ -7528,22 +7580,26 @@ function Login({ T, dark, onLogin }) {
 
   // ── Main login screen ──────────────────────────────────────────────────────
   return (
-    <div style={{ height:"100vh", display:"flex", position:"relative", overflow:"hidden", fontFamily:TYPE.body.fontFamily }}>
+    <div ref={parallax} style={{ height:"100vh", display:"flex", position:"relative", overflow:"hidden", fontFamily:TYPE.body.fontFamily }}>
 
       {/* Campus photograph. A very slow scale drift gives the still image the
           quality of a held camera shot rather than a wallpaper — it is the only
           moving thing on the screen before sign-in, and at 40s it registers as
           atmosphere rather than animation (§49). */}
-      <div className="pmo-kenburns" style={{
-        position:"absolute", inset:0,
+      {/* §1 — the image itself is untouched: same file, same crop, same
+          position, same perspective. It only gains the slowest parallax layer
+          so it sits behind everything else rather than moving with it. */}
+      <div className="pmo-kenburns pmo-lp1" style={{
+        position:"absolute", inset:"-14px",
         backgroundImage:"url(" + import.meta.env.BASE_URL + "campus-bg.jpg)",
         backgroundSize:"cover", backgroundPosition:"center 38%",
         zIndex:0,
       }} />
 
-      {/* Ambient light fields over the photograph, matching the application's
-          atmosphere so signing in feels like entering the same environment. */}
-      <div aria-hidden="true" style={{ position:"absolute", inset:0, zIndex:0, overflow:"hidden", pointerEvents:"none" }}>
+      {/* §4 Layer 3 — atmospheric colour around the architecture. Riphah blue
+          from the left, gold from the lower right, both drifting slowly and
+          both moving on parallax so the scene has depth. */}
+      <div aria-hidden="true" className="pmo-lp1" style={{ position:"absolute", inset:0, zIndex:0, overflow:"hidden", pointerEvents:"none" }}>
         <div className="pmo-drift" style={{
           position:"absolute", top:"-28%", left:"-10%", width:"58vw", height:"58vw", borderRadius:"50%",
           background:"radial-gradient(circle, rgba(44,123,196,0.30) 0%, transparent 66%)", filter:"blur(40px)" }} />
@@ -7551,6 +7607,16 @@ function Login({ T, dark, onLogin }) {
           position:"absolute", bottom:"-32%", right:"-6%", width:"52vw", height:"52vw", borderRadius:"50%",
           background:"radial-gradient(circle, rgba(224,169,74,0.16) 0%, transparent 68%)",
           filter:"blur(46px)", animationDelay:"-9s" }} />
+        <div className="pmo-drift" style={{
+          position:"absolute", top:"18%", left:"46%", width:"34vw", height:"34vw", borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(140,190,255,0.13) 0%, transparent 64%)",
+          filter:"blur(52px)", animationDelay:"-17s" }} />
+      </div>
+
+      {/* §26 — drifting motes. Two parallax depths above the glow, so they read
+          as being in front of the atmosphere rather than painted on it. */}
+      <div className="pmo-lp3" style={{ position:"absolute", inset:0, zIndex:0, pointerEvents:"none" }}>
+        <LoginAtmosphere />
       </div>
 
       {/* Dark veil for overall readability */}
@@ -7559,6 +7625,13 @@ function Login({ T, dark, onLogin }) {
       <div style={{ position:"absolute", inset:0, background:"linear-gradient(100deg, rgba(4,10,24,0.78) 0%, rgba(4,10,24,0.40) 38%, rgba(4,10,24,0.15) 58%, rgba(4,10,24,0.55) 78%, rgba(4,10,24,0.85) 100%)", zIndex:0 }} />
       {/* Top darken for logo */}
       <div style={{ position:"absolute", top:0, left:0, right:0, height:"160px", background:"linear-gradient(to bottom, rgba(2,6,16,0.7), transparent)", zIndex:0 }} />
+      {/* §4 Layer 4 — cinematic vignette. Radial rather than a flat overlay, so
+          the centre of the building stays the brightest architectural area. */}
+      <div aria-hidden="true" style={{
+        position:"absolute", inset:0, zIndex:0, pointerEvents:"none",
+        background:"radial-gradient(ellipse 76% 68% at 52% 44%, transparent 34%, rgba(2,6,16,0.30) 72%, rgba(2,6,16,0.62) 100%)",
+      }} />
+
       {/* Bottom darken */}
       <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"180px", background:"linear-gradient(to top, rgba(2,6,16,0.75), transparent)", zIndex:0 }} />
 
@@ -7566,16 +7639,22 @@ function Login({ T, dark, onLogin }) {
       <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", padding:"60px 72px", position:"relative", zIndex:1 }}>
 
         {/* Logo */}
-        <div style={{ position:"absolute", top:44, left:72, display:"flex", alignItems:"center", gap:14 }}>
-          <img src={LOGO} alt="Riphah" style={{ height:46, filter:"brightness(0) invert(1)", opacity:.92 }} />
+        <div className="pmo-li" style={{ position:"absolute", top:44, left:72, display:"flex", alignItems:"center", gap:14,
+          animationDelay:"100ms" }}>
+          {/* §6 — the existing mark, undistorted. Only a soft illumination. */}
+          <img src={LOGO} alt="Riphah" style={{ height:46, filter:"brightness(0) invert(1)", opacity:.94,
+            filter:"brightness(0) invert(1) drop-shadow(0 0 14px rgba(224,169,74,0.30))" }} />
         </div>
 
         {/* Label */}
-        <div style={{ marginBottom:20 }}>
-          <span style={{ fontSize:11, fontWeight:700, letterSpacing:3, textTransform:"uppercase", color:(T.goldText || GOLD) }}>
+        <div className="pmo-li" style={{ marginBottom:20, animationDelay:"200ms" }}>
+          <span style={{ fontSize:11, fontWeight:700, letterSpacing:3.4, textTransform:"uppercase",
+            color:GOLD, textShadow:"0 0 18px rgba(224,169,74,0.35)" }}>
             Capital Project Monitoring
           </span>
-          <div style={{ width:40, height:2, background:GOLD, marginTop:10 }} />
+          <div style={{ width:44, height:2, marginTop:10, borderRadius:2,
+            background:`linear-gradient(90deg, ${GOLD}, ${GOLD}00)`,
+            boxShadow:`0 0 12px ${GOLD}66` }} />
         </div>
 
         {/* Heading */}
@@ -7585,30 +7664,22 @@ function Login({ T, dark, onLogin }) {
         </div>
 
         {/* Description */}
-        <p style={{ fontSize:15, color:"rgba(255,255,255,0.62)", lineHeight:1.85, maxWidth:360, marginBottom:56, textShadow:"0 1px 12px rgba(0,0,0,0.5)" }}>
+        <p className="pmo-li" style={{ fontSize:15, color:"rgba(255,255,255,0.70)", lineHeight:1.85, maxWidth:380, marginBottom:56, textShadow:"0 1px 12px rgba(0,0,0,0.5)", animationDelay:"540ms" }}>
           CAPEX portfolio monitoring, control, and execution across Riphah International University campuses / hospitals.
         </p>
 
-        {/* Feature icons */}
-        <div style={{ display:"flex", gap:0 }}>
+        {/* §9 §10 — the same three claims, as small interactive modules with a
+            glass tooltip on hover. Content unchanged. */}
+        <div className="pmo-li" style={{ display:"flex", gap:0, animationDelay:"620ms" }}>
           {[
-            { icon:"🛡️", title:"Secure Access",      sub:"Protected & Encrypted" },
-            { icon:"📊", title:"Real-time Insights", sub:"Data driven decisions" },
-            { icon:"🏛️", title:"Multi-Campus",       sub:"Unified Monitoring"    },
+            { Icon:Shield,     title:"Secure Access",      sub:"Protected & Encrypted",
+              tip:"Protected authentication for authorized PMO users." },
+            { Icon:BarChart3,  title:"Real-time Insights", sub:"Data driven decisions",
+              tip:"Monitor portfolio performance and project activity." },
+            { Icon:Building2,  title:"Multi-Campus",       sub:"Unified Monitoring",
+              tip:"Unified CAPEX monitoring across campuses and hospitals." },
           ].map((f, i) => (
-            <div key={i} style={{
-              display:"flex", flexDirection:"column", alignItems:"center", padding:"14px 26px", gap:7,
-              borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.12)" : "none",
-            }}>
-              <div style={{
-                width:42, height:42, borderRadius:"50%",
-                background:"rgba(4,10,24,0.55)", backdropFilter:"blur(8px)",
-                border:"1px solid rgba(216,152,64,0.35)",
-                display:"flex", alignItems:"center", justifyContent:"center", fontSize:19,
-              }}>{f.icon}</div>
-              <div style={{ fontSize:11.5, fontWeight:700, color:"#fff", textAlign:"center" }}>{f.title}</div>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", textAlign:"center" }}>{f.sub}</div>
-            </div>
+            <LoginFeature key={f.title} {...f} first={i === 0} />
           ))}
         </div>
 
