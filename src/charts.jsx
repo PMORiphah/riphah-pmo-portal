@@ -5,7 +5,7 @@
 //  axis treatment, one tooltip and one animation curve (§29).
 //  Charts read theme tokens; they never define their own palette.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar,
   PieChart, Pie, Cell, Sector, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
@@ -67,6 +67,30 @@ export function ChartTooltip({ T, active, payload, label, fmt, footer }) {
 // Dashed planned line over a filled actual area, hover crosshair, variance in
 // the tooltip (§10).
 export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
+  // §9 — the newest actual reading carries a slow pulse, so the series reads as
+  // something still being written rather than a finished picture. Only the
+  // latest point: a line of pulsing dots would be noise.
+  const lastActualIdx = useMemo(() => {
+    if (!Array.isArray(data)) return -1;
+    for (let i = data.length - 1; i >= 0; i--) {
+      if ((data[i]?.actual ?? 0) > 0) return i;
+    }
+    return -1;
+  }, [data]);
+
+  const LiveDot = (props) => {
+    const { cx, cy, index } = props;
+    if (index !== lastActualIdx || cx == null) return null;
+    return (
+      <g style={{ pointerEvents: "none" }}>
+        <circle cx={cx} cy={cy} r={9} fill={T.positive} opacity={0.16}
+          className="pmo-live-dot" />
+        <circle cx={cx} cy={cy} r={4.2} fill={T.positive}
+          stroke={T.surface} strokeWidth={1.5} />
+      </g>
+    );
+  };
+
   // Series emphasis (§11, §12): hovering the legend — or a point on one series —
   // brings that series forward and quiets the other. Dimming rather than hiding,
   // so the comparison is never lost.
@@ -135,9 +159,9 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
           strokeWidth={focus === "actual" ? 3 : 2.25}
           fill="url(#pmoActualFill)" fillOpacity={dim("actual")}
           strokeOpacity={emph("actual")}
-          dot={false}
+          dot={<LiveDot />}
           activeDot={{ r:7, strokeWidth:2, stroke:T.surface, fill:T.positive,
-            filter:"url(#pmoDotGlow)", className:"pmo-live-dot" }}
+            filter:"url(#pmoDotGlow)" }}
           onMouseEnter={() => setFocus("actual")}
           animationDuration={1100}
           style={{ transition:"stroke-opacity .2s, stroke-width .2s" }} />
