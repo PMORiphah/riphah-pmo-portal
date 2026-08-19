@@ -359,7 +359,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
 // Glass header that reads as part of the page rather than a detached bar.
 function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu,
-                 unreadCount = 0, onBellClick, actions, onSearch, quickActions }) {
+                 unreadCount = 0, onBellClick, actions, onSearch, quickActions, sinceLabel }) {
   const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
   const [searchHot, setSearchHot] = useState(false);
   return (
@@ -384,6 +384,12 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
           </div>
         )}
       </div>
+      {/* §15 — the interface remembering you. Information rather than
+          atmosphere: it says what has had time to move since you were last in. */}
+      {sinceLabel && !isCompact && (
+        <span style={{ ...TYPE.caption, color:T.dim, marginRight:SP.xs,
+          whiteSpace:"nowrap" }}>{sinceLabel}</span>
+      )}
       {actions}
       {/* Contextual quick actions — hidden on narrow screens, where the header
           has to prioritise the page title and the essential icon controls. */}
@@ -5082,7 +5088,7 @@ function ProjectTimeline({ T, p, evm, isCompact }) {
                     {st.done
                       ? <CheckCircle2 size={12} color={T.positive} strokeWidth={2.5} />
                       : st.current
-                        ? <span className="pmo-pulse" style={{ width:7, height:7, borderRadius:"50%",
+                        ? <span className="pmo-awaiting" style={{ width:7, height:7, borderRadius:"50%",
                             background:st.color, color:st.color }} />
                         : null}
                   </div>
@@ -5644,6 +5650,15 @@ const SUPA_FN_URL = "https://prmxkecomqqngvrmytcj.supabase.co/functions/v1";
 
 function UserManagementPage({ T, session }) {
   const [users,          setUsers]          = useState([]);
+  // Role sorts by seniority, not alphabetically: Administrator before Guest.
+  const USER_SORT = useMemo(() => ({
+    username: u => (u.username || "").toLowerCase(),
+    fullname: u => (u.full_name || "").toLowerCase(),
+    email:    u => (u.email || "").toLowerCase(),
+    role:     u => ["pmo","project_manager","guest"].indexOf(u.role),
+    status:   u => (u.is_active ? 0 : 1),
+  }), []);
+  const { sorted: sortedUsers, sort: usort, toggle: utoggle } = useTableSort(users, USER_SORT);
   const [allAssignments, setAllAssignments] = useState([]);
   const [allProjects,    setAllProjects]    = useState([]);
   const [loading,        setLoading]        = useState(true);
@@ -5821,18 +5836,18 @@ function UserManagementPage({ T, session }) {
           <table style={tableStyles(T).table}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
-                <th style={th}>Username</th>
-                <th style={th}>Full Name</th>
-                <th style={th}>Email</th>
+                <SortHeader T={T} label="Username" sortKey="username" sort={usort} onToggle={utoggle} />
+                <SortHeader T={T} label="Full Name" sortKey="fullname" sort={usort} onToggle={utoggle} />
+                <SortHeader T={T} label="Email" sortKey="email" sort={usort} onToggle={utoggle} />
                 <th style={th}>WhatsApp No.</th>
-                <th style={th}>Role</th>
-                <th style={th}>Status</th>
+                <SortHeader T={T} label="Role" sortKey="role" sort={usort} onToggle={utoggle} />
+                <SortHeader T={T} label="Status" sortKey="status" sort={usort} onToggle={utoggle} />
                 <th style={th}>Assigned Projects</th>
                 <th style={{ ...th, textAlign:"right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u, i) => {
+              {sortedUsers.map((u, i) => {
                 const rc = ROLE_CFG[u.role] || { label:u.role, c:T.dim };
                 const assigns = getUserAssignments(u.id);
                 const me = isMe(u.id);
@@ -6036,6 +6051,13 @@ function RestoreSnapshotButton({ T, session, entry }) {
 // ─── ACTIVITY LOG ─────────────────────────────────────────────────────────────
 function ActivityLogPage({ T, session }) {
   const [entries,      setEntries]      = useState([]);
+  const LOG_SORT = useMemo(() => ({
+    when:   e => e.created_at || "",
+    actor:  e => (e.actor_name || "").toLowerCase(),
+    action: e => (e.action || "").toLowerCase(),
+    type:   e => (e.entity_type || "").toLowerCase(),
+  }), []);
+  const { sorted: sortedEntries, sort: lsort, toggle: ltoggle } = useTableSort(entries, LOG_SORT);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [actionFilter, setActionFilter] = useState("");
@@ -6193,15 +6215,15 @@ function ActivityLogPage({ T, session }) {
           <table style={tableStyles(T).table}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
-                <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 20px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap", minWidth:150 }}>Timestamp</th>
-                <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 14px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" }}>Actor</th>
-                <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 14px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" }}>Action</th>
-                <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 14px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" }}>Type</th>
+                <SortHeader T={T} label="Timestamp" sortKey="when" sort={lsort} onToggle={ltoggle} />
+                <SortHeader T={T} label="Actor" sortKey="actor" sort={lsort} onToggle={ltoggle} />
+                <SortHeader T={T} label="Action" sortKey="action" sort={lsort} onToggle={ltoggle} />
+                <SortHeader T={T} label="Type" sortKey="type" sort={lsort} onToggle={ltoggle} />
                 <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 14px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2 }}>Summary</th>
               </tr>
             </thead>
             <tbody>
-              {entries.map((e, i) => {
+              {sortedEntries.map((e, i) => {
                 const { date, time } = fmtDT(e.created_at);
                 const ac  = ACTION_CFG[e.action] || { c:T.muted, bg:`${T.border}40`, label:e.action };
                 const rc  = ROLE_CFG[e.actor_role] || { label:e.actor_role||"—", c:T.dim };
@@ -6225,7 +6247,7 @@ function ActivityLogPage({ T, session }) {
                             position:"absolute", top:13, bottom:-30, width:2,
                             borderRadius:2,
                             background:`linear-gradient(180deg, ${(ac.dot || ac.c)}55, ${T.borderStrong} 55%)`,
-                            display: i === entries.length - 1 ? "none" : "block",
+                            display: i === sortedEntries.length - 1 ? "none" : "block",
                           }} />
                         </div>
                         <div>
@@ -7680,7 +7702,7 @@ function NotificationsDrawer({ T, session, open, onClose, onSelectProject, onGoT
   const daysLate = (d) => Math.round((Date.now() - new Date(d)) / 86400000);
   const total = overdue.length + unread.length;
 
-  const Item = ({ tone, icon:Icon, title, meta, note, onClick }) => (
+  const Item = ({ tone, icon:Icon, title, meta, note, onClick, live }) => (
     <div onClick={onClick} className={onClick ? "pmo-focusable" : ""}
       role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined}
       onKeyDown={(e) => { if (onClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(); } }}
@@ -7696,7 +7718,7 @@ function NotificationsDrawer({ T, session, open, onClose, onSelectProject, onGoT
         background:`${tone}${T.badge}`, border:`1px solid ${tone}33`,
         display:"flex", alignItems:"center", justifyContent:"center",
       }}>
-        <Icon size={14} color={tone} strokeWidth={2} />
+        <Icon className={live ? "pmo-awaiting" : ""} size={14} color={tone} strokeWidth={2} />
       </div>
       <div style={{ minWidth:0, flex:1 }}>
         <div style={{ ...TYPE.bodySm, color:T.text, fontWeight:600, lineHeight:1.4 }}>{title}</div>
@@ -7765,7 +7787,7 @@ function NotificationsDrawer({ T, session, open, onClose, onSelectProject, onGoT
           {!loading && overdue.length > 0 && (
             <Section label="Past planned finish" count={overdue.length}>
               {overdue.map(p => (
-                <Item key={p.id} tone={T.danger} icon={AlertTriangle}
+                <Item key={p.id} tone={T.danger} icon={AlertTriangle} live
                   title={p.name}
                   note={`${p.code && p.code !== "-" ? p.code + " · " : ""}${STAGE_META[p.workflow_stage]?.label || ""}`}
                   meta={`${daysLate(p.end_date)} days past planned finish`}
@@ -8093,7 +8115,17 @@ export default function App() {
   // cast when something needs attention, cool when healthy. The environment
   // becomes about the data rather than decoration over it.
   const [ambientMood, setAmbientMood] = useState("neutral");
-  const { lastVisit } = useSessionMemory();   // §15
+  const { lastVisit, changedSince } = useSessionMemory();   // §15
+  const sinceLabel = useMemo(() => {
+    if (!lastVisit) return null;
+    const mins = Math.round((Date.now() - lastVisit.getTime()) / 60000);
+    if (mins < 2)     return null;                       // same session — not news
+    if (mins < 60)    return `Last here ${mins}m ago`;
+    const h = Math.round(mins / 60);
+    if (h < 24)       return `Last here ${h}h ago`;
+    const days = Math.round(h / 24);
+    return `Last here ${days}d ago`;
+  }, [lastVisit]);
   // Native date pickers read their chrome from color-scheme; set it per theme
   // so the calendar popup matches the rest of the product.
   useEffect(() => {
@@ -8222,6 +8254,7 @@ export default function App() {
           unreadCount={unreadCount} onBellClick={() => setNotifOpen(true)}
           onSearch={() => setSearchOpen(true)}
           quickActions={quickActions}
+          sinceLabel={sinceLabel}
         />
         {/* §67 — keyed on the destination so React remounts the region and the
             entrance animation plays. 240ms and a few pixels: the application
