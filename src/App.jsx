@@ -27,6 +27,10 @@ import {
   Aurora, Reveal, SparkBar, useCursorLight,
 } from "./ui.jsx";
 import {
+  usePresence, useProximityField, useNear,
+  FocusProvider, useFocusSource, useFocusTarget, useFocusKey, useSetFocus,
+} from "./presence.jsx";
+import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
   ShareDonut,
 } from "./charts.jsx";
@@ -619,6 +623,10 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   };
   const iconAnim = ICON_ANIM[kpiKey] || "pmo-ico-glow";
   const cl = useCursorLight(true);   // §51
+  const nearRef = useNear();          // §1 proximity · §7 anticipation · §8 dwell
+  // §2 — what this card is ABOUT, so related things elsewhere can respond.
+  const focusKey = kpiKey ? `metric:${KEY_ALIAS?.[kpiKey] || kpiKey}` : null;
+  const src = useFocusSource(focusKey);
   // Numeric share of the portfolio for the spark bar. Parsed from the displayed
   // figure so it works for both live values and PMO overrides.
   const numOf = (v) => {
@@ -660,9 +668,11 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
       onMouseLeave={() => { setHover(false); cl.onMouseLeave(); }}
     >
       <div
-        ref={cl.ref}
+        ref={(n) => { cl.ref.current = n; nearRef.current = n; }}
         onMouseMove={cl.onMouseMove}
-        className={hover && !editing ? "pmo-hot" : ""} style={{
+        {...src}
+        className={`pmo-near ${hover && !editing ? "pmo-hot" : ""}`} style={{
+        "--near-light": `${clr}22`,
         flex:1, minWidth:0, position:"relative",
         // The sheen needs clipping; the insight tip must escape it. Clip the
         // sheen at its own layer instead of the card.
@@ -676,7 +686,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
         // Glow is a token, so it can't drift brighter card by card (§19).
         boxShadow: isSelected ? T.glowRingHover(clr)
                  : hover && !editing ? T.glowSoft(clr)
-                 : T.shadow,
+                 : `0 0 0 1px ${clr}00, ${T.shadow}`,
         transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, background ${MOTION.base}`,
       }}>
         {/* One slow sheen pass on hover — the "expensive" cue (§52) */}
@@ -1150,6 +1160,11 @@ function FinancialFlow({ T, d, isCompact }) {
 }
 
 function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
+  // §2 — publish the stage under the pointer, and respond when a stage is
+  // focused from anywhere else in the interface.
+  const focus = useFocusKey();
+  const setRel = useSetFocus();
+  const relCls = (k) => !focus ? "" : focus === k ? "pmo-rel-on" : "pmo-rel-off";
   const stages = [
     { key:"pdd_not_submitted", label:"PDD Not Submitted", short:"Not Submitted", value:d.pdd_not_submitted_count || 0, note:"Awaiting submission" },
     { key:"pdds_submitted",    label:"PDD Submitted",     short:"Submitted",     value:d.pdds_submitted || 0,          note:"With the PMO" },
@@ -7921,6 +7936,14 @@ export default function App() {
 
   const T = dark ? DK : LT;
   const vp = useViewport();
+  // The awareness layer. One pointer listener for the whole application,
+  // publishing position, velocity, idle and dwell as CSS custom properties.
+  usePresence();
+  useProximityField();
+  // §9 — the atmosphere carries how the portfolio is actually doing: a warm
+  // cast when something needs attention, cool when healthy. The environment
+  // becomes about the data rather than decoration over it.
+  const [ambientMood, setAmbientMood] = useState("neutral");
   // Native date pickers read their chrome from color-scheme; set it per theme
   // so the calendar popup matches the rest of the product.
   useEffect(() => {
@@ -8002,7 +8025,7 @@ export default function App() {
       : (PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" });
 
   return (
-    <>
+    <FocusProvider>
       <DeadlineAlertPopups T={T} session={session} />
       {/* Quick actions are computed per page and per role, then handed to the
           header — see QUICK_ACTIONS below. */}
@@ -8021,7 +8044,12 @@ export default function App() {
       background:T.page, color:T.text, position:"relative" }}>
       {/* Continuous ambient light behind everything, fixed so it persists as
           you move between pages rather than restarting each time. */}
-      <Aurora T={T} />
+      <Aurora T={T} mood={ambientMood} />
+      {/* §3 — a global light source that is the cursor itself. */}
+      <div className="pmo-worldlight" aria-hidden="true" style={{
+        "--world-light": T.mode === "dark"
+          ? "rgba(120,175,240,0.075)" : "rgba(44,123,196,0.055)",
+      }} />
       <Sidebar
         T={T} page={effectivePage} setPage={navigateToPage} session={session}
         unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)}
@@ -8078,6 +8106,6 @@ export default function App() {
         }} />
       )}
     </div>
-    </>
+    </FocusProvider>
   );
 }
