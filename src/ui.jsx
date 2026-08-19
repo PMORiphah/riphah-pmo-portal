@@ -149,6 +149,36 @@ export const injectGlobals = () => {
       opacity: calc(1 - var(--idle, 0) * .45);
     }
 
+    /* §4 — tilt. Applied on a wrapper so the card's own transforms (lift,
+       proximity) compose with it rather than fighting for the property. */
+    .pmo-tilt {
+      --tiltX:0deg; --tiltY:0deg;
+      transform-style: preserve-3d;
+      perspective: 900px;
+    }
+    .pmo-tilt > * {
+      transform: rotateX(var(--tiltX)) rotateY(var(--tiltY));
+      transition: transform .42s cubic-bezier(.16,1,.3,1);
+      transform-style: preserve-3d;
+    }
+    .pmo-tilt .pmo-ico-layer {
+      transform: translate3d(var(--iconX,0), var(--iconY,0), 14px);
+      transition: transform .42s cubic-bezier(.16,1,.3,1);
+    }
+
+    /* §14 — a technical grid at 2–3% opacity. Present only to give the eye
+       something to register the surface against; invisible if you look for it. */
+    .pmo-grid {
+      position:fixed; inset:0; pointer-events:none; z-index:0;
+      background-image:
+        linear-gradient(var(--grid-c) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-c) 1px, transparent 1px);
+      background-size: 68px 68px;
+      mask-image: radial-gradient(ellipse 88% 72% at 50% 34%, #000 30%, transparent 78%);
+      -webkit-mask-image: radial-gradient(ellipse 88% 72% at 50% 34%, #000 30%, transparent 78%);
+      transform: translate3d(0, calc(var(--scrolly, 0px) * .28), 0);
+    }
+
     /* §12 — the atmosphere trails the content as you scroll, which is what
        produces real depth rather than a flat backdrop. */
     .pmo-aurora i { will-change: transform; }
@@ -269,7 +299,7 @@ export const injectGlobals = () => {
       .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
       .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
       .pmo-live-dot,.pmo-awaiting,.pmo-near,.pmo-near::before,.pmo-worldlight,
-      .pmo-world,.pmo-aurora,
+      .pmo-world,.pmo-aurora,.pmo-tilt > *,.pmo-tilt .pmo-ico-layer,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
       .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
@@ -412,6 +442,50 @@ export function useCursorLight(enabled = true) {
 
   useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
   return { ref, onMouseMove: onMove, onMouseLeave: onLeave };
+}
+
+// ─── CURSOR TILT (§4) ────────────────────────────────────────────────────────
+// A card leans very slightly toward the pointer — 1.5° at the extremes, never
+// more. Below about 2° this reads as the surface having physical presence;
+// above it, it reads as a gimmick and starts to hurt legibility of the number
+// printed on the card, which is the thing the card exists for.
+//
+// Written as CSS custom properties on the node, so tilting never triggers a
+// React render.
+export function useCursorTilt(enabled = true, max = 1.5) {
+  const ref = useRef(null);
+  const raf = useRef(null);
+
+  const onMove = useCallback((e) => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el || raf.current) return;
+    raf.current = requestAnimationFrame(() => {
+      raf.current = null;
+      const r = el.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width  - 0.5;   // -0.5 … 0.5
+      const py = (e.clientY - r.top)  / r.height - 0.5;
+      el.style.setProperty("--tiltY", `${( px * max * 2).toFixed(2)}deg`);
+      el.style.setProperty("--tiltX", `${(-py * max * 2).toFixed(2)}deg`);
+      // The icon shifts a couple of pixels the other way, which is what sells
+      // the parallax — a flat surface tilting is far less convincing than a
+      // surface with something sitting slightly above it.
+      el.style.setProperty("--iconX", `${(px * -3).toFixed(1)}px`);
+      el.style.setProperty("--iconY", `${(py * -3).toFixed(1)}px`);
+    });
+  }, [enabled, max]);
+
+  const reset = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--tiltX", "0deg");
+    el.style.setProperty("--tiltY", "0deg");
+    el.style.setProperty("--iconX", "0px");
+    el.style.setProperty("--iconY", "0px");
+  }, []);
+
+  useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
+  return { ref, onMouseMove: onMove, onMouseLeave: reset };
 }
 
 // ─── SURFACE ─────────────────────────────────────────────────────────────────
@@ -1872,5 +1946,41 @@ export function SortHeader({ T, label, sortKey, sort, onToggle, align = "left", 
         )}
       </span>
     </th>
+  );
+}
+
+
+// ─── INSIGHT NOTE (§22) ──────────────────────────────────────────────────────
+// A short observation about the data, sitting under the section it describes.
+// Deliberately quiet: a hairline rail, no icon shouting, no background block.
+// It should read as the system noticing something, not as an alert.
+export function InsightNote({ T, insight, style }) {
+  if (!insight) return null;
+  const TONE = {
+    attention: T.warning,
+    watch:     T.info,
+    good:      T.positive,
+  };
+  const c = TONE[insight.tone] || T.info;
+  return (
+    <div className="pmo-rise" style={{
+      display:"flex", gap:SP.md, alignItems:"flex-start",
+      marginTop:SP.md, padding:`${SP.sm}px ${SP.md}px`,
+      borderRadius:R.sm,
+      background:`${c}${T.wash}`,
+      borderLeft:`2px solid ${c}`,
+      ...style,
+    }}>
+      <span className="pmo-awaiting" style={{
+        width:6, height:6, borderRadius:"50%", background:c,
+        marginTop:6, flexShrink:0,
+      }} />
+      <div style={{ minWidth:0 }}>
+        <div style={{ ...TYPE.label, color: T.textOf ? T.textOf(c) : c }}>{insight.title}</div>
+        <div style={{ ...TYPE.caption, color:T.textSoft, marginTop:3, lineHeight:1.55 }}>
+          {insight.body}
+        </div>
+      </div>
+    </div>
   );
 }
