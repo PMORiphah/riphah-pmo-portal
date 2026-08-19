@@ -1526,57 +1526,93 @@ export function ShareStrip({ T, items, fmt = (v) => v, height = 14, onPick, acti
 // needing a scale — which is exactly the job here, where the answer is usually
 // "barely started".
 export function ProgressRing({
-  T, value, size = 62, stroke = 6, color, label, sublabel, delay = 0, glow = true,
+  T, value, size = 66, stroke = 7, color, label, caption, delay = 0, glow = true,
 }) {
   const [drawn, setDrawn] = useState(false);
   useEffect(() => { const t = setTimeout(() => setDrawn(true), 90 + delay); return () => clearTimeout(t); }, [delay]);
 
   const pct = Math.max(0, Math.min(100, value || 0));
   const r = (size - stroke) / 2;
+  const cx = size / 2;
+
+  // A 280° arc opening at the bottom, not a closed ring. The gap reads as an
+  // instrument dial and gives the figure room to sit centred without the label
+  // colliding with the stroke — which is what was breaking the old version,
+  // where "OF TARGET" was physically wider than the circle it sat inside.
+  const SWEEP = 280;
   const circ = 2 * Math.PI * r;
+  const arcLen = circ * (SWEEP / 360);
+
+  // A rounded cap has width of its own, so a value near zero still shows a
+  // visible mark rather than nothing. This shows the true proportion — the cap
+  // is simply not smaller than a cap.
+  const drawn01 = drawn ? pct / 100 : 0;
+  const dash = arcLen * drawn01;
   const c = color || T.positive;
-  const uid = `ring_${Math.round(size)}_${c.replace("#", "")}`;
+  const uid = `pr${Math.round(size)}${String(c).replace(/[^a-zA-Z0-9]/g, "")}`;
+
+  // Where the arc currently ends, for the tip marker.
+  const startA = 90 + (360 - SWEEP) / 2;
+  const endA = startA + SWEEP * drawn01;
+  const rad = (endA * Math.PI) / 180;
+  const tipX = cx + r * Math.cos(rad);
+  const tipY = cx + r * Math.sin(rad);
+
+  const digits = `${pct.toFixed(pct >= 10 ? 0 : 1)}`.length;
+  const fontSize = size >= 62 ? (digits > 3 ? 15 : 17) : (digits > 3 ? 12.5 : 14);
 
   return (
     <div style={{ position:"relative", width:size, height:size, flexShrink:0 }}>
-      <svg width={size} height={size} style={{ transform:"rotate(-90deg)", display:"block" }}>
+      <svg width={size} height={size} style={{ display:"block", overflow:"visible" }}>
         <defs>
-          <linearGradient id={uid} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%"   stopColor={c} stopOpacity="1" />
-            <stop offset="100%" stopColor={c} stopOpacity="0.55" />
+          <linearGradient id={uid} x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%"   stopColor={c} stopOpacity="0.7" />
+            <stop offset="100%" stopColor={c} stopOpacity="1" />
           </linearGradient>
           {glow && (
-            <filter id={`${uid}_g`} x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="2.4" result="b" />
+            <filter id={`${uid}g`} x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="2.2" result="b" />
               <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
             </filter>
           )}
         </defs>
-        {/* Track */}
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke}
-          stroke={T.mode === "dark" ? "rgba(255,255,255,0.07)" : "rgba(16,42,71,0.075)"} />
-        {/* Sweep — animates from zero so the value is something you watch arrive */}
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke}
-          stroke={`url(#${uid})`} strokeLinecap="round"
-          strokeDasharray={circ}
-          strokeDashoffset={drawn ? circ * (1 - pct / 100) : circ}
-          filter={glow && pct > 0 ? `url(#${uid}_g)` : undefined}
-          style={{ transition:`stroke-dashoffset 1100ms ${MOTION.ease}` }} />
+
+        <g transform={`rotate(${startA} ${cx} ${cx})`}>
+          {/* Track — visible enough to read as a dial even when nearly empty */}
+          <circle cx={cx} cy={cx} r={r} fill="none" strokeWidth={stroke}
+            strokeLinecap="round"
+            stroke={T.mode === "dark" ? "rgba(255,255,255,0.10)" : "rgba(16,42,71,0.10)"}
+            strokeDasharray={`${arcLen} ${circ}`} />
+          {/* Value */}
+          <circle cx={cx} cy={cx} r={r} fill="none" strokeWidth={stroke}
+            stroke={`url(#${uid})`} strokeLinecap="round"
+            strokeDasharray={`${dash} ${circ}`}
+            filter={glow && pct > 0 ? `url(#${uid}g)` : undefined}
+            style={{ transition:`stroke-dasharray 1100ms ${MOTION.ease}` }} />
+        </g>
+
+        {/* Tip marker — makes a fractional value legible as a position on the
+            dial rather than a stroke too short to see. */}
+        {pct > 0 && (
+          <circle cx={tipX} cy={tipY} r={stroke * 0.42} fill={c}
+            style={{ transition:`all 1100ms ${MOTION.ease}`,
+              filter: glow ? `drop-shadow(0 0 5px ${c})` : undefined,
+              opacity: drawn ? 1 : 0 }} />
+        )}
       </svg>
+
       <div style={{
         position:"absolute", inset:0, display:"flex", flexDirection:"column",
         alignItems:"center", justifyContent:"center", pointerEvents:"none",
       }}>
         <span style={{
-          fontFamily:TYPE.display.fontFamily,
-          fontSize: size >= 70 ? 15 : size >= 56 ? 13 : 11,
-          fontWeight:700, lineHeight:1,
-          color: T.textOf ? T.textOf(c) : c,
-          fontVariantNumeric:"tabular-nums",
-        }}>{label ?? `${pct.toFixed(1)}%`}</span>
-        {sublabel && (
-          <span style={{ ...TYPE.caption, fontSize:10, color:T.muted, marginTop:2,
-            letterSpacing:"0.05em", textTransform:"uppercase" }}>{sublabel}</span>
+          fontFamily:TYPE.display.fontFamily, fontSize, fontWeight:700, lineHeight:1,
+          color: T.textOf ? T.textOf(c) : c, fontVariantNumeric:"tabular-nums",
+          letterSpacing:"-0.02em",
+        }}>{label ?? `${pct.toFixed(pct >= 10 ? 0 : 1)}%`}</span>
+        {caption && (
+          <span style={{ ...TYPE.caption, fontSize:9.5, color:T.dim, marginTop:2,
+            letterSpacing:"0.04em", textTransform:"uppercase", whiteSpace:"nowrap" }}>{caption}</span>
         )}
       </div>
     </div>
@@ -1636,8 +1672,8 @@ export function TargetCard({
             </div>
             {meta && <div style={{ ...TYPE.caption, color:T.muted, marginLeft: Icon ? 34 : 0 }}>{meta}</div>}
           </div>
-          <ProgressRing T={T} value={pct} color={c} size={compact ? 54 : 62}
-            stroke={compact ? 5 : 6} sublabel="of target" delay={index * 70} />
+          <ProgressRing T={T} value={pct} color={c} size={compact ? 60 : 68}
+            stroke={compact ? 6 : 7} delay={index * 70} />
         </div>
 
         <div style={{ marginTop:SP.md, display:"flex", alignItems:"baseline", gap:SP.sm, flexWrap:"wrap" }}>
