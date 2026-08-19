@@ -7664,7 +7664,17 @@ function Login({ T, dark, onLogin }) {
       <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"180px", background:"linear-gradient(to top, rgba(2,6,16,0.75), transparent)", zIndex:0 }} />
 
       {/* ── LEFT PANEL ───────────────────────────────────────────────────── */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", padding:"60px 72px", position:"relative", zIndex:1 }}>
+      <div style={{
+        flex:1,
+        // §34 — below 900px the hero steps aside so the card owns the screen,
+        // rather than the desktop layout being squeezed until the headline
+        // breaks and the card slides off.
+        display: vpL.width < 900 ? "none" : "flex",
+        flexDirection:"column", justifyContent:"center",
+        padding: vpL.width < 1200 ? "48px 44px" : "60px 72px",
+        position:"relative", zIndex:1,
+        minWidth:0,
+      }}>
 
         {/* Logo */}
         <div className="pmo-li" style={{ position:"absolute", top:44, left:72, display:"flex", alignItems:"center", gap:14,
