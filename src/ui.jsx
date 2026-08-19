@@ -151,7 +151,27 @@ export const injectGlobals = () => {
 
     /* §12 — the atmosphere trails the content as you scroll, which is what
        produces real depth rather than a flat backdrop. */
-    .pmo-parallax { will-change: transform; }
+    .pmo-aurora i { will-change: transform; }
+    .pmo-aurora   { transform: translate3d(0, var(--scrolly, 0px), 0); }
+    .pmo-worldlight { transform: translate3d(0, calc(var(--scrolly, 0px) * .45), 0); }
+
+    /* §14 — rack focus. When an overlay opens, the world behind it pulls back
+       and softens, the way a camera shifts focus. Makes the palette and modals
+       feel physically in front of the application rather than pasted onto it. */
+    .pmo-world { transition: transform .34s cubic-bezier(.16,1,.3,1), filter .34s ease; }
+    html[data-overlay="1"] .pmo-world {
+      transform: scale(.988);
+      filter: blur(1.6px) saturate(.92) brightness(.92);
+    }
+
+    /* §15 — something that has changed since your last visit. */
+    .pmo-since { position: relative; }
+    .pmo-since::after {
+      content:""; position:absolute; left:-9px; top:50%; transform:translateY(-50%);
+      width:5px; height:5px; border-radius:50%;
+      background: var(--since-c, #4A9BE0);
+      box-shadow: 0 0 8px 1px var(--since-c, #4A9BE0);
+    }
     .pmo-page     { animation: pmoPageIn 240ms cubic-bezier(.16,1,.3,1); }
     .pmo-panel-r  { animation: pmoPanelR 260ms cubic-bezier(.16,1,.3,1); }
     .pmo-panel-l  { animation: pmoPanelL 260ms cubic-bezier(.16,1,.3,1); }
@@ -249,6 +269,7 @@ export const injectGlobals = () => {
       .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
       .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
       .pmo-live-dot,.pmo-awaiting,.pmo-near,.pmo-near::before,.pmo-worldlight,
+      .pmo-world,.pmo-aurora,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
       .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
