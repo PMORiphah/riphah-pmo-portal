@@ -949,11 +949,13 @@ export function Badge({ T, color, children, size = "md", dot, style, hint, hintT
   );
 }
 
-export const StatusDot = ({ color, size = 8, pulse }) => (
-  <span className={pulse ? "pmo-pulse" : ""} style={{
-    width:size, height:size, borderRadius:"50%", background:color, color,
-    display:"inline-block", flexShrink:0,
-  }} />
+export const StatusDot = ({ color, size = 8, pulse, ring }) => (
+  <span className={`${ring ? "pmo-verdict-dot " : ""}${pulse ? "pmo-pulse" : ""}`.trim()}
+    style={{
+      width:size, height:size, borderRadius:"50%", background:color, color,
+      "--dot-c": color,
+      display:"inline-block", flexShrink:0, position: ring ? "relative" : undefined,
+    }} />
 );
 
 // ─── PROGRESS ────────────────────────────────────────────────────────────────
