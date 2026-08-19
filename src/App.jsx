@@ -1185,7 +1185,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
   const total = stages.reduce((a, b) => a + b.value, 0) || 1;
   // Stages where work is sitting with a named person, waiting on them to act.
   // Those breathe; submitted-and-done or not-yet-started stages do not (§10).
-  const AWAITING = new Set(["df_review", "ed_review", "mt_review"]);
+  const AWAITING = new Set(["in_df", "in_ed", "in_mt"]);
   const inReview = stages.slice(2, 5).reduce((a, b) => a + b.value, 0);
 
   // The bottleneck is the stage holding the most work that has not yet cleared.
