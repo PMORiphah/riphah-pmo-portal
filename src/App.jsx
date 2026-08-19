@@ -7478,6 +7478,7 @@ function Login({ T, dark, onLogin }) {
   const [btnHot, setBtnHot] = useState(false);
   const [btnDown, setBtnDown] = useState(false);
   const [success, setSuccess] = useState(false);   // §25
+  const [authStep, setAuthStep] = useState(null);  // which round-trip is in flight
   const vpL = useViewport();
   const anyFocus = focusField !== null;            // §16
   const [user, setUser] = useState("");
@@ -7492,9 +7493,13 @@ function Login({ T, dark, onLogin }) {
 
   const handleLogin = async () => {
     if (!user.trim() || !pass) return;
+    // Three sequential round-trips take roughly 1.9s on this connection, so the
+    // button must acknowledge the click on the first frame. Without this the
+    // user presses Sign In and watches nothing happen for two seconds.
     setLoading(true); setErr(null);
     try {
       let emailResult;
+      setAuthStep("Verifying account…");
       try {
         emailResult = await supa("/rest/v1/rpc/resolve_login_email", {
           method:"POST", body: JSON.stringify({ p_username: user.trim() })
@@ -7503,12 +7508,14 @@ function Login({ T, dark, onLogin }) {
       const email = typeof emailResult === "string" ? emailResult : null;
       if (!email) throw new Error("Username not found. Contact the PMO.");
       let auth;
+      setAuthStep("Authenticating…");
       try {
         auth = await supa("/auth/v1/token?grant_type=password", {
           method:"POST", body: JSON.stringify({ email, password:pass })
         });
       } catch(e) { throw new Error("Incorrect password. Try again."); }
       let profiles;
+      setAuthStep("Loading your portfolio…");
       try {
         profiles = await supa(
           "/rest/v1/user_profiles?select=username,full_name,role&id=eq."+auth.user.id,
@@ -7534,7 +7541,7 @@ function Login({ T, dark, onLogin }) {
       setSuccess(true);
       setTimeout(() => onLogin(session), 460);
       return;
-    } catch(e) { setErr(e.message || "Sign in failed."); }
+    } catch(e) { setErr(e.message || "Sign in failed."); setAuthStep(null); }
     setLoading(false);
   };
 
@@ -7911,7 +7918,7 @@ function Login({ T, dark, onLogin }) {
                   border:"2px solid rgba(26,18,6,0.28)", borderTopColor:"#1A1206",
                   animation:"pmoSpin .7s linear infinite", display:"inline-block",
                 }} />
-                Authenticating…
+                {authStep || "Authenticating…"}
               </>
             ) : (
               <>
