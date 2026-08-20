@@ -8,22 +8,39 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
+
 :root{
-  --navy-950:#0A1A30;
-  --navy-900:#0F2547;
-  --navy-800:#153564;
-  --navy-700:#1D4384;
-  --gold:#C9A24B;
-  --gold-soft:#E8D9AE;
-  --teal:#2BB6A8;
-  --coral:#E2725B;
-  --bg:#F4F6F9;
-  --surface:#FFFFFF;
-  --ink:#101E3B;
-  --muted:#66738C;
-  --line:#E4E9F1;
-  --shadow: 0 1px 2px rgba(16,30,59,0.04), 0 8px 24px rgba(16,30,59,0.06);
+  /* Mapped onto the PMO design tokens (src/theme.js) so this dashboard and the
+     React portal cannot drift apart. Light theme. */
+  --navy-950:#0C1E33; --navy-900:#123C5C; --navy-800:#14395C; --navy-700:#2C7BC4;
+  --gold:#E0A94A; --gold-soft:#EBD3A2;
+  --teal:#22C4A8; --coral:#F0637D;
+  --violet:#8B7FD9; --info:#4A9BE0;
+  --bg:#F4F7FB; --bg-alt:#EDF2F8;
+  --surface:#FFFFFF; --surface-raised:#FFFFFF;
+  --ink:#0C1E33; --ink-soft:#41576F; --muted:#64798F; --dim:#94A7BC;
+  --line:#E3EAF3; --line-strong:#CFDAE8;
+  --shadow:0 1px 3px rgba(16,42,71,0.07), 0 10px 26px -12px rgba(16,42,71,0.16);
+  --shadow-lg:0 8px 18px rgba(16,42,71,0.10), 0 28px 56px -18px rgba(16,42,71,0.22);
+  --hero:linear-gradient(135deg,#14304E 0%,#0E2340 44%,#0A1729 100%);
+  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
 }
+/* Dark theme. The portal has had dark mode since launch; this tab never did,
+   so it rendered as a white slab inside a dark application. */
+[data-theme="dark"]{
+  /* Navy stays navy: these tokens paint the masthead and table headers. Text
+     that happened to reuse them is remapped below instead. */
+  --navy-950:#0A1729; --navy-900:#0E2340; --navy-800:#14395C; --navy-700:#2C7BC4;
+  --gold:#E0A94A; --gold-soft:#B8842E;
+  --teal:#22C4A8; --coral:#F0637D;
+  --bg:#070E1B; --bg-alt:#050A14;
+  --surface:#0E1A2E; --surface-raised:#132339;
+  --ink:#E8F0FA; --ink-soft:#A9BED4; --muted:#7C95AF; --dim:#54708C;
+  --line:rgba(255,255,255,0.07); --line-strong:rgba(255,255,255,0.13);
+  --shadow:0 2px 6px rgba(0,0,0,0.36), 0 12px 28px -12px rgba(0,0,0,0.6);
+  --shadow-lg:0 8px 20px rgba(0,0,0,0.42), 0 28px 60px -20px rgba(0,0,0,0.72);
+}
+
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
 body{
@@ -77,13 +94,13 @@ body{
   color:#DCE4F2;
   display:flex; align-items:center; gap:8px;
 }
-.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(43,182,168,0.25);}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(34,196,168,0.25);}
 .btn{
   font-family:'Inter',sans-serif;
   font-weight:600;
   font-size:13px;
   border:none;
-  border-radius:9px;
+  border-radius:var(--r-sm);
   padding:10px 16px;
   cursor:pointer;
   transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
@@ -127,7 +144,7 @@ body{
 .filter-group{display:flex; flex-direction:column;}
 .filterbar select{
   font-family:'Inter',sans-serif; font-size:13px; color:var(--ink);
-  padding:8px 10px; border-radius:7px; border:1px solid var(--line);
+  padding:8px 10px; border-radius:var(--r-sm); border:1px solid var(--line);
   background:#FBFCFE; min-width:150px; cursor:pointer;
 }
 .filterbar select:focus{outline:2px solid var(--gold); outline-offset:1px;}
@@ -161,7 +178,7 @@ main{padding:28px 32px 60px; max-width:1520px; margin:0 auto;}
 .kpi-card{
   background:var(--surface);
   border:1px solid var(--line);
-  border-radius:14px;
+  border-radius:var(--r-lg);
   padding:18px 18px 16px;
   box-shadow:var(--shadow);
   position:relative;
@@ -178,7 +195,7 @@ main{padding:28px 32px 60px; max-width:1520px; margin:0 auto;}
 /* ===== Hero chart ===== */
 .hero-card{
   background:linear-gradient(180deg, var(--navy-950) 0%, var(--navy-800) 100%);
-  border-radius:18px;
+  border-radius:var(--r-lg);
   padding:26px 26px 10px;
   margin-top:20px;
   color:#fff;
@@ -201,7 +218,7 @@ main{padding:28px 32px 60px; max-width:1520px; margin:0 auto;}
 .card{
   background:var(--surface);
   border:1px solid var(--line);
-  border-radius:14px;
+  border-radius:var(--r-lg);
   padding:18px 20px 16px;
   box-shadow:var(--shadow);
 }
@@ -221,7 +238,7 @@ main{padding:28px 32px 60px; max-width:1520px; margin:0 auto;}
 .chip-btn.active{background:var(--navy-900); color:#fff; border-color:var(--navy-900);}
 
 /* ===== Table ===== */
-.table-wrap{overflow-x:auto; border-radius:12px; border:1px solid var(--line);}
+.table-wrap{overflow-x:auto; border-radius:var(--r-lg); border:1px solid var(--line);}
 table{width:100%; border-collapse:collapse; font-size:12.5px; background:var(--surface);}
 thead th{
   background:var(--navy-950); color:#fff; text-align:left; padding:10px 12px;
@@ -261,7 +278,7 @@ tbody tr:hover{background:#F7F9FC;}
 /* search */
 .search-row{display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;}
 .search-input{
-  flex:1; min-width:220px; padding:9px 12px; border-radius:8px; border:1px solid var(--line);
+  flex:1; min-width:220px; padding:9px 12px; border-radius:var(--r-sm); border:1px solid var(--line);
   font-family:'Inter'; font-size:13px;
 }
 .search-input:focus{outline:2px solid var(--gold); outline-offset:1px;}
@@ -270,7 +287,7 @@ tbody tr:hover{background:#F7F9FC;}
 .footnote b{color:var(--navy-900);}
 
 .upload-note{
-  background:#FBF8F0; border:1px solid #EEDFB5; border-radius:12px; padding:16px 18px; font-size:12.5px; color:#5A4B22; line-height:1.6;
+  background:#FBF8F0; border:1px solid #EEDFB5; border-radius:var(--r-lg); padding:16px 18px; font-size:12.5px; color:#5A4B22; line-height:1.6;
 }
 .upload-note code{background:#F3E9CE; padding:1px 6px; border-radius:4px; font-family:'IBM Plex Mono';}
 
@@ -288,10 +305,10 @@ footer{
   display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   padding:12px 14px; margin-bottom:14px;
   background:linear-gradient(180deg,#fff 0%,#FAFBFD 100%);
-  border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+  border:1px solid var(--line); border-radius:var(--r-lg); box-shadow:var(--shadow);
 }
 .editbar .eb-label{font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.04em; text-transform:uppercase; margin-right:2px;}
-.btn-sm{font-size:12.5px; padding:8px 13px; border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--navy-900); font-weight:600; cursor:pointer; font-family:'Inter',sans-serif;}
+.btn-sm{font-size:12.5px; padding:8px 13px; border-radius:var(--r-sm); border:1px solid var(--line); background:#fff; color:var(--navy-900); font-weight:600; cursor:pointer; font-family:'Inter',sans-serif;}
 .btn-sm:hover{background:#F2F5FA;}
 .btn-sm.primary{background:var(--navy-900); color:#fff; border-color:var(--navy-900);}
 .btn-sm.primary:hover{background:var(--navy-800);}
@@ -303,7 +320,7 @@ footer{
 .eb-note{font-size:12px; color:var(--muted); margin-left:auto;}
 .row-actions{white-space:nowrap;}
 .icon-btn{
-  border:1px solid var(--line); background:#fff; border-radius:7px;
+  border:1px solid var(--line); background:#fff; border-radius:var(--r-sm);
   padding:3px 8px; font-size:11.5px; font-weight:600; cursor:pointer; color:var(--navy-700);
   margin-right:4px; font-family:'Inter',sans-serif;
 }
@@ -319,7 +336,7 @@ footer{
 }
 .modal-back.open{display:flex;}
 .modal{
-  background:var(--surface); border-radius:16px; width:100%; max-width:920px;
+  background:var(--surface); border-radius:var(--r-lg); width:100%; max-width:920px;
   box-shadow:0 24px 64px rgba(10,26,48,0.35); overflow:hidden;
 }
 .modal-head{
@@ -334,10 +351,10 @@ footer{
 .form-grid .half{grid-column:span 2;}
 .fld label{display:block; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:5px;}
 .fld input, .fld select, .fld textarea{
-  width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px;
+  width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:var(--r-sm);
   font-family:'Inter',sans-serif; font-size:13px; color:var(--ink); background:#fff;
 }
-.fld input:focus, .fld select:focus, .fld textarea:focus{outline:none; border-color:var(--navy-700); box-shadow:0 0 0 3px rgba(29,67,132,0.12);}
+.fld input:focus, .fld select:focus, .fld textarea:focus{outline:none; border-color:var(--navy-700); box-shadow:0 0 0 3px rgba(44,123,196,0.12);}
 .fld textarea{min-height:64px; resize:vertical;}
 .fld .hint{font-size:11px; color:var(--muted); margin-top:4px;}
 .fld input.mono-in{font-family:'IBM Plex Mono',monospace;}
@@ -347,7 +364,208 @@ footer{
 }
 .modal-foot .spacer{margin-left:auto;}
 @media (max-width:760px){ .form-grid{grid-template-columns:1fr;} .form-grid .half{grid-column:span 1;} }
+
+/* Foreground remaps for dark mode. Each of these previously took its colour
+   from a navy token that also paints surfaces. */
+[data-theme="dark"] .section-title,
+[data-theme="dark"] .kpi-value,
+[data-theme="dark"] .card-title,
+[data-theme="dark"] .heat-total,
+[data-theme="dark"] .filter-count b,
+[data-theme="dark"] .footnote b,
+[data-theme="dark"] .hero-title,
+[data-theme="dark"] .display { color: var(--ink) !important; }
+
+[data-theme="dark"] .tab-btn.active,
+[data-theme="dark"] .tab-btn:hover { color: #E8F0FA !important; }
+
+[data-theme="dark"] .topbar { background: var(--hero) !important; }
+[data-theme="dark"] .hero-card { background: var(--surface-raised) !important; }
+[data-theme="dark"] thead th { background: var(--surface-raised) !important; color: var(--muted) !important; }
+
+/* Native controls: the browser default is a white select on a dark card. */
+[data-theme="dark"] select,
+[data-theme="dark"] input,
+[data-theme="dark"] textarea {
+  background: #0A1526 !important; color: var(--ink) !important;
+  border-color: var(--line-strong) !important;
+}
+[data-theme="dark"] select option { background:#0E1A2E; color:#E8F0FA; }
+[data-theme="dark"] .card,
+[data-theme="dark"] .panel { background: var(--surface) !important; border-color: var(--line) !important; }
+[data-theme="dark"] body { background: var(--bg) !important; color: var(--ink); }
+
+/* ── §43 · Portal harmonisation ─────────────────────────────────────────
+   Chrome matched to the React portal: card elevation and hairlines, button
+   interaction language, tooltip surface, and the same ambient field so this
+   tab belongs to the same ecosystem rather than looking embedded. */
+
+/* Ambient atmosphere, matching the portal's aurora at a calmer amplitude. */
+body { position: relative; }
+body::before {
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(58vw 58vw at -8% -18%, var(--amb-a), transparent 66%),
+    radial-gradient(48vw 48vw at 104% 42%, var(--amb-b), transparent 64%);
+}
+:root        { --amb-a: rgba(44,123,196,0.10); --amb-b: rgba(34,196,168,0.07); }
+[data-theme="dark"] { --amb-a: rgba(44,123,196,0.20); --amb-b: rgba(34,196,168,0.13); }
+
+/* Cards lift and warm on interaction, exactly as portal sections do. */
+.card, .panel {
+  border-radius: var(--r-lg) !important;
+  box-shadow: var(--shadow) !important;
+  transition: transform .22s cubic-bezier(.2,.8,.3,1),
+              box-shadow .22s cubic-bezier(.2,.8,.3,1),
+              border-color .22s cubic-bezier(.2,.8,.3,1);
+}
+.card:hover, .panel:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg) !important;
+  border-color: var(--line-strong) !important;
+}
+
+/* One button language across both codebases. */
+button, .btn, .btn-sm, .btn-gold {
+  transition: filter .14s ease, transform .09s ease, box-shadow .22s ease !important;
+}
+button:hover:not(:disabled), .btn:hover, .btn-gold:hover { filter: brightness(1.10); }
+button:active:not(:disabled), .btn:active, .btn-gold:active { transform: scale(.975); }
+button:disabled { opacity:.5; cursor:not-allowed; }
+
+/* Focus ring identical to the portal's. */
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
+  outline: 2px solid var(--navy-700) !important;
+  outline-offset: 2px !important;
+  border-radius: var(--r-sm);
+}
+
+/* Tabs: the portal's sliding-accent treatment. */
+.tab-btn { position: relative; transition: color .14s ease, background .22s ease; }
+.tab-btn::after {
+  content:""; position:absolute; left:12px; right:12px; bottom:0; height:2px;
+  border-radius:2px; background:linear-gradient(90deg, var(--navy-700), var(--gold));
+  transform: scaleX(0); transform-origin:left;
+  transition: transform .22s cubic-bezier(.2,.8,.3,1);
+}
+.tab-btn.active::after { transform: scaleX(1); box-shadow: 0 0 10px -1px var(--gold); }
+.tab-btn:hover:not(.active) { background: rgba(125,160,200,.08); }
+
+/* Native controls get the portal's chevron and hover response. */
+select {
+  appearance:none; -webkit-appearance:none;
+  background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237C95AF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; padding-right:26px;
+  transition: border-color .14s ease;
+}
+select:hover { border-color: var(--line-strong) !important; }
+
+/* Respect reduced motion, as the portal does. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation:none !important; transition-duration:.01ms !important; }
+}
+
+/* Keep content above the ambient layer. */
+.topbar, .tabs, main, section, .card, .panel, .filterbar { position: relative; z-index: 1; }
+
 </style>
+
+<script>
+/* Theme bridge — keeps this dashboard in step with the portal's light/dark
+   toggle. The parent sets ?theme= on the iframe src and also posts a message
+   when the user flips the switch mid-session. */
+(function () {
+  function apply(t) {
+    document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+    if (window.__pmoRedraw) { try { window.__pmoRedraw(); } catch (e) {} }
+  }
+  var q = new URLSearchParams(location.search).get("theme");
+  apply(q || "light");
+  window.addEventListener("message", function (e) {
+    if (e && e.data && e.data.pmoTheme) apply(e.data.pmoTheme);
+  });
+})();
+</script>
+
+<style>
+/* ── §51/§1 · Living surface, ported to this codebase ────────────────────
+   The React presence layer cannot reach across an iframe boundary, so this is
+   a small standalone implementation with the same tuning: pointer-tracked
+   world light, cards that wake on approach, and an idle state. Roughly 40
+   lines rather than importing the framework. */
+:root { --px:50%; --py:40%; --near-range:190px; }
+
+#pmoWorldLight {
+  position:fixed; inset:0; pointer-events:none; z-index:0;
+  background: radial-gradient(circle 46vw at var(--px) var(--py),
+              var(--cf-world, rgba(44,123,196,.055)), transparent 62%);
+  transition: opacity 1.6s ease;
+}
+[data-theme="dark"] { --cf-world: rgba(120,175,240,.075); }
+html[data-idle="1"] #pmoWorldLight { opacity:.55; }
+
+.card, .panel { --near:0; position:relative; }
+.card::before, .panel::before {
+  content:""; position:absolute; inset:0; border-radius:inherit;
+  pointer-events:none; z-index:0;
+  background: radial-gradient(circle 320px at var(--lx,50%) var(--ly,50%),
+              rgba(120,175,240,.13), transparent 68%);
+  opacity: calc(var(--near) * .85);
+  transition: opacity .45s ease;
+}
+.card, .panel { transform: translateY(calc(var(--near) * -3px)); }
+.card > *, .panel > * { position:relative; z-index:1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .panel { transform:none !important; }
+  .card::before, .panel::before, #pmoWorldLight { display:none !important; }
+}
+</style>
+<script>
+/* Pointer presence. Coalesced to one write per frame; rects cached and only
+   re-measured on scroll or resize, so this stays cheap on a page with a dozen
+   cards and thirteen charts. */
+(function () {
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var root = document.documentElement, raf = null, idle = null, stamp = 0, cache = new WeakMap();
+  var light = document.createElement("div");
+  light.id = "pmoWorldLight"; light.setAttribute("aria-hidden", "true");
+  document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(light); });
+
+  function rectOf(el) {
+    var hit = cache.get(el);
+    if (hit && hit.s === stamp) return hit.r;
+    var r = el.getBoundingClientRect();
+    cache.set(el, { r: r, s: stamp });
+    return r;
+  }
+  function pass(x, y) {
+    root.style.setProperty("--px", (x / window.innerWidth * 100) + "%");
+    root.style.setProperty("--py", (y / window.innerHeight * 100) + "%");
+    var els = document.querySelectorAll(".card, .panel");
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i], r = rectOf(el);
+      if (!r.width) continue;
+      var dx = Math.max(0, Math.abs(x - (r.left + r.width / 2)) - r.width / 2);
+      var dy = Math.max(0, Math.abs(y - (r.top + r.height / 2)) - r.height / 2);
+      var d = Math.sqrt(dx * dx + dy * dy), RANGE = 190;
+      el.style.setProperty("--near", d > RANGE ? 0 : Math.pow(1 - d / RANGE, 1.7).toFixed(3));
+      el.style.setProperty("--lx", ((x - r.left) / r.width * 100) + "%");
+      el.style.setProperty("--ly", ((y - r.top) / r.height * 100) + "%");
+    }
+  }
+  window.addEventListener("pointermove", function (e) {
+    if (raf) return;
+    var x = e.clientX, y = e.clientY;
+    raf = requestAnimationFrame(function () { raf = null; pass(x, y); });
+    root.dataset.idle = "0";
+    clearTimeout(idle);
+    idle = setTimeout(function () { root.dataset.idle = "1"; }, 12000);
+  }, { passive: true });
+  window.addEventListener("scroll", function () { stamp++; }, { passive: true, capture: true });
+  window.addEventListener("resize", function () { stamp++; });
+})();
+</script>
 </head>
 <body>
 
@@ -661,7 +879,18 @@ const QUARTERS = [
   {name:"Q3 FY26-27", months:MONTHS.slice(6,9)},
   {name:"Q4 FY26-27", months:MONTHS.slice(9,12)},
 ];
-const PALETTE = ["#0F2547","#C9A24B","#2BB6A8","#E2725B","#1D4384","#8C6FB5","#5A9BD5","#D4A94A","#4E8C7C","#B4573F","#3E6FA8","#8AA6C9"];
+const CHART_INK = () => getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#101E3B";
+const CHART_MUTED = () => getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#66738C";
+const CHART_LINE = () => getComputedStyle(document.documentElement).getPropertyValue("--line").trim() || "#E4E9F1";
+if (window.Chart) {
+  Chart.defaults.color = CHART_MUTED();
+  Chart.defaults.borderColor = CHART_LINE();
+  Chart.defaults.font.family = 'Inter, sans-serif';
+  Chart.defaults.plugins.legend.labels.usePointStyle = true;
+  Chart.defaults.plugins.legend.labels.boxWidth = 8;
+  Chart.defaults.plugins.legend.labels.padding = 14;
+}
+const PALETTE = ["#4A9BE0","#22C4A8","#8B7FD9","#E8A63C","#2BD4D4","#F0637D","#2C7BC4","#E0A94A","#1FAE8E","#B4573F","#5A9BD5","#8AA6C9"];
 
 let currentData = RAW_DATA.slice();
 let filters = {sector:"", org:"", campus:"", projectType:"", priority:""};
@@ -824,7 +1053,7 @@ function renderHero(){
     type:"line",
     data:{labels:MONTH_LABELS, datasets:[{
       data:cum, borderColor:"#E8D9AE", backgroundColor:gradient, fill:true, tension:.35,
-      borderWidth:2.5, pointRadius:3, pointBackgroundColor:"#C9A24B", pointBorderColor:"#0A1A30"
+      borderWidth:2.5, pointRadius:3, pointBackgroundColor:"#E0A94A", pointBorderColor:"#0A1A30"
     }]},
     options:{
       responsive:true, maintainAspectRatio:false,
@@ -845,7 +1074,7 @@ function renderMiniTrend(){
     type:"bar",
     data:{labels:MONTH_LABELS, datasets:[
       {type:"bar", label:"Planned", data:months, backgroundColor:"#153564", borderRadius:4, maxBarThickness:26},
-      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#C9A24B", borderWidth:2, borderDash:[6,4], pointRadius:0}
+      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#E0A94A", borderWidth:2, borderDash:[6,4], pointRadius:0}
     ]},
     options:{responsive:true, maintainAspectRatio:false,
       plugins:{legend:{position:"bottom", labels:{boxWidth:10,font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+": "+fmtPKR(c.parsed.y,true)}}},
@@ -873,7 +1102,7 @@ function renderTrend(){
   destroy("trend");
   charts.trend = new Chart(document.getElementById("trendChart"),{
     type:"line",
-    data:{labels:MONTH_LABELS, datasets:[{data:months, borderColor:"#1D4384", backgroundColor:"rgba(29,67,132,0.08)", fill:true, tension:.3, pointBackgroundColor:"#1D4384", pointRadius:4, borderWidth:2.5}]},
+    data:{labels:MONTH_LABELS, datasets:[{data:months, borderColor:"#2C7BC4", backgroundColor:"rgba(44,123,196,0.08)", fill:true, tension:.3, pointBackgroundColor:"#2C7BC4", pointRadius:4, borderWidth:2.5}]},
     options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
       scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
   });
@@ -886,8 +1115,8 @@ function renderComparison(){
   charts.comparison = new Chart(document.getElementById("comparisonChart"),{
     type:"bar",
     data:{labels:MONTH_LABELS, datasets:[
-      {type:"bar", label:"Monthly Planned", data:months, backgroundColor:months.map(v=>v>=avg?"#2BB6A8":"#C9A24B"), borderRadius:5},
-      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#E2725B", borderWidth:2, borderDash:[5,4], pointRadius:0}
+      {type:"bar", label:"Monthly Planned", data:months, backgroundColor:months.map(v=>v>=avg?"#22C4A8":"#E0A94A"), borderRadius:5},
+      {type:"line", label:"FY Average", data:months.map(()=>avg), borderColor:"#F0637D", borderWidth:2, borderDash:[5,4], pointRadius:0}
     ]},
     options:{responsive:true, maintainAspectRatio:false,
       plugins:{legend:{position:"bottom", labels:{boxWidth:10,font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+": "+fmtPKR(c.parsed.y,true)}}},
@@ -902,7 +1131,7 @@ function renderCumulative(){
   destroy("cumulative");
   charts.cumulative = new Chart(document.getElementById("cumulativeChart"),{
     type:"line",
-    data:{labels:MONTH_LABELS, datasets:[{data:cum, borderColor:"#2BB6A8", backgroundColor:"rgba(43,182,168,0.12)", fill:true, tension:.35, pointRadius:3, borderWidth:2.5}]},
+    data:{labels:MONTH_LABELS, datasets:[{data:cum, borderColor:"#22C4A8", backgroundColor:"rgba(34,196,168,0.12)", fill:true, tension:.35, pointRadius:3, borderWidth:2.5}]},
     options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
       scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
   });
@@ -926,7 +1155,7 @@ function renderQuarter(){
   destroy("quarter");
   charts.quarter = new Chart(document.getElementById("quarterChart"),{
     type:"bar",
-    data:{labels:QUARTERS.map(q=>q.name), datasets:[{data:qTotals, backgroundColor:["#0F2547","#1D4384","#2BB6A8","#C9A24B"], borderRadius:8, maxBarThickness:70}]},
+    data:{labels:QUARTERS.map(q=>q.name), datasets:[{data:qTotals, backgroundColor:["#4A9BE0","#2C7BC4","#22C4A8","#E0A94A"], borderRadius:8, maxBarThickness:70}]},
     options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.y,true)}}},
       scales:{x:{grid:{display:false}}, y:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true)}}}}
   });
@@ -949,7 +1178,7 @@ function renderTop10(){
   destroy("top10");
   charts.top10 = new Chart(document.getElementById("top10Chart"),{
     type:"bar",
-    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#0F2547", borderRadius:5}]},
+    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#4A9BE0", borderRadius:5}]},
     options:{indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.x,true), title:c=>projects[c[0].dataIndex].name}}},
       scales:{x:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true), font:{size:10}}}, y:{grid:{display:false}, ticks:{font:{size:10.5}}}}
     }
@@ -961,7 +1190,7 @@ function renderBottom10(){
   destroy("bottom10");
   charts.bottom10 = new Chart(document.getElementById("bottom10Chart"),{
     type:"bar",
-    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#E2725B", borderRadius:5}]},
+    data:{labels:projects.map(p=>p.name.length>34?p.name.slice(0,34)+"…":p.name), datasets:[{data:projects.map(p=>p.total), backgroundColor:"#F0637D", borderRadius:5}]},
     options:{indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtPKR(c.parsed.x,true), title:c=>projects[c[0].dataIndex].name}}},
       scales:{x:{grid:baseGrid(), ticks:{callback:v=>fmtPKR(v,true), font:{size:10}}}, y:{grid:{display:false}, ticks:{font:{size:10.5}}}}
     }
@@ -1002,7 +1231,7 @@ function renderStatus(){
   destroy("status");
   charts.status = new Chart(document.getElementById("statusChart"),{
     type:"doughnut",
-    data:{labels:Object.keys(counts), datasets:[{data:Object.values(counts), backgroundColor:["#2BB6A8","#1D4384","#8C96A8","#E2725B"], borderWidth:2, borderColor:"#fff"}]},
+    data:{labels:Object.keys(counts), datasets:[{data:Object.values(counts), backgroundColor:["#22C4A8","#2C7BC4","#8C96A8","#F0637D"], borderWidth:2, borderColor:"#fff"}]},
     options:{responsive:true, maintainAspectRatio:false, cutout:"60%",
       plugins:{legend:{position:"bottom", labels:{boxWidth:10, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.label+": "+c.parsed+" projects"}}}
     }
@@ -1043,7 +1272,7 @@ function renderHeatmap(){
       const v = p.byMonth[m]||0;
       const intensity = maxVal>0 ? v/maxVal : 0;
       const bg = v>0 ? `rgba(15,37,71,${(0.08+intensity*0.75).toFixed(2)})` : "#F4F6F9";
-      const color = intensity>0.5 ? "#fff" : "#0F2547";
+      const color = intensity>0.5 ? "#fff" : "#4A9BE0";
       return `<td class="heat-cell" style="background:${bg}; color:${color};" title="${monthLabel(m)} &mdash; ${fmtPKR(v)}">${v>0?fmtPKR(v,true).replace('PKR ',''):''}</td>`;
     }).join("");
     const unsched = p.byMonth['unsched']||0;
