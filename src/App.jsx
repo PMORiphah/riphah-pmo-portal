@@ -3586,9 +3586,10 @@ function ProjectAttachments({ T, session, projectId }) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const getSignedUrl = async (att) => {
+  const getSignedUrl = async (att, forceDownload) => {
+    const body = forceDownload ? { expiresIn: 60, download: att.file_name } : { expiresIn: 60 };
     const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeStoragePath(att.file_path)}`, {
-      method: "POST", body: JSON.stringify({ expiresIn: 60 }),
+      method: "POST", body: JSON.stringify(body),
     }, session.access_token);
     if (!res.signedURL) throw new Error("Could not generate a link for this file");
     return SUPA_URL + res.signedURL;
@@ -3596,27 +3597,21 @@ function ProjectAttachments({ T, session, projectId }) {
 
   // Clicking the row/filename: open in a new tab for viewing.
   const handleOpen = async (att) => {
-    try { window.open(await getSignedUrl(att), "_blank"); }
+    try { window.open(await getSignedUrl(att, false), "_blank"); }
     catch (e) { setErr(e.message); }
   };
 
   // Clicking the Download button: guaranteed instant save, not a preview.
-  // window.open() lets the browser decide (PDFs/images often open inline
-  // instead of downloading) — fetching the bytes as a blob and triggering a
-  // same-origin blob: URL through a hidden <a download> forces an actual
-  // file save every time, regardless of content type.
+  // Earlier this fetched the file bytes directly in JS to force a save via
+  // a blob: URL — but that's a cross-origin fetch() to Supabase's storage
+  // CDN, which doesn't return CORS headers for that call and throws a raw
+  // "Failed to fetch". Supabase's sign endpoint has a "download" option
+  // that adds a Content-Disposition: attachment header server-side instead
+  // — plain navigation to that URL forces the save with no fetch() and no
+  // CORS exposure at all.
   const handleForceDownload = async (att) => {
-    try {
-      const url = await getSignedUrl(att);
-      const fileRes = await fetch(url);
-      if (!fileRes.ok) throw new Error("Could not download this file");
-      const blob = await fileRes.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl; a.download = att.file_name;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
-    } catch (e) { setErr(e.message); }
+    try { window.open(await getSignedUrl(att, true), "_blank"); }
+    catch (e) { setErr(e.message); }
   };
 
   const handleDelete = async (att) => {
