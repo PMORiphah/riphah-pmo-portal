@@ -3586,13 +3586,36 @@ function ProjectAttachments({ T, session, projectId }) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleDownload = async (att) => {
+  const getSignedUrl = async (att) => {
+    const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeStoragePath(att.file_path)}`, {
+      method: "POST", body: JSON.stringify({ expiresIn: 60 }),
+    }, session.access_token);
+    if (!res.signedURL) throw new Error("Could not generate a link for this file");
+    return SUPA_URL + res.signedURL;
+  };
+
+  // Clicking the row/filename: open in a new tab for viewing.
+  const handleOpen = async (att) => {
+    try { window.open(await getSignedUrl(att), "_blank"); }
+    catch (e) { setErr(e.message); }
+  };
+
+  // Clicking the Download button: guaranteed instant save, not a preview.
+  // window.open() lets the browser decide (PDFs/images often open inline
+  // instead of downloading) — fetching the bytes as a blob and triggering a
+  // same-origin blob: URL through a hidden <a download> forces an actual
+  // file save every time, regardless of content type.
+  const handleForceDownload = async (att) => {
     try {
-      const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeStoragePath(att.file_path)}`, {
-        method: "POST", body: JSON.stringify({ expiresIn: 60 }),
-      }, session.access_token);
-      if (res.signedURL) window.open(SUPA_URL + res.signedURL, "_blank");
-      else throw new Error("Could not generate a download link");
+      const url = await getSignedUrl(att);
+      const fileRes = await fetch(url);
+      if (!fileRes.ok) throw new Error("Could not download this file");
+      const blob = await fileRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl; a.download = att.file_name;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
     } catch (e) { setErr(e.message); }
   };
 
@@ -3658,7 +3681,7 @@ function ProjectAttachments({ T, session, projectId }) {
           {items.map(att => (
             <div key={att.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 4px", borderRadius:7, cursor:"pointer" }}
               onMouseEnter={e=>e.currentTarget.style.background=T.card2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}
-              onClick={()=>handleDownload(att)}>
+              onClick={()=>handleOpen(att)} title="Open in a new tab">
               <FileText size={15} color={T.muted} style={{flexShrink:0}}/>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:12.5, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{att.file_name}</div>
@@ -3666,7 +3689,11 @@ function ProjectAttachments({ T, session, projectId }) {
                   {fmtBytes(att.file_size)} · {att.uploaded_by_name || "Unknown"} · {new Date(att.uploaded_at).toLocaleDateString()}
                 </div>
               </div>
-              <Download size={13} color={T.dim} style={{flexShrink:0}}/>
+              <button onClick={e=>{e.stopPropagation(); handleForceDownload(att);}}
+                style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:4, flexShrink:0, display:"flex" }}
+                title="Download">
+                <Download size={13}/>
+              </button>
               {canManage && (
                 <button onClick={e=>{e.stopPropagation(); handleDelete(att);}}
                   style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:4, flexShrink:0 }}
