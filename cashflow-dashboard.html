@@ -981,6 +981,97 @@ if (window.Chart) {
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
   Chart.defaults.plugins.legend.labels.boxWidth = 8;
   Chart.defaults.plugins.legend.labels.padding = 14;
+
+  /* ── CHART LANGUAGE ───────────────────────────────────────────────────
+     Set once, so all thirteen charts share the portal's behaviour instead of
+     each carrying its own settings. Everything here is a Chart.js default,
+     which individual charts can still override where they genuinely differ. */
+
+  // Draw in rather than appear. 900ms with the portal's easing; the delay is
+  // staggered per point so a line writes itself left to right instead of
+  // inflating all at once.
+  Chart.defaults.animation = {
+    duration: 900,
+    easing: 'easeOutCubic',
+    delay: (ctx) => (ctx.type === 'data' && ctx.mode === 'default')
+      ? Math.min(ctx.dataIndex * 26, 420) : 0,
+  };
+  Chart.defaults.animations = {
+    numbers:  { type:'number', duration:900, easing:'easeOutCubic' },
+    colors:   { type:'color',  duration:320 },
+  };
+  // Bars grow from the axis rather than sliding in from the corner.
+  Chart.defaults.datasets.bar.animation = { duration:820, easing:'easeOutCubic' };
+
+  // Hover: the whole series responds, not just the point under the cursor.
+  Chart.defaults.interaction = { mode:'index', intersect:false, axis:'x' };
+  Chart.defaults.hover = { mode:'index', intersect:false };
+  Chart.defaults.transitions.active = { animation:{ duration:220, easing:'easeOutCubic' } };
+
+  // Lines: gentle curve, invisible until approached, then a clear marker —
+  // matching the portal's Planned vs Actual chart.
+  Chart.defaults.elements.line.tension     = 0.35;
+  Chart.defaults.elements.line.borderWidth = 2.4;
+  Chart.defaults.elements.line.capBezierPoints = true;
+  Chart.defaults.elements.point.radius          = 0;
+  Chart.defaults.elements.point.hoverRadius     = 6;
+  Chart.defaults.elements.point.hitRadius       = 22;   // generous approach band
+  Chart.defaults.elements.point.hoverBorderWidth= 2.5;
+
+  // Bars: rounded caps, and a lift on hover.
+  Chart.defaults.elements.bar.borderRadius    = 5;
+  Chart.defaults.elements.bar.borderSkipped   = 'bottom';
+  Chart.defaults.elements.bar.hoverBorderWidth= 2;
+
+  // Doughnuts: thinner ring, and the hovered slice steps out.
+  Chart.defaults.elements.arc.borderWidth      = 0;
+  Chart.defaults.elements.arc.hoverOffset      = 10;
+  Chart.defaults.elements.arc.hoverBorderWidth = 0;
+
+  // Tooltip styled as the portal's analytical card rather than Chart.js's
+  // default black box.
+  (function () {
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    Object.assign(Chart.defaults.plugins.tooltip, {
+      enabled: true,
+      backgroundColor: dark ? 'rgba(20,36,60,0.97)' : 'rgba(255,255,255,0.98)',
+      titleColor:  dark ? '#E8F0FA' : '#0C1E33',
+      bodyColor:   dark ? '#BACBDC' : '#41576F',
+      borderColor: dark ? 'rgba(255,255,255,0.16)' : '#DCE7F4',
+      borderWidth: 1,
+      cornerRadius: 10,
+      padding: { top:10, right:13, bottom:10, left:13 },
+      boxPadding: 5,
+      usePointStyle: true,
+      titleFont: { family:"'Space Grotesk',sans-serif", size:12, weight:'700' },
+      bodyFont:  { family:"'Inter',sans-serif", size:12 },
+      displayColors: true,
+      caretSize: 6,
+      caretPadding: 8,
+    });
+  })();
+
+  // A vertical guide following the pointer, as the portal's charts have. Only
+  // on cartesian charts with an active point — a doughnut has no x axis.
+  Chart.register({
+    id: 'pmoCrosshair',
+    afterDatasetsDraw(chart) {
+      var act = chart.tooltip && chart.tooltip.getActiveElements
+        ? chart.tooltip.getActiveElements() : [];
+      if (!act.length || !chart.scales || !chart.scales.y) return;
+      var x = act[0].element.x, ctx = chart.ctx, area = chart.chartArea;
+      if (x == null || !area) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x, area.top);
+      ctx.lineTo(x, area.bottom);
+      ctx.lineWidth = 1.25;
+      ctx.setLineDash([3, 5]);
+      ctx.strokeStyle = 'rgba(74,155,224,0.55)';
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
 }
 const PALETTE = ["#4A9BE0","#22C4A8","#8B7FD9","#E8A63C","#2BD4D4","#F0637D","#2C7BC4","#E0A94A","#1FAE8E","#B4573F","#5A9BD5","#8AA6C9"];
 
