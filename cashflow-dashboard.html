@@ -709,7 +709,7 @@ html[data-idle="1"] #pmoWorldLight { opacity:.55; }
   <div class="section-head">
     <div class="section-eyebrow">Project-Level Analysis</div>
     <div class="section-title">Where the Budget Is Going</div>
-    <div class="section-desc">102 distinct CAPEX initiatives across Riphah &amp; Trust institutions.</div>
+    <div class="section-desc" id="projCountDesc">CAPEX initiatives across Riphah &amp; Trust institutions.</div>
   </div>
 
   <div class="grid-2">
@@ -1000,7 +1000,26 @@ function renderKPIs(){
   const scheduled = currentData.filter(r=>r.month);
   const totalBudget = currentData.reduce((s,r)=>s+r.amount,0);
   const totalScheduled = scheduled.reduce((s,r)=>s+r.amount,0);
-  const projCount = new Set(currentData.map(projectKey)).size;
+  // Project count comes from the portal, not from this snapshot.
+  //
+  // The snapshot holds 151 monthly line items covering 116 distinct project
+  // names, but the live portfolio has 106 — the file was saved on 5 August and
+  // projects have been merged and removed since. Deriving the count here made
+  // this tab disagree with every other page.
+  //
+  // Passed on the URL the same way the theme already is, so it tracks the
+  // portfolio rather than being pinned to a number that goes stale in turn.
+  // Falls back to the snapshot's own count if the parameter is absent.
+  const PORTAL_PROJECT_COUNT = (() => {
+    const v = parseInt(new URLSearchParams(location.search).get("projects"), 10);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  })();
+  const projCount = PORTAL_PROJECT_COUNT ?? new Set(currentData.map(projectKey)).size;
+  {
+    const desc = document.getElementById("projCountDesc");
+    if (desc) desc.textContent =
+      `${projCount} distinct CAPEX initiatives across Riphah & Trust institutions.`;
+  }
   const months = monthAgg(currentData);
   const nonZeroMonths = months.filter(v=>v>0);
   const avgMonthly = nonZeroMonths.length ? totalScheduled/nonZeroMonths.length : 0;
