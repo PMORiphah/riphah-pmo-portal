@@ -1058,13 +1058,15 @@ if (window.Chart) {
     afterDatasetsDraw(chart) {
       var act = chart.tooltip && chart.tooltip.getActiveElements
         ? chart.tooltip.getActiveElements() : [];
-      if (!act.length || !chart.scales || !chart.scales.y) return;
-      var x = act[0].element.x, ctx = chart.ctx, area = chart.chartArea;
-      if (x == null || !area) return;
+      if (!act.length || !chart.scales || !chart.chartArea) return;
+      var ctx = chart.ctx, area = chart.chartArea, el = act[0].element;
+      // Guide runs along the category axis, so a horizontal bar chart gets a
+      // horizontal rule rather than a vertical one across its rows.
+      var horizontal = chart.options.indexAxis === 'y';
       ctx.save();
       ctx.beginPath();
-      ctx.moveTo(x, area.top);
-      ctx.lineTo(x, area.bottom);
+      if (horizontal) { ctx.moveTo(area.left, el.y); ctx.lineTo(area.right, el.y); }
+      else            { ctx.moveTo(el.x, area.top);  ctx.lineTo(el.x, area.bottom); }
       ctx.lineWidth = 1.25;
       ctx.setLineDash([3, 5]);
       ctx.strokeStyle = 'rgba(74,155,224,0.55)';
@@ -1072,6 +1074,68 @@ if (window.Chart) {
       ctx.restore();
     }
   });
+
+  /* Gradient fills under filled line charts — the portal's signature on its
+     Planned vs Actual chart. Applied at draw time because a gradient needs the
+     rendered pixel height, which does not exist when the config is written. */
+  Chart.register({
+    id: 'pmoAreaFill',
+    beforeDatasetsDraw(chart) {
+      if (!chart.chartArea) return;
+      var area = chart.chartArea;
+      chart.data.datasets.forEach(function (ds, i) {
+        if (ds.fill !== true && ds.fill !== 'origin' && ds.fill !== 'start') return;
+        if (ds._pmoFilled === area.bottom) return;      // already built at this size
+        var base = ds.borderColor;
+        if (typeof base !== 'string') return;
+        var g = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        // Rides on the line's own colour, so each series keeps its identity.
+        g.addColorStop(0,   hexA(base, 0.34));
+        g.addColorStop(0.6, hexA(base, 0.10));
+        g.addColorStop(1,   hexA(base, 0.00));
+        ds.backgroundColor = g;
+        ds._pmoFilled = area.bottom;
+      });
+    }
+  });
+
+  /* A soft glow behind the active point, so the reader's eye lands on the
+     value the tooltip is describing. */
+  Chart.register({
+    id: 'pmoPointGlow',
+    afterDatasetsDraw(chart) {
+      var act = chart.tooltip && chart.tooltip.getActiveElements
+        ? chart.tooltip.getActiveElements() : [];
+      if (!act.length) return;
+      var ctx = chart.ctx;
+      act.forEach(function (a) {
+        var el = a.element;
+        if (el.x == null || el.y == null || chart.config.type === 'bar') return;
+        var col = chart.data.datasets[a.datasetIndex].borderColor;
+        if (typeof col !== 'string') return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(el.x, el.y, 11, 0, Math.PI * 2);
+        ctx.fillStyle = hexA(col, 0.18);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+  });
+
+  // Accepts #RRGGBB or rgb()/rgba() and returns the same hue at a given alpha.
+  function hexA(c, a) {
+    if (!c) return 'rgba(74,155,224,' + a + ')';
+    if (c[0] === '#') {
+      var h = c.slice(1);
+      if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+      var n = parseInt(h.slice(0, 6), 16);
+      return 'rgba(' + ((n>>16)&255) + ',' + ((n>>8)&255) + ',' + (n&255) + ',' + a + ')';
+    }
+    var m = c.match(/\d+/g);
+    return m ? 'rgba(' + m[0] + ',' + m[1] + ',' + m[2] + ',' + a + ')'
+             : 'rgba(74,155,224,' + a + ')';
+  }
 }
 const PALETTE = ["#4A9BE0","#22C4A8","#8B7FD9","#E8A63C","#2BD4D4","#F0637D","#2C7BC4","#E0A94A","#1FAE8E","#B4573F","#5A9BD5","#8AA6C9"];
 
