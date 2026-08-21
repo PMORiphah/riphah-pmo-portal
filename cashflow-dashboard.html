@@ -19,6 +19,8 @@
   --bg:#F4F7FB; --bg-alt:#EDF2F8;
   --surface:#FFFFFF; --surface-raised:#FFFFFF;
   --ink:#0C1E33; --ink-soft:#41576F; --muted:#64798F; --dim:#94A7BC;
+  --row-hover:#F7F9FC;   /* light: the original value */
+  --input-bg:#FBFCFE;
   --line:#E3EAF3; --line-strong:#CFDAE8;
   --shadow:0 1px 3px rgba(16,42,71,0.07), 0 10px 26px -12px rgba(16,42,71,0.16);
   --shadow-lg:0 8px 18px rgba(16,42,71,0.10), 0 28px 56px -18px rgba(16,42,71,0.22);
@@ -36,6 +38,10 @@
   --bg:#070E1B; --bg-alt:#050A14;
   --surface:#0E1A2E; --surface-raised:#132339;
   --ink:#E8F0FA; --ink-soft:#A9BED4; --muted:#7C95AF; --dim:#54708C;
+  /* A near-white row hover made rows vanish in dark mode: white band,
+     near-white text. These follow the theme instead. */
+  --row-hover:#16273F;
+  --input-bg:#0F1D33;
   --line:rgba(255,255,255,0.07); --line-strong:rgba(255,255,255,0.13);
   --shadow:0 2px 6px rgba(0,0,0,0.36), 0 12px 28px -12px rgba(0,0,0,0.6);
   --shadow-lg:0 8px 20px rgba(0,0,0,0.42), 0 28px 60px -20px rgba(0,0,0,0.72);
@@ -145,7 +151,7 @@ body{
 .filterbar select{
   font-family:'Inter',sans-serif; font-size:13px; color:var(--ink);
   padding:8px 10px; border-radius:var(--r-sm); border:1px solid var(--line);
-  background:#FBFCFE; min-width:150px; cursor:pointer;
+  background:var(--input-bg, #FBFCFE); min-width:150px; cursor:pointer;
 }
 .filterbar select:focus{outline:2px solid var(--gold); outline-offset:1px;}
 .reset-link{
@@ -236,7 +242,7 @@ main{padding:28px 32px 60px; max-width:1520px; margin:0 auto;}
 .card-controls{display:flex; gap:6px; margin-bottom:10px;}
 .chip-btn{
   font-size:11.5px; font-weight:600; padding:5px 11px; border-radius:999px;
-  border:1px solid var(--line); background:#FBFCFE; color:var(--muted); cursor:pointer;
+  border:1px solid var(--line); background:var(--input-bg, #FBFCFE); color:var(--muted); cursor:pointer;
 }
 .chip-btn.active{background:var(--navy-900); color:#fff; border-color:var(--navy-900);}
 
@@ -250,7 +256,7 @@ thead th{
 }
 thead th:hover{background:var(--navy-800);}
 tbody td{padding:9px 12px; border-bottom:1px solid var(--line); color:var(--ink); white-space:nowrap;}
-tbody tr:hover{background:#F7F9FC;}
+tbody tr:hover{background:var(--row-hover);}
 .num{font-family:'IBM Plex Mono',monospace; text-align:right;}
 .badge{padding:3px 9px; border-radius:999px; font-size:10.5px; font-weight:700;}
 .badge-inprogress{background:#DFF3EE; color:#137A6B;}
@@ -268,13 +274,13 @@ tbody tr:hover{background:#F7F9FC;}
   position:sticky; left:0; z-index:1; background:var(--surface);
   box-shadow:1px 0 0 var(--line); min-width:250px;
 }
-.heat-table tbody tr:hover td.proj-name-cell{background:#F7F9FC;}
+.heat-table tbody tr:hover td.proj-name-cell{background:var(--row-hover);}
 .heat-total{
   position:sticky; right:0; z-index:1; background:var(--surface);
   box-shadow:-1px 0 0 var(--line);
   text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--navy-900);
 }
-.heat-table tbody tr:hover td.heat-total{background:#F7F9FC;}
+.heat-table tbody tr:hover td.heat-total{background:var(--row-hover);}
 .heat-idx{color:var(--muted); font-weight:600; margin-right:6px;}
 .heat-zero td.proj-name-cell, .heat-zero td.heat-total{color:var(--muted); font-weight:600;}
 
