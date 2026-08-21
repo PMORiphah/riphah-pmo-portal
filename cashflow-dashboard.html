@@ -569,6 +569,89 @@ html[data-idle="1"] #pmoWorldLight { opacity:.55; }
   window.addEventListener("resize", function () { stamp++; });
 })();
 </script>
+
+<style>
+/* ── LIVING TREATMENT ────────────────────────────────────────────────────
+   The portal's interaction language, ported to this codebase. The React
+   presence layer cannot cross the iframe boundary, so these are the same
+   behaviours reimplemented in plain CSS and ~80 lines of JS: cards that lift
+   and light up, figures that count in, sections that settle as they scroll,
+   and charts that draw rather than appear. Same easing curve and durations,
+   so the two halves of the product feel like one. */
+
+/* §1 KPI cards — lift, illuminate, and lean toward the pointer. */
+.kpi-card{
+  position:relative; overflow:hidden; cursor:default;
+  transition: transform .28s cubic-bezier(.16,1,.3,1),
+              box-shadow .28s cubic-bezier(.16,1,.3,1),
+              border-color .28s ease;
+}
+.kpi-card::after{                       /* light following the pointer */
+  content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+  background: radial-gradient(300px circle at var(--cx,50%) var(--cy,50%),
+              var(--kpi-glow, rgba(120,175,240,.14)), transparent 68%);
+  opacity:0; transition:opacity .3s ease;
+}
+.kpi-card:hover{ transform:translateY(-4px); box-shadow:var(--shadow-lg); }
+.kpi-card:hover::after{ opacity:1; }
+.kpi-card::before{                      /* one sheen pass on hover */
+  content:""; position:absolute; top:0; bottom:0; width:36%; pointer-events:none;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.07), transparent);
+  transform:translateX(-140%) skewX(-16deg);
+}
+.kpi-card:hover::before{ animation: cfSheen 1.05s cubic-bezier(.3,.7,.4,1); }
+@keyframes cfSheen{ to{ transform:translateX(260%) skewX(-16deg);} }
+
+.kpi-card.accent-gold  { --kpi-glow: rgba(224,169,74,.16); }
+.kpi-card.accent-teal  { --kpi-glow: rgba(34,196,168,.16); }
+.kpi-card.accent-navy  { --kpi-glow: rgba(74,155,224,.16); }
+.kpi-card.accent-coral { --kpi-glow: rgba(240,99,125,.16); }
+
+.kpi-card:hover .kpi-value{ transform:translateY(-1px); }
+.kpi-value{ transition:transform .28s cubic-bezier(.16,1,.3,1); position:relative; }
+.kpi-card:hover .kpi-label{ color:var(--ink); }
+.kpi-label{ transition:color .2s ease; }
+
+/* §2 Contextual insight, matching the portal's floating panel. */
+.cf-tip{
+  position:fixed; z-index:1400; width:250px; pointer-events:none;
+  background:var(--surface-2, rgba(20,36,60,.97));
+  border:1px solid var(--line-strong, rgba(255,255,255,.16));
+  border-radius:var(--r-md); padding:9px 13px;
+  box-shadow:0 18px 46px -14px rgba(0,0,0,.7);
+  backdrop-filter:blur(14px) saturate(140%);
+  opacity:0; transform:translateY(6px);
+  transition:opacity .18s ease, transform .18s cubic-bezier(.16,1,.3,1);
+}
+.cf-tip.show{ opacity:1; transform:none; }
+.cf-tip .t{ font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+            color:var(--gold); margin-bottom:3px; }
+.cf-tip .b{ font-size:12px; line-height:1.5; color:var(--ink); }
+
+/* §3 Entrance — the strip assembles rather than appearing. */
+@keyframes cfIn{ from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:none;} }
+.kpi-card{ animation: cfIn .5s cubic-bezier(.16,1,.3,1) backwards; }
+
+/* §4 Scroll reveal for everything below the fold. */
+.cf-reveal{ opacity:0; transform:translateY(14px);
+  transition:opacity .55s cubic-bezier(.16,1,.3,1), transform .55s cubic-bezier(.16,1,.3,1); }
+.cf-reveal.in{ opacity:1; transform:none; }
+
+/* §5 Tabs and chart panels respond like the portal's. */
+.card, .panel{ transition: transform .24s cubic-bezier(.16,1,.3,1),
+                           box-shadow .24s ease, border-color .24s ease; }
+.card:hover, .panel:hover{ border-color:var(--line-strong) !important; }
+
+/* §6 A live marker on the header's freshness pill. */
+@keyframes cfPulse{ 0%,100%{opacity:.5; transform:scale(1);} 50%{opacity:1; transform:scale(1.25);} }
+.cf-live-dot{ animation: cfPulse 2.8s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce){
+  .kpi-card, .card, .panel, .cf-reveal, .kpi-value{ animation:none !important; transition:none !important; }
+  .kpi-card::after, .kpi-card::before{ display:none !important; }
+  .cf-reveal{ opacity:1 !important; transform:none !important; }
+}
+</style>
 </head>
 <body>
 
@@ -1800,4 +1883,133 @@ applyFilters();
 </script>
 
 
+
+<script>
+/* ── LIVING BEHAVIOUR ────────────────────────────────────────────────────
+   Ported from the portal. Everything here is idempotent and re-runs whenever
+   the dashboard re-renders, because filtering rebuilds the KPI grid wholesale
+   and any state attached to the old nodes goes with it. */
+(function () {
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // What each KPI means. Same principle as the portal: explain the figure,
+  // never invent one. Keyed on the label so it survives re-renders.
+  var KPI_INSIGHT = {
+    "Total CAPEX Budget":              "Every line item in scope, approved and pending, summed across all months.",
+    "Total Number of Projects":        "Distinct CAPEX initiatives in the live portfolio, as reported by the portal.",
+    "Total Planned Cash Flow":         "The portion of budget already assigned to a specific month.",
+    "Current Month Planned Cash Flow": "Budget scheduled to move in the current month.",
+    "Average Monthly Cash Flow":       "Total planned spend divided by the months that carry any.",
+    "Highest Cash Flow Month":         "The month carrying the largest planned outflow.",
+    "Lowest Cash Flow Month":          "The active month carrying the smallest planned outflow.",
+    "Cash Flow Scheduled %":           "How much of the budget has a month against it. The remainder is approved but unphased.",
+    "Pending / Unscheduled Items":     "Approved in principle, but with no month assigned yet."
+  };
+
+  var tip = document.createElement("div");
+  tip.className = "cf-tip";
+  tip.innerHTML = '<div class="t"></div><div class="b"></div>';
+  document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(tip); });
+
+  function showTip(card, label) {
+    var text = KPI_INSIGHT[label];
+    if (!text || reduced) return;
+    tip.querySelector(".t").textContent = label;
+    tip.querySelector(".b").textContent = text;
+    var r = card.getBoundingClientRect();
+    var left = Math.min(Math.max(12, r.left), window.innerWidth - 262);
+    var below = r.bottom + 9;
+    // Flip above when there is no room beneath, as the portal's panels do.
+    var up = below + 92 > window.innerHeight;
+    tip.style.left = left + "px";
+    tip.style.top = up ? "" : below + "px";
+    tip.style.bottom = up ? (window.innerHeight - r.top + 9) + "px" : "";
+    tip.classList.add("show");
+  }
+  function hideTip() { tip.classList.remove("show"); }
+
+  // Numbers count in rather than appearing. Only the leading numeric part is
+  // tweened, so "Feb 2027" and "12.4%" keep their surrounding text intact.
+  function countUp(el) {
+    if (reduced) return;
+    var raw = el.textContent.trim();
+    var m = raw.match(/^([^\d\-]*)(-?[\d,]+(?:\.\d+)?)(.*)$/);
+    if (!m) return;
+    var pre = m[1], target = parseFloat(m[2].replace(/,/g, "")), post = m[3];
+    if (!isFinite(target) || Math.abs(target) < 1) return;
+    var decimals = (m[2].split(".")[1] || "").length;
+    var grouped = m[2].indexOf(",") > -1;
+    var start = performance.now(), DUR = 900;
+    function frame(now) {
+      var t = Math.min(1, (now - start) / DUR);
+      var eased = 1 - Math.pow(1 - t, 3);          // matches the portal's curve
+      var v = target * eased;
+      var txt = decimals ? v.toFixed(decimals)
+                         : (grouped ? Math.round(v).toLocaleString() : String(Math.round(v)));
+      el.textContent = pre + txt + post;
+      if (t < 1) requestAnimationFrame(frame);
+      else el.textContent = raw;                   // land exactly on the real value
+    }
+    requestAnimationFrame(frame);
+  }
+
+  var io = ("IntersectionObserver" in window) ? new IntersectionObserver(function (es) {
+    es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.05 }) : null;
+
+  function enhance() {
+    document.querySelectorAll(".kpi-card").forEach(function (card, i) {
+      if (card.dataset.cfDone) return;
+      card.dataset.cfDone = "1";
+      card.style.animationDelay = (i * 55) + "ms";
+
+      var labelEl = card.querySelector(".kpi-label");
+      var label = labelEl ? labelEl.textContent.trim() : "";
+      card.addEventListener("mousemove", function (e) {
+        var r = card.getBoundingClientRect();
+        card.style.setProperty("--cx", ((e.clientX - r.left) / r.width * 100) + "%");
+        card.style.setProperty("--cy", ((e.clientY - r.top) / r.height * 100) + "%");
+      });
+      card.addEventListener("mouseenter", function () { showTip(card, label); });
+      card.addEventListener("mouseleave", hideTip);
+
+      var v = card.querySelector(".kpi-value");
+      if (v) countUp(v);
+    });
+
+    // Sections settle in as they reach the viewport.
+    if (io) document.querySelectorAll("main .card, main .panel, main section").forEach(function (el) {
+      if (el.dataset.cfReveal) return;
+      el.dataset.cfReveal = "1";
+      el.classList.add("cf-reveal");
+      io.observe(el);
+    });
+
+    // The freshness pill gets a live marker.
+    var pill = [].slice.call(document.querySelectorAll("*")).filter(function (e) {
+      return e.children.length === 0 && /line items ·/.test(e.textContent || "");
+    })[0];
+    if (pill && !pill.dataset.cfDot) {
+      pill.dataset.cfDot = "1";
+      var prev = pill.previousElementSibling;
+      if (prev) prev.classList.add("cf-live-dot");
+    }
+  }
+
+  // The grid is rebuilt on every filter change, so re-enhance on mutation.
+  document.addEventListener("DOMContentLoaded", function () {
+    enhance();
+    var grid = document.getElementById("kpiGrid");
+    if (grid && window.MutationObserver) {
+      new MutationObserver(function () { enhance(); }).observe(grid, { childList: true });
+    }
+    var main = document.querySelector("main");
+    if (main && window.MutationObserver) {
+      new MutationObserver(function () { setTimeout(enhance, 40); })
+        .observe(main, { childList: true, subtree: true });
+    }
+    window.addEventListener("scroll", hideTip, { passive: true, capture: true });
+  });
+})();
+</script>
 </body></html>
