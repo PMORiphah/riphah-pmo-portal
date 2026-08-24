@@ -1,4 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Component } from "react";
+import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
+import { TourProvider, useTour } from "./TourGuide.jsx";
+import { guestSteps, pmSteps } from "./tourSteps.js";
+import { InvestmentsTab } from "./InvestmentsTab.jsx";
+import { ConstellationPage } from "./Constellation.jsx";
 import {
   LayoutDashboard, FolderKanban, TrendingUp, MessageSquare,
   Users, Activity, Settings, LogOut, Search, Eye, EyeOff,
@@ -7,7 +12,7 @@ import {
   Shield, BarChart3, Building2, Lock,
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
-  Sparkles, Sun, Moon
+  Sparkles, Sun, Moon, Camera, Orbit
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -31,7 +36,7 @@ import {
 import {
   usePresence, useProximityField, useNear,
   FocusProvider, useFocusSource, useFocusTarget, useFocusKey, useSetFocus,
-  useScrollParallax, emitCausality, useSessionMemory,
+  useScrollParallax, emitCausality, useSessionMemory, useProjectPeek,
 } from "./presence.jsx";
 import {
   PlannedActualChart, Donut, StageBars, Sparkline, CategoryBars, ChartTooltip,
@@ -98,13 +103,72 @@ const supa = async (path, opts = {}, token = null) => {
 
 // ─── FORMATTERS ───────────────────────────────────────────────────────────────
 const fmtM = (n) => n == null ? "—" : (n / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";
+// Exact rupee value, grouped. Project Detail uses this instead of millions:
+// it is the one page where someone is checking a specific figure, and rounding
+// 320,000 to "0.3M" makes 250,000 and 349,999 indistinguishable.
+const fmtFull = (n) => {
+  if (n == null || n === "") return "—";
+  const v = parseFloat(n);
+  if (!isFinite(v)) return "—";
+  return v.toLocaleString("en-PK", { maximumFractionDigits: 0 });
+};
 // Real project codes (IT./RU.) sort first, blank ("-") ones after — used by
 // every project list in the portal (Projects, Campus/Sites, Dashboard
 // drill-downs, Performance), not just one page, so this lives in one place.
-const sortRealCodeFirst = (arr) => {
-  const hasReal = (p) => p.code && p.code !== "-";
-  return [...arr].sort((a,b) => (hasReal(b)?1:0) - (hasReal(a)?1:0));
+// ─── ACTIVITY RANKING ────────────────────────────────────────────────────────
+// Projects where something has actually happened rank above dormant ones, in
+// every list. With 101 of 106 projects sitting at "PDD Not Submitted", the five
+// that are moving were previously scattered through the list and easy to miss.
+//
+// The signals are read from the project record, not from the activity log. The
+// log is not usable here: 101 projects carry an identical baseline of four
+// entries from a bulk import, and the table as a whole is dominated by 2,192
+// creates against 2,182 deletes. Counting log rows would have marked every
+// project as active and the ranking would have done nothing.
+//
+// Weighted so that approval progress dominates, then money, then execution
+// signals — a released project outranks a merely budgeted one, and both outrank
+// anything still sitting at submission.
+const ACTIVITY_STAGE_RANK = {
+  approved:          6,
+  mt_review:         5,
+  ed_review:         4,
+  df_review:         3,
+  identified:        2,   // PDD submitted
+  pdds_submitted:    2,
+  pdd_not_submitted: 0,
 };
+
+export function activityScore(p) {
+  if (!p) return 0;
+  const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+  let score = (ACTIVITY_STAGE_RANK[p.workflow_stage] ?? 0) * 100;
+  if (num(p.amount_released) > 0)  score += 40;   // money has actually moved
+  if (num(p.payments_made) > 0)    score += 25;
+  if (num(p.bac) > 0)              score += 15;   // budget allocated
+  if (p.actual_start_date)         score += 10;   // execution began
+  if (num(p.pct_complete) > 0)     score += 8;
+  if (p.budget_release_date)       score += 6;
+  if (p.code && p.code !== "-")    score += 5;    // registered, has a real ID
+  return score;
+}
+
+// Default ordering for every project list. An explicit column sort replaces
+// this entirely — the ranking is what you see before you choose an order, not
+// something that fights your choice.
+const sortByActivity = (arr) => [...arr].sort((a, b) => {
+  const d = activityScore(b) - activityScore(a);
+  if (d) return d;
+  // Within the same activity level, registered projects first, then by name so
+  // the order is stable rather than dependent on fetch order.
+  const ar = a.code && a.code !== "-" ? 1 : 0;
+  const br = b.code && b.code !== "-" ? 1 : 0;
+  if (br - ar) return br - ar;
+  return (a.name || "").localeCompare(b.name || "");
+});
+
+// Kept as an alias so every existing call site picks up the new ordering.
+const sortRealCodeFirst = sortByActivity;
 // Duration is always derived from start/end dates, never typed manually —
 // uses the same 30.4375-day average-month formula as the one-time database
 // backfill, so a project edited in the UI always agrees with one computed
@@ -135,6 +199,7 @@ const PRIORITY_LABEL = { top_priority:"1st Priority", first_priority:"First Prio
 const NAV = [
   { id:"cmd",  Icon:LayoutDashboard, label:"Capex Dashboard" },
   { id:"proj", Icon:FolderKanban,    label:"Projects" },
+  { id:"constellation", Icon:Orbit,  label:"Constellation" },
   { id:"camp", Icon:Building2,       label:"Campus / Sites" },
   { id:"perf", Icon:TrendingUp,      label:"Performance" },
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows & Timelines", pmoOnly:true },
@@ -146,6 +211,55 @@ const PMO_NAV = [
   { id:"log",   Icon:Activity, label:"Activity Log" },
   { id:"set",   Icon:Settings, label:"Settings" },
 ];
+
+// Offered once per account (see tutorial_offered_at above), never for PMO.
+// Builds its own step list by role and calls the tour directly — nothing
+// upstream needs to know what a "tour" is beyond rendering this card.
+function TourInviteCard({ T, show, role, name, onDismiss }) {
+  const tour = useTour();
+  if (!show || role === "pmo") return null;
+  const isPM = role === "project_manager";
+  return (
+    <div className="pmo-rise" style={{
+      position: "fixed", right: 22, bottom: 22, zIndex: 1500, width: 300,
+      background: T.surfaceOver, border: `1px solid ${T.borderStrong}`,
+      borderRadius: R.lg, padding: `${SP.md}px ${SP.lg}px`, boxShadow: T.shadowLg,
+      backdropFilter: "blur(16px) saturate(150%)", WebkitBackdropFilter: "blur(16px) saturate(150%)",
+      borderLeft: `2px solid ${BRAND.gold}`,
+    }}>
+      <div style={{ ...TYPE.h3, color: T.text, marginBottom: 4 }}>
+        Welcome{name ? `, ${name.split(" ")[0]}` : ""}
+      </div>
+      <div style={{ ...TYPE.bodySm, color: T.textSoft, lineHeight: 1.55, marginBottom: SP.md }}>
+        You're set up as a {isPM ? "Project Manager" : "Guest"}. Want a
+        {" "}{isPM ? "5-minute" : "2-minute"} tour of what you can do here?
+      </div>
+      <div style={{ display: "flex", gap: SP.sm, justifyContent: "flex-end" }}>
+        <button className="pmo-focusable pmo-btn" onClick={onDismiss}
+          style={{ background: "transparent", border: "none", color: T.muted,
+            cursor: "pointer", padding: "7px 10px", ...TYPE.bodySm }}>Not now</button>
+        <button className="pmo-focusable pmo-btn"
+          onClick={() => { onDismiss(); tour.start(isPM ? pmSteps() : guestSteps()); }}
+          style={{ padding: "7px 16px", background: `linear-gradient(135deg, ${BRAND.gold}, #C47818)`,
+            border: "none", borderRadius: R.sm, color: "#1A1206", fontWeight: 700,
+            ...TYPE.bodySm, cursor: "pointer" }}>Start tour</button>
+      </div>
+    </div>
+  );
+}
+
+function SidebarTourButton({ T, role }) {
+  const tour = useTour();
+  const isPM = role === "project_manager";
+  return (
+    <button onClick={() => tour.start(isPM ? pmSteps() : guestSteps())} className="pmo-focusable" style={{
+      width:"100%", marginTop:7, padding:"8px 12px", borderRadius:R.sm, cursor:"pointer",
+      background:"transparent", border:`1px solid ${T.sidebarBorder}`,
+      color:T.sidebarFg, fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+      display:"flex", alignItems:"center", justifyContent:"center", gap:7,
+    }}><Sparkles size={12} /> Take the tour</button>
+  );
+}
 
 function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
@@ -332,6 +446,12 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
             display:"flex", alignItems:"center", justifyContent:"center", gap:7,
           }}><Lock size={12} /> Change password</button>
         )}
+        {/* Always available, independent of whether the first-login card was
+            ever shown or dismissed — a tour worth taking once is worth being
+            able to take again. */}
+        {session?.role !== "pmo" && !mini && (
+          <SidebarTourButton T={T} role={session?.role} />
+        )}
       </div>
 
       {/* Collapse control — desktop only */}
@@ -434,7 +554,7 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
             transition:`border-color ${MOTION.fast}, background ${MOTION.fast}, color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
           }}>
           <Search size={13} color={searchHot ? T.blueBright : undefined} />
-          <span style={{ flex:1, textAlign:"left" }}>Search projects…</span>
+          <span data-tour="search-trigger" style={{ flex:1, textAlign:"left" }}>Search projects…</span>
           <kbd style={{ ...TYPE.caption, border:`1px solid ${T.border}`, borderRadius:4,
             padding:"1px 5px", color:T.dim, background:T.pageAlt }}>{mac ? "⌘K" : "Ctrl K"}</kbd>
         </button>
@@ -567,7 +687,10 @@ function DeadlineAlertPopups({ T, session }) {
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"auto 1fr", gap:`6px ${SP.md}px` }}>
             {[
-              ["Campus", p.campus_name || "—"],
+              // The at_risk_projects view exposes this as `campus`, not
+              // `campus_name` — so this read undefined and every alert showed
+              // an em dash regardless of the project actually having a campus.
+              ["Campus", p.campus || "—"],
               ["Stage", STAGE_META[p.workflow_stage]?.label || p.workflow_stage || "—"],
               ["Planned end", p.end_date || "—"],
             ].map(([k, v]) => (
@@ -649,7 +772,6 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   const iconAnim = ICON_ANIM[kpiKey] || "pmo-ico-glow";
   const cl = useCursorLight(true);   // §51
   const nearRef = useNear();          // §1 proximity · §7 anticipation · §8 dwell
-  const tilt = useCursorTilt(true);   // §4 — 1.5° lean toward the pointer
   // §2 — what this card is ABOUT, so related things elsewhere can respond.
   const focusKey = kpiKey ? `metric:${kpiKey}` : null;
   const src = useFocusSource(focusKey);
@@ -684,9 +806,6 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   return (
     <div
       className={onCardClick && !editing ? "pmo-in pmo-lift" : "pmo-in"}
-      className="pmo-tilt"
-      ref={tilt.ref}
-      onMouseMove={tilt.onMouseMove}
       style={{ animationDelay:(160 + index*55)+"ms", flex: featured ? 1.22 : 1, minWidth:0,
         display:"flex", position:"relative",
         // Sibling cards are also positioned, so without this the next card in
@@ -694,7 +813,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
         zIndex: hover && !editing ? 30 : undefined }}
       onClick={() => { if (!editing && onCardClick) onCardClick(); }}
       onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => { setHover(false); cl.onMouseLeave(); tilt.onMouseLeave(); }}
+      onMouseLeave={() => { setHover(false); cl.onMouseLeave(); }}
     >
       <div
         ref={(n) => { cl.ref.current = n; nearRef.current = n; }}
@@ -777,7 +896,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:SP.sm, marginBottom:SP.md }}>
               <div style={{ display:"flex", alignItems:"center", gap:SP.sm, minWidth:0 }}>
                 {Icon && (
-                  <div className="pmo-ico-layer" style={{
+                  <div style={{
                     width:28, height:28, borderRadius:R.sm, flexShrink:0,
                     background: hover ? `${clr}${T.washStrong}` : `${clr}${T.badge}`,
                     border:`1px solid ${clr}${hover ? "4D" : "26"}`,
@@ -793,22 +912,49 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
                   overflow:"hidden" }} title={label}>{label}</div>
               </div>
               {canEdit && (
-                <button className="pmo-focusable pmo-btn" onClick={e => { e.stopPropagation(); startEdit(); }}
-                  className="pmo-focusable"
+                // Three problems fixed here, all of which made this unclickable:
+                //   · 16×16px is below the 24px minimum for a pointer target
+                //   · zIndex:auto let the tilt wrapper sit on top, so clicks
+                //     landed on the card and never reached the button
+                //   · className was declared twice, so the second silently
+                //     dropped `pmo-btn` and its press feedback
+                <button
+                  className="pmo-focusable pmo-btn"
+                  onClick={e => { e.stopPropagation(); startEdit(); }}
+                  onMouseDown={e => e.stopPropagation()}
                   title={insightOnly ? "Edit hover text" : "Edit value, sub-label and hover text"}
-                  style={{ background:"none", border:"none", cursor:"pointer", color:T.dim,
-                    padding:2, display:"flex", opacity: hover ? 1 : 0.35,
-                    transition:`opacity ${MOTION.fast}` }}>
-                  <Edit2 size={12} />
+                  aria-label={insightOnly ? `Edit hover text for ${label}` : `Edit ${label}`}
+                  style={{
+                    background: hover ? T.surfaceHi : "transparent",
+                    border:`1px solid ${hover ? T.borderAccent : "transparent"}`,
+                    borderRadius:R.sm, cursor:"pointer",
+                    color: hover ? T.text : T.dim,
+                    // Full 32px hit area is kept — only the ink is reduced, so
+                    // it stays as easy to click while sitting quietly at rest.
+                    width:32, height:32, flexShrink:0, padding:0,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    position:"relative", zIndex:5,
+                    opacity: hover ? 1 : 0.4,
+                    transition:`opacity ${MOTION.fast}, background ${MOTION.fast}, color ${MOTION.fast}`,
+                  }}>
+                  <Edit2 size={13} />
                 </button>
               )}
             </div>
 
             {/* Fill, border and glow keep the saturated accent; only the text
                 resolves to the AA-safe variant, which matters on light cards
-                where raw gold reads at ~2:1. */}
-            <div style={{ ...TYPE[valSize], color: accent ? T.textOf(accent) : T.text,
-              whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{shownVal}</div>
+                where raw gold reads at ~2:1.
+
+                Double-clicking the figure opens the same editor. A 32px corner
+                target is fine when you know it is there; the value itself is a
+                target the size of the card. */}
+            <div
+              onDoubleClick={canEdit ? (e) => { e.stopPropagation(); startEdit(); } : undefined}
+              title={canEdit ? "Double-click to edit" : undefined}
+              style={{ ...TYPE[valSize], color: accent ? T.textOf(accent) : T.text,
+                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+                cursor: canEdit ? "text" : "inherit", position:"relative", zIndex:2 }}>{shownVal}</div>
 
             {sub && (
               <div style={{ ...TYPE.caption, color: hover ? T.textSoft : T.muted,
@@ -1232,7 +1378,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
       />
 
       {/* Proportional flow strip */}
-      <div style={{ display:"flex", gap:3, marginTop:SP.sm }}>
+      <div style={{ display:"flex", gap:3, marginTop:SP.sm }} data-tour="pipeline-stages">
         {stages.map((st) => {
           const pct = (st.value / total) * 100;
           const on  = activeCard === st.key;
@@ -1524,7 +1670,7 @@ function BreakdownSection({ T, session }) {
     (async () => {
       try {
         const [proj, sett] = await Promise.all([
-          supa("/rest/v1/projects?select=id,bac,amount_released,payments_made,fiscal_year,start_date,budget_release_date,df_recommended_amount,segments(name),sectors(name),strategic_priority", {}, session.access_token),
+          supa("/rest/v1/projects?portfolio=eq.capex&select=id,bac,amount_released,payments_made,fiscal_year,start_date,budget_release_date,df_recommended_amount,segments(name),sectors(name),strategic_priority", {}, session.access_token),
           supa("/rest/v1/settings?key=eq.dashboard_breakdowns&select=value", {}, session.access_token),
         ]);
         setProjects(proj);
@@ -1723,7 +1869,22 @@ function BreakdownSection({ T, session }) {
           return { label:`${MON[+mm - 1]} ${yy.slice(2)}`, planned:cp, actual:ca, key:k };
         });
 
-        const planTotal = data[data.length - 1].planned;
+        // The header figure and the chart line were the same number —
+        // planTotal was literally data[data.length-1].planned, i.e. the sum
+        // of only the 96 (of 109) projects with a start_date. That made the
+        // header agree with the line but disagree with every other total on
+        // the dashboard (575.8M), which sums all of them. Reported as
+        // 574.2M when the rest of the portal says 575.8M.
+        //
+        // planTotal now matches the portfolio total the KPI cards use. The
+        // chart's own line is untouched — it still only plots what it can
+        // honestly date — so the two now legitimately diverge by design, and
+        // the note beneath explains why rather than leaving it unexplained.
+        const fullDfTotal = fyProjects.reduce((s, p) => s + (parseFloat(p.df_recommended_amount) || 0), 0);
+        const undatedCount = fyProjects.filter(p => !p.start_date && (parseFloat(p.df_recommended_amount)||0) > 0).length;
+        const undatedAmt   = fullDfTotal - data[data.length - 1].planned;
+
+        const planTotal = fullDfTotal;
         const actTotal  = data[data.length - 1].actual;
         const pct = planTotal > 0 ? (actTotal / planTotal) * 100 : 0;
 
@@ -1782,6 +1943,12 @@ function BreakdownSection({ T, session }) {
                 ({pct.toFixed(1)}%). Release dates are recorded for{" "}
                 {fyProjects.filter(p => p.budget_release_date).length} of {fyProjects.length} projects,
                 so the actual line reflects only those.
+                {undatedCount > 0 && (
+                  <> The plan line ends {fmtM(undatedAmt)} short of the total for the same reason —{" "}
+                  {undatedCount} project{undatedCount === 1 ? "" : "s"} with no start date can't be placed
+                  on a monthly curve, though {undatedCount === 1 ? "it counts" : "they count"} toward the
+                  {" "}{fmtM(planTotal)} above.</>
+                )}
               </span>
             </div>
           </Surface>
@@ -1956,7 +2123,7 @@ function CarryForwardList({ T, session }) {
               <tr key={r.id}>
                 <td style={{...td, color:T.dim}}>{i+1}</td>
                 <td style={{...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted}}>{r.code || "-"}</td>
-                <td style={{...td, fontWeight:500}}>{r.name}</td>
+                <td data-peek={r.name} style={{...td, fontWeight:500, maxWidth:300, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.name}</td>
                 <td style={{...td, color:T.muted}}>{r.region || "—"}</td>
                 <td style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600}}>{fmtM(r.amount)}</td>
               </tr>
@@ -2028,7 +2195,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
         <table style={tableStyles(T).table}>
           <thead>
             <tr style={{ background:T.mainBg+"80" }}>
-              <th style={{ ...th, width:40 }}>#</th>
+              <th style={{ ...th, width:58 }}>#</th>
               <th style={th}>Project ID</th>
               <th style={{ ...th, minWidth:220 }}>Project Name</th>
               <th style={th}>Organization</th>
@@ -2053,7 +2220,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                   {p.is_carry_forward && <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:(T.goldText || GOLD), padding:"1px 4px", borderRadius:3, marginRight:5 }}>CF</span>}
                   {p.code || "-"}
                 </td>
-                <td style={{ ...td, maxWidth:260, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:500 }}>{p.name}</td>
+                <td data-peek={p.name} style={{ ...td, maxWidth:260, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:500 }}>{p.name}</td>
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.segments?.name||"—"}</td>
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.sectors?.name||"—"}</td>
                 <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600 }}>{fmtM(p.bac)}</td>
@@ -2149,7 +2316,12 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
     // matching the same condition as the Approved Projects card above.
     const budgeted = dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedOrReleased(p));
     const nonBudgeted = dashProjects.filter(p => p.project_type !== "Budgeted" && isApprovedOrReleased(p));
-    const sum = (arr) => arr.reduce((s,p) => s + (p.df_recommended_amount||0), 0);
+    // These three cards report money that has actually been released, not what
+    // Finance recommended. They previously summed df_recommended_amount, which
+    // made "Approved Projects" read 75.9M against 21.8M genuinely released —
+    // a recommendation is not a disbursement, and on this dashboard the two
+    // were being presented interchangeably.
+    const sum = (arr) => arr.reduce((s,p) => s + (+p.amount_released||0), 0);
     return {
       approvedAmt: sum(approved), approvedCount: approved.length,
       budgetedAmt: sum(budgeted), budgetedCount: budgeted.length,
@@ -2165,8 +2337,8 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       const [rows, settings, projs, metrics] = await Promise.all([
         supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token),
         supa("/rest/v1/settings?key=eq.dashboard_kpis&select=value", {}, session.access_token),
-        supa("/rest/v1/projects?select=id,start_date,code,name,bac,su_requested_amount,df_recommended_amount,amount_released,project_type,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
-        supa("/rest/v1/project_metrics?select=id,schedule_flag,budget_flag,cpi,spi", {}, session.access_token),
+        supa("/rest/v1/projects?portfolio=eq.capex&select=id,start_date,code,name,bac,su_requested_amount,df_recommended_amount,amount_released,project_type,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
+        supa("/rest/v1/project_metrics?portfolio=eq.capex&select=id,schedule_flag,budget_flag,cpi,spi", {}, session.access_token),
       ]);
       setData(rows[0]);
       setKpiOverrides(settings[0]?.value || {});
@@ -2222,7 +2394,10 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   };
 
   // ── Filter projects for the list panel ────────────────────────────────────
-  const filteredProjects = (() => {
+  // The dashboard's drill-down list returned each filter's raw order, so it was
+  // the one project list not activity-ranked. Wrapping the whole expression
+  // means every branch inherits the ranking rather than each needing its own.
+  const filteredProjects = sortByActivity((() => {
     if (activeTab === "pipeline") {
       const stageMap = { pdd_not_submitted:"pdd_not_submitted", pdds_submitted:"identified", in_df:"df_review", in_ed:"ed_review", in_mt:"mt_review", approved:"approved" };
       return dashProjects.filter(p => p.workflow_stage === (stageMap[activeCard] || "__none__"));
@@ -2247,7 +2422,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       if (activeCard === "total_projects")     return dashProjects;
     }
     return [];
-  })();
+  })());
 
   const showList = activeCard !== null && (
     activeTab === "pipeline" ||
@@ -2280,6 +2455,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   // and rendered differently on every OS.
   const TABS = [
     { id:"budgeting",  label:"CAPEX Overview",  Icon:Wallet,        insight:TAB_INSIGHT.budgeting(d) },
+    { id:"investments", label:"Investments",  Icon:TrendingUp,    insight:TAB_INSIGHT.investments },
     { id:"pipeline",   label:"PDD Status",      Icon:ClipboardList, count:d.total_projects,  insight:TAB_INSIGHT.pipeline(d) },
     { id:"execution",  label:"Project Health",  Icon:Activity,      count:d.approved_count,  insight:TAB_INSIGHT.execution(d) },
     { id:"financials", label:"Payments Status", Icon:PiggyBank,     insight:TAB_INSIGHT.financials(d) },
@@ -2325,7 +2501,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
         );
 
         return (
-          <div className={`pmo-in pmo-hero${heroHot ? " pmo-hot" : ""}`}
+          <div data-tour="hero" className={`pmo-in pmo-hero${heroHot ? " pmo-hot" : ""}`}
             ref={heroLight.ref}
             onMouseMove={heroLight.onMouseMove}
             onMouseEnter={() => setHeroHot(true)}
@@ -2421,8 +2597,23 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           {activeCard ? "↓ Scroll down to see the project list — click the same card to collapse" : "Click any card below to view its projects"}
         </div>
       )}
+
+      {activeTab === "investments" && (
+        <div data-tour="investments-panel">
+        <InvestmentsTab
+          T={T} session={session} supa={supa} canManage={session?.role === "pmo"}
+          onSelectProject={onSelectProject}
+          fmtFull={fmtFull} fmtM={fmtM}
+          STAGE_META={STAGE_META} PRIORITY_META={PRIORITY_META}
+          sortByActivity={sortByActivity}
+          // Moving a project between portfolios changes every headline figure,
+          // so the dashboard re-reads rather than waiting for a page reload.
+          onPortfolioChange={load} />
+        </div>
+      )}
+
       {activeTab === "budgeting" && (
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+        <div data-tour="kpi-strip" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested" trendPoints={trends.su_requested}    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
           <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended" trendPoints={trends.df_recommended}  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
@@ -2449,7 +2640,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
         </ChartErrorBoundary>
       )}
       {activeTab === "execution" && (
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+        <div data-tour="health-cards" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={Activity} index={0} T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
           <EditableKCard dashData={d} Icon={Clock} index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
@@ -2489,7 +2680,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
         );
       })()}
       {activeTab === "financials" && (
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+        <div data-tour="payments-flow" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
           <EditableKCard dashData={d} Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
           <EditableKCard dashData={d} Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
@@ -2985,6 +3176,43 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       for (const name of newL.cost_centers) { const r=await supa("/rest/v1/cost_centers",{method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.cost_centers[name.toLowerCase()]=r[0].id; }
       for (const name of (newL.campuses||[])) { const r=await supa("/rest/v1/campuses",  {method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.campuses[name.toLowerCase()]=r[0].id; }
 
+      // 3. Delete all existing projects.
+      //
+      // This CASCADEs through project_attachments, which is how four uploaded
+      // PDD documents were silently unlinked on 21 Aug: the PDFs stayed in the
+      // storage bucket but every row pointing at them went with the old
+      // project ids, so they vanished from the portal with no error at all.
+      //
+      // Re-linking afterwards is manual, so the import now stops and asks
+      // whenever files would be detached.
+      setProgress("Checking for uploaded files");
+      const atRisk = await supa(
+        "/rest/v1/project_attachments?select=id,file_name,kind,project_id",
+        {}, session.access_token).catch(() => []);
+      const rows = Array.isArray(atRisk) ? atRisk : [];
+      if (rows.length > 0) {
+        const docCount   = rows.filter(a => a.kind === "document").length;
+        const mediaCount = rows.filter(a => a.kind === "site_visit").length;
+        const affected   = new Set(rows.map(a => a.project_id)).size;
+        const parts = [];
+        if (docCount)   parts.push(docCount + " document" + (docCount === 1 ? "" : "s"));
+        if (mediaCount) parts.push(mediaCount + " site visit file" + (mediaCount === 1 ? "" : "s"));
+        const proceed = window.confirm(
+          "This import replaces every project in the portal.\n\n" +
+          parts.join(" and ") + " attached to " + affected + " project" +
+          (affected === 1 ? "" : "s") + " will be detached and will no longer appear " +
+          "anywhere in the portal.\n\n" +
+          "The files stay in storage, but re-linking them has to be done by hand, " +
+          "one file at a time.\n\n" +
+          "Continue with the import?"
+        );
+        if (!proceed) {
+          setProgress(null);
+          setErr("Import cancelled - no projects were changed.");
+          return;
+        }
+      }
+
       // 3. Delete all existing projects (CASCADE removes comments / milestones / assignments)
       setProgress("Removing existing project data…");
       await supa("/rest/v1/projects?id=not.is.null",{method:"DELETE",headers:{"Prefer":"return=minimal"}},session.access_token);
@@ -3234,7 +3462,9 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const [confirmDel,   setConfirmDel]   = useState(null);
   const [deleting,     setDeleting]     = useState(false);
   // Enterprise data-workspace controls (§13)
-  const [sort,     setSort]     = useState({ key:"code", dir:"asc" });
+  // null means "no explicit sort" — the list keeps its activity ranking until
+  // the reader chooses a column, rather than silently re-ordering to code.
+  const [sort,     setSort]     = useState(null);
   const [page,     setPage]     = useState(1);
   const [perPage,  setPerPage]  = useState(50);
   const [hiddenCols, setHiddenCols] = useState([]);
@@ -3246,7 +3476,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const [data, sectors, regions, segments, cost_centers, campuses] = await Promise.all([
-        supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,df_recommended_amount,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,campus,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
+        supa("/rest/v1/projects?portfolio=eq.capex&select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,df_recommended_amount,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,campus,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
         supa("/rest/v1/sectors?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/regions?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/segments?select=id,name&order=name.asc",{},session.access_token),
@@ -3301,6 +3531,8 @@ function ProjectsPage({ T, session, onSelectProject }) {
   };
 
   const sorted = useMemo(() => {
+    // No column chosen: `filtered` already arrives activity-ranked.
+    if (!sort?.key) return filtered;
     const fn = SORTERS[sort.key] || SORTERS.code;
     const mul = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
@@ -3322,7 +3554,11 @@ function ProjectsPage({ T, session, onSelectProject }) {
   useEffect(() => { setPage(1); }, [search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC,perPage]);
 
   const toggleSort = (key) =>
-    setSort(s => s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir:"asc" });
+    // asc → desc → back to the activity ranking, so the default order is
+    // reachable again without a page reload.
+    setSort(s => !s || s.key !== key ? { key, dir:"asc" }
+              : s.dir === "asc"      ? { key, dir:"desc" }
+              : null);
 
   const activeFilterCount = [fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC].filter(Boolean).length;
   const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); setFCC(""); };
@@ -3389,7 +3625,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const downloadDataTemplate = async () => {
     try {
       const projects = await supa(
-        "/rest/v1/projects?select=*,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",
+        "/rest/v1/projects?portfolio=eq.capex&select=*,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",
         {}, session.access_token
       );
       const headers = Object.keys(EXCEL_COLS);
@@ -3490,7 +3726,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const maxBac = summary.maxBac;
 
   const SortHead = ({ col }) => {
-    const on = sort.key === col.sort;
+    const on = sort?.key === col.sort;
     return (
       <th style={{
         ...TYPE.label, color: on ? T.text : T.muted, textAlign: col.num ? "right" : "left",
@@ -3534,7 +3770,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
         </span>
       );
       case "name": return (
-        <span title={p.name} style={{ display:"block", overflow:"hidden",
+        <span data-peek={p.name} style={{ display:"block", overflow:"hidden",
           textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight: hovered ? 600 : 450,
           color:T.text, transition:`font-weight ${MOTION.fast}` }}>{p.name}</span>
       );
@@ -3798,9 +4034,9 @@ function ProjectsPage({ T, session, onSelectProject }) {
               name silently overrides every min-width and pushes Stage and
               Actions off the right edge, which is the bug this page shipped
               with. Widths are proportional to each column's declared minimum. */}
-          <table style={{ width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"fixed" }}>
+          <table data-tour="projects-table" style={{ width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"fixed" }}>
             <colgroup>
-              <col style={{ width:44 }} />
+              <col style={{ width:58 }} />
               {(() => {
                 const totalMin = visible.reduce((a, c) => a + c.min, 0) || 1;
                 return visible.map(c => (
@@ -3809,9 +4045,9 @@ function ProjectsPage({ T, session, onSelectProject }) {
               })()}
               {isPMO && <col style={{ width:78 }} />}
             </colgroup>
-            <thead>
+            <thead data-tour="projects-thead">
               <tr>
-                <th style={{ ...TYPE.label, color:T.muted, padding:"10px 12px 8px", width:44,
+                <th style={{ ...TYPE.label, color:T.muted, padding:"10px 12px 8px", width:58,
                   background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
                   position:"sticky", top:0, zIndex:3, textAlign:"left" }}>#</th>
                 {visible.map(c => <SortHead key={c.key} col={c} />)}
@@ -3822,7 +4058,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                 )}
               </tr>
               {/* Filter row, pinned directly under the headers as one control band */}
-              <tr>
+              <tr data-tour="projects-filters">
                 {(() => {
                   const fc = { padding:"5px 8px", background:T.surfaceRaised, position:"sticky", top:36, zIndex:2,
                     boxShadow:`inset 0 -2px 0 ${activeFilterCount > 0 ? BRAND.gold + "99" : T.border}` };
@@ -3873,7 +4109,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
                       cursor: onSelectProject ? "pointer" : "default",
                       transition:`background ${MOTION.fast}`,
                     }}>
-                    <td style={{ ...td, color:T.dim, fontVariantNumeric:"tabular-nums", width:44,
+                    <td style={{ ...td, color:T.dim, fontVariantNumeric:"tabular-nums", width:58,
                       boxShadow: hovered ? `inset 3px 0 0 ${pClr}` : "none",
                       transition:`box-shadow ${MOTION.fast}` }}>{n}</td>
                     {visible.map(c => (
@@ -4005,7 +4241,11 @@ function CampusPage({ T, session, onSelectProject }) {
   const [fSite,  setFSite]  = useState("");
   const [fPri,   setFPri]   = useState("");
   const [fStage, setFStage] = useState("");
+  const [fCC,    setFCC]    = useState("");
   const [hoverRow, setHoverRow] = useState(null);
+  const costCentreOptions = useMemo(
+    () => [...new Set(rows.map(r => r.costCentre).filter(Boolean))].sort(),
+    [rows]);
 
   // Sorting. Stage and priority sort by workflow order rather than alphabet —
   // "Approved" must not lead simply because A precedes D.
@@ -4013,6 +4253,7 @@ function CampusPage({ T, session, onSelectProject }) {
     code:     r => (r.code && r.code !== "-") ? r.code.toLowerCase() : null,
     name:     r => (r.name || "").toLowerCase(),
     campus:   r => (r.campus || "").toLowerCase(),
+    costCentre: r => (r.costCentre || "").toLowerCase(),
     df:       r => +r.df_recommended_amount || 0,
     bac:      r => +r.bac || 0,
     priority: r => { const i = Object.keys(PRIORITY_META).indexOf(r.priority); return i < 0 ? 99 : i; },
@@ -4025,12 +4266,19 @@ function CampusPage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const [metrics, projs, camps] = await Promise.all([
-        supa("/rest/v1/project_metrics?select=id,code,name,bac,df_recommended_amount,amount_released,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
-        supa("/rest/v1/projects?select=id,campus",{},session.access_token),
+        supa("/rest/v1/project_metrics?portfolio=eq.capex&select=id,code,name,bac,df_recommended_amount,amount_released,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
+        supa("/rest/v1/projects?portfolio=eq.capex&select=id,campus,cost_centers(name)",{},session.access_token),
         supa("/rest/v1/campuses?select=id,name&order=name.asc",{},session.access_token),
       ]);
-      const campusById = Object.fromEntries((projs||[]).map(p=>[p.id, p.campus||null]));
-      setRows((metrics||[]).map(m=>({ ...m, campus: campusById[m.id] || null })));
+      const byId = Object.fromEntries((projs||[]).map(p => [p.id, {
+        campus: p.campus || null,
+        costCentre: p.cost_centers?.name || null,
+      }]));
+      setRows((metrics||[]).map(m => ({
+        ...m,
+        campus:     byId[m.id]?.campus     || null,
+        costCentre: byId[m.id]?.costCentre || null,
+      })));
       setCampuses(camps||[]);
     } catch(e) { setErr(e.message); }
     setLoading(false);
@@ -4063,11 +4311,12 @@ function CampusPage({ T, session, onSelectProject }) {
     if (fSite)         out = out.filter(r => (r.campus || UNASSIGNED) === fSite);
     if (fPri)          out = out.filter(r => r.priority === fPri);
     if (fStage)        out = out.filter(r => r.workflow_stage === fStage);
+    if (fCC)           out = out.filter(r => (r.costCentre || "") === fCC);
     return sortRealCodeFirst(out);
-  }, [rows, sel, q, fCode, fName, fSite, fPri, fStage]);
+  }, [rows, sel, q, fCode, fName, fSite, fPri, fStage, fCC]);
 
-  const colFilterCount = [fCode, fName, fSite, fPri, fStage].filter(Boolean).length;
-  const clearColFilters = () => { setFCode(""); setFName(""); setFSite(""); setFPri(""); setFStage(""); };
+  const colFilterCount = [fCode, fName, fSite, fPri, fStage, fCC].filter(Boolean).length;
+  const clearColFilters = () => { setFCode(""); setFName(""); setFSite(""); setFPri(""); setFStage(""); setFCC(""); };
 
   const k = useMemo(() => {
     const active = st => filtered.filter(r => r.workflow_stage===st && !r.is_carry_forward).length;
@@ -4234,10 +4483,11 @@ function CampusPage({ T, session, onSelectProject }) {
           <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,tableLayout:"fixed"}}>
             <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
               <tr>
-                <th style={{...th,width:44}}>#</th>
+                <th style={{...th,width:58}}>#</th>
                 <SortHeader T={T} label="Project ID"      sortKey="code"     sort={sort} onToggle={toggle} minWidth={118} />
                 <SortHeader T={T} label="Project Name"    sortKey="name"     sort={sort} onToggle={toggle} />
                 <SortHeader T={T} label="Campus / Site"   sortKey="campus"   sort={sort} onToggle={toggle} />
+                <SortHeader T={T} label="Cost Centre"     sortKey="costCentre" sort={sort} onToggle={toggle} />
                 <SortHeader T={T} label="DF Rec Budget"   sortKey="df"       sort={sort} onToggle={toggle} align="right" />
                 <SortHeader T={T} label="Approved Budget" sortKey="bac"      sort={sort} onToggle={toggle} align="right" />
                 <SortHeader T={T} label="Priority"        sortKey="priority" sort={sort} onToggle={toggle} minWidth={104} />
@@ -4261,11 +4511,18 @@ function CampusPage({ T, session, onSelectProject }) {
                         <Input T={T} size="sm" full value={fName}
                           onChange={e=>setFName(e.target.value)} placeholder="Filter name…" />
                       </td>
-                      <td style={fc}>
+                      <td data-tour="campus-filter" style={fc}>
                         <Select T={T} size="sm" full active={!!fSite} value={fSite}
                           onChange={e=>setFSite(e.target.value)}>
                           <option value="">All sites</option>
                           {campusOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                        </Select>
+                      </td>
+                      <td style={fc}>
+                        <Select T={T} size="sm" full active={!!fCC} value={fCC}
+                          onChange={e=>setFCC(e.target.value)}>
+                          <option value="">All cost centres</option>
+                          {costCentreOptions.map(c => <option key={c} value={c}>{c}</option>)}
                         </Select>
                       </td>
                       <td style={fc} /><td style={fc} />
@@ -4314,7 +4571,7 @@ function CampusPage({ T, session, onSelectProject }) {
                     <button className="pmo-focusable pmo-btn"
                       onClick={(e)=>{ e.stopPropagation(); onSelectProject?.(p.id); }} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:(T.goldText || GOLD),fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
                   </td>
-                  <td style={{...td, minWidth:220, position:"relative"}}>
+                  <td data-peek={p.name} style={{...td, minWidth:220, position:"relative", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
                     {p.name}
                     {hovered && onSelectProject && (
                       <>
@@ -4333,6 +4590,7 @@ function CampusPage({ T, session, onSelectProject }) {
                     )}
                   </td>
                   <td style={{...td,color:T.muted}}>{p.campus || "—"}</td>
+                  <td style={{...td,color:T.muted}} title={p.costCentre || ""}>{p.costCentre || "—"}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtM(p.df_recommended_amount)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtM(p.bac)}</td>
                   <td style={td}>
@@ -4616,12 +4874,30 @@ function SettingsPage({ T, session }) {
 // portal's light/dark toggle through the theme bridge below. NOTE: that file
 // exists twice (repo root for production, public/ for the build). Edit both —
 // deploy-preview.py aborts if they drift.
-function CashflowPage({ T, dark }) {
+function CashflowPage({ T, dark, session }) {
+  // The embedded dashboard runs on a snapshot saved in August, so its own
+  // project count disagrees with the live portfolio. Read the authoritative
+  // count here and pass it in, so the tab reports the same number as every
+  // other page rather than a figure frozen at export time.
+  const [projectCount, setProjectCount] = useState(null);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/portfolio_dashboard?select=total_projects", {}, session.access_token)
+      .then(rows => {
+        const n = Array.isArray(rows) ? rows[0]?.total_projects : null;
+        if (alive && n) setProjectCount(n);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
+
   const frame = useRef(null);
   // The src was hardcoded to the production URL, so the preview build loaded
   // production's copy of this file. A relative path keeps each deployment
   // self-contained.
-  const src = `cashflow-dashboard.html?theme=${dark ? "dark" : "light"}`;
+  const src = `cashflow-dashboard.html?theme=${dark ? "dark" : "light"}`
+    + (projectCount ? `&projects=${projectCount}` : "");
 
   // Push theme changes to the frame so the tab flips with the rest of the app
   // instead of only picking up the theme it was first loaded with.
@@ -4854,7 +5130,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                         )}
                         <div>
                           <div style={{ fontSize:10.5, color:T.dim, fontFamily:"monospace" }}>{r.code || "-"}</div>
-                          <div style={{ fontSize:12.5, color:T.text, lineHeight:1.3 }}>{r.name}</div>
+                          <div data-peek={r.name} style={{ fontSize:12.5, color:T.text, lineHeight:1.3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
                         </div>
                       </div>
                     </td>
@@ -4921,7 +5197,7 @@ const fmtBytes = (n) => {
   return (n/(1024*1024)).toFixed(1) + " MB";
 };
 
-function ProjectAttachments({ T, session, projectId }) {
+function ProjectAttachments({ T, session, projectId, kind = "document", render }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -4934,7 +5210,7 @@ function ProjectAttachments({ T, session, projectId }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await supa(`/rest/v1/project_attachments?project_id=eq.${projectId}&select=*&order=uploaded_at.desc`, {}, session.access_token);
+      const rows = await supa(`/rest/v1/project_attachments?project_id=eq.${projectId}&kind=eq.${kind}&select=*&order=sort_order.asc,uploaded_at.desc`, {}, session.access_token);
       setItems(rows);
     } catch (e) { setErr(e.message); }
     setLoading(false);
@@ -4953,6 +5229,7 @@ function ProjectAttachments({ T, session, projectId }) {
   useEffect(() => { load(); loadGlobalTotal(); }, [load, loadGlobalTotal]);
 
   const handleFiles = async (fileList) => {
+    let nextOrder = (items.reduce((m, a) => Math.max(m, +a.sort_order || 0), 0) || 0) + 1;
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
     setUploading(true); setErr(null);
@@ -4969,7 +5246,10 @@ function ProjectAttachments({ T, session, projectId }) {
           method: "POST", headers: { Prefer: "return=minimal" },
           body: JSON.stringify({
             project_id: projectId, file_name: file.name, file_path: path,
-            file_size: file.size, mime_type: file.type || null,
+            file_size: file.size, mime_type: file.type || null, kind,
+            // Appended, not inserted: an upload must not silently reshuffle
+            // a sequence the PMO has already arranged.
+            sort_order: nextOrder++,
             uploaded_by: session.user_id, uploaded_by_name: session.full_name || session.username || null,
           }),
         }, session.access_token);
@@ -4980,13 +5260,64 @@ function ProjectAttachments({ T, session, projectId }) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleDownload = async (att) => {
+  // Ported from the parallel session's work on main (commit 13a489a3a), kept
+  // intact through the redesign: opening a file and saving it are different
+  // intentions and now have different controls.
+  const getSignedUrl = async (att, forceDownload) => {
+    const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeStoragePath(att.file_path)}`, {
+      method: "POST", body: JSON.stringify({ expiresIn: 60 }),
+    }, session.access_token);
+    if (!res.signedURL) throw new Error("Could not generate a link for this file");
+    // Verified against the live bucket: passing `download` in the POST body has
+    // no effect — the response is byte-identical and the object is served with
+    // no Content-Disposition. The header only appears when `download` is a
+    // QUERY parameter on the signed URL:
+    //   as returned              → disposition: None
+    //   with &download appended  → disposition: attachment; filename=…
+    // So the flag has to be appended here, not sent to the sign endpoint.
+    // Supabase returns signedURL relative to the storage API, as
+    // "/object/sign/<bucket>/<path>?token=…" — it does NOT include the
+    // /storage/v1 prefix. Concatenating it straight onto the project URL
+    // produced …supabase.co/object/sign/…, which the API rejects with
+    // "requested path is invalid". Verified against the live bucket:
+    //   without /storage/v1 → 404
+    //   with    /storage/v1 → 200 application/pdf
+    const url = SUPA_URL + "/storage/v1" + res.signedURL;
+    return forceDownload
+      ? url + (url.includes("?") ? "&" : "?") + "download=" + encodeURIComponent(att.file_name)
+      : url;
+  };
+
+  // Clicking the card: open in a new tab for viewing.
+  const handleOpen = async (att) => {
+    try { window.open(await getSignedUrl(att, false), "_blank"); }
+    catch (e) { setErr(e.message); }
+  };
+
+  // The Download button: a guaranteed save, not a preview.
+  //
+  // This previously fetched the file bytes in JS and forced a save through a
+  // blob: URL. That is a cross-origin fetch() to Supabase's storage CDN, which
+  // does not return CORS headers for that call, so it threw a bare "Failed to
+  // fetch". Supabase's sign endpoint takes a `download` option that adds
+  // Content-Disposition: attachment server-side instead — plain navigation to
+  // that URL forces the save with no fetch() and no CORS exposure at all.
+  const handleForceDownload = async (att) => {
+    try { window.open(await getSignedUrl(att, true), "_blank"); }
+    catch (e) { setErr(e.message); }
+  };
+
+  // Persist a rearranged sequence. One PATCH per row: the list is small, and a
+  // partial failure leaves the rest correctly ordered rather than reverting to
+  // an order nobody chose.
+  const handleReorder = async (orderedIds) => {
     try {
-      const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeStoragePath(att.file_path)}`, {
-        method: "POST", body: JSON.stringify({ expiresIn: 60 }),
-      }, session.access_token);
-      if (res.signedURL) window.open(SUPA_URL + res.signedURL, "_blank");
-      else throw new Error("Could not generate a download link");
+      await Promise.all(orderedIds.map((id, i) =>
+        supa(`/rest/v1/project_attachments?id=eq.${id}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ sort_order: i + 1 }),
+        }, session.access_token)));
+      await load();
     } catch (e) { setErr(e.message); }
   };
 
@@ -5000,6 +5331,46 @@ function ProjectAttachments({ T, session, projectId }) {
       await load(); await loadGlobalTotal();
     } catch (e) { setErr(e.message); }
   };
+
+  // The storage indicator, shared by both surfaces so the figure and the
+  // thresholds can never disagree between tabs.
+  const storageBar = (canManage && globalBytes !== null) ? (() => {
+    const pct = Math.min(100, (globalBytes / STORAGE_CAP_BYTES) * 100);
+    const barColor = pct >= 90 ? ROSE : pct >= 70 ? AMBER : EMERALD;
+    return (
+      <div style={{ marginBottom:14 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:T.dim, marginBottom:5 }}>
+          <span>Portal storage (all projects)</span>
+          <span>{fmtBytes(globalBytes)} of 1.0 GB used ({pct.toFixed(1)}%)</span>
+        </div>
+        <div style={{ height:5, background:T.border, borderRadius:3, overflow:"hidden" }}>
+          <div style={{ width:pct+"%", height:"100%", background:barColor, borderRadius:3, transition:"width .4s" }}/>
+        </div>
+        {pct >= 80 && (
+          <div style={{ fontSize:10.5, color:T.textOf(AMBER), marginTop:5 }}>
+            Approaching the Free-tier storage limit — consider upgrading to Supabase Pro before this fills up.
+          </div>
+        )}
+      </div>
+    );
+  })() : null;
+
+  // A caller can take over the presentation while keeping all of the data
+  // handling above — which is how the Site Visit tab reuses this wholesale.
+  if (render) {
+    return (
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg,
+        boxShadow:T.shadow, padding:"20px 22px" }}>
+        {render({
+          items, loading, canManage, err, uploading, storageBar,
+          onUpload: handleFiles,
+          onDelete: handleDelete,
+          onReorder: handleReorder,
+          getUrl: (att, forceDownload) => getSignedUrl(att, forceDownload),
+        })}
+      </div>
+    );
+  }
 
   return (
     <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 22px" }}>
@@ -5075,7 +5446,7 @@ function ProjectAttachments({ T, session, projectId }) {
                                  e.currentTarget.style.boxShadow = T.glowSoft(kind.c); }}
               onMouseLeave={e=>{ e.currentTarget.style.borderColor = T.border;
                                  e.currentTarget.style.boxShadow = T.shadow; }}
-              onClick={()=>handleDownload(att)}>
+              onClick={()=>handleOpen(att)} title="Open in a new tab">
               <div style={{
                 width:38, height:38, borderRadius:R.md, flexShrink:0,
                 background:`${kind.c}${T.badge}`, border:`1px solid ${kind.c}33`,
@@ -5096,8 +5467,8 @@ function ProjectAttachments({ T, session, projectId }) {
                 </div>
               </div>
               <div style={{ display:"flex", flexDirection:"column", gap:2, flexShrink:0 }}>
-                <IconButton T={T} icon={Download} size={13} title="Download"
-                  onClick={e=>{e.stopPropagation(); handleDownload(att);}} />
+                <IconButton T={T} icon={Download} size={13} title="Download a copy"
+                  onClick={e=>{e.stopPropagation(); handleForceDownload(att);}} />
                 {canManage && (
                   <IconButton T={T} icon={Trash2} size={13} tone={T.danger} title="Delete"
                     onClick={e=>{e.stopPropagation(); handleDelete(att);}} />
@@ -5373,7 +5744,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           Back to {returnLabel || "Projects"}
         </button>
 
-        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
+        <div data-tour="detail-hero" style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
           gap:SP.lg, flexWrap:"wrap", position:"relative" }}>
           <div style={{ minWidth:0, flex:"1 1 320px" }}>
             <div style={{ ...TYPE.mono, color:T.heroFgMuted, marginBottom:5 }}>
@@ -5403,12 +5774,12 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <div style={{ display:"flex", gap:SP.xl, alignItems:"flex-start", flexWrap:"wrap" }}>
             <div>
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>DF Recommended</div>
-              <div style={{ ...TYPE.metricSm, color:T.heroFg }}>{fmtM(details.df_recommended_amount)}</div>
+              <div style={{ ...TYPE.metricSm, color:T.heroFg }}>{fmtFull(details.df_recommended_amount)}</div>
             </div>
             <div>
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved budget</div>
               <div style={{ ...TYPE.metricSm, color: +evm.bac > 0 ? BRAND.gold : T.heroFgDim }}>
-                {fmtM(evm.bac)}
+                {fmtFull(evm.bac)}
               </div>
             </div>
             {onGoToDiscussion && (
@@ -5431,11 +5802,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         gridTemplateColumns: vpD.isCompact ? "repeat(2, 1fr)" : "repeat(auto-fit, minmax(112px, 1fr))",
       }}>
         {[
-          { label:"Released",  value:fmtM(evm.amount_released), c:T.text },
+          { label:"Released",  value:fmtFull(evm.amount_released), c:T.text },
           { label:"Progress",  value:fmtP(evm.pct_complete),    c:T.text },
           { label:"CPI",       value:fmtR(evm.cpi),             c:cpiClr(evm.cpi) },
           { label:"SPI",       value:fmtR(evm.spi),             c:cpiClr(evm.spi) },
-          { label:"EAC",       value:fmtM(evm.eac),             c:T.text },
+          { label:"EAC",       value:fmtFull(evm.eac),          c:T.text },
           { label:"Schedule",  value:scheduleStatus,            c:scheduleColor },
           { label:"Budget",    value:budgetStatus,              c:budgetColor },
         ].map(({ label, value, c }) => (
@@ -5453,12 +5824,13 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             { id:"overview",   label:"Overview",   Icon:FileText },
             { id:"financials", label:"Financials", Icon:Wallet },
             { id:"timeline",   label:"Timeline",   Icon:Clock },
-            { id:"documents",  label:"Documents",  Icon:ClipboardList },
+            { id:"documents",  label:"Documents",  Icon:ClipboardList, "data-tour":"detail-tabs" },
+            { id:"sitevisit",  label:"Site Visit", Icon:Camera },
           ]} />
       </div>
 
       {tab === "timeline" && (
-        <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
+        <div data-tour="detail-timeline" style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
           <ProjectTimeline T={T} p={details} evm={evm} isCompact={vpD.isCompact} />
         </div>
       )}
@@ -5509,21 +5881,21 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         {/* Financial */}
         <div style={{ display: tab === "financials" ? "block" : "none" }}>
         <Card title="Financial Summary (PKR)">
-          <Row label="SU Requested"     value={fmtM(details.su_requested_amount)} />
-          <Row label="DF Recommended"   value={fmtM(details.df_recommended_amount)} />
+          <Row label="SU Requested"     value={fmtFull(details.su_requested_amount)} />
+          <Row label="DF Recommended"   value={fmtFull(details.df_recommended_amount)} />
           {parseFloat(details.su_requested_amount) !== parseFloat(details.df_recommended_amount) && (
-            <Row label="Budget Reduction" value={fmtM(details.su_requested_amount - details.df_recommended_amount)} vc={AMBER} />
+            <Row label="Budget Reduction" value={fmtFull(details.su_requested_amount - details.df_recommended_amount)} vc={AMBER} />
           )}
-          <Row label="BAC (Sanctioned)" value={fmtM(details.bac)} vc={GOLD} />
+          <Row label="BAC (Sanctioned)" value={fmtFull(details.bac)} vc={GOLD} />
           <div style={{margin:"10px 0", height:1, background:T.border}} />
-          <Row label="Amount Released"  value={fmtM(details.amount_released)} />
+          <Row label="Amount Released"  value={fmtFull(details.amount_released)} />
           <Row label="Budget Released Date"
             value={details.budget_release_date
               ? new Date(details.budget_release_date).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})
               : "—"}
             vc={details.budget_release_date ? T.text : T.dim} />
-          <Row label="Payments Made"    value={fmtM(details.payments_made)} />
-          <Row label="Budget Remaining" value={fmtM(parseFloat(details.bac||0) - parseFloat(details.amount_released||0))} vc={EMERALD} />
+          <Row label="Payments Made"    value={fmtFull(details.payments_made)} />
+          <Row label="Yet to Release"   value={fmtFull(parseFloat(details.bac||0) - parseFloat(details.amount_released||0))} vc={EMERALD} />
           <div style={{margin:"10px 0", height:1, background:T.border}} />
           <Row label="Payments Pending" value={details.payments_pending ? "Yes — awaiting transfer" : "No"} vc={details.payments_pending ? AMBER : EMERALD} />
           <Row label="Carry Forward"    value={details.is_carry_forward ? "Yes — prior FY obligation" : "No"} vc={details.is_carry_forward ? GOLD : T.muted} />
@@ -5539,9 +5911,9 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             <>
               <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:16}}>
                 {[
-                  {label:"Earned Value",  value:fmtM(evm.earned_value),   sub:"EV = BAC × % done"},
-                  {label:"Planned Value", value:fmtM(evm.planned_value),  sub:"PV = BAC × elapsed"},
-                  {label:"Actual Cost",   value:fmtM(evm.amount_released),sub:"AC = Released"},
+                  {label:"Earned Value",  value:fmtFull(evm.earned_value),   sub:"EV = BAC × % done"},
+                  {label:"Planned Value", value:fmtFull(evm.planned_value),  sub:"PV = BAC × elapsed"},
+                  {label:"Actual Cost",   value:fmtFull(evm.amount_released),sub:"AC = Released"},
                 ].map(({label,value,sub}) => (
                   <div key={label} style={{background:T.card2, borderRadius:R.md, padding:"10px", textAlign:"center"}}>
                     <div style={{fontSize:10, color:T.dim, textTransform:"uppercase", letterSpacing:1, marginBottom:4}}>{label}</div>
@@ -5554,7 +5926,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
               <Row label="SPI  (EV ÷ PV)"    value={fmtR(evm.spi)}                                     vc={cpiClr(evm.spi)} />
               <Row label="Cost Variance"      value={fmtMv(evm.cost_variance)}                          vc={varClr(evm.cost_variance)} />
               <Row label="Schedule Variance"  value={fmtMv(evm.schedule_variance)}                      vc={varClr(evm.schedule_variance)} />
-              <Row label="EAC  (BAC ÷ CPI)"  value={fmtM(evm.eac)} />
+              <Row label="EAC  (BAC ÷ CPI)"  value={fmtFull(evm.eac)} />
               <Row label="VAC  (BAC − EAC)"   value={fmtMv(parseFloat(evm.bac) - parseFloat(evm.eac))} vc={varClr(parseFloat(evm.bac) - parseFloat(evm.eac))} />
               <Row label="Time Elapsed"       value={fmtP((parseFloat(evm.time_elapsed_fraction)||0)*100)} />
             </>
@@ -5622,8 +5994,19 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
 
         </div>
 
-        <div style={{ display: tab === "documents" ? "block" : "none", gridColumn:"1 / -1" }}>
-          <ProjectAttachments T={T} session={session} projectId={projectId} />
+        <div data-tour="detail-documents" style={{ display: tab === "documents" ? "block" : "none", gridColumn:"1 / -1" }}>
+          <ProjectAttachments T={T} session={session} projectId={projectId} kind="document" />
+        </div>
+
+        {/* Site visit media. Same component behind it — upload, delete, signed
+            URLs and the storage total are all shared; only the presentation
+            differs, supplied through `render`. Mounted only when selected, so
+            the slideshow timer does not run in a hidden tab. */}
+        <div data-tour="detail-sitevisit" style={{ display: tab === "sitevisit" ? "block" : "none", gridColumn:"1 / -1" }}>
+          {tab === "sitevisit" && (
+            <ProjectAttachments T={T} session={session} projectId={projectId} kind="site_visit"
+              render={(api) => <SiteVisitGallery T={T} {...api} />} />
+          )}
         </div>
 
       </div>
@@ -5711,7 +6094,7 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:10, color:T.dim, fontFamily:"monospace" }}>{p.code || "-"}</div>
-                  <div style={{ fontSize:12.5, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</div>
+                  <div data-peek={p.name} style={{ fontSize:12.5, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</div>
                 </div>
                 <span style={{ fontSize:10, color:T.dim, flexShrink:0 }}>{(p.workflow_stage||"").replace("_"," ")}</span>
               </div>
@@ -6076,6 +6459,32 @@ function RestoreSnapshotButton({ T, session, entry }) {
         data:{project_count:current.length,projects:current,captured_at:new Date().toISOString()}
       }),headers:{"Prefer":"return=representation"}},session.access_token);
       const newSnapId = newSnap[0]?.id;
+
+      // 3. Delete all current projects.
+      // Same CASCADE hazard as the Excel import: a snapshot restore detaches
+      // every uploaded file just as thoroughly, and snapshots do not contain
+      // the files, so restoring cannot bring them back either.
+      const atRisk2 = await supa(
+        "/rest/v1/project_attachments?select=id,kind,project_id",
+        {}, session.access_token).catch(() => []);
+      const rows2 = Array.isArray(atRisk2) ? atRisk2 : [];
+      if (rows2.length > 0 && current.length > 0) {
+        const d = rows2.filter(a => a.kind === "document").length;
+        const m = rows2.filter(a => a.kind === "site_visit").length;
+        const affected = new Set(rows2.map(a => a.project_id)).size;
+        const parts = [];
+        if (d) parts.push(d + " document" + (d === 1 ? "" : "s"));
+        if (m) parts.push(m + " site visit file" + (m === 1 ? "" : "s"));
+        const proceed = window.confirm(
+          "Restoring this snapshot replaces every project.\n\n" +
+          parts.join(" and ") + " attached to " + affected + " project" +
+          (affected === 1 ? "" : "s") + " will be detached. Snapshots do not " +
+          "include uploaded files, so restoring will not bring them back.\n\n" +
+          "The files stay in storage and can be re-linked by hand.\n\n" +
+          "Continue with the restore?"
+        );
+        if (!proceed) { setMsg(null); return; }
+      }
 
       // 3. Delete all current projects
       setMsg("Removing current data…");
@@ -6702,7 +7111,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize:12.5, color:T.text, marginTop:2, lineHeight:1.3 }}>{p.name}</div>
+                <div data-peek={p.name} style={{ fontSize:12.5, color:T.text, marginTop:2, lineHeight:1.3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                 {cm.total > 0 && (
                   <div style={{ fontSize:11, color:T.dim, marginTop:4 }}>
                     {cm.total} comment{cm.total!==1?"s":""} · {timeAgo(cm.lastAt)}
@@ -6889,8 +7298,11 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
           : T.surface,
         border:`1px solid ${hot ? c + "59" : T.border}`,
         borderRadius:R.lg,
-        padding: big ? "18px 14px 14px" : "14px 12px 12px",
+        padding: big ? "20px 16px 16px" : "18px 14px 16px",
         textAlign:"center",
+        // Equal height across a tier: without this, one longer job description
+        // makes its card taller and the row reads as misaligned.
+        display:"flex", flexDirection:"column", flex:1, minWidth:0,
         boxShadow: hot ? T.glowSoft(c) : T.shadow,
         transform: hot ? "translateY(-3px)" : "none",
         transition:`transform ${MOTION.base}, box-shadow ${MOTION.base}, border-color ${MOTION.base}, background ${MOTION.base}`,
@@ -6936,8 +7348,8 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
         )}
       </div>
       {desc && (
-        <div style={{ ...TYPE.caption, color: hot ? T.textSoft : T.muted, lineHeight:1.45,
-          overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical",
+        <div style={{ ...TYPE.caption, color: hot ? T.textSoft : T.muted, lineHeight:1.5,
+          marginTop:"auto", paddingTop:2,
           transition:`color ${MOTION.base}` }}>{desc}</div>
       )}
 
@@ -7040,6 +7452,7 @@ function ContactEditModal({ T, data, onSave, onClose }) {
 }
 
 function TeamPage({ T, session }) {
+  const vpT = useViewport();
   const [about,   setAbout]   = useState(null);
   const [team,    setTeam]    = useState(null);
   const [contact, setContact] = useState(null);
@@ -7088,7 +7501,7 @@ function TeamPage({ T, session }) {
       <div style={{ maxWidth:820, margin:"0 auto", display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* ── About Us ── */}
-        <div className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.gold}14`, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:`${SP.xl}px ${SP.xxl}px`, boxShadow:T.shadow, borderTop:`2px solid ${BRAND.gold}` }}>
+        <div data-tour="team-about" className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.gold}14`, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:`${SP.xl}px ${SP.xxl}px`, boxShadow:T.shadow, borderTop:`2px solid ${BRAND.gold}` }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>About Us</div>
             {isPMO && <button className="pmo-focusable pmo-btn" onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
@@ -7112,57 +7525,78 @@ function TeamPage({ T, session }) {
             Our Team {isPMO && <span style={{ fontSize:10, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
           </div>
 
-          {/* Org chart: SVG lines + absolutely-positioned cards */}
-          <div style={{ paddingBottom:4 }}>
-            <div style={{ position:"relative", width:700, height:490, margin:"0 auto" }}>
+          {/* Org chart.
+              Was absolutely positioned at hardcoded pixel coordinates matched
+              to hand-drawn SVG lines: Head PMO ended at y=205 and Manager PMO
+              began at y=205, so the two tiers touched with no gap, and any card
+              whose description ran to three lines grew past the container's
+              fixed 490px height and spilled into the section below.
 
-              {/* SVG connecting lines */}
-              <svg width="700" height="490" style={{ position:"absolute", top:0, left:0, pointerEvents:"none" }}>
-                <g stroke={borderColor} strokeWidth="2" fill="none">
-                  {/* Head PMO → Manager PMO (straight down, both centered at x=380) */}
-                  <line x1="350" y1="145" x2="350" y2="205" />
-                  {/* Manager PMO bottom → L3 junction */}
-                  <line x1="350" y1="315" x2="350" y2="345" />
-                  {/* L3 horizontal bar spanning all 4 children: Deputy ↔ PO2 */}
-                  <line x1="90" y1="345" x2="610" y2="345" />
-                  {/* L3 → Deputy PMO */}
-                  <line x1="90" y1="345" x2="90" y2="380" />
-                  {/* L3 → Exec PMO */}
-                  <line x1="263" y1="345" x2="263" y2="380" />
-                  {/* L3 → PO1 */}
-                  <line x1="437" y1="345" x2="437" y2="380" />
-                  {/* L3 → PO2 */}
-                  <line x1="610" y1="345" x2="610" y2="380" />
-                </g>
-              </svg>
+              This is a flex layout with CSS connectors instead. Tiers size
+              themselves to their content, the connectors are drawn relative to
+              the cards rather than to fixed coordinates, and a longer job title
+              simply makes its row taller. */}
+          <div style={{ paddingBottom:SP.lg, overflowX:"auto" }}>
+            <div style={{
+              minWidth: vpT.width < 900 ? 680 : 760,
+              maxWidth: 880, margin:"0 auto",
+              display:"flex", flexDirection:"column", alignItems:"center",
+            }}>
 
-              {/* Cards — absolutely positioned to match SVG coordinates */}
-              {/* Head PMO: center-x=380, left=380-100=280 */}
-              <div style={{ position:"absolute", left:255, top:55, width:190 }}>
-                <OrgCardInner T={T} roleId="head_pmo" data={team?.head_pmo} title={MEMBER_TITLES.head_pmo} initials="MS" isPMO={isPMO} onEdit={()=>setEditMember("head_pmo")} big />
+              {/* Tier 1 */}
+              <div style={{ width:210 }}>
+                <OrgCardInner T={T} roleId="head_pmo" data={team?.head_pmo}
+                  title={MEMBER_TITLES.head_pmo} initials="MS" isPMO={isPMO}
+                  onEdit={()=>setEditMember("head_pmo")} big />
               </div>
 
-              {/* Manager PMO: center-x=380, left=380-80=300 (alone at level 2) */}
-              <div style={{ position:"absolute", left:270, top:205, width:160 }}>
-                <OrgCardInner T={T} roleId="manager_pmo" data={team?.manager_pmo} title={MEMBER_TITLES.manager_pmo} initials="MP" isPMO={isPMO} onEdit={()=>setEditMember("manager_pmo")} />
+              {/* Connector: tier 1 → tier 2 */}
+              <div aria-hidden="true" style={{
+                width:2, height:34, background:borderColor, flexShrink:0 }} />
+
+              {/* Tier 2 */}
+              <div style={{ width:210 }}>
+                <OrgCardInner T={T} roleId="manager_pmo" data={team?.manager_pmo}
+                  title={MEMBER_TITLES.manager_pmo} initials="MO" isPMO={isPMO}
+                  onEdit={()=>setEditMember("manager_pmo")} big />
               </div>
 
-              {/* ── LEVEL 3 — 4 cards, Deputy PMO leftmost ── */}
-              {/* Deputy PMO: center-x=95, left=95-80=15 */}
-              <div style={{ position:"absolute", left:15, top:380, width:150 }}>
-                <OrgCardInner T={T} roleId="deputy_pmo" data={team?.deputy_pmo} title={MEMBER_TITLES.deputy_pmo} initials="DP" isPMO={isPMO} onEdit={()=>setEditMember("deputy_pmo")} />
-              </div>
-              {/* Exec PMO: center-x=285, left=285-80=205 */}
-              <div style={{ position:"absolute", left:188, top:380, width:150 }}>
-                <OrgCardInner T={T} roleId="exec_pmo" data={team?.exec_pmo} title={MEMBER_TITLES.exec_pmo} initials="EP" isPMO={isPMO} onEdit={()=>setEditMember("exec_pmo")} />
-              </div>
-              {/* PO1: center-x=475, left=475-80=395 */}
-              <div style={{ position:"absolute", left:362, top:380, width:150 }}>
-                <OrgCardInner T={T} roleId="po1" data={team?.po1} title={MEMBER_TITLES.po1} initials="PO" isPMO={isPMO} onEdit={()=>setEditMember("po1")} />
-              </div>
-              {/* PO2: center-x=665, left=665-80=585 */}
-              <div style={{ position:"absolute", left:535, top:380, width:150 }}>
-                <OrgCardInner T={T} roleId="po2" data={team?.po2} title={MEMBER_TITLES.po2} initials="PO" isPMO={isPMO} onEdit={()=>setEditMember("po2")} />
+              {/* Connector: tier 2 → the branch bar */}
+              <div aria-hidden="true" style={{
+                width:2, height:30, background:borderColor, flexShrink:0 }} />
+
+              {/* Tier 3. Each column carries its own stub above the card, so the
+                  bar and drops stay aligned at any width — no coordinates to
+                  keep in sync. */}
+              <div style={{
+                display:"grid", gridTemplateColumns:"repeat(4, minmax(0, 1fr))",
+                gap:SP.lg, width:"100%", alignItems:"stretch",
+              }}>
+                {[
+                  ["deputy_pmo", "MW"],
+                  ["exec_pmo",   "EU"],
+                  ["po1",        "MA"],
+                  ["po2",        "MA"],
+                ].map(([roleId, initials], i, arr) => (
+                  <div key={roleId} style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                    {/* horizontal bar segment + vertical drop */}
+                    <div aria-hidden="true" style={{ position:"relative", width:"100%", height:30 }}>
+                      <span style={{
+                        position:"absolute", top:0, height:2, background:borderColor,
+                        left:  i === 0 ? "50%" : 0,
+                        right: i === arr.length - 1 ? "50%" : 0,
+                      }} />
+                      <span style={{
+                        position:"absolute", top:0, bottom:0, left:"50%",
+                        width:2, marginLeft:-1, background:borderColor }} />
+                    </div>
+                    <div style={{ width:"100%", display:"flex", flex:1 }}>
+                      <OrgCardInner T={T} roleId={roleId} data={team?.[roleId]}
+                        title={MEMBER_TITLES[roleId]} initials={initials}
+                        isPMO={isPMO} onEdit={()=>setEditMember(roleId)} />
+                    </div>
+                  </div>
+                ))}
               </div>
 
             </div>
@@ -8391,7 +8825,8 @@ function GlobalSearch({ T, session, open, onClose, onSelect, onQuick }) {
                     <Clock size={13} color={on ? BRAND.gold : T.dim} style={{ flexShrink:0 }} />
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft,
-                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
+                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
+                        data-peek={r.name}>{r.name}</div>
                       {r.code && r.code !== "-" && (
                         <div style={{ ...TYPE.mono, fontSize:10.5, color:T.dim, marginTop:1 }}>{r.code}</div>
                       )}
@@ -8434,7 +8869,8 @@ function GlobalSearch({ T, session, open, onClose, onSelect, onQuick }) {
                 }}>
                 <div style={{ minWidth:0, flex:1 }}>
                   <div style={{ ...TYPE.bodySm, color:T.text, fontWeight: on ? 600 : 450,
-                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
+                    data-peek={p.name}>{p.name}</div>
                   <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginTop:2 }}>
                     {p.code && p.code !== "-"
                       ? <span style={{ ...TYPE.mono, color:T.muted }}>{p.code}</span>
@@ -8480,6 +8916,33 @@ export default function App() {
   const [discussionProjectId, setDiscussionProjectId] = useState(null); // {token, type}
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadTick, setUnreadTick] = useState(0); // bump to force an immediate refresh
+
+  // ─── ONBOARDING TOUR (Guest, Project Manager only — never PMO) ──────────
+  // tutorial_offered_at gates the invite card, not the tour itself: "Take the
+  // tour" in the sidebar always works, regardless of whether the card was
+  // ever shown. A user PMO deletes and re-adds gets a fresh auth.users row,
+  // so tutorial_offered_at is NULL again with no extra logic — the offer
+  // reappears on its own.
+  const [showTourInvite, setShowTourInvite] = useState(false);
+  useEffect(() => {
+    if (!session?.access_token || session.role === "pmo") return;
+    if (session.tutorial_offered_at) return;
+    const t = setTimeout(() => {
+      setShowTourInvite(true);
+      supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ tutorial_offered_at: new Date().toISOString() }),
+      }, session.access_token).catch(() => {});
+    }, 1400); // after the page's own entrance stagger settles
+    return () => clearTimeout(t);
+  }, [session]);
+
+  // openSampleProject and tourNav were declared here, before openProject and
+  // setDashTab exist as const bindings later in this same function. Both are
+  // referenced only inside callbacks (never called at declare-time), so
+  // esbuild's static checks passed — the TDZ only fires when a step actually
+  // runs. Deleted from here; the real declarations are below, once
+  // openProject and setDashTab genuinely exist.
 
   // Global unread-comment count (for sidebar badge) — polls every 45s.
   // "Unread for me" = a comment I can see, that I didn't write, and haven't opened yet.
@@ -8572,6 +9035,7 @@ export default function App() {
   usePresence();
   useProximityField();
   useScrollParallax();   // §12
+  useProjectPeek();      // full project names on hover, anywhere in the portal
   // §9 — the atmosphere carries how the portfolio is actually doing: a warm
   // cast when something needs attention, cool when healthy. The environment
   // becomes about the data rather than decoration over it.
@@ -8581,6 +9045,57 @@ export default function App() {
   // §17 — one lightweight read, shared by every navigation preview.
   const [navStats, setNavStats] = useState(null);
   const [dashTab, setDashTab] = useState(null);   // §18 — set by quick actions
+
+  // Placed here deliberately: this is the first point in App() where both
+  // openProject and setDashTab exist as real bindings. The previous location
+  // — earlier in this function, alongside the other tour state — referenced
+  // both before they were declared. esbuild's static checks don't catch a
+  // temporal-dead-zone read inside a callback body, since the callback isn't
+  // invoked at parse time; it only threw once a tour step actually ran,
+  // which is how this reached production before being caught.
+  const openSampleProject = useCallback(async () => {
+    if (selectedProjectId) return;
+    // A specific project — Renovation & Upgratdation of QIE Campus — chosen
+    // because it genuinely has both documents and a video in Site Visit, so
+    // the tour's Documents and Site Visit steps show real content instead of
+    // landing on whatever happened to be edited most recently.
+    //
+    // Looked up by `code`, not a stored id: this portal's re-import path
+    // deletes and recreates every project row (confirmed cascading through
+    // project_attachments earlier this session), which changes ids but not
+    // codes. Falls back to most-recently-updated if the project is ever
+    // renamed, removed, or its code changes, so the tour can never fail to
+    // open something.
+    const TOUR_SAMPLE_CODE = "IT.261297-04";
+    try {
+      const byCode = await supa(
+        `/rest/v1/projects?code=eq.${TOUR_SAMPLE_CODE}&select=id&limit=1`,
+        {}, session.access_token);
+      let id = Array.isArray(byCode) && byCode[0]?.id;
+      if (!id) {
+        const rows = await supa(
+          "/rest/v1/projects?select=id&order=updated_at.desc&limit=1",
+          {}, session.access_token);
+        id = Array.isArray(rows) && rows[0]?.id;
+      }
+      if (id) openProject(id);
+    } catch (_) { /* the step still shows; the demo simply has nothing to open */ }
+  }, [session, selectedProjectId, openProject]);
+
+  const markTourComplete = useCallback(async () => {
+    if (!session?.access_token) return;
+    await supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
+      method: "PATCH", headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ tutorial_completed_at: new Date().toISOString() }),
+    }, session.access_token).catch(() => {});
+  }, [session]);
+
+  const tourNav = {
+    setPage,
+    setTab: (pg, tab) => { if (pg === "cmd") setDashTab(tab); },
+    openSampleProject,
+    onFinish: markTourComplete,
+  };
 
   // Data freshness, read from the newest activity-log entry rather than the
   // page-load time — it answers "how current is this?", not "when did I open it?".
@@ -8721,6 +9236,10 @@ export default function App() {
 
   return (
     <FocusProvider>
+    <TourProvider T={T} nav={tourNav}>
+      <TourInviteCard T={T} show={showTourInvite}
+        role={session?.role} name={session?.full_name}
+        onDismiss={() => setShowTourInvite(false)} />
       <DeadlineAlertPopups T={T} session={session} />
       {/* Quick actions are computed per page and per role, then handed to the
           header — see QUICK_ACTIONS below. */}
@@ -8759,6 +9278,14 @@ export default function App() {
         "--grid-c": T.mode === "dark" ? "rgba(140,180,230,0.030)" : "rgba(30,70,120,0.028)",
       }} />
       {/* §3 — a global light source that is the cursor itself. */}
+      {/* Peek panel colours, set on the root so the delegated tooltip — which
+          lives outside React's tree — follows the theme. */}
+      <style>{`:root{
+        --peek-bg:${T.surfaceOver};
+        --peek-border:${T.borderStrong};
+        --peek-fg:${T.text};
+        --peek-muted:${T.muted};
+      }`}</style>
       <div className="pmo-worldlight" aria-hidden="true" style={{
         "--world-light": T.mode === "dark"
           ? "rgba(120,175,240,0.075)" : "rgba(44,123,196,0.055)",
@@ -8800,10 +9327,11 @@ export default function App() {
           <>
             {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} fyLabel={portal.fy} initialTab={dashTab} />}
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
+            {effectivePage === "constellation" && <ConstellationPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
             {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "perf" && <PerformancePage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} />}
-            {effectivePage === "upd"  && <UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} />}
+            {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
+            {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} />}
+            {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} />}
             {effectivePage === "users" && <UserManagementPage T={T} session={session} />}
@@ -8822,6 +9350,7 @@ export default function App() {
         }} />
       )}
     </div>
+    </TourProvider>
     </FocusProvider>
   );
 }
