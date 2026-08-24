@@ -6147,7 +6147,7 @@ function UserManagementPage({ T, session }) {
   const [confirmDelete,    setConfirmDelete]    = useState(null); // user id pending confirmation
   const [deleting,         setDeleting]         = useState(null); // user id being deleted
   const [resettingId,      setResettingId]      = useState(null); // user id having its password reset
-  const [resetResult,      setResetResult]      = useState(null); // {username, password, emailSent} — shown once
+  const [resettingUser,    setResettingUser]    = useState(null); // user object with the set-password form open
   const [editPhoneId,      setEditPhoneId]      = useState(null);
   const [phoneDraft,       setPhoneDraft]       = useState("");
 
@@ -6233,23 +6233,21 @@ function UserManagementPage({ T, session }) {
   };
 
   // ── Reset password ────────────────────────────────────────────────────────
-  // Sets a new password directly via the admin API — no email round-trip, no
-  // link that can go stale or get burned by a scanner (the exact class of bug
-  // just fixed on the invite flow). The password is shown once, here, and
-  // never emailed in plaintext; the user gets a notification that it changed,
-  // not the password itself.
-  const resetPassword = async (user) => {
+  // PMO types the exact password and sets it directly — no generated
+  // password, no email. The endpoint still refuses PMO targets even if this
+  // UI is bypassed entirely.
+  const submitPasswordReset = async (user, newPassword) => {
     setResettingId(user.id);
     try {
       const res = await fetch(`${SUPA_FN_URL}/reset-user-password`, {
         method:"POST",
         headers:{ "Authorization":`Bearer ${session.access_token}`, "Content-Type":"application/json", "apikey":SUPA_KEY },
-        body: JSON.stringify({ user_id: user.id }),
+        body: JSON.stringify({ user_id: user.id, new_password: newPassword }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Reset failed");
-      setResetResult({ username: result.username, password: result.new_password, emailSent: result.email_sent });
-    } catch(e) { alert("Could not reset password: " + e.message); }
+      setResettingUser(null);
+    } catch(e) { alert("Could not set password: " + e.message); }
     setResettingId(null);
   };
 
@@ -6402,9 +6400,9 @@ function UserManagementPage({ T, session }) {
                             </Button>
                           )}
                           {u.role !== "pmo" && (
-                            <Button T={T} variant="ghost" size="sm" loading={resettingId === u.id}
-                              onClick={() => resetPassword(u)}
-                              title="Sets a new password immediately — shown once, here, to share with the user directly">
+                            <Button T={T} variant="ghost" size="sm"
+                              onClick={() => setResettingUser(u)}
+                              title="Set a new password for this account directly">
                               Reset Password
                             </Button>
                           )}
@@ -6461,45 +6459,75 @@ function UserManagementPage({ T, session }) {
           onClose={() => setAssigningUser(null)}
         />
       )}
-      {resetResult && (
-        <ResetPasswordResultModal T={T} result={resetResult} onClose={() => setResetResult(null)} />
+      {resettingUser && (
+        <SetUserPasswordModal T={T} user={resettingUser} loading={resettingId === resettingUser.id}
+          onClose={() => setResettingUser(null)}
+          onSubmit={(pw) => submitPasswordReset(resettingUser, pw)} />
       )}
     </div>
   );
 }
 
-function ResetPasswordResultModal({ T, result, onClose }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(result.password); setCopied(true); setTimeout(() => setCopied(false), 1800); }
-    catch (_) {}
+function SetUserPasswordModal({ T, user, loading, onClose, onSubmit }) {
+  const [np, setNp] = useState("");
+  const [cp, setCp] = useState("");
+  const [showNp, setShowNp] = useState(false);
+  const [showCp, setShowCp] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const inp = { width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${T.inputBorder}`,
+    borderRadius:R.md, padding:"11px 40px 11px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily,
+    outline:"none" };
+  const eyeBtn = { position:"absolute", right:10, top:"50%", transform:"translateY(-50%)",
+    background:"none", border:"none", color:T.dim, cursor:"pointer", display:"flex", padding:2 };
+
+  const submit = () => {
+    setErr(null);
+    if (!np)          return setErr("Enter a password.");
+    if (np.length<8)  return setErr("Password must be at least 8 characters.");
+    if (np !== cp)    return setErr("Passwords don't match.");
+    onSubmit(np);
   };
+
   return (
-    <Modal T={T} title="Password reset" onClose={onClose}>
+    <Modal T={T} title={`Set a password for ${user.username}`} onClose={onClose}>
       <div style={{ ...TYPE.bodySm, color:T.textSoft, marginBottom:SP.md, lineHeight:1.6 }}>
-        <strong style={{ color:T.text }}>{result.username}</strong>'s password has been reset. This is
-        shown once — copy it now and share it with them directly. It will not be shown again, and it
-        was not included in {result.emailSent ? "their notification email" : "an email"}.
+        This takes effect immediately — {user.username} will need to sign in with whatever you set here.
+        No email is sent; share it with them directly.
       </div>
-      <div style={{ display:"flex", alignItems:"center", gap:SP.sm,
-        background:T.surfaceRaised, border:`1px solid ${T.border}`, borderRadius:R.sm,
-        padding:"12px 14px", marginBottom:SP.md }}>
-        <span style={{ ...TYPE.mono, fontSize:16, letterSpacing:1, color:T.text, flex:1,
-          userSelect:"all" }}>{result.password}</span>
-        <button className="pmo-focusable pmo-btn" onClick={copy}
-          style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 11px",
-            background: copied ? T.positive+"1E" : "transparent",
-            border:`1px solid ${copied ? T.positive : T.border}`, borderRadius:R.sm,
-            color: copied ? T.textOf(T.positive) : T.textSoft, ...TYPE.caption, fontWeight:600, cursor:"pointer" }}>
-          {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
-        </button>
+
+      {err && (
+        <div style={{ display:"flex", alignItems:"flex-start", gap:6, marginBottom:SP.md,
+          padding:"8px 12px", borderRadius:R.sm, background:T.danger+"14", ...TYPE.caption, color:T.textOf(T.danger) }}>
+          <AlertCircle size={13} style={{ flexShrink:0, marginTop:1 }} /> {err}
+        </div>
+      )}
+
+      <div style={{ marginBottom:14 }}>
+        <label style={{ display:"block", ...TYPE.label, color:T.muted, marginBottom:6 }}>New Password</label>
+        <div style={{ position:"relative" }}>
+          <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="At least 8 characters" style={inp} autoFocus />
+          <button className="pmo-focusable" title="Show or hide password" onClick={()=>setShowNp(s=>!s)} style={eyeBtn}>
+            {showNp ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
       </div>
-      <div style={{ ...TYPE.caption, color:T.dim, marginBottom:SP.md }}>
-        {result.emailSent
-          ? `${result.username} has also been emailed to let them know their password changed — without the password itself.`
-          : "No notification email was sent (no address on file, or email isn't configured)."}
+      <div style={{ marginBottom:20 }}>
+        <label style={{ display:"block", ...TYPE.label, color:T.muted, marginBottom:6 }}>Confirm Password</label>
+        <div style={{ position:"relative" }}>
+          <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&submit()} style={inp} />
+          <button className="pmo-focusable" title="Show or hide password" onClick={()=>setShowCp(s=>!s)} style={eyeBtn}>
+            {showCp ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
       </div>
-      <Button T={T} variant="primary" full onClick={onClose}>Done</Button>
+
+      <div style={{ display:"flex", gap:SP.sm }}>
+        <Button T={T} variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+        <Button T={T} variant="primary" full loading={loading} onClick={submit}>Set Password</Button>
+      </div>
     </Modal>
   );
 }
