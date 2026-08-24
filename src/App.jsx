@@ -12,7 +12,7 @@ import {
   Shield, BarChart3, Building2, Lock,
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
-  Sparkles, Sun, Moon, Camera, Orbit
+  Sparkles, Sun, Moon, Camera, Orbit, Copy
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -6146,6 +6146,8 @@ function UserManagementPage({ T, session }) {
   const [savingAssign,     setSavingAssign]     = useState(false);
   const [confirmDelete,    setConfirmDelete]    = useState(null); // user id pending confirmation
   const [deleting,         setDeleting]         = useState(null); // user id being deleted
+  const [resettingId,      setResettingId]      = useState(null); // user id having its password reset
+  const [resetResult,      setResetResult]      = useState(null); // {username, password, emailSent} — shown once
   const [editPhoneId,      setEditPhoneId]      = useState(null);
   const [phoneDraft,       setPhoneDraft]       = useState("");
 
@@ -6228,6 +6230,27 @@ function UserManagementPage({ T, session }) {
       }, session.access_token);
       load();
     } catch(_) {}
+  };
+
+  // ── Reset password ────────────────────────────────────────────────────────
+  // Sets a new password directly via the admin API — no email round-trip, no
+  // link that can go stale or get burned by a scanner (the exact class of bug
+  // just fixed on the invite flow). The password is shown once, here, and
+  // never emailed in plaintext; the user gets a notification that it changed,
+  // not the password itself.
+  const resetPassword = async (user) => {
+    setResettingId(user.id);
+    try {
+      const res = await fetch(`${SUPA_FN_URL}/reset-user-password`, {
+        method:"POST",
+        headers:{ "Authorization":`Bearer ${session.access_token}`, "Content-Type":"application/json", "apikey":SUPA_KEY },
+        body: JSON.stringify({ user_id: user.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Reset failed");
+      setResetResult({ username: result.username, password: result.new_password, emailSent: result.email_sent });
+    } catch(e) { alert("Could not reset password: " + e.message); }
+    setResettingId(null);
   };
 
   // ── Delete user ───────────────────────────────────────────────────────────
@@ -6379,6 +6402,13 @@ function UserManagementPage({ T, session }) {
                             </Button>
                           )}
                           {u.role !== "pmo" && (
+                            <Button T={T} variant="ghost" size="sm" loading={resettingId === u.id}
+                              onClick={() => resetPassword(u)}
+                              title="Sets a new password immediately — shown once, here, to share with the user directly">
+                              Reset Password
+                            </Button>
+                          )}
+                          {u.role !== "pmo" && (
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                                 <span style={{ ...TYPE.caption, color:T.textOf(T.danger), fontWeight:600 }}>Permanent —</span>
@@ -6431,7 +6461,46 @@ function UserManagementPage({ T, session }) {
           onClose={() => setAssigningUser(null)}
         />
       )}
+      {resetResult && (
+        <ResetPasswordResultModal T={T} result={resetResult} onClose={() => setResetResult(null)} />
+      )}
     </div>
+  );
+}
+
+function ResetPasswordResultModal({ T, result, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(result.password); setCopied(true); setTimeout(() => setCopied(false), 1800); }
+    catch (_) {}
+  };
+  return (
+    <Modal T={T} title="Password reset" onClose={onClose}>
+      <div style={{ ...TYPE.bodySm, color:T.textSoft, marginBottom:SP.md, lineHeight:1.6 }}>
+        <strong style={{ color:T.text }}>{result.username}</strong>'s password has been reset. This is
+        shown once — copy it now and share it with them directly. It will not be shown again, and it
+        was not included in {result.emailSent ? "their notification email" : "an email"}.
+      </div>
+      <div style={{ display:"flex", alignItems:"center", gap:SP.sm,
+        background:T.surfaceRaised, border:`1px solid ${T.border}`, borderRadius:R.sm,
+        padding:"12px 14px", marginBottom:SP.md }}>
+        <span style={{ ...TYPE.mono, fontSize:16, letterSpacing:1, color:T.text, flex:1,
+          userSelect:"all" }}>{result.password}</span>
+        <button className="pmo-focusable pmo-btn" onClick={copy}
+          style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 11px",
+            background: copied ? T.positive+"1E" : "transparent",
+            border:`1px solid ${copied ? T.positive : T.border}`, borderRadius:R.sm,
+            color: copied ? T.textOf(T.positive) : T.textSoft, ...TYPE.caption, fontWeight:600, cursor:"pointer" }}>
+          {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
+        </button>
+      </div>
+      <div style={{ ...TYPE.caption, color:T.dim, marginBottom:SP.md }}>
+        {result.emailSent
+          ? `${result.username} has also been emailed to let them know their password changed — without the password itself.`
+          : "No notification email was sent (no address on file, or email isn't configured)."}
+      </div>
+      <Button T={T} variant="primary" full onClick={onClose}>Done</Button>
+    </Modal>
   );
 }
 
