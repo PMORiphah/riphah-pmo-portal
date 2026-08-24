@@ -221,28 +221,32 @@ function TourInviteCard({ T, show, role, name, onDismiss }) {
   const isPM = role === "project_manager";
   return (
     <div className="pmo-rise" style={{
-      position: "fixed", right: 22, bottom: 22, zIndex: 1500, width: 300,
+      position: "fixed", right: 26, bottom: 26, zIndex: 1500, width: 450,
       background: T.surfaceOver, border: `1px solid ${T.borderStrong}`,
-      borderRadius: R.lg, padding: `${SP.md}px ${SP.lg}px`, boxShadow: T.shadowLg,
+      borderRadius: R.lg, padding: "18px 24px", boxShadow: T.shadowLg,
       backdropFilter: "blur(16px) saturate(150%)", WebkitBackdropFilter: "blur(16px) saturate(150%)",
-      borderLeft: `2px solid ${BRAND.gold}`,
+      borderLeft: `3px solid ${BRAND.gold}`,
     }}>
-      <div style={{ ...TYPE.h3, color: T.text, marginBottom: 4 }}>
-        Welcome{name ? `, ${name.split(" ")[0]}` : ""}
+      {/* name.split(" ")[0] took only the first space-separated token, which
+          for a full_name stored as "Mr. Yahya Khan" is just "Mr." — the
+          honorific, not the name. Using the whole string fixes it for every
+          account, not just ones without a title prefix. */}
+      <div style={{ ...TYPE.h3, fontSize:21, color: T.text, marginBottom: 6 }}>
+        Welcome{name ? `, ${name}` : ""}
       </div>
-      <div style={{ ...TYPE.bodySm, color: T.textSoft, lineHeight: 1.55, marginBottom: SP.md }}>
+      <div style={{ ...TYPE.bodySm, fontSize:18, color: T.textSoft, lineHeight: 1.55, marginBottom: 18 }}>
         You're set up as a {isPM ? "Project Manager" : "Guest"}. Want a
         {" "}{isPM ? "5-minute" : "2-minute"} tour of what you can do here?
       </div>
-      <div style={{ display: "flex", gap: SP.sm, justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
         <button className="pmo-focusable pmo-btn" onClick={onDismiss}
           style={{ background: "transparent", border: "none", color: T.muted,
-            cursor: "pointer", padding: "7px 10px", ...TYPE.bodySm }}>Not now</button>
+            cursor: "pointer", padding: "10px 15px", ...TYPE.bodySm, fontSize:16 }}>Not now</button>
         <button className="pmo-focusable pmo-btn"
           onClick={() => { onDismiss(); tour.start(isPM ? pmSteps() : guestSteps()); }}
-          style={{ padding: "7px 16px", background: `linear-gradient(135deg, ${BRAND.gold}, #C47818)`,
+          style={{ padding: "10px 24px", background: `linear-gradient(135deg, ${BRAND.gold}, #C47818)`,
             border: "none", borderRadius: R.sm, color: "#1A1206", fontWeight: 700,
-            ...TYPE.bodySm, cursor: "pointer" }}>Start tour</button>
+            ...TYPE.bodySm, fontSize:16, cursor: "pointer" }}>Start tour</button>
       </div>
     </div>
   );
