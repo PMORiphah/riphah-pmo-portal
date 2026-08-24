@@ -305,6 +305,33 @@ export const injectGlobals = () => {
       filter: blur(1.6px) saturate(.92) brightness(.92);
     }
 
+    /* Full project name on hover, for names a column cannot fit. Positioned
+       fixed so it escapes every table's overflow, as the insight panels do. */
+    .pmo-peek {
+      position:fixed; z-index:1500; max-width:min(460px, 76vw);
+      pointer-events:none; opacity:0; transform:translateY(5px);
+      background:var(--peek-bg); border:1px solid var(--peek-border);
+      border-radius:10px; padding:9px 13px;
+      box-shadow:0 18px 46px -14px rgba(0,0,0,.62);
+      backdrop-filter:blur(14px) saturate(140%);
+      -webkit-backdrop-filter:blur(14px) saturate(140%);
+      transition:opacity .16s ease, transform .16s cubic-bezier(.16,1,.3,1);
+    }
+    .pmo-peek.show { opacity:1; transform:none; }
+    .pmo-peek-name {
+      font-family:'Inter',sans-serif; font-size:12.5px; font-weight:600;
+      line-height:1.45; color:var(--peek-fg);
+    }
+    .pmo-peek-meta {
+      font-family:'Inter',sans-serif; font-size:11px; margin-top:4px;
+      padding-top:4px; border-top:1px solid var(--peek-border);
+      color:var(--peek-muted);
+    }
+    [data-peek] { cursor:default; }
+
+    /* Slideshow progress hairline — shows how long until the next slide. */
+    @keyframes pmoSlideBar { from { width:0; } to { width:100%; } }
+
     /* §15 — something that has changed since your last visit. */
     .pmo-since { position: relative; }
     .pmo-since::after {
