@@ -7743,6 +7743,35 @@ function SessionExpiredModal({ T, onSignIn }) {
 }
 
 // ─── SET PASSWORD (invite acceptance + password recovery) ─────────────────────
+function InviteErrorScreen({ T, message, onBackToSignIn }) {
+  return (
+    <div style={{ display:"flex", height:"100vh", background:T.mainBg }}>
+      <div style={{ width:420, flexShrink:0, background:NAVY,
+        backgroundImage:"repeating-linear-gradient(45deg,transparent 0,transparent 22px,rgba(216,152,64,.05) 22px,rgba(216,152,64,.05) 23px),repeating-linear-gradient(-45deg,transparent 0,transparent 22px,rgba(216,152,64,.05) 22px,rgba(216,152,64,.05) 23px)",
+        display:"flex", flexDirection:"column", justifyContent:"center", padding:"60px 50px" }}>
+        <img src={LOGO} alt="Riphah" style={{ width:160, filter:"brightness(0) invert(1)", opacity:.88, marginBottom:40 }} />
+        <div style={{ fontSize:10, color:"rgba(255,255,255,0.25)", letterSpacing:3, textTransform:"uppercase", marginBottom:12 }}>Capital Project Monitoring</div>
+        <div style={{ fontFamily:TYPE.display.fontFamily, fontSize:32, color:"#fff", lineHeight:1.3 }}>Link No Longer{"\n"}Valid</div>
+      </div>
+      <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:40 }}>
+        <div style={{ width:"100%", maxWidth:400, textAlign:"center" }}>
+          <div style={{ width:56, height:56, borderRadius:"50%", background:T.danger+"1E",
+            display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px" }}>
+            <AlertCircle size={26} color={T.textOf(T.danger)} />
+          </div>
+          <div style={{ ...TYPE.h2, color:T.text, marginBottom:10 }}>This link is no longer valid</div>
+          <div style={{ ...TYPE.bodySm, color:T.textSoft, lineHeight:1.6, marginBottom:26 }}>{message}</div>
+          <button className="pmo-focusable pmo-btn" onClick={onBackToSignIn}
+            style={{ padding:"10px 22px", background:T.blueBright, border:"none", borderRadius:R.sm,
+              color:"#fff", fontWeight:700, ...TYPE.bodySm, cursor:"pointer" }}>
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SetPasswordPage({ T, dark, token, type, onDone }) {
   const [np,     setNp]     = useState("");
   const [cp,     setCp]     = useState("");
@@ -8911,6 +8940,7 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [returnPage, setReturnPage] = useState("proj");
   const [inviteState, setInviteState] = useState(null);
+  const [inviteError, setInviteError] = useState(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [discussionProjectId, setDiscussionProjectId] = useState(null); // {token, type}
@@ -8997,29 +9027,79 @@ export default function App() {
 
   // Session restore + invite/recovery token detection
   useEffect(() => {
-    // 1. Check for Supabase auth token in URL hash (invite or password recovery)
-    const hash = window.location.hash;
-    if (hash) {
-      const params = new URLSearchParams(hash.substring(1));
-      const type  = params.get("type");
-      const token = params.get("access_token");
-      if ((type === "invite" || type === "recovery") && token) {
-        setInviteState({ token, type });
-        // Remove token from URL immediately for security
+    (async () => {
+      // 1a. New format: a link to our own app, carrying only a hashed_token.
+      // A plain HTTP fetch (an email security scanner checking the link for
+      // malware, for instance) never executes this code, since it never runs
+      // JavaScript at all — only a real browser gets this far, which is what
+      // makes this immune to the prefetch-burns-the-token failure the old
+      // format had. See invite-user edge function for the full story.
+      const search = new URLSearchParams(window.location.search);
+      const tokenHash = search.get("invite_token");
+      const searchType = search.get("type");
+      if (tokenHash && (searchType === "invite" || searchType === "recovery")) {
         window.history.replaceState({}, "", window.location.pathname);
+        try {
+          const res = await fetch(`${SUPA_URL}/auth/v1/verify`, {
+            method: "POST",
+            headers: { apikey: SUPA_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ type: searchType, token_hash: tokenHash }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.access_token) {
+            throw new Error(data.error_description || data.msg || "This link is no longer valid.");
+          }
+          setInviteState({ token: data.access_token, type: searchType });
+        } catch (e) {
+          setInviteError(
+            "This invitation link has already been used or has expired. " +
+            "Ask the PMO to send you a new one."
+          );
+        }
         setRestoring(false);
         return;
       }
-    }
-    // 2. Restore saved session
-    try {
-      const raw = localStorage.getItem("pmo_session");
-      if (raw) {
-        const s = JSON.parse(raw);
-        if (s.expires_at && Date.now() < (s.expires_at - 60) * 1000) setSession(s);
+
+      // 1b. Old format still in flight in anyone's inbox from before this fix:
+      // a direct link to Supabase's own verify endpoint, redirecting back with
+      // either a live session or an #error=... in the hash. The error case
+      // was previously unhandled entirely — it fell straight through to an
+      // ordinary sign-in screen with no explanation, which is the exact
+      // symptom reported.
+      const hash = window.location.hash;
+      if (hash) {
+        const params = new URLSearchParams(hash.substring(1));
+        const type  = params.get("type");
+        const token = params.get("access_token");
+        const hashError = params.get("error_code") || params.get("error");
+        if ((type === "invite" || type === "recovery") && token) {
+          setInviteState({ token, type });
+          window.history.replaceState({}, "", window.location.pathname);
+          setRestoring(false);
+          return;
+        }
+        if (hashError) {
+          window.history.replaceState({}, "", window.location.pathname);
+          setInviteError(
+            hashError === "otp_expired"
+              ? "This invitation link has already been used or has expired. Ask the PMO to send you a new one."
+              : "This link couldn't be verified. Ask the PMO to send you a new one."
+          );
+          setRestoring(false);
+          return;
+        }
       }
-    } catch(_) {}
-    setRestoring(false);
+
+      // 2. Restore saved session
+      try {
+        const raw = localStorage.getItem("pmo_session");
+        if (raw) {
+          const s = JSON.parse(raw);
+          if (s.expires_at && Date.now() < (s.expires_at - 60) * 1000) setSession(s);
+        }
+      } catch(_) {}
+      setRestoring(false);
+    })();
   }, []);
 
   const handleLogout = async () => {
@@ -9206,6 +9286,7 @@ export default function App() {
     page;
 
   if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:TYPE.body.fontFamily }}>Loading…</div>;
+  if (inviteError) return <InviteErrorScreen T={T} message={inviteError} onBackToSignIn={() => setInviteError(null)} />;
   if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
   if (!session) return <Login T={T} dark={dark} onLogin={setSession} />;
 
