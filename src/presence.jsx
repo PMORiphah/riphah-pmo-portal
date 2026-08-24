@@ -346,3 +346,92 @@ export function useSessionMemory() {
 
   return { lastVisit, changedSince };
 }
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   PROJECT NAME PEEK
+
+   Project names are truncated in every list — a register column cannot be as
+   wide as "Upgradation of Facilities & Equipment (Block Fund for the PRH)".
+   Reading one meant opening the project.
+
+   A native `title` would do it, but it waits about a second, cannot be themed,
+   and renders as an OS tooltip in the middle of a designed interface.
+
+   This is one listener and one node for the whole application, delegated from
+   the document: any element carrying `data-peek` gets the treatment, including
+   rows rendered later or by lists that do not exist yet. Mounting a component
+   per row would mean 106 of them on the Projects page alone.
+   ─────────────────────────────────────────────────────────────────────────── */
+export function useProjectPeek({ enabled = true } = {}) {
+  useEffect(() => {
+    if (!enabled) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+
+    const el = document.createElement("div");
+    el.className = "pmo-peek";
+    el.setAttribute("role", "tooltip");
+    el.innerHTML = '<div class="pmo-peek-name"></div><div class="pmo-peek-meta"></div>';
+    document.body.appendChild(el);
+
+    let showTimer = null;
+    let current = null;
+
+    const place = (target) => {
+      const r = target.getBoundingClientRect();
+      const pad = 12;
+      el.style.visibility = "hidden";
+      el.classList.add("show");
+      const w = el.offsetWidth, h = el.offsetHeight;
+      // Prefer below-left of the cell; flip or shift only to stay on screen.
+      let left = Math.min(Math.max(pad, r.left), window.innerWidth - w - pad);
+      let top = r.bottom + 8;
+      if (top + h > window.innerHeight - pad) top = Math.max(pad, r.top - h - 8);
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.visibility = "";
+    };
+
+    const onOver = (e) => {
+      const t = e.target.closest?.("[data-peek]");
+      if (!t || t === current) return;
+      // Only worth showing when the text is actually being cut off.
+      const clipped = t.scrollWidth > t.clientWidth + 1;
+      const name = t.getAttribute("data-peek") || "";
+      if (!name || (!clipped && name.length < 46)) return;
+      current = t;
+      clearTimeout(showTimer);
+      showTimer = setTimeout(() => {
+        el.querySelector(".pmo-peek-name").textContent = name;
+        const meta = t.getAttribute("data-peek-meta") || "";
+        const m = el.querySelector(".pmo-peek-meta");
+        m.textContent = meta;
+        m.style.display = meta ? "" : "none";
+        place(t);
+      }, 220);   // long enough that sweeping down a table does not strobe
+    };
+
+    const onOut = (e) => {
+      if (!e.target.closest?.("[data-peek]")) return;
+      clearTimeout(showTimer);
+      current = null;
+      el.classList.remove("show");
+    };
+
+    const hide = () => { clearTimeout(showTimer); current = null; el.classList.remove("show"); };
+
+    document.addEventListener("mouseover", onOver);
+    document.addEventListener("mouseout", onOut);
+    window.addEventListener("scroll", hide, { passive: true, capture: true });
+    window.addEventListener("resize", hide);
+
+    return () => {
+      document.removeEventListener("mouseover", onOver);
+      document.removeEventListener("mouseout", onOut);
+      window.removeEventListener("scroll", hide, { capture: true });
+      window.removeEventListener("resize", hide);
+      clearTimeout(showTimer);
+      el.remove();
+    };
+  }, [enabled]);
+}
