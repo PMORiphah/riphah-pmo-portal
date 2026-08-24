@@ -428,9 +428,9 @@ export const perfStatus = (v) => {
 export const KPI_INSIGHT = {
   su_requested:  (d) => `Total value requested across ${d?.total_projects ?? 0} CAPEX proposals for FY 2026-27.`,
   df_recommended:(d) => "Portfolio value recommended after Director Finance review.",
-  approved:      (d) => `Budget sanctioned for execution — ${d?.approved_count ?? 0} of ${d?.total_projects ?? 0} projects.`,
-  budgeted:      (d) => "Projects carrying an approved budget allocation.",
-  non_budgeted:  (d) => "Approved projects still awaiting a budget allocation.",
+  approved:      (d) => `Budget actually released to projects sanctioned for execution — ${d?.approved_count ?? 0} of ${d?.total_projects ?? 0} projects.`,
+  budgeted:      (d) => "Budget released to projects that form part of the original CAPEX.",
+  non_budgeted:  (d) => "Budget released to projects added outside the original CAPEX.",
   carry_forward: (d) => `Budget carried forward from the previous fiscal year${d?.carry_forward_count ? ` across ${d.carry_forward_count} projects` : ""}.`,
   total_projects:(d) => "Every CAPEX project currently tracked in the portfolio.",
   total_capex:   (d) => "Combined value of the portfolio at its current approval stage.",
@@ -489,6 +489,15 @@ export const KPI_INSIGHT_PLAIN = {
 // Tab descriptions plus a live figure, so the preview says something true about
 // the portfolio rather than restating the tab name (§8).
 export const TAB_INSIGHT = {
+  // Static: this tab is about a portfolio that is deliberately not counted in
+  // the figures beside it, so the description says so rather than quoting a
+  // number that would invite comparison.
+  investments: {
+    title: "Investments",
+    line: "Projects tracked outside the CAPEX FY 26-27 portfolio.",
+    stat: "Excluded from all CAPEX totals",
+  },
+
   budgeting:  (d) => ({ title:"Portfolio overview",
                         line:"Budget, approvals and planned against actual performance.",
                         stat: d ? `${d.total_projects} projects · PKR ${((+d.total_capex||0)/1e6).toFixed(1)}M` : null }),
