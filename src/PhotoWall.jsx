@@ -1,0 +1,240 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Camera, Play, Download, X, ChevronLeft, ChevronRight, ArrowUpRight, ImageOff } from "lucide-react";
+import { TYPE, SP, R, MOTION } from "./theme.js";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHOTO WALL
+
+   Every site-visit photo and video across the whole CAPEX portfolio, in one
+   place. Deliberately a flat chronological wall, not grouped by campus —
+   verified directly before building: only 3 of 109 projects have any
+   site-visit media today (8 files total). A grouped grid would show mostly
+   empty campus sections right now; a flat wall stays visually full at any
+   volume and simply grows richer as more site visits get documented.
+
+   Visible to every role identically, including Project Managers — who are
+   scoped to their own assigned projects everywhere else in the portal. That
+   required two new, narrow RLS policies (kind='site_visit' only; document
+   access for PMs is completely unchanged) rather than loosening anything
+   that already existed.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const isVideo = (m) => /^video\//.test(m?.mime_type || "") || /\.(mp4|mov|webm|m4v)$/i.test(m?.file_name || "");
+const SUPA_URL = "https://prmxkecomqqngvrmytcj.supabase.co";
+// Storage paths are "<uuid>/<uuid>-filename.ext" — encoding the whole string
+// with encodeURIComponent would also escape the "/" itself and break the
+// path. Each segment has to be encoded independently, then rejoined.
+const encodeStoragePath = (path) => path.split("/").map(encodeURIComponent).join("/");
+
+function relTime(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  const d = Math.floor(s / 86400);
+  return d === 1 ? "yesterday" : d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-GB", { day:"numeric", month:"short" });
+}
+
+export function PhotoWallPage({ T, session, supa, onSelectProject }) {
+  const [items, setItems] = useState(null);
+  const [err, setErr] = useState(null);
+  const [urls, setUrls] = useState({});
+  const [lightboxIdx, setLightboxIdx] = useState(null);
+  const urlsRef = useRef({});
+
+  const load = useCallback(async () => {
+    try {
+      const rows = await supa(
+        "/rest/v1/project_attachments?kind=eq.site_visit&select=id,project_id,file_name,file_path,mime_type,uploaded_at,uploaded_by_name,projects(name,campus)&order=uploaded_at.desc&limit=200",
+        {}, session.access_token);
+      if (Array.isArray(rows)) {
+        setItems(rows.filter(r => r.projects)); // portfolio scoping happens on the projects join itself via RLS
+      }
+    } catch (e) { setErr(e.message); }
+  }, [supa, session]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Signed URLs, fetched for what's visible plus a little ahead — this list
+  // is small today (single digits) but shouldn't become a stampede of
+  // requests once site visits are documented more widely.
+  const getUrl = useCallback(async (item) => {
+    if (urlsRef.current[item.id]) return urlsRef.current[item.id];
+    try {
+      const res = await supa(
+        `/storage/v1/object/sign/project-attachments/${encodeStoragePath(item.file_path)}`,
+        { method: "POST", body: JSON.stringify({ expiresIn: 3600 }) }, session.access_token);
+      if (!res?.signedURL) return null;
+      // Supabase's signedURL is relative ("/object/sign/…") — omitting the
+      // /storage/v1 prefix here previously caused live 404s across this
+      // portal until it was traced and fixed; matching that exact fix here.
+      const full = SUPA_URL + "/storage/v1" + res.signedURL;
+      urlsRef.current[item.id] = full;
+      setUrls(u => ({ ...u, [item.id]: full }));
+      return full;
+    } catch (_) { return null; }
+  }, [supa, session]);
+
+  useEffect(() => {
+    if (!items) return;
+    items.slice(0, 40).forEach(getUrl);
+  }, [items, getUrl]);
+
+  const download = async (item) => {
+    const url = await getUrl(item);
+    if (!url) return;
+    const sep = url.includes("?") ? "&" : "?";
+    window.open(`${url}${sep}download=${encodeURIComponent(item.file_name)}`, "_blank");
+  };
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }} className="pmo-scroll">
+      <div style={{ padding: `${SP.lg}px ${SP.xl}px ${SP.md}px` }}>
+        <div style={{ ...TYPE.h2, color: T.text }}>Site Visit Photo Wall</div>
+        <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>
+          {items === null ? "Loading…" : `${items.length} photo${items.length === 1 ? "" : "s"} and video${items.length===1?"":"s"} across the portfolio`}
+        </div>
+      </div>
+
+      {err && <div style={{ padding: `0 ${SP.xl}px`, ...TYPE.bodySm, color: T.textOf(T.danger) }}>{err}</div>}
+
+      {items !== null && items.length === 0 && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", padding: SP.xxl, color: T.muted, gap: 10 }}>
+          <Camera size={26} color={T.dim} />
+          <div style={{ ...TYPE.bodySm }}>No site visits documented yet.</div>
+          <div style={{ ...TYPE.caption, color: T.dim }}>Photos and video uploaded to any project's Site Visit tab will appear here.</div>
+        </div>
+      )}
+
+      <div style={{
+        padding: `${SP.md}px ${SP.xl}px ${SP.xxl}px`,
+        display: "grid", gap: SP.md,
+        gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))",
+      }}>
+        {items === null ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} style={{ aspectRatio: "1/1", borderRadius: R.md, background: T.surfaceRaised }} />
+          ))
+        ) : items.map((item, i) => (
+          <button key={item.id} className="pmo-focusable pmo-lift" onClick={() => setLightboxIdx(i)}
+            style={{ position: "relative", aspectRatio: "1/1", borderRadius: R.md, overflow: "hidden",
+              border: `1px solid ${T.border}`, background: "#05080F", cursor: "pointer", padding: 0,
+              textAlign: "left" }}>
+            {urls[item.id] ? (
+              isVideo(item) ? (
+                <video src={urls[item.id]} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted />
+              ) : (
+                <img src={urls[item.id]} alt={item.file_name} loading="lazy"
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              )
+            ) : (
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center",
+                justifyContent: "center" }}><ImageOff size={16} color={T.dim} /></div>
+            )}
+            {isVideo(item) && (
+              <span style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: "50%",
+                background: "rgba(3,7,15,.72)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Play size={11} color="#fff" />
+              </span>
+            )}
+            <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "22px 10px 8px",
+              background: "linear-gradient(0deg, rgba(3,7,15,.88), transparent)" }}>
+              <div style={{ ...TYPE.caption, color: "#fff", fontWeight: 600, overflow: "hidden",
+                textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.projects?.name}</div>
+              <div style={{ ...TYPE.caption, color: "rgba(255,255,255,.65)", fontSize: 10.5, marginTop: 1 }}>
+                {item.projects?.campus} · {relTime(item.uploaded_at)}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {lightboxIdx !== null && items && items[lightboxIdx] && (
+        <Lightbox T={T} items={items} idx={lightboxIdx} urls={urls} getUrl={getUrl}
+          onClose={() => setLightboxIdx(null)}
+          onNav={(d) => setLightboxIdx(i => (i + d + items.length) % items.length)}
+          onDownload={download}
+          onViewProject={(pid) => { setLightboxIdx(null); onSelectProject?.(pid); }} />
+      )}
+    </div>
+  );
+}
+
+function Lightbox({ T, items, idx, urls, getUrl, onClose, onNav, onDownload, onViewProject }) {
+  const item = items[idx];
+  useEffect(() => { getUrl(item); }, [item, getUrl]);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowRight") onNav(1);
+      else if (e.key === "ArrowLeft") onNav(-1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, onNav]);
+
+  return (
+    <div onMouseDown={(e) => e.target === e.currentTarget && onClose()} style={{
+      position: "fixed", inset: 0, zIndex: 1600, background: "rgba(3,7,15,.95)",
+      backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: "4vh 4vw",
+    }}>
+      <div style={{ position: "relative", width: "min(1100px, 100%)", maxHeight: "82vh", aspectRatio: "16/10" }}>
+        {urls[item.id] ? (
+          isVideo(item) ? (
+            <video src={urls[item.id]} controls autoPlay style={{ width: "100%", height: "100%", objectFit: "contain", background: "#05080F", borderRadius: R.md }} />
+          ) : (
+            <img src={urls[item.id]} alt={item.file_name} style={{ width: "100%", height: "100%", objectFit: "contain", background: "#05080F", borderRadius: R.md }} />
+          )
+        ) : (
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ color: T.muted, ...TYPE.bodySm }}>Loading…</span>
+          </div>
+        )}
+        {items.length > 1 && (
+          <>
+            <button className="pmo-focusable" onClick={() => onNav(-1)} title="Previous"
+              style={navBtnStyle("left")}><ChevronLeft size={20} color="#fff" /></button>
+            <button className="pmo-focusable" onClick={() => onNav(1)} title="Next"
+              style={navBtnStyle("right")}><ChevronRight size={20} color="#fff" /></button>
+          </>
+        )}
+      </div>
+
+      <div style={{ position: "fixed", top: 18, right: 20, display: "flex", gap: 8 }}>
+        <button className="pmo-focusable" onClick={() => onDownload(item)} title="Download" style={chipStyle}>
+          <Download size={14} color="#fff" />
+        </button>
+        <button className="pmo-focusable" onClick={onClose} title="Close (Esc)" style={chipStyle}>
+          <X size={14} color="#fff" />
+        </button>
+      </div>
+
+      <div style={{ position: "fixed", left: 0, right: 0, bottom: 18, textAlign: "center" }}>
+        <div style={{ ...TYPE.bodySm, color: "#fff", marginBottom: 6 }}>
+          {item.projects?.name} · {item.projects?.campus} · {relTime(item.uploaded_at)}
+        </div>
+        <button className="pmo-focusable pmo-btn" onClick={() => onViewProject(item.project_id)}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px",
+            background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)",
+            borderRadius: R.pill, color: "#fff", ...TYPE.caption, cursor: "pointer" }}>
+          View Project <ArrowUpRight size={11} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const chipStyle = {
+  width: 32, height: 32, borderRadius: R.sm, cursor: "pointer",
+  background: "rgba(8,16,32,.72)", border: "1px solid rgba(255,255,255,.16)",
+  display: "flex", alignItems: "center", justifyContent: "center",
+  backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+};
+const navBtnStyle = (side) => ({
+  position: "absolute", top: "50%", [side]: -52, transform: "translateY(-50%)",
+  width: 40, height: 40, borderRadius: "50%", cursor: "pointer",
+  background: "rgba(8,16,32,.72)", border: "1px solid rgba(255,255,255,.16)",
+  display: "flex", alignItems: "center", justifyContent: "center",
+  backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+});
