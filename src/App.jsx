@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Component } from "react";
 import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
+import { PhotoWallPage } from "./PhotoWall.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps, pmSteps } from "./tourSteps.js";
 import { InvestmentsTab } from "./InvestmentsTab.jsx";
@@ -199,6 +200,7 @@ const NAV = [
   { id:"cmd",  Icon:LayoutDashboard, label:"Capex Dashboard" },
   { id:"proj", Icon:FolderKanban,    label:"Projects" },
   { id:"camp", Icon:Building2,       label:"Campus / Sites" },
+  { id:"photowall", Icon:Camera,     label:"Photo Wall" },
   { id:"perf", Icon:TrendingUp,      label:"Performance" },
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows & Timelines", pmoOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
@@ -9508,6 +9510,7 @@ export default function App() {
             {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} fyLabel={portal.fy} initialTab={dashTab} />}
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
+            {effectivePage === "photowall" && <PhotoWallPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
             {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
             {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
