@@ -3442,24 +3442,21 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 }
 
 // ─── PROJECTS ─────────────────────────────────────────────────────────────────
-function ProjectsPage({ T, session, onSelectProject }) {
+function ProjectsPage({ T, session, onSelectProject,
+  search, setSearch, fFY, setFFY, fOrg, setFOrg, fCode, setFCode, fName, setFName,
+  fSeg, setFSeg, fPri, setFPri, fStrat, setFStrat, fStage, setFStage, fCC, setFCC }) {
   const isPMO = session?.role === "pmo";
   const [rows,         setRows]         = useState([]);
   const [lookups,      setLookups]      = useState({sectors:[],regions:[],segments:[],cost_centers:[],campuses:[]});
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
-  const [search,       setSearch]       = useState("");
   const [hoverId,      setHoverId]      = useState(null);
-  // Column-level filters
-  const [fFY,     setFFY]     = useState("");
-  const [fOrg,    setFOrg]    = useState("");
-  const [fCode,   setFCode]   = useState("");
-  const [fName,   setFName]   = useState("");
-  const [fSeg,    setFSeg]    = useState("");
-  const [fPri,    setFPri]    = useState("");
-  const [fStrat,  setFStrat]  = useState("");
-  const [fStage,  setFStage]  = useState("");
-  const [fCC,     setFCC]     = useState("");
+  // Column-level filters — search and the 9 filters below are now props from
+  // App(), not local state: this component previously unmounted entirely
+  // whenever a project was opened (it's swapped out for ProjectDetailPage,
+  // not kept mounted alongside it), so every filter silently reset on
+  // "Back to Projects". Lifting the state up means it now lives in a
+  // component that survives that swap.
   const [showForm,     setShowForm]     = useState(false);
   const [editProject,  setEditProject]  = useState(null);
   const [showImport,   setShowImport]   = useState(false);
@@ -4232,20 +4229,16 @@ function ProjectsPage({ T, session, onSelectProject }) {
 }
 
 // ─── CAMPUS / SITES ───────────────────────────────────────────────────────────
-function CampusPage({ T, session, onSelectProject }) {
+function CampusPage({ T, session, onSelectProject,
+  sel, setSel, q, setQ, fCode, setFCode, fName, setFName, fSite, setFSite,
+  fPri, setFPri, fStage, setFStage, fCC, setFCC }) {
   const [rows,     setRows]     = useState([]);
   const [campuses, setCampuses] = useState([]);
-  const [sel,      setSel]      = useState("");
   const [activeCard, setActiveCard] = useState(null);
-  const [q,        setQ]        = useState("");
-  // Per-column filters, mirroring the Projects register so the two tables
-  // behave identically rather than one being searchable and the other filterable.
-  const [fCode,  setFCode]  = useState("");
-  const [fName,  setFName]  = useState("");
-  const [fSite,  setFSite]  = useState("");
-  const [fPri,   setFPri]   = useState("");
-  const [fStage, setFStage] = useState("");
-  const [fCC,    setFCC]    = useState("");
+  // sel, q, and the 6 filters below are props from App() now, not local
+  // state — same reason as ProjectsPage: this component unmounts entirely
+  // whenever a project is opened, so anything kept as local state here was
+  // silently lost on "Back to Campus / Sites".
   const [hoverRow, setHoverRow] = useState(null);
   const costCentreOptions = useMemo(
     () => [...new Set(rows.map(r => r.costCentre).filter(Boolean))].sort(),
@@ -9039,6 +9032,31 @@ export default function App() {
   const [page, setPage] = useState("cmd");
   const [restoring, setRestoring] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+
+  // Projects and Campus/Sites filter state, lifted here from inside each
+  // page: both pages unmount entirely whenever a project is opened (they're
+  // swapped for ProjectDetailPage, not kept mounted behind it), so anything
+  // kept as local state inside them was silently reset every time someone
+  // opened a project and clicked back — reported directly, reproduced, and
+  // this is the fix.
+  const [projSearch, setProjSearch] = useState("");
+  const [projFFY,    setProjFFY]    = useState("");
+  const [projFOrg,   setProjFOrg]   = useState("");
+  const [projFCode,  setProjFCode]  = useState("");
+  const [projFName,  setProjFName]  = useState("");
+  const [projFSeg,   setProjFSeg]   = useState("");
+  const [projFPri,   setProjFPri]   = useState("");
+  const [projFStrat, setProjFStrat] = useState("");
+  const [projFStage, setProjFStage] = useState("");
+  const [projFCC,    setProjFCC]    = useState("");
+  const [campSel,    setCampSel]    = useState("");
+  const [campQ,      setCampQ]      = useState("");
+  const [campFCode,  setCampFCode]  = useState("");
+  const [campFName,  setCampFName]  = useState("");
+  const [campFSite,  setCampFSite]  = useState("");
+  const [campFPri,   setCampFPri]   = useState("");
+  const [campFStage, setCampFStage] = useState("");
+  const [campFCC,    setCampFCC]    = useState("");
   const [returnPage, setReturnPage] = useState("proj");
   const [inviteState, setInviteState] = useState(null);
   const [inviteError, setInviteError] = useState(null);
@@ -9508,8 +9526,18 @@ export default function App() {
         ) : (
           <>
             {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} fyLabel={portal.fy} initialTab={dashTab} />}
-            {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
+            {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject}
+              search={projSearch} setSearch={setProjSearch}
+              fFY={projFFY} setFFY={setProjFFY} fOrg={projFOrg} setFOrg={setProjFOrg}
+              fCode={projFCode} setFCode={setProjFCode} fName={projFName} setFName={setProjFName}
+              fSeg={projFSeg} setFSeg={setProjFSeg} fPri={projFPri} setFPri={setProjFPri}
+              fStrat={projFStrat} setFStrat={setProjFStrat} fStage={projFStage} setFStage={setProjFStage}
+              fCC={projFCC} setFCC={setProjFCC} />}
+            {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject}
+              sel={campSel} setSel={setCampSel} q={campQ} setQ={setCampQ}
+              fCode={campFCode} setFCode={setCampFCode} fName={campFName} setFName={setCampFName}
+              fSite={campFSite} setFSite={setCampFSite} fPri={campFPri} setFPri={setCampFPri}
+              fStage={campFStage} setFStage={setCampFStage} fCC={campFCC} setFCC={setCampFCC} />}
             {effectivePage === "photowall" && <PhotoWallPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
             {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
             {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} />}
