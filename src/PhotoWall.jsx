@@ -84,22 +84,13 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
     } catch (_) { return null; }
   }, [supa, session]);
 
-  useEffect(() => {
-    if (!sortedItems) return;
-    sortedItems.slice(0, 40).forEach(getUrl);
-  }, [sortedItems, getUrl]);
-
-  const download = async (item) => {
-    const url = await getUrl(item);
-    if (!url) return;
-    const sep = url.includes("?") ? "&" : "?";
-    window.open(`${url}${sep}download=${encodeURIComponent(item.file_name)}`, "_blank");
-  };
-
   // Every option beyond "recent" sorts by a field on the joined project, not
   // the attachment itself — nulls (a project with no strategic_priority or
   // cost centre set, say) sort to the end rather than scattering randomly
-  // through the middle.
+  // through the middle. Declared here, before first use below — an earlier
+  // version of this file referenced sortedItems from an effect declared
+  // above this point, the same temporal-dead-zone mistake documented
+  // elsewhere in this codebase's App.jsx.
   const SORTERS = {
     recent:      null, // already the fetch order
     fiscal_year: (p) => p.fiscal_year,
@@ -124,6 +115,18 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
       return String(va).localeCompare(String(vb), undefined, { numeric: true });
     });
   }, [items, sortBy]);
+
+  useEffect(() => {
+    if (!sortedItems) return;
+    sortedItems.slice(0, 40).forEach(getUrl);
+  }, [sortedItems, getUrl]);
+
+  const download = async (item) => {
+    const url = await getUrl(item);
+    if (!url) return;
+    const sep = url.includes("?") ? "&" : "?";
+    window.open(`${url}${sep}download=${encodeURIComponent(item.file_name)}`, "_blank");
+  };
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }} className="pmo-scroll">
