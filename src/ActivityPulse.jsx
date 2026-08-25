@@ -87,7 +87,7 @@ export function ActivityPulse({ T, session, supa }) {
 
   return (
     <div data-pulse-panel="1" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: R.lg,
-      boxShadow: T.shadow, overflow: "hidden" }}>
+      boxShadow: T.shadow, overflow: "hidden", minHeight: 120, flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8,
         padding: `${SP.sm}px ${SP.lg}px`, borderBottom: `1px solid ${T.border}` }}>
         <span className="pmo-live-dot" style={{ width: 6, height: 6, borderRadius: "50%",
