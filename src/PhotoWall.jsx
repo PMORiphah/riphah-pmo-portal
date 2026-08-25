@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Camera, Play, Download, X, ChevronLeft, ChevronRight, ArrowUpRight, ImageOff } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Camera, Play, Download, X, ChevronLeft, ChevronRight, ArrowUpRight, ImageOff, ArrowUpDown } from "lucide-react";
 import { TYPE, SP, R, MOTION } from "./theme.js";
+import { Select } from "./ui.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHOTO WALL
@@ -39,15 +40,24 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
   const [err, setErr] = useState(null);
   const [urls, setUrls] = useState({});
   const [lightboxIdx, setLightboxIdx] = useState(null);
+  const [sortBy, setSortBy] = useState("recent");
   const urlsRef = useRef({});
 
   const load = useCallback(async () => {
     try {
+      // Note on two easily-swapped fields, confirmed earlier this session:
+      // the portal's "Organization" column (Riphah / Trust) reads from
+      // segment_id, and its "Segment" column (Healthcare / Academics /
+      // Management) reads from sector_id — the DB names are the reverse of
+      // the UI labels. sectors(name) below is genuinely "Segment", and
+      // segments(name) is genuinely "Organization".
       const rows = await supa(
-        "/rest/v1/project_attachments?kind=eq.site_visit&select=id,project_id,file_name,file_path,mime_type,uploaded_at,uploaded_by_name,projects(name,campus)&order=uploaded_at.desc&limit=200",
+        "/rest/v1/project_attachments?kind=eq.site_visit&select=id,project_id,file_name,file_path,mime_type,uploaded_at,uploaded_by_name," +
+        "projects(name,code,campus,fiscal_year,strategic_priority,sectors(name),segments(name),cost_centers(name))" +
+        "&order=uploaded_at.desc&limit=200",
         {}, session.access_token);
       if (Array.isArray(rows)) {
-        setItems(rows.filter(r => r.projects)); // portfolio scoping happens on the projects join itself via RLS
+        setItems(rows.filter(r => r.projects));
       }
     } catch (e) { setErr(e.message); }
   }, [supa, session]);
@@ -75,9 +85,9 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
   }, [supa, session]);
 
   useEffect(() => {
-    if (!items) return;
-    items.slice(0, 40).forEach(getUrl);
-  }, [items, getUrl]);
+    if (!sortedItems) return;
+    sortedItems.slice(0, 40).forEach(getUrl);
+  }, [sortedItems, getUrl]);
 
   const download = async (item) => {
     const url = await getUrl(item);
@@ -86,13 +96,61 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
     window.open(`${url}${sep}download=${encodeURIComponent(item.file_name)}`, "_blank");
   };
 
+  // Every option beyond "recent" sorts by a field on the joined project, not
+  // the attachment itself — nulls (a project with no strategic_priority or
+  // cost centre set, say) sort to the end rather than scattering randomly
+  // through the middle.
+  const SORTERS = {
+    recent:      null, // already the fetch order
+    fiscal_year: (p) => p.fiscal_year,
+    org:         (p) => p.segments?.name,          // "Organization" in the UI == segment_id
+    segment:     (p) => p.sectors?.name,            // "Segment" in the UI == sector_id
+    priority:    (p) => p.strategic_priority,
+    campus:      (p) => p.campus,
+    cost_centre: (p) => p.cost_centers?.name,
+    project_name:(p) => p.name,
+    project_id:  (p) => (p.code && p.code !== "-") ? p.code : null,
+  };
+
+  const sortedItems = useMemo(() => {
+    if (!items) return items;
+    const getter = SORTERS[sortBy];
+    if (!getter) return items; // "recent" — keep server order
+    return [...items].sort((a, b) => {
+      const va = getter(a.projects), vb = getter(b.projects);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return String(va).localeCompare(String(vb), undefined, { numeric: true });
+    });
+  }, [items, sortBy]);
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }} className="pmo-scroll">
-      <div style={{ padding: `${SP.lg}px ${SP.xl}px ${SP.md}px` }}>
-        <div style={{ ...TYPE.h2, color: T.text }}>Site Visit Photo Wall</div>
-        <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>
-          {items === null ? "Loading…" : `${items.length} photo${items.length === 1 ? "" : "s"} and video${items.length===1?"":"s"} across the portfolio`}
+      <div style={{ padding: `${SP.lg}px ${SP.xl}px ${SP.md}px`, display: "flex",
+        alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: SP.md }}>
+        <div>
+          <div style={{ ...TYPE.h2, color: T.text }}>Site Visit Photo Wall</div>
+          <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>
+            {items === null ? "Loading…" : `${items.length} photo${items.length === 1 ? "" : "s"} and video${items.length===1?"":"s"} across the portfolio`}
+          </div>
         </div>
+        {items !== null && items.length > 1 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ArrowUpDown size={13} color={T.dim} />
+            <Select T={T} size="sm" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="recent">Most recent</option>
+              <option value="fiscal_year">Fiscal Year</option>
+              <option value="org">Organization</option>
+              <option value="segment">Segment</option>
+              <option value="priority">Strategic Priority</option>
+              <option value="campus">Campus</option>
+              <option value="cost_centre">Cost Centre</option>
+              <option value="project_name">Project Name</option>
+              <option value="project_id">Project ID</option>
+            </Select>
+          </div>
+        )}
       </div>
 
       {err && <div style={{ padding: `0 ${SP.xl}px`, ...TYPE.bodySm, color: T.textOf(T.danger) }}>{err}</div>}
@@ -111,11 +169,11 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
         display: "grid", gap: SP.md,
         gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))",
       }}>
-        {items === null ? (
+        {sortedItems === null ? (
           Array.from({ length: 6 }).map((_, i) => (
             <div key={i} style={{ aspectRatio: "1/1", borderRadius: R.md, background: T.surfaceRaised }} />
           ))
-        ) : items.map((item, i) => (
+        ) : sortedItems.map((item, i) => (
           <button key={item.id} className="pmo-focusable pmo-lift" onClick={() => setLightboxIdx(i)}
             style={{ position: "relative", aspectRatio: "1/1", borderRadius: R.md, overflow: "hidden",
               border: `1px solid ${T.border}`, background: "#05080F", cursor: "pointer", padding: 0,
@@ -149,10 +207,10 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
         ))}
       </div>
 
-      {lightboxIdx !== null && items && items[lightboxIdx] && (
-        <Lightbox T={T} items={items} idx={lightboxIdx} urls={urls} getUrl={getUrl}
+      {lightboxIdx !== null && sortedItems && sortedItems[lightboxIdx] && (
+        <Lightbox T={T} items={sortedItems} idx={lightboxIdx} urls={urls} getUrl={getUrl}
           onClose={() => setLightboxIdx(null)}
-          onNav={(d) => setLightboxIdx(i => (i + d + items.length) % items.length)}
+          onNav={(d) => setLightboxIdx(i => (i + d + sortedItems.length) % sortedItems.length)}
           onDownload={download}
           onViewProject={(pid) => { setLightboxIdx(null); onSelectProject?.(pid); }} />
       )}
