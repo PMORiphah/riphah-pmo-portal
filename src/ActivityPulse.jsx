@@ -86,7 +86,7 @@ export function ActivityPulse({ T, session, supa }) {
   }, [load]);
 
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: R.lg,
+    <div data-pulse-panel="1" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: R.lg,
       boxShadow: T.shadow, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8,
         padding: `${SP.sm}px ${SP.lg}px`, borderBottom: `1px solid ${T.border}` }}>
