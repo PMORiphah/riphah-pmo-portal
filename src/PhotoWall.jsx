@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Camera, Play, Download, X, ChevronLeft, ChevronRight, ArrowUpRight, ImageOff, ArrowUpDown } from "lucide-react";
+import { Camera, Play, Download, X, ChevronLeft, ChevronRight, ArrowUpRight, ImageOff, ArrowUpDown, Filter } from "lucide-react";
 import { TYPE, SP, R, MOTION } from "./theme.js";
 import { Select } from "./ui.jsx";
 
@@ -35,12 +35,33 @@ function relTime(iso) {
   return d === 1 ? "yesterday" : d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-GB", { day:"numeric", month:"short" });
 }
 
+// A small, self-contained filter dropdown — same Select the rest of the
+// portal already uses, so it looks like one control language rather than a
+// second one invented just for this page. Options are hidden entirely once
+// there's only one (or zero) real values, since a filter that can't narrow
+// anything is just clutter.
+function FilterSelect({ T, value, onChange, label, options }) {
+  if (!options || options.length < 2) return null;
+  return (
+    <Select T={T} size="sm" value={value} active={!!value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{label}</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </Select>
+  );
+}
+
 export function PhotoWallPage({ T, session, supa, onSelectProject }) {
   const [items, setItems] = useState(null);
   const [err, setErr] = useState(null);
   const [urls, setUrls] = useState({});
   const [lightboxIdx, setLightboxIdx] = useState(null);
   const [sortBy, setSortBy] = useState("recent");
+  const [fFiscalYear, setFFiscalYear] = useState("");
+  const [fOrg, setFOrg]               = useState("");
+  const [fSegment, setFSegment]       = useState("");
+  const [fPriority, setFPriority]     = useState("");
+  const [fCampus, setFCampus]         = useState("");
+  const [fCostCentre, setFCostCentre] = useState("");
   const urlsRef = useRef({});
 
   const load = useCallback(async () => {
@@ -84,6 +105,42 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
     } catch (_) { return null; }
   }, [supa, session]);
 
+  // Every filter dropdown is populated from what's actually in the data, not
+  // a hardcoded list — so a filter never offers a value that would return
+  // zero results, and it needs nothing updated when new campuses or cost
+  // centres get added elsewhere in the portal.
+  const FILTER_FIELDS = {
+    fFiscalYear: (p) => p.fiscal_year,
+    fOrg:        (p) => p.segments?.name,
+    fSegment:    (p) => p.sectors?.name,
+    fPriority:   (p) => p.strategic_priority,
+    fCampus:     (p) => p.campus,
+    fCostCentre: (p) => p.cost_centers?.name,
+  };
+  const filterState = { fFiscalYear, fOrg, fSegment, fPriority, fCampus, fCostCentre };
+  const setFilter = { fFiscalYear: setFFiscalYear, fOrg: setFOrg, fSegment: setFSegment,
+    fPriority: setFPriority, fCampus: setFCampus, fCostCentre: setFCostCentre };
+
+  const filterOptions = useMemo(() => {
+    if (!items) return {};
+    const out = {};
+    for (const key of Object.keys(FILTER_FIELDS)) {
+      const vals = new Set(items.map(i => FILTER_FIELDS[key](i.projects)).filter(Boolean));
+      out[key] = [...vals].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+    }
+    return out;
+  }, [items]);
+
+  const activeFilterCount = Object.values(filterState).filter(Boolean).length;
+  const clearAllFilters = () => Object.values(setFilter).forEach(fn => fn(""));
+
+  const filteredItems = useMemo(() => {
+    if (!items) return items;
+    return items.filter(item =>
+      Object.entries(filterState).every(([key, val]) =>
+        !val || FILTER_FIELDS[key](item.projects) === val));
+  }, [items, fFiscalYear, fOrg, fSegment, fPriority, fCampus, fCostCentre]);
+
   // Every option beyond "recent" sorts by a field on the joined project, not
   // the attachment itself — nulls (a project with no strategic_priority or
   // cost centre set, say) sort to the end rather than scattering randomly
@@ -104,17 +161,17 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
   };
 
   const sortedItems = useMemo(() => {
-    if (!items) return items;
+    if (!filteredItems) return filteredItems;
     const getter = SORTERS[sortBy];
-    if (!getter) return items; // "recent" — keep server order
-    return [...items].sort((a, b) => {
+    if (!getter) return filteredItems; // "recent" — keep fetch order
+    return [...filteredItems].sort((a, b) => {
       const va = getter(a.projects), vb = getter(b.projects);
       if (va == null && vb == null) return 0;
       if (va == null) return 1;
       if (vb == null) return -1;
       return String(va).localeCompare(String(vb), undefined, { numeric: true });
     });
-  }, [items, sortBy]);
+  }, [filteredItems, sortBy]);
 
   useEffect(() => {
     if (!sortedItems) return;
@@ -133,9 +190,11 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
       <div style={{ padding: `${SP.lg}px ${SP.xl}px ${SP.md}px`, display: "flex",
         alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: SP.md }}>
         <div>
-          <div style={{ ...TYPE.h2, color: T.text }}>Site Visit Photo Wall</div>
+          <div style={{ ...TYPE.h2, color: T.text }}>Gallery</div>
           <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>
-            {items === null ? "Loading…" : `${items.length} photo${items.length === 1 ? "" : "s"} and video${items.length===1?"":"s"} across the portfolio`}
+            {items === null ? "Loading…" : activeFilterCount > 0
+              ? `${sortedItems.length} of ${items.length} photos and videos`
+              : `${items.length} photo${items.length === 1 ? "" : "s"} and video${items.length===1?"":"s"} across the portfolio`}
           </div>
         </div>
         {items !== null && items.length > 1 && (
@@ -156,6 +215,27 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
         )}
       </div>
 
+      {items !== null && items.length > 1 && (
+        <div style={{ padding: `0 ${SP.xl}px ${SP.md}px`, display: "flex", flexWrap: "wrap",
+          alignItems: "center", gap: SP.sm }}>
+          <Filter size={13} color={T.dim} />
+          <FilterSelect T={T} value={fFiscalYear} onChange={setFFiscalYear} label="All Fiscal Years" options={filterOptions.fFiscalYear} />
+          <FilterSelect T={T} value={fOrg}        onChange={setFOrg}        label="All Organizations" options={filterOptions.fOrg} />
+          <FilterSelect T={T} value={fSegment}    onChange={setFSegment}    label="All Segments" options={filterOptions.fSegment} />
+          <FilterSelect T={T} value={fPriority}   onChange={setFPriority}   label="All Priorities" options={filterOptions.fPriority} />
+          <FilterSelect T={T} value={fCampus}     onChange={setFCampus}     label="All Campuses" options={filterOptions.fCampus} />
+          <FilterSelect T={T} value={fCostCentre} onChange={setFCostCentre} label="All Cost Centres" options={filterOptions.fCostCentre} />
+          {activeFilterCount > 0 && (
+            <button className="pmo-focusable pmo-btn" onClick={clearAllFilters}
+              style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px",
+                background: "transparent", border: "none", color: T.textOf(T.blueBright),
+                ...TYPE.caption, fontWeight: 600, cursor: "pointer" }}>
+              <X size={11} /> Clear {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}
+            </button>
+          )}
+        </div>
+      )}
+
       {err && <div style={{ padding: `0 ${SP.xl}px`, ...TYPE.bodySm, color: T.textOf(T.danger) }}>{err}</div>}
 
       {items !== null && items.length === 0 && (
@@ -164,6 +244,18 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
           <Camera size={26} color={T.dim} />
           <div style={{ ...TYPE.bodySm }}>No site visits documented yet.</div>
           <div style={{ ...TYPE.caption, color: T.dim }}>Photos and video uploaded to any project's Site Visit tab will appear here.</div>
+        </div>
+      )}
+
+      {items !== null && items.length > 0 && sortedItems.length === 0 && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", padding: SP.xxl, color: T.muted, gap: 10 }}>
+          <Filter size={22} color={T.dim} />
+          <div style={{ ...TYPE.bodySm }}>Nothing matches these filters.</div>
+          <button className="pmo-focusable pmo-btn" onClick={clearAllFilters}
+            style={{ ...TYPE.caption, color: T.textOf(T.blueBright), background: "none", border: "none", cursor: "pointer" }}>
+            Clear all filters
+          </button>
         </div>
       )}
 
