@@ -2626,6 +2626,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           <EditableKCard dashData={d} Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects" trendPoints={trends.total_projects}  onSave={saveKPI} onCardClick={() => toggleCard("total_projects")} isSelected={activeCard==="total_projects"} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
       )}
+      {(() => { console.log("PULSE INSERTION POINT REACHED, activeTab=", activeTab); return null; })()}
       {activeTab === "budgeting" && (
         <div style={{ padding:20, background:"red", color:"#fff", fontSize:20 }}>PULSE DEBUG MARKER</div>
       )}
