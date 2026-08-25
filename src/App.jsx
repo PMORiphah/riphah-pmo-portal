@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Component } from "react";
 import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
+import { ActivityPulse } from "./ActivityPulse.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps, pmSteps } from "./tourSteps.js";
 import { InvestmentsTab } from "./InvestmentsTab.jsx";
@@ -11,7 +12,7 @@ import {
   Shield, BarChart3, Building2, Lock,
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
-  Sparkles, Sun, Moon, Camera, Orbit, Copy
+  Sparkles, Sun, Moon, Camera, Copy, Radio
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -2624,6 +2625,11 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           <EditableKCard dashData={d} Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
           <EditableKCard dashData={d} Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects" trendPoints={trends.total_projects}  onSave={saveKPI} onCardClick={() => toggleCard("total_projects")} isSelected={activeCard==="total_projects"} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
         </div>
+      )}
+      {activeTab === "budgeting" && (
+        <ChartErrorBoundary T={T}>
+          <ActivityPulse T={T} session={session} supa={supa} />
+        </ChartErrorBoundary>
       )}
       {activeTab === "pipeline" && (
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
