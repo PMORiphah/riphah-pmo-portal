@@ -2627,9 +2627,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
         </div>
       )}
       {activeTab === "budgeting" && (
-        <ChartErrorBoundary T={T}>
-          <ActivityPulse T={T} session={session} supa={supa} />
-        </ChartErrorBoundary>
+        <div style={{ padding:20, background:"red", color:"#fff", fontSize:20 }}>PULSE DEBUG MARKER</div>
       )}
       {activeTab === "pipeline" && (
         <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
