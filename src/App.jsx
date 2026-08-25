@@ -3,7 +3,6 @@ import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps, pmSteps } from "./tourSteps.js";
 import { InvestmentsTab } from "./InvestmentsTab.jsx";
-import { ConstellationPage } from "./Constellation.jsx";
 import {
   LayoutDashboard, FolderKanban, TrendingUp, MessageSquare,
   Users, Activity, Settings, LogOut, Search, Eye, EyeOff,
@@ -199,7 +198,6 @@ const PRIORITY_LABEL = { top_priority:"1st Priority", first_priority:"First Prio
 const NAV = [
   { id:"cmd",  Icon:LayoutDashboard, label:"Capex Dashboard" },
   { id:"proj", Icon:FolderKanban,    label:"Projects" },
-  { id:"constellation", Icon:Orbit,  label:"Constellation" },
   { id:"camp", Icon:Building2,       label:"Campus / Sites" },
   { id:"perf", Icon:TrendingUp,      label:"Performance" },
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows & Timelines", pmoOnly:true },
@@ -9509,7 +9507,6 @@ export default function App() {
           <>
             {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} fyLabel={portal.fy} initialTab={dashTab} />}
             {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "constellation" && <ConstellationPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
             {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
             {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
             {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} />}
