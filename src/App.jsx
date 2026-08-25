@@ -200,10 +200,10 @@ const NAV = [
   { id:"cmd",  Icon:LayoutDashboard, label:"Capex Dashboard" },
   { id:"proj", Icon:FolderKanban,    label:"Projects" },
   { id:"camp", Icon:Building2,       label:"Campus / Sites" },
-  { id:"photowall", Icon:Camera,     label:"Photo Wall" },
   { id:"perf", Icon:TrendingUp,      label:"Performance" },
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows & Timelines", pmoOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
+  { id:"photowall", Icon:Camera,     label:"Gallery" },
   { id:"team", Icon:Users,           label:"Team & About" },
 ];
 const PMO_NAV = [
