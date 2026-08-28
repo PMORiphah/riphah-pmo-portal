@@ -2183,6 +2183,21 @@ applyFilters();
     }
     window.addEventListener("scroll", hideTip, { passive: true, capture: true });
 
+    // Chart.js tooltips have the same problem as the KPI hover-tip above: a
+    // tap on a touch device triggers the tooltip but there's no mouse-leave
+    // to ever dismiss it, so it sits stuck over whatever scrolls underneath.
+    // Same fix, same event — walk every live chart and clear its active
+    // tooltip state on scroll.
+    window.addEventListener("scroll", function () {
+      Object.keys(charts).forEach(function (key) {
+        var chart = charts[key];
+        if (!chart || !chart.setActiveElements) return;
+        chart.setActiveElements([]);
+        if (chart.tooltip) chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+        chart.update();
+      });
+    }, { passive: true, capture: true });
+
     // Switching tabs changes visibility, not structure, so enhance again.
     document.querySelectorAll(".tab-btn").forEach(function (btn) {
       btn.addEventListener("click", function () { setTimeout(enhance, 60); });
