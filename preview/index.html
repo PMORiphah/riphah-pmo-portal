@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- viewport-fit=cover is required for env(safe-area-inset-*) to return
+         anything but 0 on iOS. Without it the existing safe-area padding on
+         the bottom tab bar is silently inert once installed to the home screen. -->
     <title>PMO Portal — Riphah International University</title>
     <link rel="icon" type="image/png" href="/riphah-pmo-portal/favicon.png" />
     <link rel="shortcut icon" href="/riphah-pmo-portal/favicon.png" />
@@ -13,14 +16,18 @@
     <meta name="theme-color" content="#0A1A2E" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "black" keeps app content below the status bar. "black-translucent" looks
+         nicer (full-bleed background behind the clock) but pushes the header
+         under the notch unless every top-level surface adds safe-area padding.
+         Not worth the risk of an unusable header on someone's phone. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="PMO Portal" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:'Inter',sans-serif; }</style>
-    <script type="module" crossorigin src="/riphah-pmo-portal/preview/assets/index-4eAm2Oy-.js"></script>
+    <script type="module" crossorigin src="/riphah-pmo-portal/preview/assets/index-fQVe19AZ.js"></script>
   </head>
   <body>
     <div id="root"></div>
