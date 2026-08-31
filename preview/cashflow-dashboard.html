@@ -388,7 +388,7 @@ footer{
   border-top:1px solid var(--line); background:#FAFBFD;
 }
 .modal-foot .spacer{margin-left:auto;}
-@media (max-width:760px){ .form-grid{grid-template-columns:1fr;} .form-grid .half{grid-column:span 1;} }
+@media (max-width:760px){ .form-grid{grid-template-columns:repeat(2,1fr);} .form-grid .half, .form-grid .full{grid-column:1 / -1;} }
 
 /* Foreground remaps for dark mode. Each of these previously took its colour
    from a navy token that also paints surfaces. */
