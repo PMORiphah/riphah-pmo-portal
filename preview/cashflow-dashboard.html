@@ -148,10 +148,28 @@ body{
 }
 .filterbar label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; display:block; margin-bottom:4px; font-weight:600;}
 .filter-group{display:flex; flex-direction:column;}
+.filter-toggle{
+  display:none; width:100%; align-items:center; gap:8px;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-sm);
+  padding:10px 14px; font-family:'Inter',sans-serif; font-size:13px; font-weight:600;
+  color:var(--ink); cursor:pointer; text-align:left;
+}
+.filter-toggle-icon{ font-size:13px; opacity:.8; }
+.filter-toggle-count{ margin-left:auto; font-weight:500; font-size:11.5px; color:var(--muted); }
+.filter-toggle-chevron{ font-size:11px; color:var(--gold-soft); transition:transform .2s ease; }
 @media(max-width:640px){
-  .filterbar{ padding:12px 16px; gap:10px; }
+  .filterbar{ padding:12px 16px; gap:10px; align-items:stretch; }
   .filter-group{ flex:0 0 calc(50% - 5px); }
   .filterbar select{ width:100%; min-width:0; }
+  /* Collapsed: every field, the reset link and the full count hide behind
+     the one summary toggle. Expanded (the default, and always true on a
+     page that hasn't been scrolled) is the existing five-field layout —
+     nothing changes there. */
+  .filterbar.collapsed .filter-group,
+  .filterbar.collapsed .reset-link,
+  .filterbar.collapsed .filter-count{ display:none; }
+  .filterbar.collapsed .filter-toggle{ display:flex; }
+  .filterbar.collapsed .filter-toggle-chevron{ transform:rotate(-90deg); }
 }
 .filterbar select{
   font-family:'Inter',sans-serif; font-size:13px; color:var(--ink);
@@ -705,7 +723,13 @@ html[data-idle="1"] #pmoWorldLight { opacity:.55; }
   <button class="tab-btn" data-tab="data">Data Explorer</button>
 </div>
 
-<div class="filterbar">
+<div class="filterbar" id="filterBar">
+  <button class="filter-toggle" id="filterToggle" type="button">
+    <span class="filter-toggle-icon">&#128269;</span>
+    <span>Filters</span>
+    <span class="filter-toggle-count">Showing <b id="filterToggleCount">151</b> of <b id="filterToggleTotal">151</b></span>
+    <span class="filter-toggle-chevron">&#9662;</span>
+  </button>
   <div class="filter-group">
     <label>Sector</label>
     <select id="f-sector"><option value="">All Sectors</option></select>
@@ -1222,6 +1246,9 @@ function applyFilters(){
   });
   document.getElementById("filterCount").textContent = currentData.length;
   document.getElementById("filterTotal").textContent = RAW_DATA.length;
+  var ftc = document.getElementById("filterToggleCount"), ftt = document.getElementById("filterToggleTotal");
+  if (ftc) ftc.textContent = currentData.length;
+  if (ftt) ftt.textContent = RAW_DATA.length;
   renderAll();
 }
 
@@ -2223,6 +2250,41 @@ applyFilters();
     document.querySelectorAll(".tab-btn").forEach(function (btn) {
       btn.addEventListener("click", function () { setTimeout(enhance, 60); });
     });
+
+    // Mobile: the filter bar (five fields + reset + count) is tall enough
+    // that on a phone it can dominate the screen for as long as it's
+    // visible. Collapse it to a single summary line once the page scrolls
+    // past it; a tap re-expands. Desktop is untouched — .collapsed only
+    // does anything inside the max-width:640px block above.
+    var filterBar = document.getElementById("filterBar");
+    var filterToggle = document.getElementById("filterToggle");
+    if (filterBar && filterToggle) {
+      var manuallyExpanded = false;
+      var suppressUntil = 0;
+      var isMobileWidth = function () { return window.innerWidth <= 640; };
+
+      var collapse = function () { filterBar.classList.add("collapsed"); manuallyExpanded = false; };
+      var expand   = function () { filterBar.classList.remove("collapsed"); };
+
+      window.addEventListener("scroll", function () {
+        if (!isMobileWidth()) return;
+        if (Date.now() < suppressUntil) return;
+        // Near the very top the bar sits in its natural (non-sticky) spot —
+        // always show it in full there, same as before any of this existed.
+        if (window.scrollY < 40) { expand(); manuallyExpanded = false; return; }
+        // Once manually opened, the next scroll in either direction closes
+        // it again — that scroll is the user moving on to the content they
+        // opened it to filter, not a reason to keep blocking the screen.
+        collapse();
+      }, { passive: true, capture: true });
+
+      filterToggle.addEventListener("click", function (e) {
+        e.stopPropagation();
+        expand();
+        manuallyExpanded = true;
+        suppressUntil = Date.now() + 400; // ignore the reflow's own scroll jitter
+      });
+    }
   });
 })();
 </script>
