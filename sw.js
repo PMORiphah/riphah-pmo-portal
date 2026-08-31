@@ -44,3 +44,49 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(fetch(event.request));
   }
 });
+
+// ─── PUSH NOTIFICATIONS ──────────────────────────────────────────────────────
+// The payload arrives encrypted; the browser decrypts it before handing it
+// over. iOS requires that every push actually shows a notification — a silent
+// push will get the subscription revoked — so there is always a fallback
+// title rather than an early return on malformed data.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+
+  const title = data.title || "PMO Portal";
+  const options = {
+    body: data.body || "You have a new update.",
+    icon: data.icon || "icon-192.png",
+    badge: data.badge || "icon-192.png",
+    tag: data.tag || "pmo-notification",
+    // Collapse repeats of the same subject rather than stacking them, but
+    // still alert for a genuinely new one.
+    renotify: !!data.tag,
+    requireInteraction: false,
+    data: { url: data.url || "./", ...(data.data || {}) },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Tapping a notification should reuse an already-open window rather than
+// spawning a second copy of the portal.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "./", self.location.origin + self.registration.scope).href;
+
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of all) {
+      if (client.url.startsWith(self.registration.scope)) {
+        await client.focus();
+        if ("navigate" in client && target !== client.url) {
+          try { await client.navigate(target); } catch { /* focus is enough */ }
+        }
+        return;
+      }
+    }
+    await self.clients.openWindow(target);
+  })());
+});
