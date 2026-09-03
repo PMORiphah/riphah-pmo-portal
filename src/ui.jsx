@@ -1,0 +1,2418 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  PMO PORTAL — UI PRIMITIVES
+// ─────────────────────────────────────────────────────────────────────────────
+//  Every button, input, card, badge, modal, skeleton and empty state in the
+//  product comes from here. Pages compose these; pages do not restyle them.
+//
+//  All of them take `T` (the active theme) and read tokens from it, which is
+//  why light and dark both come out right without per-component branching.
+// ─────────────────────────────────────────────────────────────────────────────
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { TYPE, SP, R, MOTION, AURORA } from "./theme.js";
+
+// ─── FONTS + GLOBAL MOTION ───────────────────────────────────────────────────
+export const injectGlobals = () => {
+  if (document.getElementById("pmo-globals")) return;
+
+  const f = document.createElement("link");
+  f.rel = "stylesheet";
+  f.href = "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap";
+  document.head.appendChild(f);
+
+  const s = document.createElement("style");
+  s.id = "pmo-globals";
+  s.textContent = `
+    @keyframes pmoIn      { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+    @keyframes pmoFade    { from { opacity:0; } to { opacity:1; } }
+    @keyframes pmoScaleIn { from { opacity:0; transform:scale(.97) translateY(6px); } to { opacity:1; transform:none; } }
+    @keyframes pmoShimmer { 0% { background-position:-420px 0; } 100% { background-position:420px 0; } }
+    @keyframes pmoPulse   { 0%,100% { box-shadow:0 0 0 0 currentColor; opacity:1; } 70% { box-shadow:0 0 0 6px transparent; opacity:.8; } }
+    @keyframes pmoDrift   { 0%,100% { transform:translate(0,0) scale(1); } 50% { transform:translate(-1.5%,1%) scale(1.03); } }
+    @keyframes pmoSlideR  { from { opacity:0; transform:translateX(14px); } to { opacity:1; transform:none; } }
+    @keyframes pmoRise    { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+    /* A richer entrance for the tour invite card specifically — scale plus
+       rise plus a brief brighter flash on arrival, settling into a slow
+       breathing glow. This is an invitation, not an alert, so the pulse
+       stays gentle and slow rather than urgent. */
+    @keyframes pmoInviteRise {
+      0%   { opacity:0; transform:translateY(18px) scale(.94); }
+      60%  { opacity:1; transform:translateY(-2px) scale(1.01); }
+      100% { opacity:1; transform:none; }
+    }
+    @keyframes pmoInviteGlow {
+      0%,100% { filter: drop-shadow(0 0 0 rgba(216,152,64,0)); }
+      50%     { filter: drop-shadow(0 0 16px rgba(216,152,64,.35)); }
+    }
+    /* Icon micro-animations (§6). Each runs once on hover and is deliberately
+       tiny — a few pixels, under 400ms. */
+    @keyframes pmoNudgeUp { 0%{transform:translateY(0)} 45%{transform:translateY(-2.5px)} 100%{transform:translateY(0)} }
+    @keyframes pmoBreathe { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.09);opacity:.85} }
+    @keyframes pmoTick    { 0%{transform:scale(1) rotate(0)} 40%{transform:scale(1.14) rotate(-7deg)} 100%{transform:scale(1) rotate(0)} }
+    @keyframes pmoShift   { 0%{transform:translate(0,0)} 45%{transform:translate(1.5px,-1.5px)} 100%{transform:translate(0,0)} }
+    @keyframes pmoSheen   { 0%{transform:translateX(-120%)} 100%{transform:translateX(220%)} }
+
+    /* ── AMBIENT LIFE ──────────────────────────────────────────────────
+       Everything else in this file responds to the pointer. These run
+       continuously, so the screen is never completely still — which is the
+       difference between "polished" and "alive". All are slow (18–46s) and
+       low-contrast: perceptible at the edge of vision, never distracting from
+       a figure you are reading. */
+    @keyframes pmoAurora1 { 0%,100%{transform:translate(0,0) scale(1)}
+                            33%{transform:translate(6%,-4%) scale(1.14)}
+                            66%{transform:translate(-4%,5%) scale(0.94)} }
+    @keyframes pmoAurora2 { 0%,100%{transform:translate(0,0) scale(1.05)}
+                            40%{transform:translate(-7%,4%) scale(0.92)}
+                            75%{transform:translate(5%,6%) scale(1.16)} }
+    @keyframes pmoAurora3 { 0%,100%{transform:translate(0,0) scale(0.96)}
+                            50%{transform:translate(4%,-6%) scale(1.2)} }
+    @keyframes pmoScan    { 0%{transform:translateY(-100%)} 100%{transform:translateY(900%)} }
+    @keyframes pmoBreathe2{ 0%,100%{opacity:.55} 50%{opacity:1} }
+    @keyframes pmoTrace   { 0%{stroke-dashoffset:var(--len)} 100%{stroke-dashoffset:0} }
+    @keyframes pmoOrbit   { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+    @keyframes pmoGrow    { from{transform:scaleX(0)} to{transform:scaleX(1)} }
+    /* §67 — page transition. Short and directional: the application should
+       always feel fast, so this is 240ms and a few pixels, never a fade the
+       reader has to wait through. */
+    @keyframes pmoPageIn  { from{opacity:0; transform:translateY(8px) scale(.995)}
+                            to{opacity:1; transform:none} }
+    /* §18 — tab content arrives from the direction of travel. */
+    @keyframes pmoPanelR  { from{opacity:0; transform:translateX(12px)} to{opacity:1; transform:none} }
+    @keyframes pmoPanelL  { from{opacity:0; transform:translateX(-12px)} to{opacity:1; transform:none} }
+    /* §49 — a held camera shot rather than a static wallpaper. */
+    @keyframes pmoKenBurns{ 0%,100%{transform:scale(1.04) translate(0,0)}
+                            50%{transform:scale(1.10) translate(-1.2%,-0.8%)} }
+
+    .pmo-aurora   { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+    .pmo-aurora i { position:absolute; display:block; border-radius:50%; filter:blur(60px); }
+    /* §11 — prime-ish, mutually indivisible durations with offset delays, so
+       the combined field never visibly repeats. The brain detects a loop within
+       about three cycles and stops reading it as alive; with these periods the
+       pattern does not recur for hours. */
+    .pmo-aurora i { transition: transform 1.4s cubic-bezier(.16,1,.3,1); }
+    .pmo-aurora i:nth-child(1){ animation: pmoAurora1 37s ease-in-out infinite;   animation-delay:  -3s; }
+    .pmo-aurora i:nth-child(2){ animation: pmoAurora2 53s ease-in-out infinite;   animation-delay: -19s; }
+    .pmo-aurora i:nth-child(3){ animation: pmoAurora3 29s ease-in-out infinite;   animation-delay:  -7s; }
+    .pmo-aurora i:nth-child(4){ animation: pmoAurora2 43s ease-in-out infinite reverse; animation-delay: -31s; }
+
+    /* A single hairline of light drifting down a surface. */
+    .pmo-scan::after {
+      content:""; position:absolute; left:0; right:0; height:22%;
+      background:linear-gradient(180deg, transparent, rgba(120,180,255,.055), transparent);
+      animation: pmoScan 9s linear infinite; pointer-events:none;
+    }
+    .pmo-breathe { animation: pmoBreathe2 4.5s ease-in-out infinite; }
+    .pmo-grow    { animation: pmoGrow 900ms cubic-bezier(.16,1,.3,1) backwards; transform-origin:left; }
+
+    /* Sections arrive as they enter the viewport rather than all at once. */
+    .pmo-kenburns { animation: pmoKenBurns 40s ease-in-out infinite; will-change:transform; }
+
+    /* ══ SIGN-IN ATMOSPHERE ══════════════════════════════════════════════
+       Everything here composites above the campus photograph. Transform and
+       opacity only — no layout properties are animated (§32). */
+    @keyframes pmoMote {
+      0%   { transform: translate3d(0,0,0) scale(.7); opacity:0; }
+      12%  { opacity:.9; }
+      50%  { transform: translate3d(14px,-34px,0) scale(1); opacity:.7; }
+      88%  { opacity:.5; }
+      100% { transform: translate3d(-8px,-72px,0) scale(.6); opacity:0; }
+    }
+    .pmo-mote {
+      position:absolute; border-radius:50%; display:block;
+      animation-name: pmoMote; animation-timing-function: ease-in-out;
+      animation-iteration-count: infinite; will-change: transform, opacity;
+    }
+
+    /* §5 — layered parallax. Each depth scales the same pointer offset, so the
+       scene reads as dimensional while nothing travels more than ~8px. */
+    .pmo-lp1 { transform: translate3d(calc(var(--lpx,0) * -3px),  calc(var(--lpy,0) * -3px),  0); }
+    .pmo-lp2 { transform: translate3d(calc(var(--lpx,0) * -6px),  calc(var(--lpy,0) * -5px),  0); }
+    .pmo-lp3 { transform: translate3d(calc(var(--lpx,0) * -9px),  calc(var(--lpy,0) * -7px),  0); }
+    .pmo-lp1,.pmo-lp2,.pmo-lp3 { transition: transform .7s cubic-bezier(.16,1,.3,1); }
+    .pmo-mote[data-depth="1"] { --mote-shift: -4px; }
+    .pmo-mote[data-depth="2"] { --mote-shift: -8px; }
+    .pmo-mote[data-depth="3"] { --mote-shift: -13px; }
+
+    /* §36 — staggered entrance. Nothing here gates interactivity; the form is
+       usable from the first frame. */
+    @keyframes pmoLoginIn {
+      from { opacity:0; transform: translate3d(0, 14px, 0); }
+      to   { opacity:1; transform: none; }
+    }
+    .pmo-li { animation: pmoLoginIn 620ms cubic-bezier(.16,1,.3,1) backwards; }
+
+    /* §15 — the crest ring breathes rather than spins. */
+    @keyframes pmoCrestRing {
+      0%,100% { opacity:.45; transform: scale(1); }
+      50%     { opacity:.95; transform: scale(1.045); }
+    }
+    .pmo-crest-ring { animation: pmoCrestRing 4.2s ease-in-out infinite; }
+
+    /* §25 — the success transition. The scene advances rather than cutting:
+       the card confirms, the world brightens, and the whole frame eases
+       forward as the dashboard takes over. 520ms end to end — cinematic, but
+       nobody is waiting on it. */
+    @keyframes pmoSignInOut {
+      0%   { opacity:1; transform: scale(1); filter: brightness(1); }
+      35%  { opacity:1; transform: scale(1.012); filter: brightness(1.16); }
+      100% { opacity:0; transform: scale(1.055); filter: brightness(1.3); }
+    }
+    .pmo-signin-out { animation: pmoSignInOut 520ms cubic-bezier(.4,0,.2,1) forwards; }
+
+    /* The card leaves slightly ahead of the scene, so it reads as handing over
+       rather than everything fading together. */
+    @keyframes pmoCardOut {
+      0%   { opacity:1; transform: translateY(0) scale(1); }
+      100% { opacity:0; transform: translateY(-10px) scale(.97); }
+    }
+    .pmo-card-out { animation: pmoCardOut 380ms cubic-bezier(.4,0,.2,1) forwards; }
+
+    /* A single confirming flash on the button before it goes. */
+    @keyframes pmoConfirm {
+      0%   { box-shadow: 0 6px 24px rgba(216,152,64,.45); }
+      45%  { box-shadow: 0 0 0 6px rgba(34,196,168,.28), 0 10px 34px rgba(34,196,168,.5); }
+      100% { box-shadow: 0 0 0 14px rgba(34,196,168,0), 0 6px 24px rgba(34,196,168,.2); }
+    }
+    .pmo-confirm { animation: pmoConfirm 420ms ease-out forwards; }
+
+    /* §23 — a light sweep across the sign-in button, on hover only. */
+    @keyframes pmoSweep { 0% { transform: translateX(-130%) skewX(-18deg); }
+                          100% { transform: translateX(240%) skewX(-18deg); } }
+    .pmo-sweep::after {
+      content:""; position:absolute; top:0; bottom:0; width:38%;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.42), transparent);
+      transform: translateX(-130%) skewX(-18deg); pointer-events:none;
+    }
+    .pmo-sweep:hover::after { animation: pmoSweep 780ms cubic-bezier(.3,.7,.4,1); }
+
+    /* §17 — a highlight travelling the focused field's border. */
+    @keyframes pmoFieldTrace { to { background-position: 200% 0; } }
+    .pmo-field-focus {
+      background-image: linear-gradient(90deg,
+        transparent, rgba(224,169,74,.75), rgba(74,155,224,.6), transparent);
+      background-size: 200% 2px; background-repeat: no-repeat;
+      background-position: -100% 0;
+      animation: pmoFieldTrace 1.4s ease-out forwards;
+    }
+
+    /* ══ LIVING SURFACE ══════════════════════════════════════════════════
+       Everything below reads --near, --px/--py, --idle and --dwell, which the
+       presence layer publishes globally. No JavaScript runs per element and no
+       React render is triggered — which is what makes it affordable for the
+       whole page to be aware of the pointer rather than one card at a time. */
+
+    /* §1 §7 — surfaces wake as the pointer approaches, and earlier on the side
+       you are travelling toward. At --near 0 this is identical to resting. */
+    .pmo-near {
+      --near: 0;
+      transition: transform .5s cubic-bezier(.16,1,.3,1),
+                  box-shadow .5s cubic-bezier(.16,1,.3,1),
+                  border-color .5s cubic-bezier(.16,1,.3,1);
+      transform: translateY(calc(var(--near) * -3px));
+    }
+    /* §3 — light leans toward the pointer instead of sitting in the middle. */
+    .pmo-near::before {
+      content:""; position:absolute; inset:0; border-radius:inherit;
+      pointer-events:none; z-index:0;
+      background: radial-gradient(circle 320px at var(--lx,50%) var(--ly,50%),
+                  var(--near-light, rgba(120,175,240,.13)), transparent 68%);
+      opacity: calc(var(--near) * .9);
+      transition: opacity .45s ease;
+    }
+    /* §8 — resting near something deepens its response beyond passing over. */
+    .pmo-near { --dwell-boost: calc(var(--dwell, 0) * var(--near) * 0.5); }
+
+    /* §2 — relational response. An element describing the same thing as the
+       one under the pointer brightens; unrelated ones step back, so the
+       interface visibly knows what relates to what. */
+    .pmo-rel-on  { filter: saturate(1.14) brightness(1.06); }
+    .pmo-rel-off { opacity:.52; filter: saturate(.72); }
+    .pmo-rel-on, .pmo-rel-off { transition: opacity .28s ease, filter .28s ease; }
+
+    /* §10 — only things that MEAN live, pending or awaiting you breathe.
+       Motion becomes a channel of meaning rather than decoration. */
+    @keyframes pmoLivePulse { 0%,100%{opacity:.55; transform:scale(1)}
+                              50%{opacity:1; transform:scale(1.18)} }
+    .pmo-live-dot { animation: pmoLivePulse 2.8s ease-in-out infinite; }
+
+    /* The portfolio verdict is the single most important line on the screen and
+       it was rendering as flat grey text. It now carries its status colour and
+       a slow luminance pulse — the headline breathing, not blinking. */
+    @keyframes pmoVerdict {
+      0%,100% { filter: drop-shadow(0 0 10px var(--vg)) brightness(1); }
+      50%     { filter: drop-shadow(0 0 22px var(--vg)) brightness(1.13); }
+    }
+    .pmo-verdict { animation: pmoVerdict 3.6s ease-in-out infinite; will-change: filter; }
+
+    /* The status dot ahead of it, with an expanding ring so the state reads as
+       live rather than printed. */
+    @keyframes pmoRing {
+      0%   { transform: scale(1);   opacity:.65; }
+      70%  { transform: scale(2.6); opacity:0; }
+      100% { transform: scale(2.6); opacity:0; }
+    }
+    .pmo-verdict-dot { position:relative; }
+    .pmo-verdict-dot::after {
+      content:""; position:absolute; inset:0; border-radius:50%;
+      background: var(--dot-c, currentColor);
+      animation: pmoRing 3.6s cubic-bezier(.2,.7,.3,1) infinite;
+    }
+    .pmo-awaiting { animation: pmoLivePulse 4.2s ease-in-out infinite; }
+
+    /* §5 — after a while without input the room quietens; movement wakes it. */
+    html[data-idle="1"] .pmo-aurora i { animation-duration: 78s, 78s; opacity:.72; }
+    html[data-idle="1"] .pmo-live-dot { animation-duration: 5.2s; }
+    .pmo-aurora i, .pmo-live-dot { transition: opacity 2.4s ease; }
+
+    /* §3 — a global light whose source is your cursor. One environment
+       responding, rather than fifteen widgets each with their own lamp. */
+    .pmo-worldlight {
+      position:fixed; inset:0; pointer-events:none; z-index:1;
+      background: radial-gradient(circle 46vw at var(--px,50%) var(--py,40%),
+                  var(--world-light, rgba(120,175,240,.055)), transparent 62%);
+      transition: background .28s ease, opacity 1.6s ease;
+      opacity: calc(1 - var(--idle, 0) * .45);
+    }
+
+    /* §4 — tilt. Applied on a wrapper so the card's own transforms (lift,
+       proximity) compose with it rather than fighting for the property. */
+    .pmo-tilt {
+      --tiltX:0deg; --tiltY:0deg;
+      transform-style: preserve-3d;
+      perspective: 900px;
+    }
+    .pmo-tilt > * {
+      transform: rotateX(var(--tiltX)) rotateY(var(--tiltY));
+      transition: transform .42s cubic-bezier(.16,1,.3,1);
+      transform-style: preserve-3d;
+    }
+    .pmo-tilt .pmo-ico-layer {
+      transform: translate3d(var(--iconX,0), var(--iconY,0), 14px);
+      transition: transform .42s cubic-bezier(.16,1,.3,1);
+    }
+
+    /* §14 — a technical grid at 2–3% opacity. Present only to give the eye
+       something to register the surface against; invisible if you look for it. */
+    .pmo-grid {
+      position:fixed; inset:0; pointer-events:none; z-index:0;
+      background-image:
+        linear-gradient(var(--grid-c) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-c) 1px, transparent 1px);
+      background-size: 68px 68px;
+      mask-image: radial-gradient(ellipse 88% 72% at 50% 34%, #000 30%, transparent 78%);
+      -webkit-mask-image: radial-gradient(ellipse 88% 72% at 50% 34%, #000 30%, transparent 78%);
+      transform: translate3d(0, calc(var(--scrolly, 0px) * .28), 0);
+    }
+
+    /* §12 — the atmosphere trails the content as you scroll, which is what
+       produces real depth rather than a flat backdrop. */
+    .pmo-aurora i { will-change: transform; }
+    .pmo-aurora   { transform: translate3d(0, var(--scrolly, 0px), 0); }
+    .pmo-worldlight { transform: translate3d(0, calc(var(--scrolly, 0px) * .45), 0); }
+
+    /* §14 — rack focus. When an overlay opens, the world behind it pulls back
+       and softens, the way a camera shifts focus. Makes the palette and modals
+       feel physically in front of the application rather than pasted onto it. */
+    .pmo-world { transition: transform .34s cubic-bezier(.16,1,.3,1), filter .34s ease; }
+    html[data-overlay="1"] .pmo-world {
+      transform: scale(.988);
+      filter: blur(1.6px) saturate(.92) brightness(.92);
+    }
+
+    /* Full project name on hover, for names a column cannot fit. Positioned
+       fixed so it escapes every table's overflow, as the insight panels do. */
+    .pmo-peek {
+      position:fixed; z-index:1500; max-width:min(460px, 76vw);
+      pointer-events:none; opacity:0; transform:translateY(5px);
+      background:var(--peek-bg); border:1px solid var(--peek-border);
+      border-radius:10px; padding:9px 13px;
+      box-shadow:0 18px 46px -14px rgba(0,0,0,.62);
+      backdrop-filter:blur(14px) saturate(140%);
+      -webkit-backdrop-filter:blur(14px) saturate(140%);
+      transition:opacity .16s ease, transform .16s cubic-bezier(.16,1,.3,1);
+    }
+    .pmo-peek.show { opacity:1; transform:none; }
+    .pmo-peek-name {
+      font-family:'Inter',sans-serif; font-size:12.5px; font-weight:600;
+      line-height:1.45; color:var(--peek-fg);
+    }
+    .pmo-peek-meta {
+      font-family:'Inter',sans-serif; font-size:11px; margin-top:4px;
+      padding-top:4px; border-top:1px solid var(--peek-border);
+      color:var(--peek-muted);
+    }
+    [data-peek] { cursor:default; }
+
+    /* Slideshow progress hairline — shows how long until the next slide. */
+    @keyframes pmoSlideBar { from { width:0; } to { width:100%; } }
+
+    /* §15 — something that has changed since your last visit. */
+    .pmo-since { position: relative; }
+    .pmo-since::after {
+      content:""; position:absolute; left:-9px; top:50%; transform:translateY(-50%);
+      width:5px; height:5px; border-radius:50%;
+      background: var(--since-c, #4A9BE0);
+      box-shadow: 0 0 8px 1px var(--since-c, #4A9BE0);
+    }
+    .pmo-page     { animation: pmoPageIn 240ms cubic-bezier(.16,1,.3,1); }
+    .pmo-panel-r  { animation: pmoPanelR 260ms cubic-bezier(.16,1,.3,1); }
+    .pmo-panel-l  { animation: pmoPanelL 260ms cubic-bezier(.16,1,.3,1); }
+
+    .pmo-reveal   { opacity:0; transform:translateY(14px);
+                    transition: opacity .55s cubic-bezier(.16,1,.3,1), transform .55s cubic-bezier(.16,1,.3,1); }
+    .pmo-reveal.in{ opacity:1; transform:none; }
+
+    .pmo-in      { animation: pmoIn .34s ${MOTION.ease} backwards; }
+    .pmo-fade    { animation: pmoFade .28s ease backwards; }
+    .pmo-scale   { animation: pmoScaleIn .2s ${MOTION.ease}; }
+    .pmo-slide-r { animation: pmoSlideR .26s ${MOTION.ease} backwards; }
+    .pmo-drift   { animation: pmoDrift 20s ease-in-out infinite; }
+    .pmo-pulse   { animation: pmoPulse 2.4s ease-in-out infinite; }
+    .pmo-lift    { transition: transform ${MOTION.base}, box-shadow ${MOTION.base}, border-color ${MOTION.base}; }
+    /* -3px, not more. The movement should read as expensive, not springy (§5). */
+    .pmo-lift:hover { transform: translateY(-3px); }
+    .pmo-rise    { animation: pmoRise .22s ${MOTION.ease}; }
+
+    /* Icon animations fire from the card's hover state, not the icon's, so the
+       whole card is the target rather than a 14px hit area. */
+    .pmo-ico-up:hover      .pmo-ico, .pmo-hot .pmo-ico-up      { animation: pmoNudgeUp .42s ease; }
+    .pmo-hot .pmo-ico-up   { animation: pmoNudgeUp .42s ease; }
+    .pmo-hot .pmo-ico-tick { animation: pmoTick .42s ease; }
+    .pmo-hot .pmo-ico-pulse{ animation: pmoBreathe 1.6s ease-in-out infinite; }
+    .pmo-hot .pmo-ico-shift{ animation: pmoShift .45s ease; }
+    .pmo-hot .pmo-ico-glow { filter: drop-shadow(0 0 5px currentColor); transition: filter .3s ease; }
+
+    /* §51 — cursor-responsive light. Positioned from --mx/--my, which the
+       hook writes directly to the node so pointer movement never re-renders. */
+    .pmo-cursor-light { position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+      opacity:0; transition:opacity .35s ease; }
+    .pmo-hot .pmo-cursor-light { opacity:1; }
+
+    /* A single slow sheen crossing a card on hover. One pass, then done. */
+    .pmo-sheen { position:absolute; inset:0; pointer-events:none; overflow:hidden; border-radius:inherit; opacity:0; transition:opacity .2s ease; }
+    .pmo-hot .pmo-sheen { opacity:1; }
+    .pmo-hot .pmo-sheen::after {
+      content:""; position:absolute; top:0; bottom:0; width:38%;
+      background:linear-gradient(100deg, transparent, rgba(255,255,255,.055), transparent);
+      animation: pmoSheen 1.1s cubic-bezier(.3,.7,.4,1) 1;
+    }
+
+    /* Baseline interaction for controls not yet migrated to <Button>. Subtle
+       by design: it should read as the same product, not compete with the
+       primitives. */
+    .pmo-btn { transition: filter 140ms ease, transform 90ms ease, opacity 140ms ease; }
+    .pmo-btn:hover:not(:disabled)  { filter: brightness(1.14); }
+    .pmo-btn:active:not(:disabled) { transform: scale(.975); }
+    .pmo-btn:disabled { opacity:.5; cursor:not-allowed; }
+
+    /* Native controls respond to the pointer too */
+    .pmo-select:hover:not(:disabled) { border-color: rgba(124,149,175,.55) !important; }
+
+    /* Focus: always visible, never the default browser ring (§34) */
+    .pmo-focusable:focus-visible {
+      outline: 2px solid ${"#4A9BE0"};
+      outline-offset: 2px;
+      border-radius: ${R.sm}px;
+    }
+
+    /* Native controls restyled once, globally (§37: no default browser controls) */
+    .pmo-select {
+      -webkit-appearance:none; -moz-appearance:none; appearance:none;
+      background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237C95AF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:right 10px center; padding-right:26px !important;
+    }
+    /* Native date fields: the OS widget is the last stock control in the
+       product. Tint the picker indicator so it reads as ours. */
+    input[type="date"] {
+      color-scheme: var(--pmo-scheme, dark);
+      font-family: 'Inter', sans-serif;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      opacity:.55; cursor:pointer; transition:opacity 140ms ease;
+      filter: var(--pmo-date-filter, invert(1));
+    }
+    input[type="date"]:hover::-webkit-calendar-picker-indicator { opacity:1; }
+
+    .pmo-scroll::-webkit-scrollbar { width:10px; height:10px; }
+    /* A flex row of cards, scrollable on narrow screens without letting the
+       cards themselves shrink to fit — the crush that happens when a
+       display:flex row has no overflow handling and its children have no
+       flex-shrink:0, both defaults that fight against a fixed number of
+       fixed-content cards on a phone-width screen. */
+    .pmo-card-row { overflow-x: auto; }
+    .pmo-card-row > * { flex-shrink: 0; }
+    .pmo-scroll::-webkit-scrollbar-track { background:transparent; }
+    .pmo-scroll::-webkit-scrollbar-thumb { background:rgba(124,149,175,.28); border-radius:99px; border:2px solid transparent; background-clip:content-box; }
+    .pmo-scroll::-webkit-scrollbar-thumb:hover { background:rgba(124,149,175,.5); border:2px solid transparent; background-clip:content-box; }
+
+    /* Legacy class aliases — un-migrated pages still reference these. This
+       block disappears as each page is moved onto the new names. */
+    .pmo-card-in { animation: pmoIn .34s ${MOTION.ease} backwards; }
+    .pmo-fade-in { animation: pmoFade .28s ease backwards; }
+    .pmo-pulse-dot { animation: pmoPulse 2.4s ease-in-out infinite; }
+    .pmo-mesh { animation: pmoDrift 20s ease-in-out infinite; }
+    .pmo-skeleton { background-repeat:no-repeat; animation: pmoShimmer 1.5s ease-in-out infinite; }
+    .pmo-invite-card { animation: pmoInviteRise .5s cubic-bezier(.2,.8,.3,1), pmoInviteGlow 3.6s ease-in-out .5s infinite; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .pmo-in,.pmo-fade,.pmo-scale,.pmo-slide-r,.pmo-drift,.pmo-pulse,.pmo-skeleton,.pmo-rise,
+      .pmo-aurora i,.pmo-scan::after,.pmo-breathe,.pmo-grow,.pmo-reveal,
+      .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
+      .pmo-signin-out,.pmo-card-out,.pmo-confirm,
+      .pmo-mote,.pmo-lp1,.pmo-lp2,.pmo-lp3,.pmo-li,.pmo-crest-ring,.pmo-sweep::after,.pmo-field-focus,
+      .pmo-live-dot,.pmo-awaiting,.pmo-verdict,.pmo-verdict-dot::after,.pmo-near,.pmo-near::before,.pmo-worldlight,
+      .pmo-world,.pmo-aurora,.pmo-tilt > *,.pmo-tilt .pmo-ico-layer,
+      .pmo-btn:active,
+      .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
+      .pmo-hot .pmo-ico-pulse,.pmo-hot .pmo-ico-shift,
+      .pmo-card-in,.pmo-fade-in,.pmo-pulse-dot,.pmo-mesh,.pmo-invite-card { animation:none !important; }
+      .pmo-lift:hover { transform:none !important; }
+      * { transition-duration:.01ms !important; }
+    }
+  `;
+  document.head.appendChild(s);
+};
+
+// ─── RESPONSIVE ──────────────────────────────────────────────────────────────
+// Inline styles can't express media queries, so breakpoints come through a hook
+// instead. This is what makes §26 possible at all.
+export const BP = { mobile:640, tablet:1024, laptop:1366 };
+// Touch devices trigger onMouseEnter on tap but never fire onMouseLeave — a
+// hover-driven tooltip that opens that way has no event to close it and sits
+// stuck over the content underneath. Computed once: a device's fundamental
+// hover capability doesn't change mid-session, so this doesn't need to be a
+// hook that re-checks on every render.
+export const CAN_HOVER = typeof window !== "undefined" && window.matchMedia
+  ? window.matchMedia("(hover: hover)").matches : true;
+
+export function useViewport() {
+  const [w, setW] = useState(typeof window !== "undefined" ? window.innerWidth : 1440);
+  useEffect(() => {
+    let raf = null;
+    const on = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setW(window.innerWidth));
+    };
+    window.addEventListener("resize", on);
+    return () => { window.removeEventListener("resize", on); if (raf) cancelAnimationFrame(raf); };
+  }, []);
+  return {
+    width: w,
+    isMobile: w < BP.mobile,
+    isTablet: w >= BP.mobile && w < BP.tablet,
+    isLaptop: w >= BP.tablet && w < BP.laptop,
+    isDesktop: w >= BP.laptop,
+    isCompact: w < BP.tablet,
+  };
+}
+
+// ─── COUNT-UP ────────────────────────────────────────────────────────────────
+// Tweens the leading numeric part of a value. Two rules learned the hard way:
+//  1. Never call this inside a component that has a conditional early return
+//     before it — the hook count changes between renders and React blanks the
+//     whole app. Use <Metric>/<CountUp> instead, which own the hook.
+//  2. Animate on mount only (`once`). Re-tweening on every filter keystroke
+//     flashes 0→value repeatedly and reads as broken (§19).
+export function useCountUp(value, { duration = 850, once = true } = {}) {
+  const [display, setDisplay] = useState(value);
+  const raf = useRef(null);
+  const done = useRef(false);
+
+  useEffect(() => {
+    const str = String(value ?? "");
+    if (once && done.current) { setDisplay(str); return; }
+
+    const m = str.match(/^(-?[\d,]*\.?\d+)/);
+    if (!m) { setDisplay(str); return; }
+    const numStr = m[1];
+    const suffix = str.slice(numStr.length);
+    const target = parseFloat(numStr.replace(/,/g, ""));
+    if (!isFinite(target)) { setDisplay(str); return; }
+    const decimals = (numStr.split(".")[1] || "").length;
+    const hasComma = numStr.includes(",");
+
+    const start = performance.now();
+    if (raf.current) cancelAnimationFrame(raf.current);
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const cur = target * eased;
+      const fixed = decimals > 0 ? cur.toFixed(decimals) : String(Math.round(cur));
+      setDisplay((hasComma ? Number(fixed).toLocaleString("en-US",{minimumFractionDigits:decimals,maximumFractionDigits:decimals}) : fixed) + suffix);
+      if (t < 1) raf.current = requestAnimationFrame(tick);
+      else done.current = true;
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+  }, [value, duration, once]);
+
+  return display;
+}
+
+export const CountUp = ({ value, duration }) => useCountUp(value, { duration });
+
+// ─── LAYOUT ──────────────────────────────────────────────────────────────────
+export const Stack = ({ gap = SP.md, children, style }) => (
+  <div style={{ display:"flex", flexDirection:"column", gap, ...style }}>{children}</div>
+);
+
+export const Inline = ({ gap = SP.sm, align = "center", wrap, children, style }) => (
+  <div style={{ display:"flex", alignItems:align, gap, flexWrap: wrap ? "wrap" : "nowrap", ...style }}>{children}</div>
+);
+
+// Section heading. The eyebrow encodes what the section *is*, not decoration.
+export const SectionTitle = ({ T, title, sub, right, icon:Icon }) => (
+  <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", gap:SP.md, marginBottom:SP.md }}>
+    <div style={{ minWidth:0 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:SP.sm }}>
+        {Icon && (
+          <div style={{ width:24, height:24, borderRadius:R.sm, background:T.blue+T.badge,
+            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <Icon size={13} color={T.blueBright} strokeWidth={2} />
+          </div>
+        )}
+        <h2 style={{ ...TYPE.h2, color:T.text, margin:0 }}>{title}</h2>
+      </div>
+      {sub && <div style={{ ...TYPE.caption, color:T.muted, marginTop:3 }}>{sub}</div>}
+    </div>
+    {right}
+  </div>
+);
+
+// ─── CURSOR LIGHT (§51) ──────────────────────────────────────────────────────
+// A soft radial highlight that follows the pointer inside a surface. The
+// signature is "light reacting to the user", not a torch beam — so the opacity
+// is low, the radius is large, and it fades in rather than snapping on.
+//
+// Implemented with CSS custom properties written directly to the node, so
+// moving the pointer never triggers a React render. That is what keeps it
+// affordable on a page holding seven cards and three charts (§76).
+export function useCursorLight(enabled = true) {
+  const ref = useRef(null);
+  const raf = useRef(null);
+
+  const onMove = useCallback((e) => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el) return;
+    if (raf.current) return;                 // coalesce to one write per frame
+    raf.current = requestAnimationFrame(() => {
+      raf.current = null;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", `${((e.clientX - r.left) / r.width) * 100}%`);
+      el.style.setProperty("--my", `${((e.clientY - r.top) / r.height) * 100}%`);
+    });
+  }, [enabled]);
+
+  const onLeave = useCallback(() => {
+    const el = ref.current;
+    if (el) { el.style.setProperty("--mx", "50%"); el.style.setProperty("--my", "50%"); }
+  }, []);
+
+  useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
+  return { ref, onMouseMove: onMove, onMouseLeave: onLeave };
+}
+
+// ─── CURSOR TILT (§4) ────────────────────────────────────────────────────────
+// A card leans very slightly toward the pointer — 1.5° at the extremes, never
+// more. Below about 2° this reads as the surface having physical presence;
+// above it, it reads as a gimmick and starts to hurt legibility of the number
+// printed on the card, which is the thing the card exists for.
+//
+// Written as CSS custom properties on the node, so tilting never triggers a
+// React render.
+export function useCursorTilt(enabled = true, max = 1.5) {
+  const ref = useRef(null);
+  const raf = useRef(null);
+
+  const onMove = useCallback((e) => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el || raf.current) return;
+    raf.current = requestAnimationFrame(() => {
+      raf.current = null;
+      const r = el.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width  - 0.5;   // -0.5 … 0.5
+      const py = (e.clientY - r.top)  / r.height - 0.5;
+      el.style.setProperty("--tiltY", `${( px * max * 2).toFixed(2)}deg`);
+      el.style.setProperty("--tiltX", `${(-py * max * 2).toFixed(2)}deg`);
+      // The icon shifts a couple of pixels the other way, which is what sells
+      // the parallax — a flat surface tilting is far less convincing than a
+      // surface with something sitting slightly above it.
+      el.style.setProperty("--iconX", `${(px * -3).toFixed(1)}px`);
+      el.style.setProperty("--iconY", `${(py * -3).toFixed(1)}px`);
+    });
+  }, [enabled, max]);
+
+  const reset = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--tiltX", "0deg");
+    el.style.setProperty("--tiltY", "0deg");
+    el.style.setProperty("--iconX", "0px");
+    el.style.setProperty("--iconY", "0px");
+  }, []);
+
+  useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
+  return { ref, onMouseMove: onMove, onMouseLeave: reset };
+}
+
+// ─── SURFACE ─────────────────────────────────────────────────────────────────
+// The one card in the product. `tone` tints it; `raised` lifts it; `interactive`
+// makes it respond to the pointer.
+export function Surface({
+  T, tone, raised, interactive, selected, pad = SP.lg, radius = R.lg,
+  children, style, onClick, className = "", title, light = false, ...rest
+}) {
+  const [hover, setHover] = useState(false);
+  const cl = useCursorLight(light);
+  const accent = tone || null;
+  const bg = raised ? T.surfaceRaised : T.surface;
+
+  return (
+    <div
+      {...rest}
+      ref={light ? cl.ref : undefined}
+      title={title}
+      onClick={onClick}
+      onMouseMove={light ? cl.onMouseMove : undefined}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => { setHover(false); if (light) cl.onMouseLeave(); }}
+      className={`${interactive ? "pmo-lift " : ""}${hover && light ? "pmo-hot " : ""}${className}`}
+      style={{
+        background: accent
+          ? `linear-gradient(160deg, ${bg} 0%, ${bg} 62%, ${accent}${T.wash} 100%)`
+          : bg,
+        border: `1px solid ${selected ? accent || T.borderAccent : hover && interactive ? T.borderStrong : T.border}`,
+        borderRadius: radius,
+        padding: pad,
+        position: "relative",
+        overflow: "hidden",
+        boxShadow: selected
+          ? `0 0 0 1px ${accent || T.blue}${T.ring}, ${T.shadow}`
+          : hover && interactive ? T.shadowLg : T.shadow,
+        cursor: onClick ? "pointer" : "default",
+        transition: `background ${MOTION.base}, border-color ${MOTION.base}, box-shadow ${MOTION.base}, transform ${MOTION.base}`,
+        ...style,
+      }}
+    >
+      {light && (
+        <span className="pmo-cursor-light" style={{
+          background:`radial-gradient(420px circle at var(--mx,50%) var(--my,50%), ${T.cursorLight}, transparent 70%)`,
+        }} />
+      )}
+      {children}
+    </div>
+  );
+}
+
+// ─── BUTTON ──────────────────────────────────────────────────────────────────
+// Replaces 96 individually-styled <button> elements.
+export function Button({
+  T, variant = "ghost", size = "md", icon:Icon, iconRight:IconR, children,
+  onClick, disabled, loading, tone, title, full, type = "button", style, ...rest
+}) {
+  const [hover, setHover] = useState(false);
+  const [press, setPress] = useState(false);
+  const c = tone || T.blue;
+
+  const sizes = {
+    sm: { padding:"5px 10px",  fontSize:11.5, gap:5, icon:12, radius:R.sm },
+    md: { padding:"8px 14px",  fontSize:12.5, gap:6, icon:14, radius:R.sm },
+    lg: { padding:"11px 20px", fontSize:14,   gap:8, icon:16, radius:R.md },
+  }[size];
+
+  const variants = {
+    primary: { bg: hover ? T.blueBright : T.blue, fg:"#fff", border:"transparent", shadow:`0 2px 10px ${T.blue}44` },
+    accent:  { bg: hover ? `${c}2E` : `${c}1F`,   fg:c,      border:`${c}55`,      shadow:"none" },
+    ghost:   { bg: hover ? T.rowHover : "transparent", fg: hover ? T.text : T.muted, border:T.border, shadow:"none" },
+    subtle:  { bg: hover ? T.rowHover : "transparent", fg: hover ? T.text : T.muted, border:"transparent", shadow:"none" },
+    danger:  { bg: hover ? `${T.danger}2E` : `${T.danger}1A`, fg:T.danger, border:`${T.danger}55`, shadow:"none" },
+  }[variant];
+
+  return (
+    <button
+      {...rest}
+      type={type}
+      title={title}
+      disabled={disabled || loading}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => { setHover(false); setPress(false); }}
+      onMouseDown={() => setPress(true)}
+      onMouseUp={() => setPress(false)}
+      className="pmo-focusable"
+      style={{
+        display:"inline-flex", alignItems:"center", justifyContent:"center",
+        gap:sizes.gap, padding:sizes.padding, width: full ? "100%" : undefined,
+        background:variants.bg, color:variants.fg,
+        border:`1px solid ${variants.border}`, borderRadius:sizes.radius,
+        fontFamily:TYPE.body.fontFamily, fontSize:sizes.fontSize, fontWeight:600,
+        cursor: disabled || loading ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.45 : 1,
+        boxShadow:variants.shadow,
+        transform: press ? "scale(.975)" : "none",   // tactile press feedback (§20)
+        transition:`background ${MOTION.fast}, color ${MOTION.fast}, border-color ${MOTION.fast}, transform 90ms ease, box-shadow ${MOTION.fast}`,
+        whiteSpace:"nowrap",
+        ...style,
+      }}
+    >
+      {loading
+        ? <Spinner size={sizes.icon} color={variants.fg} />
+        : Icon && <Icon size={sizes.icon} strokeWidth={2} />}
+      {children}
+      {IconR && <IconR size={sizes.icon} strokeWidth={2} />}
+    </button>
+  );
+}
+
+export const Spinner = ({ size = 14, color = "#fff" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" style={{ animation:"pmoSpin .7s linear infinite" }}>
+    <style>{"@keyframes pmoSpin{to{transform:rotate(360deg)}}"}</style>
+    <circle cx="12" cy="12" r="9" fill="none" stroke={color} strokeWidth="3" opacity=".25" />
+    <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" />
+  </svg>
+);
+
+// ─── ICON BUTTON ─────────────────────────────────────────────────────────────
+// Icon-only controls always carry a title, so they're never unlabelled (§34).
+export function IconButton({ T, icon:Icon, onClick, title, tone, size = 15, active, badge, style, ...rest }) {
+  const [hover, setHover] = useState(false);
+  const c = tone || (active ? T.blueBright : hover ? T.text : T.muted);
+  return (
+    <button
+      {...rest}
+      onClick={onClick} title={title} aria-label={title}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      className="pmo-focusable"
+      style={{
+        position:"relative", display:"inline-flex", alignItems:"center", justifyContent:"center",
+        width:32, height:32, borderRadius:R.sm,
+        background: active ? T.blue+T.badge : hover ? T.rowHover : "transparent",
+        border:`1px solid ${active ? T.borderAccent : "transparent"}`,
+        color:c, cursor:"pointer",
+        transition:`background ${MOTION.fast}, color ${MOTION.fast}, border-color ${MOTION.fast}`,
+        ...style,
+      }}
+    >
+      <Icon size={size} strokeWidth={2} />
+      {badge > 0 && (
+        <span style={{
+          position:"absolute", top:2, right:2, minWidth:15, height:15, padding:"0 4px",
+          borderRadius:R.pill, background:T.danger, color:"#fff",
+          fontSize:9.5, fontWeight:700, fontFamily:TYPE.body.fontFamily,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          boxShadow:`0 0 0 2px ${T.surface}`,
+        }}>{badge > 99 ? "99+" : badge}</span>
+      )}
+    </button>
+  );
+}
+
+// ─── INPUTS ──────────────────────────────────────────────────────────────────
+export function Input({ T, icon:Icon, value, onChange, placeholder, onClear, size = "md", full, style, ...rest }) {
+  const [focus, setFocus] = useState(false);
+  const [hover, setHover] = useState(false);
+  const pad = size === "sm" ? "5px 9px" : "8px 12px";
+  const fs  = size === "sm" ? 11.5 : 13;
+  return (
+    <div
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+      display:"flex", alignItems:"center", gap:7, padding:pad,
+      background:T.inputBg,
+      border:`1px solid ${focus ? T.inputFocus : hover ? T.borderStrong : value ? T.borderStrong : T.inputBorder}`,
+      borderRadius:R.sm,
+      boxShadow: focus ? `0 0 0 3px ${T.inputFocus}22` : "none",
+      transition:`border-color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
+      width: full ? "100%" : undefined, minWidth:0, boxSizing:"border-box",
+      ...style,
+    }}>
+      {Icon && <Icon size={13} color={focus ? T.inputFocus : T.muted} style={{ flexShrink:0 }} />}
+      <input
+        {...rest}
+        value={value} onChange={onChange} placeholder={placeholder}
+        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+        style={{
+          background:"none", border:"none", outline:"none", flex:1, minWidth:0,
+          fontFamily:TYPE.body.fontFamily, fontSize:fs, color:T.text,
+        }}
+      />
+      {onClear && value ? (
+        <button onClick={onClear} title="Clear"
+          style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, display:"flex", padding:0 }}>
+          <XIcon size={12} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+const XIcon = ({ size = 12 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+    <path d="M18 6 6 18M6 6l12 12" />
+  </svg>
+);
+
+// ─── SELECT (§54) ────────────────────────────────────────────────────────────
+// A real listbox rather than a native <select>. The OS dropdown was the last
+// browser-default control in the product: it ignores the theme entirely, renders
+// its own system font and chrome, and looks identical in a premium portal and a
+// 1998 form.
+//
+// The API is unchanged — callers still pass <option> children and receive an
+// onChange carrying { target: { value } } — so every existing call site upgrades
+// without being touched.
+//
+// The panel is positioned fixed, computed from the trigger's rect. Absolute
+// positioning would clip inside the Projects filter row, which sits in a table
+// cell with its own overflow.
+export function Select({ T, value, onChange, children, size = "md", full, active, style,
+                         placeholder, ...rest }) {
+  const [open, setOpen]   = useState(false);
+  const [focus, setFocus] = useState(false);
+  const [hover, setHover] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  const [rect, setRect]   = useState(null);
+  const btn  = useRef(null);
+  const list = useRef(null);
+  const typed = useRef({ str: "", at: 0 });
+
+  // Read the <option> children into plain data.
+  const items = [];
+  const walk = (nodes) => {
+    (Array.isArray(nodes) ? nodes : [nodes]).forEach((n) => {
+      if (!n) return;
+      if (Array.isArray(n)) return walk(n);
+      if (n.type === "option") {
+        const kids = n.props.children;
+        const label = Array.isArray(kids)
+          ? kids.filter(k => k != null && typeof k !== "boolean").join("")
+          : String(kids ?? "");
+        items.push({ value: n.props.value ?? "", label,
+                     disabled: !!n.props.disabled });
+      } else if (n.props?.children) walk(n.props.children);
+    });
+  };
+  walk(children);
+
+  const selected = items.find(i => String(i.value) === String(value)) || items[0];
+  const pad = size === "sm" ? "5px 9px"  : "8px 12px";
+  const fs  = size === "sm" ? 11.5 : 12.5;
+
+  const place = useCallback(() => {
+    const el = btn.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const room = window.innerHeight - r.bottom;
+    const H = Math.min(300, items.length * 32 + 12);
+    setRect({ left: r.left, width: Math.max(r.width, 168),
+              top: room < H + 16 ? r.top - H - 6 : r.bottom + 6, maxH: H });
+  }, [items.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onScroll = () => place();
+    const onDoc = (e) => {
+      if (!btn.current?.contains(e.target) && !list.current?.contains(e.target)) setOpen(false);
+    };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    document.addEventListener("mousedown", onDoc);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+      document.removeEventListener("mousedown", onDoc);
+    };
+  }, [open, place]);
+
+  useEffect(() => {
+    if (open) setCursor(Math.max(0, items.findIndex(i => String(i.value) === String(value))));
+  }, [open]);   // eslint-disable-line
+
+  useEffect(() => {
+    if (!open) return;
+    list.current?.querySelector(`[data-i="${cursor}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [cursor, open]);
+
+  const pick = (item) => {
+    if (item?.disabled) return;
+    onChange?.({ target: { value: item.value } });
+    setOpen(false);
+    btn.current?.focus();
+  };
+
+  const onKey = (e) => {
+    if (!open) {
+      if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) { e.preventDefault(); setOpen(true); }
+      return;
+    }
+    if (e.key === "ArrowDown")      { e.preventDefault(); setCursor(c => Math.min(items.length - 1, c + 1)); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
+    else if (e.key === "Home")      { e.preventDefault(); setCursor(0); }
+    else if (e.key === "End")       { e.preventDefault(); setCursor(items.length - 1); }
+    else if (e.key === "Enter")     { e.preventDefault(); pick(items[cursor]); }
+    else if (e.key === "Escape")    { e.preventDefault(); setOpen(false); btn.current?.focus(); }
+    else if (e.key === "Tab")       { setOpen(false); }
+    else if (e.key.length === 1) {
+      // Type-ahead, matching native select behaviour.
+      const now = Date.now();
+      typed.current.str = now - typed.current.at > 900 ? e.key : typed.current.str + e.key;
+      typed.current.at = now;
+      const hit = items.findIndex(i => i.label.toLowerCase().startsWith(typed.current.str.toLowerCase()));
+      if (hit >= 0) setCursor(hit);
+    }
+  };
+
+  const ring = open || focus;
+
+  return (
+    <>
+      <button
+        {...rest}
+        ref={btn} type="button"
+        role="combobox" aria-expanded={open} aria-haspopup="listbox"
+        onClick={() => setOpen(o => !o)}
+        onKeyDown={onKey}
+        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+        onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+        className="pmo-focusable"
+        style={{
+          display:"flex", alignItems:"center", gap:8, padding:pad,
+          background:T.inputBg,
+          border:`1px solid ${ring ? T.inputFocus : hover ? T.borderStrong : active ? T.borderAccent : T.inputBorder}`,
+          borderRadius:R.sm,
+          fontFamily:TYPE.body.fontFamily, fontSize:fs,
+          color: active ? T.text : T.textSoft, fontWeight: active ? 600 : 400,
+          cursor:"pointer", outline:"none", textAlign:"left",
+          width: full ? "100%" : undefined,
+          boxShadow: ring ? `0 0 0 3px ${T.inputFocus}22` : "none",
+          transition:`border-color ${MOTION.fast}, box-shadow ${MOTION.fast}, background ${MOTION.fast}`,
+          ...style,
+        }}>
+        <span style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+          {selected ? selected.label : (placeholder || "")}
+        </span>
+        <Chevron size={11} open={open} color={ring ? T.inputFocus : T.muted} />
+      </button>
+
+      {open && rect && (
+        <div ref={list} role="listbox" className="pmo-scale pmo-scroll"
+          style={{
+            position:"fixed", left:rect.left, top:rect.top, width:rect.width,
+            maxHeight:rect.maxH, overflowY:"auto", zIndex:1400,
+            // L5 in the depth system: an overlay, not a card.
+            background:T.surfaceOver,
+            border:`1px solid ${T.borderStrong}`, borderRadius:R.md,
+            boxShadow:T.shadowLg, padding:4,
+            backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+          }}>
+          {items.map((it, i) => {
+            const on  = String(it.value) === String(value);
+            const cur = i === cursor;
+            return (
+              <div key={`${it.value}-${i}`} data-i={i} role="option" aria-selected={on}
+                onMouseEnter={() => setCursor(i)}
+                onClick={() => pick(it)}
+                style={{
+                  display:"flex", alignItems:"center", gap:8,
+                  padding:"6px 9px", borderRadius:R.sm,
+                  background: cur ? T.rowHover : "transparent",
+                  color: it.disabled ? T.dim : on ? T.text : T.textSoft,
+                  fontFamily:TYPE.body.fontFamily, fontSize:fs,
+                  fontWeight: on ? 600 : 400,
+                  cursor: it.disabled ? "not-allowed" : "pointer",
+                  transition:`background ${MOTION.fast}`,
+                }}>
+                <span style={{
+                  width:4, alignSelf:"stretch", borderRadius:2, flexShrink:0,
+                  background: on ? T.blueBright : "transparent",
+                }} />
+                <span style={{ flex:1, minWidth:0, overflow:"hidden",
+                  textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.label}</span>
+                {on && <Tick size={11} color={T.blueBright} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+const Chevron = ({ size = 11, open, color }) => (
+  <svg width={size} height={size} viewBox="0 0 10 6" fill="none" style={{ flexShrink:0,
+    transform: open ? "rotate(180deg)" : "none", transition:`transform ${MOTION.base}` }}>
+    <path d="M1 1l4 4 4-4" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const Tick = ({ size = 11, color }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+    strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
+
+// ─── BADGES ──────────────────────────────────────────────────────────────────
+export function Badge({ T, color, children, size = "md", dot, style, hint, hintTitle }) {
+  const [hot, setHot] = useState(false);
+  const c = color || T.neutral;
+  // Fill and dot keep the full-saturation hue; the label uses the AA-safe
+  // variant, which matters on light surfaces where the raw hue reads at ~2:1.
+  const fg = T.textOf ? T.textOf(c) : c;
+  const s = size === "sm"
+    ? { fontSize:10.5, padding:"2px 8px" }
+    : { fontSize:11.5, padding:"3px 10px" };
+  const pill = (
+    <span
+      onMouseEnter={hint ? () => setHot(true) : undefined}
+      onMouseLeave={hint ? () => setHot(false) : undefined}
+      style={{
+        display:"inline-flex", alignItems:"center", gap:5,
+        padding:s.padding, borderRadius:R.pill,
+        background: hot ? `${c}${T.washStrong}` : `${c}${T.badge}`,
+        color:fg,
+        fontFamily:TYPE.body.fontFamily, fontSize:s.fontSize, fontWeight:600,
+        whiteSpace:"nowrap", lineHeight:1.5,
+        border:`1px solid ${c}${hot ? "5C" : "22"}`,
+        cursor: hint ? "help" : "inherit",
+        transition:`background ${MOTION.fast}, border-color ${MOTION.fast}`,
+        ...style,
+      }}>
+      {dot && <span style={{ width:5, height:5, borderRadius:"50%", background:c, flexShrink:0 }} />}
+      {children}
+    </span>
+  );
+  if (!hint) return pill;
+  return (
+    <span style={{ position:"relative", display:"inline-flex" }}>
+      {pill}
+      <InsightTip T={T} show={hot} tone={c} side="top" align="left"
+        width={230} title={hintTitle} line={hint} />
+    </span>
+  );
+}
+
+export const StatusDot = ({ color, size = 8, pulse, ring }) => (
+  <span className={`${ring ? "pmo-verdict-dot " : ""}${pulse ? "pmo-pulse" : ""}`.trim()}
+    style={{
+      width:size, height:size, borderRadius:"50%", background:color, color,
+      "--dot-c": color,
+      display:"inline-block", flexShrink:0, position: ring ? "relative" : undefined,
+    }} />
+);
+
+// ─── PROGRESS ────────────────────────────────────────────────────────────────
+// Animates from 0 to its value on mount (§19).
+export function Progress({ T, value, max = 100, color, height = 6, showTrack = true, delay = 0 }) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setW(pct), 60 + delay);
+    return () => clearTimeout(t);
+  }, [pct, delay]);
+  const c = color || T.positive;
+  return (
+    <div style={{
+      height, borderRadius:R.pill, overflow:"hidden",
+      background: showTrack ? (T.mode === "dark" ? "rgba(255,255,255,0.06)" : "rgba(16,42,71,0.07)") : "transparent",
+    }}>
+      <div style={{
+        height:"100%", width:`${w}%`, borderRadius:R.pill,
+        background:`linear-gradient(90deg, ${c}CC, ${c})`,
+        transition:`width 900ms ${MOTION.ease}`,
+      }} />
+    </div>
+  );
+}
+
+// ─── SKELETONS ───────────────────────────────────────────────────────────────
+export function Skeleton({ T, w = "100%", h = 14, radius = R.sm, style }) {
+  return (
+    <div className="pmo-skeleton" style={{
+      width:w, height:h, borderRadius:radius,
+      background: T.mode === "dark" ? "rgba(255,255,255,0.045)" : "rgba(16,42,71,0.055)",
+      backgroundImage:`linear-gradient(90deg, transparent, ${T.mode === "dark" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.85)"}, transparent)`,
+      backgroundSize:"420px 100%", backgroundRepeat:"no-repeat",
+      animation:"pmoShimmer 1.5s ease-in-out infinite",
+      ...style,
+    }} />
+  );
+}
+
+export const SkeletonCard = ({ T, h = 108 }) => (
+  <Surface T={T} pad={SP.lg} style={{ flex:1, minWidth:0 }}>
+    <Skeleton T={T} w={26} h={26} radius={R.sm} />
+    <Skeleton T={T} w="55%" h={9} style={{ marginTop:SP.md }} />
+    <Skeleton T={T} w="72%" h={22} style={{ marginTop:SP.sm }} />
+    <Skeleton T={T} w="45%" h={9} style={{ marginTop:SP.sm }} />
+  </Surface>
+);
+
+export const SkeletonChart = ({ T, h = 260 }) => (
+  <div style={{ height:h, display:"flex", alignItems:"flex-end", gap:10, padding:SP.lg }}>
+    {[42,66,38,80,54,72,48,88,60,76,50,68].map((p,i) => (
+      <Skeleton key={i} T={T} w="100%" h={`${p}%`} radius={R.sm} style={{ animationDelay:`${i*60}ms` }} />
+    ))}
+  </div>
+);
+
+export const SkeletonRows = ({ T, rows = 10 }) => (
+  <div style={{ display:"flex", flexDirection:"column", gap:SP.sm, padding:SP.lg }}>
+    {Array.from({ length:rows }).map((_, i) => (
+      <Skeleton key={i} T={T} h={26} style={{ opacity: 1 - i*0.055, animationDelay:`${i*45}ms` }} />
+    ))}
+  </div>
+);
+
+// ─── EMPTY STATE ─────────────────────────────────────────────────────────────
+// Never a blank area. Icon, what's true, why, and a way forward (§21).
+export function EmptyState({ T, icon:Icon, title, message, action, tone, compact }) {
+  const c = tone || T.info;
+  return (
+    <div className="pmo-fade" style={{
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      gap:SP.sm, padding: compact ? `${SP.xxl}px ${SP.lg}px` : `${SP.xxxl}px ${SP.xl}px`,
+      textAlign:"center",
+    }}>
+      {Icon && (
+        <div style={{
+          width:44, height:44, borderRadius:R.lg, background:`${c}${T.badge}`,
+          display:"flex", alignItems:"center", justifyContent:"center", marginBottom:2,
+          border:`1px solid ${c}26`,
+        }}>
+          <Icon size={19} color={c} strokeWidth={1.75} />
+        </div>
+      )}
+      <div style={{ ...TYPE.h3, color:T.text }}>{title}</div>
+      {message && <div style={{ ...TYPE.bodySm, color:T.muted, maxWidth:360 }}>{message}</div>}
+      {action && <div style={{ marginTop:SP.xs }}>{action}</div>}
+    </div>
+  );
+}
+
+// ─── MODAL ───────────────────────────────────────────────────────────────────
+// Replaces 11 separately-styled overlays. Handles Escape, scroll lock, backdrop
+// click and focus, so no page has to reimplement them.
+export function Modal({ T, title, sub, onClose, children, footer, width = 560, icon:Icon, isMobile }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  return (
+    <div
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
+      style={{
+        position:"fixed", inset:0, zIndex:1000,
+        background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)",
+        backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)",
+        display:"flex", alignItems: isMobile ? "flex-end" : "center", justifyContent:"center",
+        padding: isMobile ? 0 : SP.xl,
+        animation:"pmoFade .18s ease",
+      }}
+    >
+      <div className="pmo-scale pmo-scroll" role="dialog" aria-modal="true" style={{
+        width: isMobile ? "100%" : width, maxWidth:"100%",
+        maxHeight: isMobile ? "92vh" : "88vh",
+        background:T.surface,
+        border:`1px solid ${T.border}`,
+        borderRadius: isMobile ? `${R.xl}px ${R.xl}px 0 0` : R.xl,
+        boxShadow:T.shadowLg,
+        display:"flex", flexDirection:"column", overflow:"hidden",
+      }}>
+        <div style={{
+          display:"flex", alignItems:"flex-start", gap:SP.md,
+          padding:`${SP.lg}px ${SP.xl}px`, borderBottom:`1px solid ${T.border}`, flexShrink:0,
+        }}>
+          {Icon && (
+            <div style={{ width:30, height:30, borderRadius:R.sm, background:T.blue+T.badge,
+              display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <Icon size={15} color={T.blueBright} />
+            </div>
+          )}
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ ...TYPE.h2, color:T.text }}>{title}</div>
+            {sub && <div style={{ ...TYPE.caption, color:T.muted, marginTop:2 }}>{sub}</div>}
+          </div>
+          <IconButton T={T} icon={XIcon} onClick={onClose} title="Close" />
+        </div>
+
+        <div className="pmo-scroll" style={{ padding:`${SP.xl}px`, overflowY:"auto", flex:1 }}>
+          {children}
+        </div>
+
+        {footer && (
+          <div style={{
+            display:"flex", justifyContent:"flex-end", gap:SP.sm,
+            padding:`${SP.md}px ${SP.xl}px`, borderTop:`1px solid ${T.border}`,
+            background:T.pageAlt, flexShrink:0,
+          }}>{footer}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── TOOLTIP ─────────────────────────────────────────────────────────────────
+export function Tooltip({ T, label, children, side = "top" }) {
+  const [show, setShow] = useState(false);
+  const pos = {
+    top:    { bottom:"calc(100% + 7px)", left:"50%", transform:"translateX(-50%)" },
+    bottom: { top:"calc(100% + 7px)",    left:"50%", transform:"translateX(-50%)" },
+    right:  { left:"calc(100% + 7px)",   top:"50%",  transform:"translateY(-50%)" },
+  }[side];
+  return (
+    <span style={{ position:"relative", display:"inline-flex" }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && (
+        <span className="pmo-fade" style={{
+          position:"absolute", ...pos, zIndex:900,
+          background: T.mode === "dark" ? "#1A2C46" : "#0C1E33",
+          color:"#fff", padding:"5px 9px", borderRadius:R.sm,
+          fontFamily:TYPE.body.fontFamily, fontSize:11, fontWeight:500,
+          whiteSpace:"nowrap", pointerEvents:"none", boxShadow:T.shadowLg,
+          border:`1px solid ${T.borderStrong}`,
+        }}>{label}</span>
+      )}
+    </span>
+  );
+}
+
+// ─── ARCH MOTIF ──────────────────────────────────────────────────────────────
+// Riphah's Mughal-arch silhouette, kept as the institutional signature. Used
+// sparingly — hero and featured surfaces only.
+export const ArchMotif = ({ T, color, size = 76, opacity = 1 }) => {
+  const light = T?.mode === "light";
+  return (
+    <svg width={size} height={size} viewBox="0 0 72 72" aria-hidden="true"
+      style={{ position:"absolute", top:0, right:0, pointerEvents:"none", opacity }}>
+      <path d="M72 72 L72 40 Q72 18 54 12 Q56 22 48 30 Q58 34 58 46 L58 72 Z" fill={color} opacity={light ? 0.13 : 0.085} />
+      <path d="M72 72 L72 50 Q72 34 60 30 Q61 38 55 44 Q62 47 62 56 L62 72 Z" fill={color} opacity={light ? 0.2  : 0.14} />
+    </svg>
+  );
+};
+
+// ─── AMBIENT BACKGROUND ──────────────────────────────────────────────────────
+// Barely-there atmospheric depth. Must never compete with data (§32).
+export const Ambient = ({ T }) => (
+  <div aria-hidden="true" style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden", zIndex:0 }}>
+    <div className="pmo-drift" style={{
+      position:"absolute", top:"-22%", right:"-8%", width:520, height:520, borderRadius:"50%",
+      background:`radial-gradient(circle, ${T.blue}${T.mode === "dark" ? "14" : "10"} 0%, transparent 68%)`,
+    }} />
+    <div className="pmo-drift" style={{
+      position:"absolute", bottom:"-28%", left:"6%", width:440, height:440, borderRadius:"50%",
+      background:`radial-gradient(circle, ${T.positive}${T.mode === "dark" ? "0E" : "0C"} 0%, transparent 70%)`,
+      animationDelay:"-8s",
+    }} />
+  </div>
+);
+
+// ─── TABS ────────────────────────────────────────────────────────────────────
+// Animated underline that slides between tabs rather than cutting (§18).
+export function Tabs({ T, tabs, active, onChange, isMobile, onDirection }) {
+  const wrap = useRef(null);
+  const [ind, setInd] = useState({ left:0, width:0 });
+  const [hover, setHover] = useState(null);
+
+  const measure = useCallback(() => {
+    const el = wrap.current?.querySelector(`[data-tab="${active}"]`);
+    if (el) setInd({ left:el.offsetLeft, width:el.offsetWidth });
+  }, [active]);
+
+  useEffect(() => {
+    measure();
+    const t = setTimeout(measure, 60);
+    window.addEventListener("resize", measure);
+    return () => { clearTimeout(t); window.removeEventListener("resize", measure); };
+  }, [measure]);
+
+  return (
+    <div ref={wrap} className="pmo-scroll" style={{
+      display:"flex", gap:2, position:"relative",
+      borderBottom:`1px solid ${T.border}`,
+      // visible so tab previews aren't clipped; horizontal scroll is handled by
+      // the parent on narrow screens instead.
+      overflow:"visible", flexShrink:0,
+    }}>
+      {tabs.map((t) => {
+        const on   = t.id === active;
+        const hot  = hover === t.id;
+        return (
+          <div key={t.id} style={{ position:"relative", display:"flex",
+            zIndex: hot ? 20 : undefined }}
+            onMouseEnter={() => setHover(t.id)} onMouseLeave={() => setHover(null)}>
+            <button data-tab={t.id}
+              onClick={() => {
+                // §18 — hand the caller the direction of travel so content can
+                // enter from the side the reader moved toward.
+                const from = tabs.findIndex(x => x.id === active);
+                const to   = tabs.findIndex(x => x.id === t.id);
+                onDirection?.(to > from ? "r" : "l");
+                onChange(t.id);
+              }}
+              onFocus={() => setHover(t.id)} onBlur={() => setHover(null)}
+              className={`pmo-focusable ${hot ? "pmo-hot" : ""}`}
+              style={{
+                display:"flex", alignItems:"center", gap:7,
+                padding: isMobile ? "9px 13px" : "10px 17px",
+                // A soft surface grows behind the tab on hover, and the active
+                // tab keeps a permanent one — so "current" and "about to be
+                // current" are distinguishable at a glance (§9).
+                background: on
+                  ? `linear-gradient(180deg, ${T.blue}${T.wash}, transparent)`
+                  : hot ? T.rowHover : "transparent",
+                borderRadius: `${R.sm}px ${R.sm}px 0 0`,
+                border:"none", cursor:"pointer",
+                fontFamily:TYPE.body.fontFamily,
+                fontSize: isMobile ? 12 : 12.5,
+                fontWeight: on ? 700 : hot ? 600 : 500,
+                color: on ? T.text : hot ? T.text : T.muted,
+                whiteSpace:"nowrap",
+                transition:`color ${MOTION.fast}, background ${MOTION.base}, font-weight ${MOTION.fast}`,
+              }}>
+              {t.Icon && (
+                <t.Icon className={hot ? "pmo-ico-glow" : ""} size={14} strokeWidth={on ? 2.2 : 2}
+                  color={on ? T.gold : hot ? T.blueBright : T.dim}
+                  style={{ transition:`color ${MOTION.fast}` }} />
+              )}
+              {t.label}
+              {t.count != null && (
+                <span style={{
+                  ...TYPE.caption, fontWeight:600,
+                  padding:"1px 6px", borderRadius:R.pill,
+                  background: on ? T.blue+T.badge : hot ? T.blue+T.wash
+                    : T.mode === "dark" ? "rgba(255,255,255,0.06)" : "rgba(16,42,71,0.06)",
+                  color: on ? T.blueBright : T.dim,
+                  transition:`background ${MOTION.fast}`,
+                }}>{t.count}</span>
+              )}
+            </button>
+            {/* Live preview of what the section contains (§8) */}
+            {t.insight && (
+              <InsightTip T={T} show={hot} side="bottom" align="left" width={252}
+                tone={on ? T.gold : T.blueBright}
+                title={t.insight.title} line={t.insight.line} stat={t.insight.stat} />
+            )}
+          </div>
+        );
+      })}
+      <div style={{
+        position:"absolute", bottom:-1, height:2, borderRadius:2,
+        left:ind.left, width:ind.width,
+        background:`linear-gradient(90deg, ${T.blue}, ${T.gold})`,
+        boxShadow:`0 0 10px -1px ${T.gold}80`,
+        transition:`left ${MOTION.base}, width ${MOTION.base}`,
+      }} />
+    </div>
+  );
+}
+
+// ─── METRIC ──────────────────────────────────────────────────────────────────
+// Owns the count-up hook so callers with conditional returns can't trip the
+// Rules-of-Hooks crash.
+export function Metric({ T, value, size = "metric", color, prefix, animate = true }) {
+  const shown = useCountUp(animate ? value : String(value ?? ""));
+  return (
+    <span style={{ ...TYPE[size], color: color || T.text, display:"inline-flex", alignItems:"baseline", gap:5 }}>
+      {prefix && <span style={{ ...TYPE.caption, fontWeight:600, color:T.muted, letterSpacing:"0.04em" }}>{prefix}</span>}
+      {animate ? shown : value}
+    </span>
+  );
+}
+
+
+// ─── INSIGHT TIP ─────────────────────────────────────────────────────────────
+// The contextual hover layer used by KPI cards, tabs, nav items and badges.
+// Deliberately not a browser tooltip and not a generic dark box: it inherits
+// the card chrome, animates in, and carries an optional live figure.
+//
+// §4 asked for "premium, not a boring tooltip"; §3 asked for one or two lines.
+// The component enforces the second constraint by simply not having room for
+// more — there is no scroll and no expansion.
+export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", align = "left", width = 250, anchorRect = null }) {
+  // §83 — flip and shift away from the viewport edge rather than clipping.
+  // Measured after mount, so the panel is positioned against where it actually
+  // landed rather than where it was expected to.
+  const box = useRef(null);
+  const [adj, setAdj] = useState(null);
+  useEffect(() => {
+    if (!show) { setAdj(null); return; }
+    const el = box.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 12;
+    const next = {};
+    if (r.right > window.innerWidth - pad)  next.shiftX = -(r.right - (window.innerWidth - pad));
+    if (r.left < pad)                        next.shiftX = pad - r.left;
+    if (r.bottom > window.innerHeight - pad && side === "bottom") next.flipY = true;
+    if (r.top < pad && side === "top")       next.flipY = true;
+    setAdj(Object.keys(next).length ? next : null);
+  }, [show, side, align, width]);
+
+  if (!show || !CAN_HOVER) return null;
+  const c = tone || T.blueBright;
+  const effSide = adj?.flipY ? (side === "bottom" ? "top" : "bottom") : side;
+
+  if (anchorRect) {
+    const GAP = 9, PAD = 12;
+    const vw = typeof window !== "undefined" ? window.innerWidth  : 1200;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    const below = anchorRect.bottom + GAP;
+    const est   = 96;                       // enough to decide which way to open
+    const up    = below + est > vh - PAD;
+
+    let left = align === "right"  ? anchorRect.right - width
+             : align === "center" ? anchorRect.left + anchorRect.width / 2 - width / 2
+             : anchorRect.left;
+    left = Math.max(PAD, Math.min(left, vw - width - PAD));
+
+    const fixedStyle = side === "right"
+      ? { left: Math.min(anchorRect.right + 10, vw - width - PAD),
+          top:  Math.max(PAD, anchorRect.top + anchorRect.height / 2 - 34) }
+      : up ? { left, bottom: Math.max(PAD, vh - anchorRect.top + GAP) }
+           : { left, top: below };
+
+    return (
+      <div ref={box} className="pmo-rise" role="tooltip" style={{
+        position:"fixed", ...fixedStyle, zIndex:1450, width, maxWidth:"78vw",
+        background:T.surfaceFloat,
+        border:`1px solid ${T.borderStrong}`,
+        borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
+        boxShadow:T.shadowLg, pointerEvents:"none",
+        backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+      }}>
+        {title && (
+          <div style={{ ...TYPE.label, color: tone ? (T.textOf ? T.textOf(tone) : tone) : T.muted,
+            marginBottom:3 }}>{title}</div>
+        )}
+        <div style={{ ...TYPE.caption, color:T.text, lineHeight:1.5 }}>{line}</div>
+        {stat && (
+          <div style={{ ...TYPE.caption, color:T.muted, marginTop:4,
+            paddingTop:4, borderTop:`1px solid ${T.border}` }}>{stat}</div>
+        )}
+      </div>
+    );
+  }
+
+  const pos = {
+    bottom: { top:"calc(100% + 9px)", ...(align === "center" ? { left:"50%", transform:"translateX(-50%)" } : align === "right" ? { right:0 } : { left:0 }) },
+    top:    { bottom:"calc(100% + 9px)", ...(align === "center" ? { left:"50%", transform:"translateX(-50%)" } : { left:0 }) },
+    right:  { left:"calc(100% + 10px)", top:"50%", transform:"translateY(-50%)" },
+  }[effSide];
+
+  return (
+    <div ref={box} className="pmo-rise" role="tooltip" style={{
+      position:"absolute", ...pos, zIndex:200, width, maxWidth:"78vw",
+      // L4 in the depth system (§04): a floating layer, distinct from cards.
+      background: T.surfaceFloat,
+      border:`1px solid ${T.borderStrong}`,
+      borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
+      boxShadow:T.shadowLg, pointerEvents:"none",
+      backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+      marginLeft: adj?.shiftX ? `${adj.shiftX}px` : undefined,
+    }}>
+      {/* Accent edge ties the tip to whatever it is describing */}
+      <div style={{ position:"absolute", left:0, top:8, bottom:8, width:2,
+        borderRadius:2, background:c, opacity:.85 }} />
+      {title && <div style={{ ...TYPE.label, color:c, marginBottom:3 }}>{title}</div>}
+      <div style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.5 }}>{line}</div>
+      {stat && (
+        <div style={{ ...TYPE.caption, color:T.text, fontWeight:700, marginTop:5,
+          fontVariantNumeric:"tabular-nums" }}>{stat}</div>
+      )}
+    </div>
+  );
+}
+
+// Wraps any element so it reveals an InsightTip on hover or keyboard focus.
+export function WithInsight({ T, title, line, stat, tone, side, align, width, children, style }) {
+  const [on, setOn] = useState(false);
+  const [rect, setRect] = useState(null);
+  const anchor = useRef(null);
+
+  const show = useCallback(() => {
+    const el = anchor.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      setRect({ top:r.top, left:r.left, right:r.right, bottom:r.bottom,
+                width:r.width, height:r.height });
+    }
+    setOn(true);
+  }, []);
+  const hide = useCallback(() => setOn(false), []);
+
+  if (!line) return children;
+  return (
+    <span
+      ref={anchor}
+      onMouseEnter={show} onMouseLeave={hide}
+      onFocus={show} onBlur={hide}
+      style={{ position:"relative", display:"inline-flex", ...style }}>
+      {children}
+      <InsightTip T={T} show={on} title={title} line={line} stat={stat}
+        tone={tone} side={side} align={align} width={width} anchorRect={rect} />
+    </span>
+  );
+}
+
+
+// ─── SECTION ─────────────────────────────────────────────────────────────────
+// Wraps a major dashboard block (§13). Two jobs:
+//   · responds to interaction — lifts fractionally and warms its border, so a
+//     section the reader is working in is visibly the active one;
+//   · carries its own atmospheric gradient (§17), painted behind the content at
+//     very low opacity. Per-section rather than one page-wide wash, which is
+//     what gives the dashboard depth instead of a flat tint.
+export function Section({ T, tone, children, style, pad = SP.lg, glow = true, className = "" }) {
+  const [hot, setHot] = useState(false);
+  const c = tone || T.blue;
+  return (
+    <div
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      className={className}
+      style={{
+        position:"relative", overflow:"hidden",
+        background:T.surface,
+        border:`1px solid ${hot ? T.borderStrong : T.border}`,
+        borderRadius:R.lg, padding:pad,
+        boxShadow: hot ? T.shadowLg : T.shadow,
+        transform: hot ? "translateY(-1px)" : "none",
+        transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, transform ${MOTION.base}`,
+        ...style,
+      }}>
+      {glow && (
+        <div aria-hidden="true" className="pmo-drift" style={{
+          position:"absolute", top:"-40%", right:"-6%", width:340, height:340,
+          borderRadius:"50%", pointerEvents:"none",
+          background:`radial-gradient(circle, ${c}${T.mode === "dark" ? "12" : "0C"} 0%, transparent 68%)`,
+          opacity: hot ? 1 : 0.65, transition:`opacity ${MOTION.slow}`,
+        }} />
+      )}
+      <div style={{ position:"relative" }}>{children}</div>
+    </div>
+  );
+}
+
+
+// ─── SHARED PAGE + TABLE TREATMENT ───────────────────────────────────────────
+// Ten pages had drifted into ten different treatments: four carried the ambient
+// background and six didn't; five tables each defined their own header and row
+// styling; cards were a mix of <Surface> and hand-written divs. These helpers
+// are the single definition, applied everywhere, so a page can't look like a
+// different product just because it was written on a different day.
+
+/** Scroll container for any full page. Carries the ambient wash and the
+ *  standard gutters, so every page sits on the same ground. */
+export const pageBody = (T, { pad = true, compact = false } = {}) => ({
+  flex: 1,
+  minHeight: 0,
+  overflow: "auto",
+  background: T.page,
+  backgroundImage: T.ambient,
+  backgroundAttachment: "local",
+  padding: pad ? (compact ? `${SP.lg}px ${SP.lg}px ${SP.xxl}px` : `${SP.xl}px ${SP.xxl}px ${SP.xxl}px`) : 0,
+});
+
+/** A toolbar / filter strip pinned above page content. */
+export const pageBar = (T, { compact = false } = {}) => ({
+  display: "flex", alignItems: "center", gap: SP.sm, flexWrap: "wrap",
+  padding: `${SP.sm}px ${compact ? SP.lg : SP.xl}px`,
+  background: T.surface,
+  borderBottom: `1px solid ${T.border}`,
+  flexShrink: 0,
+});
+
+/** The card chrome, for places where a plain object is easier to drop in than
+ *  swapping the element for <Surface>. Identical output either way. */
+export const cardStyle = (T, { raised = false, pad = SP.lg, radius = R.lg } = {}) => ({
+  background: raised ? T.surfaceRaised : T.surface,
+  border: `1px solid ${T.border}`,
+  borderRadius: radius,
+  padding: pad,
+  boxShadow: T.shadow,
+});
+
+/** One table treatment: sticky header band, uppercase labels, hairline rows,
+ *  zebra striping and ellipsis. Every table in the product reads from this. */
+export const tableStyles = (T) => ({
+  // Default is auto layout: it sizes columns to their content, which is right
+  // for tables that don't declare column widths. `tableFixed` is for tables
+  // that DO (Projects, Campus) — there, fixed layout is what guarantees the
+  // last column can't be pushed off-screen. Using fixed without widths gives
+  // every column an equal share, which crushes a project-name column to a
+  // fourteenth of the table.
+  table: { width:"100%", borderCollapse:"separate", borderSpacing:0 },
+  tableFixed: { width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"fixed" },
+  th: {
+    ...TYPE.label, color:T.muted, textAlign:"left",
+    padding:"10px 12px 8px", whiteSpace:"nowrap",
+    background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
+    position:"sticky", top:0, zIndex:2,
+  },
+  td: {
+    ...TYPE.bodySm, color:T.text, padding:"10px 12px",
+    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle",
+    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+    maxWidth:280,
+  },
+  row: (i, hovered, accent) => ({
+    background: hovered
+      ? (accent ? `linear-gradient(90deg, ${accent}14, ${T.rowHover} 22%)` : T.rowHover)
+      : i % 2 === 0 ? "transparent" : T.rowAlt,
+    transition:`background ${MOTION.fast}`,
+  }),
+});
+
+
+// ─── RANKED BARS ─────────────────────────────────────────────────────────────
+// Replaces three separate treatments on the CAPEX Overview tab: a 3-slice donut
+// with overlapping labels, a vertical stacked bar with two categories and a lot
+// of empty air, and a flat gold bar list with no values.
+//
+// The design problem those shared: nothing was comparable. Each segment card
+// carried its own "Released 100.0%" bar — released ÷ approved, which is always
+// full — so a segment with 0.2% of its target released looked identical to one
+// at 54%. Here every row is drawn on ONE shared scale, so length means the same
+// thing everywhere, and the target sits behind the actual as a ghost track so
+// the gap is the thing you see.
+export function RankedBars({
+  T, items, fmt = (v) => v, max, showTarget = true,
+  barH = 10, gap = SP.md, onPick, activeKey, emptyLabel = "Nothing to compare yet",
+}) {
+  const [hot, setHot] = useState(null);
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setDrawn(true), 80); return () => clearTimeout(t); }, []);
+
+  const rows = (items || []).filter(Boolean);
+  if (!rows.length) {
+    return <div style={{ ...TYPE.caption, color:T.muted, padding:`${SP.lg}px 0` }}>{emptyLabel}</div>;
+  }
+  const ceiling = max ?? Math.max(...rows.map(r => Math.max(r.value || 0, showTarget ? (r.target || 0) : 0)), 1);
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap }}>
+      {rows.map((r, i) => {
+        const on      = hot === r.key || activeKey === r.key;
+        const dimmed  = (hot && hot !== r.key) || (activeKey && activeKey !== r.key);
+        const c       = r.color || T.info;
+        // Only applied where a caller still passes opacityStep; lists using the
+        // rank ramp carry their ordering in hue instead.
+        const step    = r.opacityStep != null ? Math.max(0.55, 0.55 + r.opacityStep * 0.45) : 1;
+        const vPct    = ceiling > 0 ? Math.min(100, ((r.value || 0) / ceiling) * 100) : 0;
+        const tPct    = ceiling > 0 ? Math.min(100, ((r.target || 0) / ceiling) * 100) : 0;
+        const share   = r.target > 0 ? ((r.value || 0) / r.target) * 100 : null;
+
+        return (
+          <div key={r.key}
+            onMouseEnter={() => setHot(r.key)} onMouseLeave={() => setHot(null)}
+            onClick={() => onPick?.(r.key)}
+            style={{
+              cursor: onPick ? "pointer" : "default",
+              opacity: dimmed ? 0.62 : 1,
+              transition:`opacity ${MOTION.base}`,
+            }}>
+            <div style={{ display:"flex", alignItems:"baseline", gap:SP.sm, marginBottom:5 }}>
+              <span style={{ width:8, height:8, borderRadius:2, background:c, flexShrink:0,
+                boxShadow: on ? `0 0 8px -1px ${c}` : "none", transition:`box-shadow ${MOTION.base}` }} />
+              <span title={r.label} style={{
+                ...TYPE.bodySm, color: on ? T.text : T.textSoft, fontWeight: on ? 600 : 500,
+                textDecoration: on && onPick ? "underline" : "none",
+                textUnderlineOffset:3, textDecorationColor:`${c}88`,
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1, minWidth:0,
+                transition:`color ${MOTION.fast}`,
+              }}>{r.label}</span>
+              {r.meta && <span style={{ ...TYPE.caption, color: on ? T.muted : T.dim, flexShrink:0,
+                transition:`color ${MOTION.fast}` }}>{r.meta}</span>}
+              <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.textOf ? T.textOf(c) : c,
+                fontVariantNumeric:"tabular-nums", flexShrink:0 }}>{fmt(r.value)}</span>
+            </div>
+
+            <div style={{ position:"relative", height:barH, borderRadius:R.pill,
+              background: T.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(16,42,71,0.055)" }}>
+              {/* Target sits behind as a ghost, so the shortfall is visible as
+                  distance rather than needing to be read off a number. */}
+              {showTarget && r.target > 0 && (
+                <div style={{
+                  position:"absolute", inset:0, width: drawn ? `${tPct}%` : 0,
+                  borderRadius:R.pill, background:`${c}22`,
+                  border:`1px dashed ${c}55`, boxSizing:"border-box",
+                  transition:`width 900ms ${MOTION.ease}`,
+                }} />
+              )}
+              <div style={{
+                position:"absolute", top:0, bottom:0, left:0,
+                width: drawn ? `${vPct}%` : 0,
+                borderRadius:R.pill,
+                background:`linear-gradient(90deg, ${c}CC, ${c})`,
+                opacity: on ? 1 : step,
+                boxShadow: on ? `0 0 12px -2px ${c}` : "none",
+                transition:`width 900ms ${MOTION.ease}, box-shadow ${MOTION.base}`,
+              }} />
+            </div>
+
+            {showTarget && r.target > 0 && (
+              <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
+                <span style={{ ...TYPE.caption, color:T.muted }}>
+                  {share != null ? `${share.toFixed(1)}% of ${fmt(r.target)} target` : ""}
+                </span>
+                <span style={{ ...TYPE.caption, color: on ? T.textSoft : T.dim }}>
+                  {fmt(Math.max(0, (r.target || 0) - (r.value || 0)))} remaining
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── SHARE STRIP ─────────────────────────────────────────────────────────────
+// A donut answers "what share?" but a 3-slice donut with labels around the ring
+// spends a lot of space to do it. This says the same thing in one line, and the
+// segments are directly comparable by length.
+export function ShareStrip({ T, items, fmt = (v) => v, height = 14, onPick, activeKey }) {
+  const [hot, setHot] = useState(null);
+  const rows = (items || []).filter(r => (r.value || 0) > 0);
+  const total = rows.reduce((a, b) => a + (b.value || 0), 0);
+  if (!total) return null;
+
+  return (
+    <div>
+      <div style={{ display:"flex", height, borderRadius:R.pill, overflow:"hidden", gap:2 }}>
+        {rows.map(r => {
+          const pct = (r.value / total) * 100;
+          const dimmed = (hot && hot !== r.key) || (activeKey && activeKey !== r.key);
+          return (
+            <div key={r.key} title={`${r.label} — ${fmt(r.value)} (${pct.toFixed(1)}%)`}
+              onMouseEnter={() => setHot(r.key)} onMouseLeave={() => setHot(null)}
+              onClick={() => onPick?.(r.key)}
+              style={{
+                width:`${pct}%`, background:`linear-gradient(180deg, ${r.color}, ${r.color}CC)`,
+                opacity: dimmed ? 0.35 : 1, cursor:onPick ? "pointer" : "default",
+                transition:`opacity ${MOTION.base}`,
+              }} />
+          );
+        })}
+      </div>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:`4px ${SP.lg}px`, marginTop:SP.sm }}>
+        {rows.map(r => {
+          const pct = (r.value / total) * 100;
+          return (
+            <span key={r.key} onMouseEnter={() => setHot(r.key)} onMouseLeave={() => setHot(null)}
+              style={{ display:"inline-flex", alignItems:"center", gap:6, ...TYPE.caption,
+                color: hot === r.key ? T.text : T.muted, cursor:onPick ? "pointer" : "default" }}>
+              <span style={{ width:7, height:7, borderRadius:2, background:r.color }} />
+              {r.label}
+              <strong style={{ color:T.textSoft, fontVariantNumeric:"tabular-nums" }}>{pct.toFixed(1)}%</strong>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── PROGRESS RING ───────────────────────────────────────────────────────────
+// A radial gauge for "how far through a target". Reads faster than a bar at a
+// glance because the eye judges a filled arc against a full circle without
+// needing a scale — which is exactly the job here, where the answer is usually
+// "barely started".
+export function ProgressRing({
+  T, value, size = 66, stroke = 7, color, label, caption, delay = 0, glow = true,
+}) {
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setDrawn(true), 90 + delay); return () => clearTimeout(t); }, [delay]);
+
+  const pct = Math.max(0, Math.min(100, value || 0));
+  const r = (size - stroke) / 2;
+  const cx = size / 2;
+
+  // A 280° arc opening at the bottom, not a closed ring. The gap reads as an
+  // instrument dial and gives the figure room to sit centred without the label
+  // colliding with the stroke — which is what was breaking the old version,
+  // where "OF TARGET" was physically wider than the circle it sat inside.
+  const SWEEP = 280;
+  const circ = 2 * Math.PI * r;
+  const arcLen = circ * (SWEEP / 360);
+
+  // A rounded cap has width of its own, so a value near zero still shows a
+  // visible mark rather than nothing. This shows the true proportion — the cap
+  // is simply not smaller than a cap.
+  const drawn01 = drawn ? pct / 100 : 0;
+  const dash = arcLen * drawn01;
+  const c = color || T.positive;
+  const uid = `pr${Math.round(size)}${String(c).replace(/[^a-zA-Z0-9]/g, "")}`;
+
+  // Where the arc currently ends, for the tip marker.
+  const startA = 90 + (360 - SWEEP) / 2;
+  const endA = startA + SWEEP * drawn01;
+  const rad = (endA * Math.PI) / 180;
+  const tipX = cx + r * Math.cos(rad);
+  const tipY = cx + r * Math.sin(rad);
+
+  const shown = pct >= 99.95 ? "100" : pct.toFixed(1);
+  const digits = shown.length;
+  const fontSize = size >= 62 ? (digits > 3 ? 15 : 17) : (digits > 3 ? 12.5 : 14);
+
+  return (
+    <div style={{ position:"relative", width:size, height:size, flexShrink:0 }}>
+      <svg width={size} height={size} style={{ display:"block", overflow:"visible" }}>
+        <defs>
+          <linearGradient id={uid} x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%"   stopColor={c} stopOpacity="0.7" />
+            <stop offset="100%" stopColor={c} stopOpacity="1" />
+          </linearGradient>
+          {glow && (
+            <filter id={`${uid}g`} x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="2.2" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          )}
+        </defs>
+
+        <g transform={`rotate(${startA} ${cx} ${cx})`}>
+          {/* Track — visible enough to read as a dial even when nearly empty */}
+          <circle cx={cx} cy={cx} r={r} fill="none" strokeWidth={stroke}
+            strokeLinecap="round"
+            stroke={T.mode === "dark" ? "rgba(255,255,255,0.10)" : "rgba(16,42,71,0.10)"}
+            strokeDasharray={`${arcLen} ${circ}`} />
+          {/* Value */}
+          <circle cx={cx} cy={cx} r={r} fill="none" strokeWidth={stroke}
+            stroke={`url(#${uid})`} strokeLinecap="round"
+            strokeDasharray={`${dash} ${circ}`}
+            filter={glow && pct > 0 ? `url(#${uid}g)` : undefined}
+            style={{ transition:`stroke-dasharray 1100ms ${MOTION.ease}` }} />
+        </g>
+
+        {/* Tip marker — makes a fractional value legible as a position on the
+            dial rather than a stroke too short to see. */}
+        {pct > 0 && (
+          <circle cx={tipX} cy={tipY} r={stroke * 0.42} fill={c}
+            style={{ transition:`all 1100ms ${MOTION.ease}`,
+              filter: glow ? `drop-shadow(0 0 5px ${c})` : undefined,
+              opacity: drawn ? 1 : 0 }} />
+        )}
+      </svg>
+
+      <div style={{
+        position:"absolute", inset:0, display:"flex", flexDirection:"column",
+        alignItems:"center", justifyContent:"center", pointerEvents:"none",
+      }}>
+        <span style={{
+          fontFamily:TYPE.display.fontFamily, fontSize, fontWeight:700, lineHeight:1,
+          color: T.textOf ? T.textOf(c) : c, fontVariantNumeric:"tabular-nums",
+          letterSpacing:"-0.02em",
+        }}>{label ?? `${shown}%`}</span>
+        {caption && (
+          <span style={{ ...TYPE.caption, fontSize:9.5, color:T.dim, marginTop:2,
+            letterSpacing:"0.04em", textTransform:"uppercase", whiteSpace:"nowrap" }}>{caption}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── TARGET CARD ─────────────────────────────────────────────────────────────
+// Released-against-target for one organisation or segment. The gauge answers
+// "how far in?" and the bar answers "how much is left?" — the two questions the
+// old card conflated into a single always-full "Amount Released 100%" bar.
+export function TargetCard({
+  T, name, icon:Icon, meta, value, target, color, fmt = (v) => v,
+  index = 0, onClick, compact = false,
+  // What the solid bar represents. Defaults preserve the original
+  // released-against-target reading for any other caller.
+  valueLabel = "Released", remainingVerb = "release",
+}) {
+  const [hot, setHot] = useState(false);
+  const c = color || T.info;
+  const pct = target > 0 ? Math.min(100, ((value || 0) / target) * 100) : 0;
+  const remaining = Math.max(0, (target || 0) - (value || 0));
+
+  return (
+    <div
+      className="pmo-in"
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      onClick={onClick}
+      style={{
+        position:"relative", overflow:"hidden", flex:1, minWidth:0,
+        animationDelay:`${index * 70}ms`,
+        background: hot
+          ? `linear-gradient(158deg, ${T.surfaceHi} 0%, ${T.surfaceRaised} 55%, ${c}${T.washStrong} 100%)`
+          : `linear-gradient(158deg, ${T.surfaceRaised} 0%, ${T.surface} 58%, ${c}${T.wash} 100%)`,
+        border:`1px solid ${hot ? c + "66" : T.border}`,
+        borderRadius:R.lg,
+        padding: compact ? `${SP.md}px ${SP.lg}px` : `${SP.lg}px ${SP.xl}px`,
+        boxShadow: hot ? T.glowSoft(c) : T.shadow,
+        transform: hot ? "translateY(-3px)" : "none",
+        cursor: onClick ? "pointer" : "default",
+        transition:`transform ${MOTION.base}, box-shadow ${MOTION.base}, border-color ${MOTION.base}, background ${MOTION.base}`,
+      }}>
+      <span className="pmo-sheen" />
+      <div style={{ position:"relative" }}>
+        <div style={{ display:"flex", alignItems:"flex-start", gap:SP.md }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:2 }}>
+              {Icon && (
+                <div className={hot ? "pmo-hot" : ""} style={{
+                  width:26, height:26, borderRadius:R.sm, flexShrink:0,
+                  background: hot ? `${c}${T.washStrong}` : `${c}${T.badge}`,
+                  border:`1px solid ${c}${hot ? "4D" : "26"}`,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  transition:`background ${MOTION.base}, border-color ${MOTION.base}`,
+                }}>
+                  <Icon className="pmo-ico-up" size={13} color={c} strokeWidth={2} />
+                </div>
+              )}
+              <span title={name} style={{ ...TYPE.h3, color:T.text,
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{name}</span>
+            </div>
+            {meta && <div style={{ ...TYPE.caption, color:T.muted, marginLeft: Icon ? 34 : 0 }}>{meta}</div>}
+          </div>
+          <ProgressRing T={T} value={pct} color={c} size={compact ? 60 : 68}
+            stroke={compact ? 6 : 7} delay={index * 70} />
+        </div>
+
+        <div style={{ marginTop:SP.md, display:"flex", alignItems:"baseline", gap:SP.sm, flexWrap:"wrap" }}>
+          <span style={{ ...TYPE.metric, fontSize: compact ? 22 : 26,
+            color: T.textOf ? T.textOf(c) : c }}>{fmt(value)}</span>
+          {target > 0 && (
+            <span style={{ ...TYPE.caption, color:T.muted }}>of {fmt(target)} planned</span>
+          )}
+        </div>
+
+        {target > 0 && (
+          <>
+            <div style={{ marginTop:SP.md }}>
+              <Progress T={T} value={value} max={target} color={c} height={7} delay={index * 70} />
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}>
+              <span style={{ ...TYPE.caption, color:T.muted }}>{valueLabel}</span>
+              <span style={{ ...TYPE.caption, color: hot ? T.textSoft : T.dim }}>
+                {fmt(remaining)} still to {remainingVerb}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── AURORA ──────────────────────────────────────────────────────────────────
+// A slow-moving field of light behind the entire application. Fixed rather than
+// per-page so it persists across navigation — the room stays lit while you move
+// between pages, instead of the background restarting each time.
+//
+// Deliberately calibrated: dark mode reads at roughly 8-14% opacity, light mode
+// at 5-8%. Enough that the screen is never dead; far too faint to compete with
+// a number someone is reading off it.
+export function Aurora({ T, mood = "neutral" }) {
+  const blobs = AURORA[T.mode === "dark" ? "dark" : "light"];
+  // §9 — portfolio state tints the whole atmosphere. Applied as a hue rotation
+  // and saturation shift over the existing fields rather than swapping colours,
+  // so the environment shifts mood without changing its identity.
+  const MOOD = {
+    attention: { filter:"hue-rotate(-16deg) saturate(1.22)", extra:"rgba(232,166,60,0.10)" },
+    healthy:   { filter:"hue-rotate(10deg) saturate(1.10)",  extra:"rgba(34,196,168,0.09)" },
+    neutral:   { filter:"none",                              extra:null },
+  }[mood] || { filter:"none", extra:null };
+  return (
+    <div className="pmo-aurora" aria-hidden="true"
+      style={{ filter: MOOD.filter, transition:"filter 3.5s ease" }}>
+      {MOOD.extra && (
+        <i className="pmo-parallax" style={{
+          background:`radial-gradient(circle, ${MOOD.extra} 0%, transparent 66%)`,
+          width:"46vw", height:"46vw", top:"22%", left:"30%",
+          animation:"pmoAurora3 61s ease-in-out infinite", animationDelay:"-11s",
+        }} />
+      )}
+      {blobs.map((b, i) => (
+        <i key={i} style={{ background:`radial-gradient(circle, ${b.c} 0%, transparent 68%)`,
+          width:b.w, height:b.h, top:b.top, left:b.left }} />
+      ))}
+    </div>
+  );
+}
+
+// ─── SCROLL REVEAL ───────────────────────────────────────────────────────────
+// Sections settle in as they reach the viewport. Rewards scrolling with motion
+// instead of animating everything once on load and then going still.
+export function useReveal() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (!("IntersectionObserver" in window)) { el.classList.add("in"); return; }
+    const io = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) { el.classList.add("in"); io.disconnect(); } },
+      { rootMargin: "0px 0px -8% 0px", threshold: 0.06 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return ref;
+}
+
+export function Reveal({ children, delay = 0, style, className = "" }) {
+  const ref = useReveal();
+  return (
+    <div ref={ref} className={`pmo-reveal ${className}`}
+      style={{ transitionDelay:`${delay}ms`, ...style }}>{children}</div>
+  );
+}
+
+// ─── SPARK BAR ───────────────────────────────────────────────────────────────
+// A KPI card's share of the portfolio, drawn as a hairline under the figure. At
+// rest it gives each card something of its own to say beyond the number; it
+// also stops seven identical rectangles from reading as wallpaper.
+export function SparkBar({ T, value, total, color, delay = 0, height = 3 }) {
+  const [w, setW] = useState(0);
+  const pct = total > 0 ? Math.max(0, Math.min(100, (value / total) * 100)) : 0;
+  useEffect(() => { const t = setTimeout(() => setW(pct), 260 + delay); return () => clearTimeout(t); }, [pct, delay]);
+  if (!total || !isFinite(pct)) return null;
+  const c = color || T.info;
+  return (
+    <div style={{ marginTop:9 }}>
+      <div style={{ height, borderRadius:R.pill, overflow:"hidden",
+        background: T.mode === "dark" ? "rgba(255,255,255,0.055)" : "rgba(16,42,71,0.06)" }}>
+        <div className="pmo-breathe" style={{
+          height:"100%", width:`${w}%`, borderRadius:R.pill,
+          background:`linear-gradient(90deg, ${c}77, ${c})`,
+          boxShadow:`0 0 8px -2px ${c}`,
+          transition:`width 1100ms ${MOTION.ease}`,
+        }} />
+      </div>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SORTABLE TABLE HEADER
+   ═══════════════════════════════════════════════════════════════════════════
+   Projects had sorting; Campus, Performance, User Management and Activity Log
+   did not. Rather than four implementations, this is the one header — so a
+   column sorts the same way, looks the same and announces itself the same,
+   whichever table it is in.
+
+   `order` lets a column sort by meaning rather than alphabet: an approval stage
+   should run PDD → DF → ED → MT → Approved, never "Approved" first because A
+   comes before D.
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function useTableSort(rows, accessors, initial = null) {
+  const [sort, setSort] = useState(initial);
+
+  const sorted = useMemo(() => {
+    if (!sort?.key) return rows;
+    const fn = accessors[sort.key];
+    if (!fn) return rows;
+    const mul = sort.dir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const x = fn(a), y = fn(b);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;          // blanks always sink, either direction
+      if (y == null) return -1;
+      if (typeof x === "number" && typeof y === "number") return (x - y) * mul;
+      return String(x).localeCompare(String(y), undefined, { numeric: true }) * mul;
+    });
+  }, [rows, sort, accessors]);
+
+  const toggle = useCallback((key) => {
+    setSort(s => s?.key === key
+      ? (s.dir === "asc" ? { key, dir: "desc" } : null)   // asc → desc → off
+      : { key, dir: "asc" });
+  }, []);
+
+  return { sorted, sort, toggle };
+}
+
+export function SortHeader({ T, label, sortKey, sort, onToggle, align = "left", style, minWidth }) {
+  const [hot, setHot] = useState(false);
+  const on = sort?.key === sortKey;
+  const dir = on ? sort.dir : null;
+  return (
+    <th
+      onClick={() => sortKey && onToggle(sortKey)}
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      title={sortKey ? `Sort by ${label}${on ? (dir === "asc" ? " (descending)" : " (clear)") : ""}` : undefined}
+      aria-sort={on ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      style={{
+        ...TYPE.label,
+        color: on ? T.text : hot ? T.textSoft : T.muted,
+        textAlign: align, padding: "10px 12px 8px", whiteSpace: "nowrap",
+        background: T.surfaceRaised,
+        boxShadow: `inset 0 -1px 0 ${on ? T.blueBright : T.border}`,
+        position: "sticky", top: 0, zIndex: 2,
+        cursor: sortKey ? "pointer" : "default", userSelect: "none",
+        minWidth,
+        transition: `color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
+        ...style,
+      }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4,
+        flexDirection: align === "right" ? "row-reverse" : "row" }}>
+        {label}
+        {sortKey && (
+          <span style={{
+            display: "inline-flex", opacity: on ? 1 : hot ? 0.6 : 0.22,
+            color: on ? T.blueBright : T.dim,
+            transform: dir === "desc" ? "rotate(180deg)" : "none",
+            transition: `opacity ${MOTION.fast}, transform ${MOTION.base}`,
+          }}>
+            <svg width="9" height="9" viewBox="0 0 10 6" fill="none">
+              <path d="M1 5l4-4 4 4" stroke="currentColor" strokeWidth="1.6"
+                strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        )}
+      </span>
+    </th>
+  );
+}
+
+
+// ─── INSIGHT NOTE (§22) ──────────────────────────────────────────────────────
+// A short observation about the data, sitting under the section it describes.
+// Deliberately quiet: a hairline rail, no icon shouting, no background block.
+// It should read as the system noticing something, not as an alert.
+export function InsightNote({ T, insight, style }) {
+  if (!insight) return null;
+  const TONE = {
+    attention: T.warning,
+    watch:     T.info,
+    good:      T.positive,
+  };
+  const c = TONE[insight.tone] || T.info;
+  return (
+    <div className="pmo-rise" style={{
+      display:"flex", gap:SP.md, alignItems:"flex-start",
+      marginTop:SP.md, padding:`${SP.sm}px ${SP.md}px`,
+      borderRadius:R.sm,
+      background:`${c}${T.wash}`,
+      borderLeft:`2px solid ${c}`,
+      ...style,
+    }}>
+      <span className="pmo-awaiting" style={{
+        width:6, height:6, borderRadius:"50%", background:c,
+        marginTop:6, flexShrink:0,
+      }} />
+      <div style={{ minWidth:0 }}>
+        <div style={{ ...TYPE.label, color: T.textOf ? T.textOf(c) : c }}>{insight.title}</div>
+        <div style={{ ...TYPE.caption, color:T.textSoft, marginTop:3, lineHeight:1.55 }}>
+          {insight.body}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── MICRO TREND ─────────────────────────────────────────────────────────────
+// A sparkline inside a KPI card, drawn from real data.
+//
+// The obvious version of this — a trend line showing the metric over time — is
+// not available here: only four of 106 projects record a budget release date,
+// across two months. Drawing a curve from that would be invention.
+//
+// What IS real is the portfolio's build-up by project start month: 11 months of
+// genuine data. So the line shows the measure accumulating as projects come on
+// stream, and the hover text says exactly that. Same visual language as a trend
+// sparkline, no fabricated history.
+export function MicroTrend({ T, points, color, height = 26, delay = 0, filled = true }) {
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setDrawn(true), 320 + delay); return () => clearTimeout(t); }, [delay]);
+
+  if (!points || points.length < 2) return null;
+  const c = color || T.info;
+  const max = Math.max(...points, 1);
+  const min = Math.min(...points, 0);
+  const span = max - min || 1;
+  const W = 100, H = height;
+
+  const xy = points.map((v, i) => [
+    (i / (points.length - 1)) * W,
+    H - ((v - min) / span) * (H - 3) - 1.5,
+  ]);
+  // A light smoothing pass — a straight polyline across 11 points reads as a
+  // saw, which suggests volatility the data does not have.
+  const path = xy.reduce((acc, [x, y], i, a) => {
+    if (i === 0) return `M ${x} ${y}`;
+    const [px, py] = a[i - 1];
+    const cx = (px + x) / 2;
+    return `${acc} C ${cx} ${py}, ${cx} ${y}, ${x} ${y}`;
+  }, "");
+  const area = `${path} L ${W} ${H} L 0 ${H} Z`;
+  const uid = `mt${String(c).replace(/[^a-zA-Z0-9]/g, "")}${Math.round(height)}`;
+  const last = xy[xy.length - 1];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={height} preserveAspectRatio="none"
+      style={{ display:"block", overflow:"visible", opacity: drawn ? 1 : 0,
+        transition:"opacity .5s ease" }} aria-hidden="true">
+      <defs>
+        <linearGradient id={uid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={c} stopOpacity="0.30" />
+          <stop offset="100%" stopColor={c} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {filled && <path d={area} fill={`url(#${uid})`} />}
+      <path d={path} fill="none" stroke={c} strokeWidth="1.6"
+        strokeLinecap="round" strokeLinejoin="round"
+        pathLength="1"
+        strokeDasharray="1" strokeDashoffset={drawn ? 0 : 1}
+        style={{ transition:`stroke-dashoffset 1200ms ${MOTION.ease}` }} />
+      {/* The newest point, so the eye lands on where the portfolio is now. */}
+      <circle cx={last[0]} cy={last[1]} r="2.1" fill={c}
+        style={{ opacity: drawn ? 1 : 0, transition:"opacity .4s ease .9s" }} />
+    </svg>
+  );
+}
+
+
+// ─── AMBIENT RIBBON ──────────────────────────────────────────────────────────
+// Abstract flowing light for the empty lower half of the sidebar. Purely
+// decorative — it carries no data and claims none, which is why it lives in the
+// one region of the interface where nothing is being reported.
+//
+// Drawn as SVG rather than an image so it takes both themes, scales to any
+// height, and costs nothing to ship.
+export function AmbientRibbon({ T, height = 200 }) {
+  const dark = T.mode === "dark";
+  const bands = dark
+    ? [["#3E93DC", .95], ["#22C4A8", .85], ["#9B8DE8", .72], ["#E0A94A", .62]]
+    : [["#2C7BC4", .55], ["#2BD4D4", .48], ["#8B7FD9", .40], ["#E0A94A", .45]];
+
+  return (
+    <div aria-hidden="true" style={{
+      position:"relative", height, flexShrink:0, overflow:"hidden",
+      maskImage:"linear-gradient(180deg, transparent, #000 24%, #000 78%, transparent)",
+      WebkitMaskImage:"linear-gradient(180deg, transparent, #000 24%, #000 78%, transparent)",
+    }}>
+      <svg viewBox="0 0 200 220" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"
+        style={{ display:"block" }}>
+        <defs>
+          <filter id="ribbonBlur" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="4.5" />
+          </filter>
+          {bands.map(([c], i) => (
+            <linearGradient key={i} id={`rb${i}`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%"   stopColor={c} stopOpacity="0" />
+              <stop offset="45%"  stopColor={c} stopOpacity="1" />
+              <stop offset="100%" stopColor={c} stopOpacity="0" />
+            </linearGradient>
+          ))}
+        </defs>
+
+        <g filter="url(#ribbonBlur)">
+          {bands.map(([c, o], i) => (
+            <path key={i}
+              className="pmo-drift"
+              style={{ animationDuration: `${34 + i * 11}s`, animationDelay: `${-i * 7}s`,
+                       transformOrigin: "center" }}
+              d={`M -20 ${150 + i * 12}
+                  C 40 ${96 + i * 16}, 80 ${186 - i * 13}, 140 ${118 + i * 10}
+                  S 190 ${72 + i * 15}, 220 ${104 + i * 12}`}
+              fill="none" stroke={`url(#rb${i})`} strokeWidth={3.4 + i * 1.1}
+              opacity={o} strokeLinecap="round" />
+          ))}
+        </g>
+
+        {/* A scatter of slow motes, which is what gives the ribbons air. */}
+        {[[36,74],[68,132],[112,92],[150,158],[92,186],[164,116],[52,166],[128,60]].map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 1.6 : 1}
+            fill={bands[i % bands.length][0]}
+            opacity={dark ? 0.85 : 0.6}
+            className="pmo-live-dot"
+            style={{ animationDuration: `${5 + (i % 4) * 1.7}s`, animationDelay: `${-i * 0.8}s` }} />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+
+// ─── LOGIN ATMOSPHERE ────────────────────────────────────────────────────────
+// Layers that sit ABOVE the campus photograph and never replace it (§1). The
+// building stays the hero; everything here is light, depth and drift.
+//
+// Particles are DOM nodes rather than canvas: 26 of them, animated purely with
+// transform and opacity, which the compositor handles without touching layout
+// (§32). A canvas would cost more and buy nothing at this density.
+export function LoginAtmosphere({ reduced = false }) {
+  const motes = useMemo(() => {
+    // Deterministic scatter — a fixed arrangement rather than a random one that
+    // reshuffles on every render.
+    const seeded = (n) => {
+      const x = Math.sin(n * 12.9898) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    return Array.from({ length: 26 }, (_, i) => ({
+      left:  seeded(i + 1) * 100,
+      top:   seeded(i + 51) * 100,
+      size:  0.9 + seeded(i + 101) * 2.1,
+      dur:   16 + seeded(i + 151) * 26,
+      delay: -seeded(i + 201) * 30,
+      gold:  seeded(i + 251) > 0.72,
+      depth: 1 + Math.floor(seeded(i + 301) * 3),   // parallax layer
+    }));
+  }, []);
+
+  if (reduced) return null;
+
+  return (
+    <div aria-hidden="true" className="pmo-login-atmos" style={{
+      position:"absolute", inset:0, zIndex:0, overflow:"hidden", pointerEvents:"none",
+    }}>
+      {motes.map((m, i) => (
+        <span key={i} data-depth={m.depth} className="pmo-mote" style={{
+          left:`${m.left}%`, top:`${m.top}%`,
+          width:m.size, height:m.size,
+          background: m.gold ? "rgba(224,169,74,0.85)" : "rgba(168,206,255,0.8)",
+          boxShadow: m.gold
+            ? "0 0 6px 1px rgba(224,169,74,0.5)"
+            : "0 0 6px 1px rgba(140,190,255,0.45)",
+          animationDuration:`${m.dur}s`,
+          animationDelay:`${m.delay}s`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+/** Mouse parallax for the sign-in layers. Publishes a normalised pointer
+ *  offset; each layer scales it by its own depth, so the scene gains dimension
+ *  without anything moving more than a few pixels (§5). */
+export function useLoginParallax(enabled = true) {
+  const ref = useRef(null);
+  const raf = useRef(null);
+  useEffect(() => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el) return;
+    const onMove = (e) => {
+      if (raf.current) return;
+      raf.current = requestAnimationFrame(() => {
+        raf.current = null;
+        const x = (e.clientX / window.innerWidth  - 0.5) * 2;   // -1 … 1
+        const y = (e.clientY / window.innerHeight - 0.5) * 2;
+        el.style.setProperty("--lpx", x.toFixed(3));
+        el.style.setProperty("--lpy", y.toFixed(3));
+      });
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      if (raf.current) cancelAnimationFrame(raf.current);
+    };
+  }, [enabled]);
+  return ref;
+}

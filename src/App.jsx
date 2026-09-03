@@ -1,15 +1,85 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Component } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Component, lazy, Suspense } from "react";
+import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
+import { PhotoWallPage } from "./PhotoWall.jsx";
+import { RiskRegisterPage, ProjectRisksPanel } from "./RiskRegister.jsx";
+import { ProjectLessonsPanel } from "./LessonsLearned.jsx";
+import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
+import { TourProvider, useTour } from "./TourGuide.jsx";
+import { guestSteps } from "./tourSteps.js";
+import { InvestmentsTab } from "./InvestmentsTab.jsx";
+import { InstallPrompt } from "./InstallPrompt.jsx";
+import { BiometricButton } from "./BiometricButton.jsx";
+import { NotificationButton } from "./NotificationButton.jsx";
+import { biometricAvailable, signInWithBiometric, BIOMETRIC_HINT_KEY } from "./biometric.js";
 import {
   LayoutDashboard, FolderKanban, TrendingUp, MessageSquare,
   Users, Activity, Settings, LogOut, Search, Eye, EyeOff,
   RefreshCw, CheckCircle2, AlertCircle, Clock, ChevronRight,
   ArrowUpRight, Minus, Bell, Edit2, X, Trash2, Plus, Upload, Download,
-  Shield, BarChart3, Building2, Lock,
+  Shield, BarChart3, Building2, Lock, Fingerprint,
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
-  Sparkles, Sun, Moon
+  Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal
 } from "lucide-react";
-import * as XLSX from "xlsx";
+// SheetJS is ~150KB gzipped and is only needed when someone actually imports
+// or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
+// every visitor pay for it on first load, including a PM opening a project on
+// their phone. Fetched on demand instead, and cached after the first use.
+let _xlsxPromise = null;
+const loadXLSX = () => (_xlsxPromise ||= import("xlsx"));
+import {
+  DK, LT, BRAND, DATA, TYPE, SP, R, MOTION, CATEGORICAL,
+  STAGE_META, STAGE_ORDER, PRIORITY_META, healthOf, perfStatus,
+  KPI_INSIGHT, KPI_INSIGHT_PLAIN, TAB_INSIGHT, NAV_INSIGHT, STAGE_HINT, PRIORITY_HINT,
+  rampColor, RANK_RAMP, ALERT_RAMP, portfolioInsights,
+} from "./theme.js";
+import {
+  injectGlobals, useViewport, BP, Surface, Button, IconButton, Input, Select,
+  Badge, StatusDot, Progress, Skeleton, SkeletonCard, SkeletonChart, SkeletonRows,
+  EmptyState, Modal, Tooltip as TooltipUI, ArchMotif as ArchMotifUI, Ambient, Tabs as TabsUI,
+  Metric, CountUp, useCountUp, Stack, Inline, SectionTitle, Spinner,
+  InsightTip, WithInsight, Section,
+  pageBody, pageBar, cardStyle, tableStyles,
+  RankedBars, ShareStrip, ProgressRing, TargetCard,
+  Aurora, Reveal, SparkBar, useCursorLight, useCursorTilt,
+  useTableSort, SortHeader, InsightNote, MicroTrend, AmbientRibbon,
+  LoginAtmosphere, useLoginParallax,
+} from "./ui.jsx";
+import {
+  usePresence, useProximityField, useNear,
+  FocusProvider, useFocusSource, useFocusTarget, useFocusKey, useSetFocus,
+  useScrollParallax, emitCausality, useSessionMemory, useProjectPeek,
+} from "./presence.jsx";
+// Charts are ~89KB gzipped and appear only after sign-in, yet a static import
+// pulled them into the login page's critical path — the second-heaviest
+// request on a screen with no charts on it. Loaded on demand instead.
+//
+// Each is wrapped so call sites stay unchanged: the Suspense boundary lives
+// here rather than being sprinkled through every dashboard that renders a
+// chart. The fallback matches the chart's own height so nothing jumps when it
+// swaps in.
+const _charts = () => import("./charts.jsx");
+const ChartFallback = ({ height = 300 }) => (
+  <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center",
+                opacity: 0.35, fontSize: 12 }}>Loading chart…</div>
+);
+const lazyChart = (name) => {
+  const L = lazy(() => _charts().then((m) => ({ default: m[name] })));
+  const Wrapped = (props) => (
+    <Suspense fallback={<ChartFallback height={props?.height} />}>
+      <L {...props} />
+    </Suspense>
+  );
+  Wrapped.displayName = name;
+  return Wrapped;
+};
+const PlannedActualChart = lazyChart("PlannedActualChart");
+const Donut              = lazyChart("Donut");
+const StageBars          = lazyChart("StageBars");
+const Sparkline          = lazyChart("Sparkline");
+const CategoryBars       = lazyChart("CategoryBars");
+const ChartTooltip       = lazyChart("ChartTooltip");
+const ShareDonut         = lazyChart("ShareDonut");
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement,
   LineElement, Tooltip, Legend,
@@ -17,131 +87,69 @@ import {
 import { Bar, Scatter } from "react-chartjs-2";
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
-// ─── FONTS ─────────────────────────────────────────────────────────────────────
-(() => {
-  const l = document.createElement("link");
-  l.rel = "stylesheet";
-  l.href = "https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@300;400;500;600;700&display=swap";
-  document.head.appendChild(l);
-})();
+// Settings rows written before the save path was fixed contain a JSON string
+// that still carries its own quote marks (e.g. `"\"FY 2026-27\""`). Unwrap on
+// read so both the old and the corrected shape render the same text.
+const unquote = (v) => {
+  if (typeof v !== "string") return v;
+  const t = v.trim();
+  if (t.length > 1 && t.startsWith('"') && t.endsWith('"')) {
+    try { return JSON.parse(t); } catch (_) { return t.slice(1, -1); }
+  }
+  return t;
+};
 
-// ─── MOTION SYSTEM ──────────────────────────────────────────────────────────────
-// Shared keyframes for the visual-upgrade pass. Injected once; every component
-// below just references these class names rather than redefining animation.
-(() => {
-  const s = document.createElement("style");
-  s.textContent = `
-    @keyframes pmoCardIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes pmoFadeIn { from { opacity:0; } to { opacity:1; } }
-    @keyframes pmoPulseDot { 0%,100% { box-shadow:0 0 0 0 currentColor; opacity:1; } 70% { box-shadow:0 0 0 7px transparent; opacity:.85; } }
-    @keyframes pmoShimmer { 0% { background-position:-300px 0; } 100% { background-position:300px 0; } }
-    @keyframes pmoArchGlow { 0%,100% { opacity:.5; } 50% { opacity:1; } }
-    @keyframes pmoMeshDrift { 0% { transform:translate(0,0) scale(1); } 50% { transform:translate(-2%,1.5%) scale(1.04); } 100% { transform:translate(0,0) scale(1); } }
-    .pmo-mesh { animation: pmoMeshDrift 18s ease-in-out infinite; }
-    .pmo-nav-item { transition: background .15s, color .15s; }
-    .pmo-nav-item:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); }
-    .pmo-topbar-toggle:hover { background: rgba(224,169,74,0.14) !important; color: #E0A94A !important; }
-    .pmo-topbar-signout:hover { border-color: #E0A94A !important; color: #E0A94A !important; }
-    .pmo-card-in { animation: pmoCardIn .45s cubic-bezier(.16,1,.3,1) backwards; }
-    .pmo-fade-in { animation: pmoFadeIn .35s ease backwards; }
-    .pmo-lift { transition: transform .18s cubic-bezier(.16,1,.3,1), box-shadow .18s ease, border-color .18s ease; }
-    .pmo-lift:hover { transform: translateY(-3px); }
-    .pmo-pulse-dot { animation: pmoPulseDot 2.2s ease-in-out infinite; }
-    .pmo-skeleton { background-image: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); background-size: 300px 100%; background-repeat: no-repeat; animation: pmoShimmer 1.4s ease-in-out infinite; }
-    @media (prefers-reduced-motion: reduce) {
-      .pmo-card-in, .pmo-fade-in, .pmo-pulse-dot, .pmo-skeleton, .pmo-mesh { animation: none !important; }
-      .pmo-lift:hover { transform: none !important; }
-    }
-  `;
-  document.head.appendChild(s);
-})();
-
-// Animated count-up for KPI numbers. Parses the leading numeric portion of a
-// string value (handles "1,234", "59.2M", "0.94", "12%", plain integers) and
-// tweens it; any non-numeric value (e.g. "Critical", "—") renders as-is with
-// no animation. Re-triggers whenever `value` changes.
-function useCountUp(value, duration = 900) {
-  const [display, setDisplay] = useState(value);
-  const raf = useRef(null);
-  useEffect(() => {
-    const str = String(value ?? "");
-    const m = str.match(/^(-?[\d,]*\.?\d+)/);
-    if (!m) { setDisplay(str); return; }
-    const prefix = "";
-    const numStr = m[1];
-    const suffix = str.slice(m[1].length);
-    const target = parseFloat(numStr.replace(/,/g, ""));
-    const decimals = (numStr.split(".")[1] || "").length;
-    const hasComma = numStr.includes(",");
-    if (!isFinite(target)) { setDisplay(str); return; }
-    const start = performance.now();
-    const from = 0;
-    if (raf.current) cancelAnimationFrame(raf.current);
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      const cur = from + (target - from) * eased;
-      const fixed = decimals > 0 ? cur.toFixed(decimals) : String(Math.round(cur));
-      const formatted = hasComma ? Number(fixed).toLocaleString("en-US", { minimumFractionDigits:decimals, maximumFractionDigits:decimals }) : fixed;
-      setDisplay(prefix + formatted + suffix);
-      if (t < 1) raf.current = requestAnimationFrame(tick);
-    };
-    raf.current = requestAnimationFrame(tick);
-    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-  return display;
-}
+// ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
+// Fonts, keyframes, focus rings and native-control resets are injected once by
+// the design system (see ./ui.jsx). Replaces the previous inline font link and
+// MOTION SYSTEM style block.
+injectGlobals();
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPA_URL = "https://prmxkecomqqngvrmytcj.supabase.co";
 const PORTAL_LINK = "https://pmoriphah.github.io/riphah-pmo-portal/";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBybXhrZWNvbXFxbmd2cm15dGNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDUxNzAsImV4cCI6MjA5Nzk4MTE3MH0.4MtGQqpuv9DdPOdoyKTh-RbHG9JAgTV94TJW74apAw8";
-const GOLD  = "#E0A94A";
-const GOLD_DEEP = "#B8842E";
-const NAVY  = "#185078";
-const EMERALD = "#1FAE8E";
-const ROSE = "#E4576B";
-const AMBER = "#E2A83D";
-const VIOLET = "#8B7FD9";
+const GOLD  = BRAND.gold;
+const GOLD_DEEP = BRAND.goldDeep;
+const NAVY  = BRAND.navy;
+const EMERALD = DATA.positive;
+const ROSE = DATA.danger;
+const AMBER = DATA.warning;
+const VIOLET = DATA.violet;
 const LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYAAAABwCAYAAAAXIqcSAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAyFpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuNi1jMTQyIDc5LjE2MDkyNCwgMjAxNy8wNy8xMy0wMTowNjozOSAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczp4bXBNTT0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL21tLyIgeG1sbnM6c3RSZWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZVJlZiMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENDIChXaW5kb3dzKSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDo2RDBFOTI1MEZBNDkxMUVDQTVEMUU2M0E2QjAyRTM0MSIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDo2RDBFOTI1MUZBNDkxMUVDQTVEMUU2M0E2QjAyRTM0MSI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOjZEMEU5MjRFRkE0OTExRUNBNUQxRTYzQTZCMDJFMzQxIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjZEMEU5MjRGRkE0OTExRUNBNUQxRTYzQTZCMDJFMzQxIi8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+goXUPAAAWm1JREFUeNrsXQecFdX1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";
 const CREST_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAAE9CAIAAABiH4s4AADpN0lEQVR42ux9d3hURd/2lFO2b3rvkISQ0HvvSAcRRMRGUxQrKvYu2BWwoIJiw0KR3nvvndASkgDpffvuOWdmvj8mxAABoj7P96JP5uK6JLjZbObMPb9+3zC8/cOgftWv+gUAqt+C+lW/6sFQv+pXPRjqV/2qB0P9ql/1YKhf9aseDPWrftWDoX7Vr3ow1K/6VQ+G+lW/6sHwj14QwvpNqAdD/QIQQlUjCNU/hXow/M8vQmign8nj8WGMGGP1G1IPhv9Rm+D1qZ1bJ89+a1xygwiH0ysIuH5b/m8XNke1qd+F//9I0DQtKizg6+kTWqbGN2oQuX7ncbfbJwhCvX2oB8P/FhIYYxDC2W+Na9OkgdenJkSHmI36LXvTGWP18UM9GP6HkAAhcLp8b025c9TADoQQASON0BaN4xRV23XwXL2zVA+G/5ntxsjh9Ey8q+cLk4ZUwwMhCBHs2qZRTl7JoZPZelms95XqA+h/+15j5HL7erRPfe6hoQBASukfRQbGAADvPTe6XdMGLo9S7yzVg+Ff7iD5fGp0ROD0Z+4KDjBTSq868ZRSs1H/wQtjAqxGopH6Yly9m/SvXYwxhOHnr4/r0DJR06ggoGvRQigND/YP9DOt2nZUFDAA9XioB8O/0Sy4Pb63ptx516AOhFCMYQ3niL8AAAAgAJTRpo1ibXb3jv1n9HqpPtNaD4Z/1RIwdrg8E+/q+cJDQ8Dl1CqljDGGEIQQQAgoZYQyhBAEAELYtU2j7Nziw6dy9HI9HurB8G9ZooAdbk+3to0/enGMXicxxihjCCGMEUIIQgghZABghDBClDIAAANAFISubVOOnb54PqdQksR6PPx/MuD1vEn/VZvg8vjiIoN/nfVYYlyYphEGmCgIhNJdB8+eysy7WFAKAaSUWs3G9s0adO+QCgAglEIAEELZl4rvfGxWdm6JLNVXpuvB8E9eCEKvolrMhh8/fKRTqyRNIwghhODJjNyPv1m1ff/p3MIKCAEEECHo8arR4QH9uzV7duKghJhQQimEEEG48+DZ+5+d7XT7hPpOvno36Z+KBAR9qmYx6edMn9itXYpGqpCwYvPhh16eu/dIJoTQZNTpZEmvk3SyaDXrVY3sPZx55FROi9S48GA/QihlLC4qODosYO2OY4zWd2rUg+GfiQRF1WRR+Hr6hD6dmxJCORLOZuXf/eRnZRUuk1FWVCJJgiQKGCMBI8aAqhGTUZedV3I6M69Hu8Z+ViNjgFCSlhRtMerXbT8uCBghWG8e6sHwz9lQhFSNQghmvnLf0N6tKWUIQcAYA+DhV749l1MgSyIltH+35rPfHP/643c8Obb/g6N69umSJsvS2fP5AICMnELKWI92jXmnBqWsddMEiNDmPemyKNbvcD0Y/iG7iREhhDH23tTRY4Z1ZowBCBilCKGNO098+ctGVaUGgzTt6ZGvPTEiONCCEKKUyrIYHuzfq2Nag7jQnQfPaYRkXijq2jYlKiyAEIoQZIx1bp1sd7q37T9trC8+1IPhH+EdaYSqGnn9iREP3tWTEAou15Uxxq/PWnz87EVJEp6dMOih0b0BAMfPXvz6l00L1+zfffhcZKh/UIAlKS48IsRv5Zaj5TZHowaRbZs2gLBqSJox1rlVckFp5a5DGSajrh4P9WC4dReEUFU1jPG7U+8aP7IHtwkIQkoZxqi0wvHVL5su5pe2b5703nOjBQGv3Xbsibe+X7hmX/q5S9sPnN579HzvjmlWs6FRQsT5i0WHT2YbZLFvl2a8NMHxIIpC93aNXW7vnsOZuvrO1v/GdVa/Bf8RJPgU1WTUz3lnwtgR3XlRGUEIAKCMQQgPnsguKK20mg1jR3Qx6uWyCsfM79eePp8fGRrg72eKCgs8lZn39mdLPF4FIThmaCd/qzE9I8/udNf8EZRSk0H33tS7n5kw0OZw84Jd/ebXg+GWgQEACEGvTw3yM897/6GB3VtwB6b6mPIv8wrLK22u0CDrHf3bMcb2Hsk8nZnnbzEoqqZpxOtT/cz6lVuPVNicAICUhIgurZNPZ+a53F4AAKuBB0KIIOCXJw97ZsIgRdWqovP6VQ+GW8EgIIzcHqVpo+gFnz3erW0KpRTURoVUYXe5PUqXVskIIghh5oXC4jJ7zToaZUBRydHTFxkAwYGW1MRo5lMv5JcBAGCN3lWEEKWMAfja43e8/9zdooAVRcO4/iHWg+H/GgkQAofL279bs58+mty0USwhtQwh8ONus7u8Pl+zlFjuOxWX2SmjV3VoIwgKSir46+Oig7EoaBqp7ecCCAEhdOyIbp++dn+Qv9np9l7bEF6/6sHw/887YpQ5Xb4HR/X84s1xkWEBN+YCI5QyCsJD/avsAGW1ufuwtNzB/zU00GryN2qE3ihzpZGhfVp/8+6DqYnRFTaXgOuHp+vB8H9gE4BKCKHk7Sl3Tnt6lNVs0AgRbuirMAYAYwF+xhu/s3rZFGCEMLxJMxLGSFVJh5ZJP374yIBuLSrsLgjqQ+p6MPx/2ywIAYBenxoSYP3+w0ceva+vKGJCKL5Z15BOFiG+eagrS3+uwCwISCMkPjp43vuTXnpkKMbQp6h8RqJ+1YPhv7gwRhqlXp/Ss2Pa6m+n9uvajFJKKb1xPocfTH+rUaeT+LgCP8SMXnvrMz+zvupvgFFKDTq56qsbfCqECKEGvfT8pKE/fTI5MS7M4fRyP6r+kdWD4b+yBAG7PT5JwM9NGvzLJ4/GRATxLus6XsJWs0EniV6fyk92kL+FscuznjVcqaAAc9UbMoYgDA223AQKl+MHyhilrGublGVfPT2if1ufoikqEQRUX5erB8N/3iaUVTgaJ0Z9PW3icw8OwRhRylDdYAAhoJRGhPqbjbryShfPIAVYjWaTnhByxcsYbRATyr90uL2STggJsFJap/MMQVWKKSTQ+s27D732+HCzUedweqV6SrJ6MPwHY2UAgM3hvv+Orj98+Ei/bs1UjVxzp98gbmYIQoRQ5oUih8uXV1TO/z002OpnMWgarVGbA7IkhQX78S9Lyh1lJbat+07xydC6PksECaGE0sfu6/fDhw83TYmpsLnqY+p6MPx9GEAEoU9RdbL44QtjPnnpvvioYFXTBFxXZ5xSPuuMv1m45d3ZyyFk57IL+P9KiA4JC7KqGuHnFEGoaiQxLkyWqwLoskoHZeC1mYu+nL8RXW7UqyMeIAAaIZ1aJS/89Inxd3ZXVE3RSH3rRj0Y/uqmIMgYc7i9qUkxCz574sG7ekki1gipey6fUooxIpR++v26qe/+oqiagHF6Zh7/Xw1iQ8ND/RVF5SeUS5a0TI0z6CQAgKqRwuJKnV52uX1vfvr7rO/WcsDw8nZdYIwR0ggJCbR+9OK9s98aFxJg8XgVxuqj6now/PlY2etTKWVjR3RfPffZ1mkJlFLGGK7z1KVGKMa40u56+u0fX/74N1kSMEYMsLzCcqfLSyjDCDWIDoEI8vseIej2eFs2juOp1bzC8jPnC2RJFDBigL31+ZIXP/zN7VUwxjcow12bZaKUIgRG9Gu3/OtnbuvSRFWJqt6kHvK/HhzWt3DXXKIgVNpckaEBLz82/IVJQyRR4NXiujsZqkYkUci+VPzoG9//vu6AyaivEebCts0b8CjZ6fbuPHjOp6gYIQYYRuipsQMiwwIAAOkZeZ/9tF4WBUIBQgBjvOvwufMXi9o1a+hnMWiE1vGC55+ZUhbobx7er41RLx86mW13emsmeetXvWWoPVZGCJVXOru2Tfn+w4fHjejGR/Lr7mozAAilkigcPJF13zOzt+w+aTHpq319hJBPVfcdy+Qv694uxd9qUFSCMHJ7fN3bNW4QW5VKyrxQWF7hFDDikQJjzGrWL167/96nP99zJEMU8J86yjyqBgw8et9t33/wcNNGsZV2F67nFqgHw3V3AUJVI4qiThnf/7sPJrVKi1dVDaE/EXNSxhCEAsaL1+6//9nZpzLzTEYdqeHlIwgVRTtwPAsCoKrE32pq2iiG+/d2h7d9i4b+VhOlzKdoR07l6HQirRExaxoN8DMdPJE9/vmvfliyg7ep1n24h/P0qarWpU2jnz5+5O4hncoqnbzhr37Vu0lX+xIenxrgb/rkpfsevqePUS+rGqm7aAhjAACGEdI08tJHC975cpnD6dXrJXKVfw8hD8GH9G5pNRsAAHpZXrPtqE9RgwPNk8f0iYsKhhCWlts/mLPS5fZd5ZhRyvQ6yeH0bNx10u1VurdrDCEkhNXRg+N2TyPU32Ls07mpwSDtPHCOUiZgVM9uXA8GAHivm0ZVVevYMvG79x/q0iYFAkgorbsXwSMKhFBmTuF9z85etuEQRFCShGs9GQgBRsjrUxvGhTdJjiaENogJXbL+QE5eSZ/OTR4a3UvACEJ4MiP3o7mrTEbdte/AGBMwhhBs2386+2Jx++YNzSY9pYyxuopJc64NUcSdWiY1Sog4fCq7uMwmSVI9DP7XwSAI2ONRdLLw4F29Zr81PiTQer3RnBtkjQQBQwgXr9334EvfnD6fZ9DJ1dRGvFIB4R/DOQLG5TaX1aQf2KMFpVQQsEbI2u3Hnx4/oFWTBI1QBOEPS3bsPZopiQJjjLMBoBoODceHXicdOJ6150hmg+iQuKhghCChtM4VccgAoIw1ahDRp1NaTl7JqYw8SRIQhPUx9f8oGDBGDpcnOT78gxfGPDi6F4SIMfqn6lKEUFHAlQ739C+Wvvnp726vYpAl7uhjhASMKGOEUMooRkgQMMcEoRQh2LNjWoCfCQAQHuzn9akT7+opi6KAkaJoL3z4m8PpEQQkYMQAIIQSRgGAImcQu2wiDHo5t6BsyfqDLo83NSnaZNBpdRZXh1UT1SzQ3zy0d2tNI3uPZjLGBAH/j5Nu/C+CAUFod3iG9G4989X72zVPVFXyZ4frGWMY4+NnLj7x1ve/rNht0Eu8YYnTzbu8vgqby2zUBQeYzUaDw+UtKrMzADCEOp1UUGxLaRjZtFGMphGDQde9fYrFZODTzHuOZMz+aYMgILdHqbS7RUEICbRYzAYEQXGZ3eNTMYIYY/4BJFEAAGzcdfLE2UtJ8WFR4YFVvYN1DpYoYwJGPdqnxkQE7jmcYXd6/scZjoX/tXCZAWZzuJ94oN9zk4aajTpF1cQ/GStzKvkflu78cM6KnNwSP4uB8MFkCD1eJdDfNHZEty5tU2LCA/nZ8vq0iwWlOw6cWbvtWEFxpcPt2bwnfVjv1ga9DAET9TpKKXel5i3a5lNUP6vx7sEdu7dPjY0M0skiv8VLKuxH0nOWbzx0OD1HEgWEqsKVIH/LzoNn7n169rMTB40d0Q0AQCmto6+HIGSMEULvGtQxKizw6Wk/ns7KtxgNjP2PliH+h1i4ecZdUcmLjwydMm4AJ5tAfyJWphwGJWX2Nz5dvGjtfqJRnU6sJgvz+pSWqXGzXnsgOT6i1rpYeaXz11V7Pv9xXaXdvfjzp9q3SNQ0wl+JELpUUDbkwQ+6tGk8ZWy/yPDAWiHq8ninfb70q182y9IfIlcYI59PZQwM6d3q7Skjw0P8GQC0zrU5xhhhTMQ4+1Lxs+/+vHlvul6WQJ27oerdpH8iEpCqEVmS3ntu9MN39wa8MlD3DguNCILAGNu8N33CC3M27k7XSSIWUHXOR9NIfHTIws+ejI8KAZfTO3lF5Tm5JcVlNofLo5NFi9nQpmmD2Ijgr3/aEBcd0rFlEsaIX/wIoXdmL2MAfPf+JD+rESNUYXNdzC/NKywvr3TKsihLIqVMlsSeHVJ9Pm3XkYxql6Y6y5R+LnfphoNR4QHJ8eEIoTpGETxGZ4wF+JnuHNje4fLtO5qBEML/eyTH/xNuEkbIp2p+FsPMV+/v37WZRghGdS2pca0dURSyLhXPnr9h3qJtCEKLSUcpqzF3AxFGbz45MizYjxCKMbI53L+s2P3jkp1HTmdjiMJC/Dq3Sh7au1VsZPDC1XsFWTx57pLHp5iN+urCXHpG7rb9pxes3hMdHnToRNauQ+d2HjxbUm63mvU9O6Q9PX5g66bx/JM/Nb7/sTMX1+887m8xaoSAy1RlOp1YVGobO/WrR+7p/ei9t4UGWRVV4xnbOjmQjAEA354yUhTx5z+sYwiKoqAR+r9Th/j3u0kIQZdHCQ/2m/3WuG5tUzSN1J1oiJNDAgAWr93/0Terjp7KCfAz8RaJGjgAikJapcWvmPMsTyKpqvbqJwtnfr/OYtIbdBJlTNOoy+MDjMVHhxSUVMqi8NnrDwzt05pSBiEglAoY7Tp0bvSTn/FyxKWCcrNRp9dJGCMIQFmlMyTAsvzrZ9KSo32KKkvi3AVbnpk+32zUEcpqDsPxRIDd6enYMvHlycM7t06uEs6qK/IBb5Sa8+umd75c7nB5dZJIKP0fAcO/3E1CCDpc3lZpcV9Pm9C+eWLdkcCqUkao0u566aMF78xeXlJu87cYyTV9oxghl9s3dkS3Di0Tucey69DZd75cLglYlkVNI1zIUK8T9TrJ4fRqmjZl3MCxI7oTQv+oJDAQExkkCHj11qMYQavFKGLMAKOUUcr8LIaCosrgAEvnNslVMnCM7jh4ptzmEgV0lTPDGDDq5cwLRZt3n3S4PB1bJNW985xDhhDWpmmD+KiQHQfO2J0eXvT4n/Cl/93ekdPt7dgice70B5unxKlaXcnn+FQnRmjnwbPDHv543qKtCEGDXlZrZfUCUCM0MsxfwFUtdKUVTkoZgLAaOTxpwxhze32De7V6cmx/BlhVTY77JxBQyh4e03tkv7Zuj0IJ5RkqvnwK0Ruk0go7pRQjBCEMDrD4W0yaRmrVilY1YjUZym2uj+auvmPyjNOZefwH1aXDD0KIEFA1bUjvVl9OGx8SZHF7fP8jokH/2l8SY+z0eNs0bfD5G2Pjo0NUVavLBclFaTFGLo9v2hdLRj0+6+TZS3qdXNX7ef0LVSN/UKw2jAn1sxgUVYNXItPudDdvHPfe1LskSQBVxDNAUTWE+OQ+EzCe9vSoJsnRbq+vJm4xhj6fGhrsJ+CqupiqEo3yKmHt51sjRBYFnSzuOHBm6EMfff3rZp+iYYwIoTe95SGEGGFCaM/2qV+9NT4s2Or2+DD699MLoH8pEpDL7W3ROPbTVx9IiAnV6tZ4RykDAGKMTp67dPeTn30wZxUhVJZExtgN/AQGGMY4+2IxY0zASCOkWePYVqnxmkbQ5QONEHJ5lKT4iK/fHh8a5Ecvd09k55Y8//6vDpeX39mE0NBgv6+mTWwQE+rxKgLGgAGMkM+nhQZZh/ZuCSFUVA0AkH2p5FJ+qSwJNzjZlDHGmEEn2V2e5977+aGX5mbmFAoC5q7XTf0l3sjUtW3K3HceDAvxc3p8Ikb/bnfpXxgzIAjdHqVJUvQXb4xLaRhZxziBUooQRgh+t2jbo6/PO52ZZzLo6vYDmYBxQUnlHbe11XNZHQgbxoSu33m8tMKp14kQQEVVgwMtc6dPbNoolmd+eGL35U8Wfv3LRotZ36V1skYowogQGhpkbd00YePOE5U2l14vUspcHt8bT47o3605pZR7OwvX7F2z7ZjZpLvpsWYAQAj1sngoPWvz3lNB/ua0pCjOLnPTLBOEgDEWExHUPCVu695TFXa3ThYIY7AeDP+M7BiEPkVNaRA5950HUxpG3pT4sfoSxRg7XJ4XP1zw4ZwVPpUY9VLdsygYo/ziivBgv7bNGvJ/CQ32S2kQefBkVn5xJQNArxM/e+3+bu0aE0KrFUzm/Lr50+/X6nXykfScxg0jk+LDKWUcD5GhAW2bNti052R+cSWE4NXH7xg/sjt31URRuFRQ9uJHv2mEIFjXUgBlzGiQyyqdKzcftjndbZs01MnidShfr95QQmhcVHBqYuTmPen/7paNfxUYEISqqoWF+H33/qTGdbMJjFX1+mdeKJr40pzlGw/qdKKA8Z/KJzIGRAEfP3OxbbOGUeGBjAFCaIPY0Nu6NK2wuVwe5bPXx97WpRl3nLjGwqbdJ597/xdNI5Ikur3Ktr2n27dIjAoLqGYSiAoPbNM0obzS8epjw+8b3oVH56IouL2+KdN+PHQyW/8npzcpZZKAEcY7D5w9eDK7WUpMaBDnZboRInhXn0ZIg5iwuMigLftOuz0+EWNWD4ZbO4uKCKWyJM5+a3z75omqSm5K1M5LvxDCdduPjXvuq5MZl0wGHQDwL9x8CCGHy7t136kGsSENY8MQQhohAVbTbV2ajB7cMTUxil/DlFFREE5l5D7x1g8FxRWSJBBCJVGwOTx7j2T079bcz2LkNBaU0qjwwEE9WzROjOKNTwghu9Pz2OvfLd982KiX/8IcM38fWRazLhat3X4sNMialhTNfbYbAAJCACEihKY0jLSY9Nv2nyJ15lCrB8P/jU3gFIufvHzfkF4tNU27acRMKBUwVjVt9vwNz73/c6XdbdDr/s6kvChgm8O9ettRQmjjxEi9TqKMiYKg10m8eQ4AhjG+mF/62JvfHzmVbTJU/TjGmCTiolLbibMXB3RvwXXcEEKMMVEU+Pd6feqZ83kPvjR30550vSz9HT+Fv63L5V2x+TCjrE3TBFEQbjwRUR1Pt0yLN+rlzXtO/SsVUv4NYOCpeq+iTnt61P3Du/LnemNvmCOhwu568YNfZ3y3BiP897v5GQDczqzdfnTPkcwBPVqYDLrqNj5uPdIzch9+9Zt9RzMtJkPNXC1jQJLE8xeKDhw/P/y2tgij6q5yyhjG6Eh6zuCJH17ILflPSX1CBAWE1u88UVRa2aZpA7NRf1PeDQghALBN0wS7w73j4DnDlYPa9anVW2Qxt1d55O4+D43uxSPUGyOB14kv5ZdNfPHreYu2m416CP8zTZoYI5+i+VtMXVon80CZj6kxVtU0ceZ8/rb9p00G3VU/jbfQapQ2ahBJCOGUYfw1CCLKWHJC+OR7+0KEiEb+U+R4DAB/P8OPS3Y9+NLcc9kFooDJzXiZePXw5UdvH9yzRbnNJQr/quDhH28ZIARur9qva9MPXxjDu+9uigSE0OH0nEmvzN1x4Jy/n7HuzFw3Cxugy+2zmvXvTh396H231VSt5RaDUpYYG5aWFLX3SGZJuV0nSxwhCEGvTzEa5Pefu/vp8QNlWeQx/WW+PQAY0+ukLm0aBfgZN+89RbT/mI4bY8Cgl8/lFOw6dK5F47jIsICb+ksAAFEQ2jdP3HMk40JeiUEn/2vswz8bDAghn6KmJETMe2+Sv9UEwI0CQcY46yPetu/U5NfmpWfm+psN/xEk8Eqw26OkJkXPfWfibV2bXWbYhhx7Z87nl1XYgwMtGKPUxKi+nZsUl9rPnM/jkajT5e3UOnnO9Adv69oUIQAAtLu8KzYdMhv1VouhGsOMgdZNElo3STh4IruwxCaJ+D9iIihjep1UUFyxbf/pZikxsRHB7CbxNCSUcsnqLftO2R1uQcD/Djj8g8GAEVQ1YjHqvvvw4cS4sBtP6vDmTUHAKzYdfuLNH/KLK8xGHflPIAFjpKgaZezOge3nvfdQQkwoL40xBiAAGKN1249NeHHOVz9vyi0sb94o1mTUBfqbB/VqGRcVfOhkNoLw8bH9Pn7p3qiwAACAqtHNu9MffuWb7xfvWLnlcGxkUGJcOBeB5qFRfHTIkJ4tc4vKj5+9KGBU3aDxt/BAmSQKFTbX8o2HYyKCGidG3ZhyA0GoaSQ2MthqMqzfdRKCfwkF0z8VDJx1wufT3pt6921dmxJCb4wEQpko4PnLdj7z7ny7w62XRfKfmG0UBexy+0wG3QsPD33zyZE6WeSnllAmCJgy9vPynVOm/1Rpc0EID57IWrX1SHCgJTk+XBBwWlL08NvaDu7ZckS/dnyu7VJB2euzFr3yycIKmxMLuNLhWrbxkCigpimxsiSqGkEYMcbMJv2wPq31OvnQiWyHy6v/T9BFMgYEjH2Ktmbb0diIoLSkaELZDVxOLsLbvHGszeHedeisLIqsHgz/Z58bI6fbN/7OHk/c3w9AcONQgTImCviDOStf/ngBp4H4+24ughBjZHd4UhpGzHj1vrsGdrzcwQQ1QiRRuFRQ9uanv0+fvRwCIGAEIJQlodLmWrvtWOaFokYJ4X4Wo8WkCw3yo4wpqvbbyj3PTJ+/cdcJo0HHMwACxgjCjbvSLxaUNmsUG+hn4nQyHN4dWiSmJEadzc4/l11oNun/I44Kr/et2X40NjK4SVL0TRloGAOdWycfPXXhbHaBLAqsHgz/V0holRb/4QtjzCYduOEAJwMAI/Th1yunf7nUIEsQgr9/biCEhFC703vXwA4fv3xfq7R4VeXTzAxBiDFes/3Y1HfnL9t4yGI2VHeWMgZkSXR6fKXl9qF9W0eE+Ff5aQxQxpZvOsxfX/PzQQhkWTySnrPz4NlAf1PjhlHcWeIfIDEurEf7xnan59CJbIwR/k+4TAJGlIG124/FRgQ2SY7ht0atFw3/R1HAbZombNh5osLu/qcXH/55YODdR1aLcc70iUlx4fSGBHj8/37+w7q3v1iqk0Twt5EAIQAQeL1qoL9p+jN3PTNxUEighU9XAgARQm6f8trMRdM+X3qpoMx6zTCQx6P07dL0p48nJ8dHAAC8PtXlVQx6GWPcvV3j2PDAtduPsSuxzVmSLuWXbd576lJBWesmCUaDjh9FjZBAP/NtXZs2Sgg/eDy7uMwmS+LfjKoZA4KACSHrdhyPiwpKTYy+QTzNs8YBfqb4qOClGw6gf7jS6D8QDAAQwl597PbBPVvxmeDrGQRKiCAIPy7Z8erMRf+RCXdehfV4lGF9Wn/7/qRubVNEAfNJCX4Otu079eBL36zecpQxptNdQbcKIfR6ldv7tf1q2oQgfzMAID0j954pX/y4ZEdKw8iY8EBKWbOU2NjI4DXbj1HKhBrzA5xoVdG0A8ez1m4/FhUekBgXxl0pTSOSiBsnRg/u3crh8pzKyK3mLvgbeGACxhoh63Ycb5QQkZwQcYOWPh7cJ8aFe3zKhl0nzQbdP5fv/h8GBj7QPKBb8+nP3MWuP9rLGCCUioKwYNXeFz74TdOIIKC/GScgBBVV0+uk158Y+faUO61mAyFU04gkCRDC3MLyaZ8vefHD34pKbbIkCBjVPBMCQi6Pb1ifVl+9PUEniwCA1VuOjp36Zdal4gqbc8Xmwwa91KJxHAAsLSk6ITpkw84TRKM13R7e8i2JQlmlc9nGQzl5JY0bRAX4mTBGikIABH5mw4DuLWLCg3YdPmd3uHWySCj7y9c0Y0xASNPomu3HmiRFN4wLu0E/Em92TGkYdeLsxXM5hfrLzIL1YPjvOkhc0HLe+w9ZzQb+DG4QMf++7sBTb/+oqKrwJzUNav3RmkaiwgJnvXr/qIHtCaWcmFUUhdIKxy8rdj/62neb957SySLvDmQ1DookYrvT06l18rfvTtLrJADA/GW7np7+o83pNehEPn22astRt1fp1CoJQJCaGJ0cH75m+zFVJdfOlwkYIQQPHM9aveWoJApx0SEmo44Syq+G1KToFo3jdhw4U1bp1OskQv4GHgDAGCqKtmVvete2jSJC/K+ncco3x2LShwRa124/5lNV4Z85FvdPAoOAscvrfW/q6M6tG9HrX3t8kP/giayHX/nW7fGKovB3kQCARlmgv+m7DyZ1bp2saoRHyQih5ZsOvfLJgq9/2axqmkEnXeucCAJyun0JMSHfvPcgF/P8btG2Fz78VVU0SRKrP5hOlrbuPeVweft1baZqpFGDCLNJt3HXCQBRrf1COll0un3LNx06lZHrZzEmcaIkShljcVEhHVsmbdl7qqTcrpf/bvuQgJHd6T14Mrtnh1SrWU+vU35ACFFKG8aG5RVWHDqZ/Q9t0/jHgEEQcFmlY/htbac+OIifj1qfCmMAIVRQXDn++a8vFpTKsvh3XdjLHNhfvDmua5sUVSMYQYRQQUnl1Pd+/uTbNWezCgKsRgDgtccOQqhq1GLSz3r1vtZNGgAAVm46/NS0HwmtbketESUb5D1HMhBCXds08ilqy9SEC3mlx89cwLWNbvNf02iQz2Tmrd9x/EJBWZOkaN7+TQiJDAtomRq/eW96hd0l/j1uCwaALAqX8ksr7e7bujRD+Po7DwCjrHnj2HU7jheXO8R/oAT1PwMMCEGfT40KD3z32dExEUGE1l5i43kYj1eZ+OKcPUczTEb57wdzAsZlla7Xnxxxz9DOqqYhhDBCR09fePDFuau3HpElwaiXNUJqzzsBqGra0xMGjh7SiTGQV1TxwHNf2p1uSRRrle4UMDp4Iis5PiylYRRjtGPLpNXbjpVVOq6XJKCU6XWyomqHTmav3X40NMjauGEUQlDRtNiIIFkStu47DRiAfzvhKYvC0dMX/CyGds0aEi5yV5uzxBiwmPQWs37t9mP/RK3dfwYYIIRen/rE/f3u6NdWUWqfVWAM8EbP5977ZfHa/VzI42/+XBGjCrv7rsEdXn30doQQo0wQ8KotRya/Nu9cdgFvHLqeIi1CyOXxtm+eNPO1+xhlCMHH3/j+4MmsG8SXGGOXx5d1sbhP5yYWk8Ggl+Oigheu3isK1yU+vBxYi2XlzpWbj+j0UrtmDXkPbMu0hFMZuekZuTf49rruP0IYoe0HzqQmRSXFh5PrNHvzGkiT5JhDJ7IzcgpF4R9WdvgHfFwEodurNG0Uc8+wzjweqPVlhBCM0ZxfNv+0dIfJINfqGyAEbzASDSHA+I8QEUHoVbTIMP/H7r1NJ0uqpomiMPe3zRNfmFNcZjMadJwK6XrvpmmayaCbfG8fDJGA8brtxzbtSZdF8QbfQik1G3X7j53/efluBgCltGubRt3aNvb6lBtMGjDGKKU6WUQIvj5j8de/bsIIMQYQhM8/PDQ4wFzTcEEIr30rjNGN62WUUoSgRujT0346lZF7w9kPCAB4/uEhgoD+cWxL/4CPSyiVBPzAHV1Dg6yEkFqPBZ8P3nMk46NvVkEIIULXPi2EoE/RSiuclNJrTTivTDvd3uokFULI6fEO79umeeNYjRBZEtduO/r8+78CCASMbyxRzqOFtMTogT1aaIQoivbtwq1Ot1cQbpJmoZQa9PLC1XuzLhQhhGRJHDuiq6bdXJiHcxoIGL0+c/HGXSckUdAISY4Pv3toJ037Q4eFMcaTVDWwgexOT6XddePQgjImCbigpPKZd+fbne7L3Ky1gzO1YfSYoZ3LKpzCPypy+AeAQdNoWnLM3UM68Qbs67kKZRWOlz5aUFxm1+tq8cgRgm6PLzE2bMKoHhaTQdVozREgCKGqUlkUurRqhBHSNIoQ9CpqdFjAbV2acStxqaDs+Q9+5bzZNw1J+XjaqEHteQPc0dMXTmXmiXXjbjLq5WNnLu4/dp7/S8vU+CbJ0R6fetOLljEmSVjTyJTpP508dwkjRCkbN6K70SBV83VLohAR6m9zevidomnE61UGdGs+sn97zhB14xYvg17aeejc67N+v0FNmjImiviBO7qGB1u1/9woUj0YAICAMvrEA7fJkni9sgKCkDH6+qzFh09m+1kM15JAIgg9XjUiNODnGY92aplUaXeLAuZ3JD/VjDEA2e23tZn7zsTJ9/XBGEEAPV6lSXJshxaJqqohhGZ8u+ZCbolYt+lQzt41sEdLDssdB87kFVXIUp1SW4RRnSTsPnzO41UAAKFB1l4d0hwuL66D3gIhTKeTsi4Wf/7TBkXVEIKhQda+nZt6faqAkaqRGa/c9+usxwd2b+72KACAAD/Tl9PGf/nW+N6dm1RWTSawG2PVbND98PuObxdu5aQHtT4OQmhKg8gHRnQrtzmFf07D0i39QSGEqkpaN0no27kpuw53Fb/Mlqw/+Mvy3WaTXq2NfpQyhjF8atyAyDD/73/f4VUUTnbdKi3e32qghFLKjHrd8L5tQ4KsI/u1i4kIdHsVvU5qmhwjSQLC6PzFohVbDst1S9tDCIlGWjdJCPI38Q6O9Ixcn6LWTTwEMMp0snQ4PafS7uY55SYp0ZKIad3YuwghVrNh2YaD+45mAgBEAQ/s3lxRNVUjrdLi+3ZukhwfPqxPK49X8SnapLt7j+jXzmTS7TuSoWkE1ul2AgjBD+eu2nc0QxSE68yEMFHAw/u1SUuKdnl8dZRNqQfDDVNdCCqK+uh9t8lS7e3yPN1+Kb/0tRkLOb1KrQ9PIyQuKmT8yO4LVu3bfuC0v8Xo8apTHxr80uTb8wrLJUngzJDhIX6UsUB/s7/F6FNUP7OhbbMExhhGaP7yXZV2V10VBCEglDZtFMOBcamg9EJ+qU4S6074JYo4I6fQ7nDzf2kYE9owJtTrU2EdThVjAGNUaXev23GcEAIhTIoPt5r1ikpCAiyKqnFpQ142TkuMpJQqisY5J+vi0lDGdJKQW1D27pcr7E53rdV9hJCqaqkNo4f2aaUR+k/xlNAtjATkcvu6tG3UtU2jqod81VMHgBDq8SrPf/hrfnGlKArXSwtqGn158tBKu3v2/PV6neT2Kp1bJT96b98l6/ZzEi3OGm80SFXTAgBQSo16uXFiJGOMUHrg2HmfT6vzDQcJYZw9CQBQaXfbHG4sIAbqmupFEDo93srLYAgNsoYF+6kqgXVTMKeUmQzy9v2nC0oqAQAmoy4uKkRVNYQxQgghqNfJZpMOQpBxoQghJAq4Z8dUnSx6Fa0uhEiEUD+rccOuE3N/23q9lBqfQ7pnSOekuDCX+59hHG5dMEAEfao2enAn3hJ37e1CCBFF/MOSHRt2nJBl8TqZe2R3egZ2bz6kV+vPflh79PQFg04SBPzKo7dnXypesGafxagnhHBaucvkqnx6BkAIeDtqQXFFSbm97s36EADGaKCfiX/pUzSfT0N/svQFIQSwKuo1GXVmk75aB7EOYKCSJJ4+n293egAAsiQGWk0aIaJQ1WKtk0WTQZZlcd6ibVmXigUB3963zbSn78QQUnBz+8CvIYtJP+uHdcdOX6g10kAQaoTER4d0a5uCa0vu1YPhT5gFh9PTsWVSrw6pl/f/qnwrwwhnXSyet2ibSoiAa9luCKGikohQ/zefGrlpd/qnP64P8jeXlDseGN61ddOEX1busTs9kPd1M4AQMuh1oGbAcZnJtLjM4fWpqO4d4BBQBox6qfqeroo0/tR5YAACxL/doJeNepnQP6EohRB0OD0ut8L/jgXEGMAY8xtaFLAsigiizAtFj77+3Rc/rX/u/V827U4XxT98Hnj5z/UyBAhBm9316oyFXp8KYS0E3RwDk+7ubTHpFZXc+r7SLQoGCIGm0UE9WoYF+6nXCPUxxhAECMHvf9+WnpFrNuqvDeM4CZeiqG8+cYfVrH/mnZ8YAz5Viwz1v2doJ4/P9/3i7QadRC+fME4aV8XAeHm0kjs2qqpRyuroolSv6hS7JGJJxFyR5E+l0Rij3EJqGvkLOUqMEN8WVSUutw9CKFxOSAkYy5JIKTUapJ0Hzr7y8cJFa/blFpVHhvkjCBVFVVTNq6j8j0/RVI1ce9cQykxGeefBsz8t3Q4hqK10AxljDWJDe3ZoXJufe8utW1HgECHo9irJCeE9OzautU+bVqlFnftmwdbrkVxgBMsqXY/d22dE/3b3TPki61JxgNVUWFI5YWSP1KToWd+vqbC5RBHXEh3KooAxgEDVSGm5IzI0IDjArNdJ/GJmdbzUISyrdPKvAvxM/hbjhbxSGcA/YR0Y4FEQBEBRNJ+iIgj/pGkBOlkAADhc3uxLxaLIayQQAIAFJIiYAaCqpFvbRs9MHNimaQOPT9E04lW0zJyCjJzC4lJHSaW9wuay2VyFZbbScodGKBdzqTYdhDBZFmfMWze4d6uQACurxZJAxtjYEd2XbTp867tJwi1pFqBPUVukxqUlRdeU/KjOlggYO1yej+audHl8ptrAwKXcurZtNO2ZUR/OXbVm21GLSe9weZPiw4b3a+v2+H74fScD7NryGWNAlgRRxBBCl9t78tylpo1iwoL9OBjqeJgZAAjCwlIbAIAxGhHqHxsZuP9YptEg1zWhrNGk+LCQQCv/stLuqrC7sYDrCCUIoapqcVHBJqMOAFBSbs8rKjfoZXRN9xyl7PlJQzq1TgYArN1+7P05KyND/RvGhCbGhffunOZnMTJKbQ73rsPnfvh9x5ms/AA/kyyKNcsLAkYFJZXvf7XyoxfvoYTAK204J2po3SQhMS4080LRLT7ncMuBgV+EIYHWYX1aAwCu9U4gBAywnQfPbth5ws9qrM1BAqpGggMsM166d8veUzO/XytLIoJQ07S+XZu1aBz38berLxWWiSK+1nJTxjAAooAFhGwOz86D58YM7WzQy2FBVghhna91hjE6nZlLKeMk2+2aJ67acozVrXFQEFBRqW38nd1DgqwaIRjhC/mlWZeKdZJYx3wUF/hp3CAyOMBCKdu675ROlgihsixWxfGMgctVixNnL3ZqnayoWq+OTdZtP/7Dkh1Gg6SoRFUJpVQQcICfyWTQNUqIaNuswaGT2ecvFFnNhup6C/eP1m47Ov7O7o0bRmoaxVdfXkyShLuHdHruvV/8a3te9THDjZ6komoRIf7d2zeuddifX+cz5q3V62V6nZ1VfOr0Z0YZ9NLjb/7g9aqyJDhc3vjo4Emje1XYXeu2H/N6FQHXckvxSgXGiLO0p2fm5hdXMAB6d2pi0Ela3UQbKGWiiDfsPKERTRQwpXRo79YN40Ld3ptnGCEEhFA/s6Fv56aSgDVCIQQZ2YV5ReWSWNd5PQFBp9vXoVVDq8ng9Slrth7TyaKmEavFyAfxIIQAQgYYQvDz+RuOnMqRRMFkkN9/fszdgzuqGvGzGEMCLSFB1tio4Mfuu23h508u+XLKN+8+NGf6g+NGdnf7lJrXh14v5RZVfPnzxlonHbjt7dkh1WLW01tbRfeWAwNjTBBQ++YNuQQBrG1n12w9dvRUdq2nGSFoc3gm33vbgO4t7p86u6C4wmiQVU3DCPbqmNYgJnTT7pNnMvMMN5xbNxl0EAKjQT6dmbdu+3EIwNA+rSJC/YlG6xjEYoQKiiv2Hz0PIKSUhYf4PXx3b4wxl7u94TfiSrv7/uHd2jRLUDUii4Ld6d6y95RYZ5Jw3lUVExHYo10qgODYmYsZOQWiiDVC/S2GK1IRDGCMi0ptD0z98tcVuzFGVrP+gxfG3DWwo8ejeHwqJdTp8Cxdf+D9r5b/vm6/qmptmiZ89NK9I/u3V1StZvOfJAibd6cfOpGFMSZX92hAAEB0eGCfjk1cHgXfwq2st9wno5TJkjS0dyuu2XENVAAAYNb3awmt5RbCGDld3n7dmj3/8JAp0386dDLHbNRrGtEI87eaHr+/P6F00+700kqnJAgQ1DJ/wp2yQD+jKAgQAq9X3bDrhNPlDQ6wvDz5dkqpplFOb3zTC54B+MXPG6tLImOGdn7knt4+RVOr3gFec4gRgKDc5ureLmXqQ4P0ssSv8IycwnU7jltNdaKF5azxTo/vwVE9m6bEAgA+/WEtz5FSxvyuYG7l2S0mi0JeQflzH/z6zuxldqc3wM8045V7v3hrXFxkkMenUsDOZBUsWX/gsTe+H/X4rIzsAgGjR+/pWxPVlDK9XsrOLVm4Zh//RWrCFkJACDEZdD06NHa5vbcyt9KtBwbGQgMtHVolXUuSRyjFGC1Zf+BUZp6Ar6ZAEjDyepXkBpFfvD7215W7F6zabTLoNEI4n8pdgzrERAQeP3Nx9+FzFpNeUVWfolHKrm4jgwAA4GcxChhpGrVaDOt3HN+4O50xNqR3q1ceGw4gcLm9gAEB34QjCAKw70jmvqMZnJcXIfj64yOmPjhYFLDL7SWEigIWBCxgJAoYIeRye1WV9O3S5OvpEwP9zHyAhhD62Q/rFVVjdYABd8nsDvfdgzs+em9fUcBb9qbvOHAWYwQBoJT6W6rqgJpGfT6VR0GEMp1OVFXy/tcrxk2dnXWpSK+TR/Zv99W0CWlJUQ6X12SU/S1Gxtj6Hcff/3qFqmlBgear8kaUULNRv2T9gSOnchBCPCl81RWWlhQdHxXsU9Rbtjvj1gIDhJBR2rdzk+vULKHXp/64dKfd6blq5Bwj5FU0P4vx62kTisvtr8/8vTrNzwAIDjA/PKY3AOBIek76uUuqSkxGXWSYP8aw3OZCCCIEKaFen8rvfD+ridMIQAAggO9+uexiQRkE4Mmx/b+eNqFDy0TKWIXdRSkVRVwrKhgDoiiU25zTZy9zeXwQQlUjEMLnJw357v2HO7RINBp0RaW24lJbuc1VWFLp9vhSGka++cQdv3/+VESIP7+5MUIrNx9etHa/0SBfz9uGEGKMOAyKy22iiJ8Y2++z18ZKsuh0ez+au9rl9nHeGp0smUxV+qU+RXW6vdXUG5QyAJhBL2/amz7mqc+37jsFAGjROG7OOw92b9fY4fTyW0OWxaOnL6qKduB4FqWU93FUK6rIknAxv2zZhkPaNXUhhCBjLDEurHWTBIfbh/EtCoZba+wTIej2qi88PCQhJvSq/6USIgp4464T3yzcBhiDNWAMASCUUso+efnepo1i7npiVmGpTSdLvP2uwu568ZFhvTqmuT3KO7OXOVy+qQ8OnjS69+BeLds2a6CTxVOZ+ZRRg06+o39bP4sBQng+p3DT7pMapRAASRJy8kqcLu+gni0VVUtNjBrRr21YiL8oCCVl9tzCco1QQcCiKFwFCQihKAoX8kodLm/PDqm8j5Ax1jAu7I5+bZPiwhPjwlIaRiYlhLdr1vCO/m3ffHJkjw6plFEAgEaoKOBTGbkPvTy3VqlFCCFGSMBII9Tp9lY63KHBfv27tXhmwsBJd/dhgAkYf/r9ut9W7dFJAkRQIzQowHzfsM6hQVYAQE5eyY9Ld17bXC2JQkmZY+PukwJGzVJiQwOtfbs09Snq/mPnMUaCgF56ZFhosN8Tb/7gcHsVRbU53HzCjjHAGNPJ0tmsgmF92/hZjDVHI7hEokEvZ18q2bznpEGnuzWJlYRbyi5QwoIDzGnJ0eByd1D1TYshAgBs3H2yqLSSU/DW/Eafoo7o1+6O/m0ffvnbM1kFZoOOUIoQ9Pq01MSo4X3bAACOn71QUFK56PMnE2NDNUJCAq2dWiXfOaD97Pmbpn+x1ONTyyud0eGBAIDwED9ZFj0+BQuCRmiA1bRg1d7khPAnHujPhz/vH971zgHtDqdfOJOVt+dw5p7DZ7NzSwUByZIoibiqO4kxCKEgoO8WbdU07a2nRvGpI00jsiQO7tVycK+WoGpatcqIqRrBCHEknM0umPTKNyXlDkn8Q/3gsngJ0Ajx+VSPT42NCOrdOa1Di8TmjWM7tkgEAPoUVZbEVZuPzPp+LYQAIggAVDU1KtTfz1wVM/h8qs3uCQ2yXDX7wRjTyaLN7n7xo9+KSm3PTRoS6Gd6e8qdDWPDnnv/lwA/o0/Rpkz76Wx2PgKgZVpC++YN5y/fVW5zGnQSYwAjlFdUsXH3yfEju19tLRlgDDRpFBMREuB0ewWMbkE83EJgwBC6FOW2Lk2tJgO4kvKfMCZgnHmhcM+RDJ18xRgxhEBVtQCrcfozo35fe+CXFbsspqosOELI7XE/NLp3WIifqmo5uSXPTxrSrlmD4Y98ci4rPz46ZFDPFhPu7PnYfX01Tfv429XFZbxMxlIbRhn1clmFgzfCEkolSXh39nKjQTfhzh6UUp+i6mSpU6ukTq2SRg3sWFBckX2peM/RzJ0Hzhw/c1ElFEOIEMQYIYQBoN8u3JZfXDnr1fuC/C0IAcaYomqEUAEjhJGqaoQyUUB8FA4hvOPAmRc/+vV0Zr5OlqqVGQihlFWFvvHRwd3bNe7WtlFSfER4iNViMnBcEcJkSdyy79Sjb8zzeFVZEgmlAoaKSqLCAvysVRe2zeEhlNTaHkIolURBFPCMeWsEjF98ZKgg4AmjekgSfv79X1/5ZAHf/MT48DnTJ8RGBo8c0G7quz8fSs8RMCKUmk26bxdsve/2LlelvxBGEIKmydGxkUGH0rPNBh2oB8ONDAOCHq/SqXWS/lo2LgYAADsOnjlyKifY/4r7jDFAGbu9b5sgf/OOA6dVjWIBEUXDGDmcno6tEgf1bI4Rcrm9ZqN+YI8Wc3/bsmVPOoIwt7Bi//GsxWsPvPHEHU+NG7DnSAZveFY1EhhgDvQ3XcgrrQk5gMDLHy8oLrU9M3EQn5Dk3Xsmg5wYF5YYF9a7UxO311de4dx1+NyS9QcOp+fYHG4IiE4W9Tpp7bZjA8d/8OaTI7u1S5ElQRIFIP4R8IhVSSdaUmb//Kf1Py7b6Xb7+E/BCHl9KgPMZNAlJ0T06ZzWp1NaXFSIQS9V015oGuE1NYzB9v1nHnxxjtPt00kid7EghIqiRYYFmo16QimGML+kUsDXrWdzo2rQyzPmrSkut01/5i6DTr7v9q4AgOc/+JVqzN9ifOPJEbGRwT5Fa5IcExbsxygFGPF0XObFwq37TvXumFbTU+IS3eEh/tHhAXuOnANGXb2bdOMKAxBFoVlKbFXi6HIQxhUVbA73xl3pYm2s6xDC27o0o4wFBVgoo5QyScSUAYjgvbd3sVqMTrdXr5P5tM2F/FKn2xsVFqBqhFB2OD179JOfzZk2YfI9ffYfz6p+z7SkmOOnL1T/LMYAhAgB9sGclYfSc155dFiTpBjOmupTVD4kgBEyGXQmgy4mMmj04I4FJRUfz129aO3+SofLbNDrdVLWpeL7np2d0jCiT6cmHZo3jAoP1Osk3pLoVdTTmXkrtxzeuPOky+PDCImigCAklDrcvkB/U7+uzZ4a279hXNhVJULOKitgJAiiw+VZtGbftM+X2pweSRSqgw0GIACsQUwI/xYIYGFJJcboBlczH/SRRPzj7ztyC8p/mfmYKAr33d4VAvjsuz9jjAQBqxqRJeGL+RvW7ThWna6AEFDCfl93oE+nJrWO5rVumrB2x/Fbsw59q4ABIejzKWmJUUH+lup8f83EXG5h+c4DZ0xGHSHXggGIEgYM3De865nzeau3HuNTjr06pt07rMtbny0Z1qdVk+SYsCBrtd9dNdgFgCyJHq/y8Kvf/vDRZEnEl1P1oFmjmAWrhGvrfQa9vHlP+qETWSP7txvSp1W7pg1kSQQAKKoGGIMIgcuhTniw/wcvjOnbpem7Xy0/dDLbZJBlUaCMncrIPZp+waeqVpM+PMQfY+T1qrlF5aqq6XWiKAiSKFzeEA0hOLR3y4fu7t2xZdLlMwoYuzwzQRllTBIFBtjWfae//HnDmm3H9LJY1SR7+aZQFDUmIpCDAWPs9Sm5BWWCgG/Q3FHVtQWhXi9vP3jmpY8WvDx5mMmou/f2LiohL7z/65gnPr3n9i5tmiZ8/uMGn0/T66vUg3g+cO+RDKfba9TLNQM/PqbXonGcv8VYVuH4m1R//+ZsEsLI5fb16JA6ckBbURBqShXyZux1O479snK32Xh1SZ/3ThJCBvdqZTUburZplJwQGRMRhBAaN6KrQS9PfGFOlzaNGjWIUDVNEPCewxk7D541Gv4g28MYqpp28ESWUafr160ZIRRjZDTI3/++g7FahopkUdAI3Xnw3MrNR85lF9hdnvAQP4tJjxDipajLHeBA02hifFifzk3sTs/RUxd4rQ0jJEuiSS9DCO1Ot83h8fgUvSzp9RJGuMpCCsju9ESFB77z7F0vT749OjxQ1TR4GagQAkYphBBjjDHad+z8+1+vePvz309l5llNenb1xkKvT01uEDF2RDer2QAhtDs83yzcWlJmu5bVmDNHgcu6Fuxy6nbP4QyXx9etbWMIQau0BJvdvedoxsHj2cs3HmQACFcaGQiQRmlSfHhKg0hCWHXllH94P4vx1xV7yiqdtyD/5K0CBhHjCrtz5ID23ds1rknYxjtAvT71k29XX8wrw7W1PUIET5/PV1SteUqsv9XUJDm6T+cmvTqmtkyNLy6zp2fknjqfP7J/W4wx7+nftu+03eERq+xAVRvsuZxCAME9wzrzElWA1bhm69HCEtu15DT8iBgNMgDswPGsLXtP7TxwJutSsZ/VGBHqDy8PjvIBCU0jfhZj705plNGdh85Vi1BVh/iYq+Je1sACAIgCqrC5OrRK/OKNcb06phFCKaMCxhBCbhI42RGlbN32Yx99s+qLn9Zv2n1Sr5N0snit+4ERtjvcnVs3untoJ+58llc63/96xbWzShAAjVC70yOK2N9qdLi83FOFEOok8cDxrEA/c9tmDSllrZrEn87Mz8kt8bMaiXZNyzDGDqfbZNQP6N68poAGBIAQqtdJa7YeuZBX8vd5/v6dYICw6oK///auqYlRV+h2MgAhrLC7Xvl4AQC1N/RDCDGEe49mrNp69PyFIlkWTQY5LNhPFHBIoHVwz5aZFwrtLm9Kg0hCaGSYf1mlY++RTEIpJYwywABjDIgiNhl0vTqm8U5PjNHF/LLdh89JtRFKV+V0ADQb9Rih7NziAyey1m8/vvvQuYgwv+jwIN7pwdmTCKUCxp1bJxNCdxw8K16JrmsZ5ysd7q5tU76aNiE5PkJRNYwghIjTyHIjWVhc8flPG16buei3lXv2H8t0V/Wxs1qiqcsqXncNat+hRaKmEkHAWZdKPv9pg0F3BekgZ1hLTgj/+MV7n3toyPiRPcwGefOedJ1OopRhhAhj57ILendMC/Q362SpUUL4up0nbQ63cE3sgRBQVE0UhSG9Wxn1Mr2SiwlCcDankMuc1oOhNh8JQlUjoUHWe4d1iQ4P5COFf+AEwl2Hzs1ftvN6I//g8n1ZWGI7evrCkg0Hfliyc9zI7pRSt1exmg1d26S8NmOhKODkBhECxt3bNZYknF9YARDECEEAGWAYIkpZ22YNkuLDCSUYIcDYr6v2SKJwrWcLEVQ1Qgh1uX2qpulkSSeJTrc340Lh0vUHT569mJwQERRgQRBqhPKRVIRQ51bJBcWVB06evx7dKpdiadUk4etpE2MjglSNiAKmjCEEEUKKqh05lf3WZ0te/mThrkPn8gorHC4vgECWJEkUeEXv2sKfomrhoX6P398/PMQPQIAQWr3t6IadJyWpRvkCQkqp1WKcO31Cjw6pAX6mSwVlr3yyQLt861PGZEksLLG5vUqvjqkYo9Agv5Jy+9Z9p3k/5TXbA1RCWqXGJ0SH0KvsPEJ2h2vNtmM3Jiz7Hw6gIVRUEh7sFx7iB64RFWYAbN136iY0LRAIGBsgpIz5FA0wr0EnZecWvzN7+eR7+jRvHOdweSe8OGfC0cx7h3Vu3DBqyriBU8YNtDnceYXlJRWO4lLbso2HVm45fCYrb2CPFpRQIIBmjWKbJcecPp9fc+AdIej2KN07NG6dFu/2KNmXSnILyypsrryickqZyaijlC3beGjdjhOPP3DbA8O7hQZZeSDB+xdefXz4iXMXj5y6YDLIV7k0fAwjMsz/3Wfvio0M0jTCab94PL3r0NlvF25btukQAkAUsc3u1umkxomR0WGBbZo2SIgJUTRt5rw1GTmFvPRe/Z6KqkWF+rdIiSWEYoQYo3sOnxOEK3wkjKDN4R3au1XTRjEMAEro0vUHM3OKQoKs2uUsNiHEZNQtXrvvrkEdOrduBAAYM7Tz2m3HzmUXGPRSTR1hxpgkigVFFYfTs3t2SOUjIn8UDQFo1CBSFJDXR+rBULubpKokJMgaFmwF4OpBTwjAtn2nIbzumBn3+0vK7FazgTcaCSL2+bSE6NAB3ZpJopiRU3gmK18ShE9/WPf979tv79umQ/OG/lYjj3plSVA1UlrhcHuUY6cuahrh+lEmk75ru5T9x7OC/c1qjbZkjFGlzTVxVM/gAAsAoNzmzMgu3Lb/9Kbd6YdOZkEIjAadppE3Zy3ZtDv92fED+3RpymsIhNJAP9ObT4wYM+ULRdPQlXN2vKPh9cdHtGnaQCOE+1eSKJzJyv9+8fbvf9/udHkD/U1Ot8/jU/t2adqjQ+rA7i0SYkL4t+cWln3yzZprM6Q6WerYKgkiSFWCseBTyP5j5zHCV2wmhIwBSRT4RUQprbC5dDrxqo+HEFBUsmTdgS5tGhFCG8aGdmqVdDIj13DNBCBEUFHJmfN5qkZ4pz2sEUPHRASJguDxqvVuUm0fAiO709O9bcqgXq1U9Y9RKQYYguhCXsms79cRSmBtbCsQAI1SAeOnxvUvq3SWljskUVA1GhcVnJYUndIwUtG0CS/OySsqBwCEBFlbpsadPJf77cIt63acWLXl8OJ1Bxat2ffLit0l5XadLIoi7t4uJSjAwluhEIIrNx+5uhgi4PMXi/ceyejcKslqNhj1UlRYYKdWyb07pjWMCT2XU5hfWG7QSUa9nJNbvHLzEZfH17ZZA0kSKGWU0qjwQIfbs33/aX0Nrx1C6PL4xo3o/uTY/tyG8Ch5waq9z747f/mmQ0a9bNDL5TZ3bETgq4/f8fLk4V1aJ/tbjV6vCiE8m5V/39NfnMsu4D56zYDYaJDff25MgJ8JQIAgPJedP3v+Rt7pffWFAkCfzk34hZJ5oXDlpsMW8xW0/pyyLb+kYkS/dkaDjiN8+4EzXq+CamvM1uulnh1S/S3GmnrSEABBwL+v219cbr/VmCdviU/DGJNEHBrsV53Or/p3CgAAe4+e1wi9Hu8QA8Dn0+4Z1ikmIjC/qAJC6PYoik+ZPnvpd4u3zfl1891Pfnb0VLaIMcbQ4fTcNajD6m+nNm0UQxlVVKJpRFFJcKDFoJdFAV/ML8u8UAwAAJSX3qLbNWvgdPtqPmxKmb/VuO/4+Rc/XuDy+CgFqqqpKgkP8bv/jq4/fPBw785NnG6vqhGTUc8AmzFvzdipX+YWlPHgAWM0aXTv5ilxTqenOl2jEZIUH/7sxEGckYvzar76yYInp/1w/mJRaKCVUlZuc947rPPvXzw19o5uJoOsKKqqEZ1OLLM5H3lt3unzeUaDXLOrj0vptElLaBgbWp2P3rr3NLhGioqLnhxOz9l37Dz/PH06N2nWKNbl9l01iwMRLCl37DuWyYN5q8Wgq41yk4+SZ+eWXMgtBVfyYvC/JsVHMMoAgPVguNrJIYSajXoueVbzMfGq0PEzF5TrNMFjDD0+dcywTpEh/i99uKCgpLJLm+T5n0xunhp/Ma/0lY8XvD5r8enzeQa9DiIoS1JZpbO4zB4e7MdrApcvYMjbGSRRKCy1HTqRxd9Z00iA1TSoV8sq1ayaDQuE+pkNm3alf/7jen4ssIC4+GdKw8gv35ow/s4elDFFIQLGBr20bsfxu6d8lpNbIoqCT9HCgv2G9mkliJifXQEju9Mz+Z4+nHMfI3SpoGzUE7NmfLeWMWAy6Lw+FUL4wXN3z3jlvoSYUI0QQqkoCgJGqkpe+WjBofTsa4kRuGP5xNh+rNqVBGD9juOKpl0bZyMIDHrp/a9WcB6DxLiwqQ8N5gK4NaM1nhhev+N4NYpqLZwxxiRJvJRffjG/FIBaWGIaxIbcgrRit4JlgFyUILSqQnx17fn42UtqbaxBGCO709u3c1q/Ls1mfr/O5fU1axTz/KQh/bs1XzDr8cE9W7o9CtdWqrC57A6PzeFWvMrhk9m8p6g6Q1pTXlYWhSOnL5TbnBhjTp/Rq0Nq44aRLrcPXdmFzxgQMPry540LVu8VBD7PCTFGlNLgANMHz4954oF+GtEIpYABo14+eTZ3zJTPz18s0smiRsjdQzrGRwf7FFUQsMPl7dgisV/XZoRQURB2HTo78tGZm3anm416ESOvoup14pdvjZs0po+IEY+DEYSc4WnOr5t+W7XXYtRpV+b7EYIej9K3S5N2zRrwXxVjnF9Ufv5SEbzGQVJUrbTCoankzPn8tz9fwmeJRg5o/9LkYYpKuApMzYPOe8N47+B1jzRjGMGzWflcOOKqVzWIDr0Fm7hviQBaI9Rk0FVZhitPm9vrKy23g2vCZwggIdSol+8Z2mXphoNFJZWR4QGfvTG2dZMGbq8S6G8O8DMhjDxeX4OY0MjQAEXVuK5Uw9iwAyeyHK5a5g85d93RUzk5uSUBVhMEUNNIfHRIt3aNT2bkXt06yJgoYLdHeW3GorBga9c2KX/0IzAAAHth0lAAwIdzV+kkAQCo14mnz+eNeerzX2c+FhcVHB7s36llcvalEgiAqpG7h3QKDbJCCDfuPvHwy99W2F1mo8wYUFUii8LMV+8f3KuVphEuvg4uq9cdOH7+vTkrdHItcqYIQoTBI/f0FQSBUkYohRBu2nOq0u4RhCuiZ43QyNCAlAYRecUVJWX2+Ut3GmXpzSkjZUl87L7bEITTvljq9viMelm9PALOU0wQwuy8Ek5kf+0zpYzpJDEjp9Bmd/lbTZRSUF2OBCAi1J/TqrN6y3BVBMyJcsOCLPxKu+wjUQjhuawC7rmya8yCze6+a3BHr0/ZvOekLImaRjfvPuny+Aw66aNvVn3/+w5RQBaT4d1n71r42ZPzP5n88yeT1857/qXJw7buTS8qtcnX9MYwxiQR5RVV7D9+vkovCwLK2IN39UxtGOX1adeOoRoM0qWCso+/Wc25dWmNxj5NIy9MGvrMhIFen8b/xaCTz2UXTHyhKpof2KO5QSfbHJ5WqXE9OqTylpOHX/7W5vDoZJFSxihDGH366gNDerXSalzPjAHGgNvje2PW706X79oauSjg0grn8L5tWzaOo4xxwh0I4Za96XYH16ao4cEzcO+wzr/MfOyHDx+efG8fP4vhq982P/vO/JIyOwBg8r19Z716f4PYsJIKByfkQwjFRARRynyKuuvQWbfbh2obS+R1zIsFZZzv9aqgITTQSv8sxeD/hJsEAaHUaJBDAq20RlDFQ76si8UOlxfjKy4RTpLl72e6vW+bSqfb7vTodKLd6XnvyxWPvPrt1Hd//mjuKotZX1LhvH94154d0xhgfhajIODMnMIZ89b8uGQnRqjWJ0Ep0+ukzbvT3V4FQoggZJTFRgaNHdGtVsp7VSX+VuOewxkbdh2v6eLxXgxF1V6YNPSpcf3cHh9vfTMZ5IMns555Z365zdmpVXKAn9Gnap1aJyVEh2zeffLxN3+odLg5JQwEwONTpj89amjf1mqNpgYAAAfGz8t3HzxxXpauhjQvtIWF+D0wopteLzNKOeFIRk7hybO5V5HSUkpNRl33dimaRuIig/U6SVGJUS//uHTn2Oe+TM/IBQCM6N9u1dypk+/pY3N6+GjH3UM6IgS//mXzio2HTQZdrd4/pVQUhaxLxTan58q8CAMAmAy6WmWz62MGSCmVJVEQMKF/0NPyncovqfB4FXw14QL0KkqDmJC2TRK4D00oEwVsMMgrNh2ePX8DAIAx6m82LNt4aMa8NfwQQwQzLxbPW7S1sLSy5u145WXP9LK4Ze+pk2cv8rwOQpAQcu/tXfp0SlNUUtu4M1M18uOSnV6fWjPlxUMIRdVemDRs0pjebo8PVaUKdKu3HHnvq+V6ndSzQ2qwv2lIr1bnsguefe/n0nKHLImUMYyQzemZMn7g/Xd0JYQINZBAKBUFnJNb8uPSHT6FXDtPjBC0Oz13D+7YrllDrtXLWcY37DyekVNguDL3SgnVyWKrJgnc1dmw84TN4cYImgy63YczRj/56UffrJ71/drXZy7aczgDAJacEPH2lDsT48I//2n9tC+WcAqx651pAaMKm6uswlGj4Fb1F4xRUICFkFurCC3cAoYBMAYkSbg668AAAKCg2ObxKWbjFTRHEAKvokWHB8iy6Pb4MEaoSsIHGPQS1MuUMUKYIOCCkopXZyzcdyxz5iv3hwRaBnZv3io1buKLc/YcyTQapOtRJ6kqWbv9eLvmifxDIIRkDF+YNPRI+oWySsdVDOyUMoNe2rb/9PYDZ/p2bnKV4w4QxBi9+ujwgqKK5ZsOc5pKs1E/e/7GFo3jenZMPXQiKyTQOvm1eZk5hRazgRAqCNju8Iwa2P7pCQPYNbxcjDKI4cZdJw6n5/hZDFdlkHiBvFlK7PiR3TFGgADGmChiu8Ozbf9p7UrWJsbFdt2+V2csbJYSK4vC+QvFkijwFJEkCqXljnmLtoqigAFMSYwYd2f3Xh3Szl8qGjTxg027T+pl0WzUXysadsX7I5RfVAmu+S1EAQcHmItKKm8p5pj/+4/Cp9f9L4/nXpVXLS6zcc7dazeaX2YJUSGiIPBGYsAADxYZYxBBr0997L6+H714z5FTOaOfnLVt/2mMUWRYwNSHBgcFmK5Hks4AkyVhzbZj5TbnH6ad0bTk6OcnDa51YIVj49cVu2uTGEWEUr1OevnR4QnRIT5FBQxQxvSy9PrMxR6PmhgX/vWvm9fvPO5nMXIkuFzepinRrz1+h0Enc+mdmlGpKAol5fblmw7j2jrdKGUYwcn39ImPDlFVjYtoQQh3HTq7dd9pq1lPrsQ/9+W++GnDgy/Ovf/Z2bmFZTxc4S30owZ2ePOpkR+9OOar6eNH9GuXc6nk3qe/GP7Qx+cvFPXumBYXFVLpcOPrU+YwxgSECoorrsgRQgAAEEQc6G/m4xn1lqHmVQcwhhaz4apUkihg3lEs4Fr6RjGEPp+mKFqXNo06tkxctvGQyajTSWJ1FMuJLRBE3dqk7Dx4dvHafYMmvP/cQ0OmPjg40M+MEAJV8UktkR/GKDOn8NuFW5+ZMIj3k/NeidFDOh07c+m7xduMBlm7cvQUY7x5T/rR0xdaNI676hkjCCmlDWNDP3j+7vHPf+3xqXxsoNLueu/r5Ua9tGzTwbAgP1UjvFndajG8++zomIgg3stwLeoOHs/afuCM2aTXyNVNEC6X94ER3cYM7cxpUhkAGCOPT1m68aDL5Q3wN2u1XeR8Pqn6/XlIFhHqfzLj0p4jGaqmXSwo83lVWRYFhF5/asSAbs2TEyJOnL34xqzfN+w6YTLorqeAijAsKK3UNHKVOcUQmg2cI+MWSindEpYBI2Qx6WsWGXjq0OF0O10ejNBV20Up0OukjJzCrNziQH/zu1NHv/rY8KT4cLfXV1BSaXN4HC6v0+Vzurzvf72i7fBXFq7am5YUc3uf1kH+Zp+izZ6/vrzSIUrXJWzkpBJL1h3ILSqHlzP6PJf69PgBjRLCbXa3cGUOByPo8SmrNh8BlwlbrwpqKWU9OqQ+cm9fnuQFAGCML+SVnDybKwkC73PmNaxnJw7u2DKpViRghHyKumH3CU3jklZXJBU8XrVVk4Q3nxxZ7f7xztBT53KXbTjoZzXVKs55bb2FMSaKQn5xxeGT2dm5xRnZhXaHR9E0p8vr9ir5hRXcJjdJjvnm3QefeKCfz6fW6nDyjFxBcWVNVwpeNpi6GuIY9ZbhimvVatZfWeVlAACb0+PyKAjBqwYUGaM6WbyQV/rh3JUfvXBPXFTwCw8PHT24Y35RReaFonPZ+cUVDkapKAgRIf7J8eFx0cEBfmY+9zj1vZ9/WbFbr5Nv/JFEAWXkFC5YuWfK+IH8XHJ+u4hQ//emjp7w4pyScrte90fUwRsotu0//ZS7v0Ev19KfDAGl7OExvU6cubh43f4AP5OmEUkQgACqI1qvog6/rc24kd1VTauVkxRCWFJuX7bhkNWsr0lpCiFUNS000DLz5fssJj0n1ACXVWjnLd7m9ipWk/AnxCEYEwVBEoHD5b17SMfRQzohBCtt7gPHz3/5y6ZVW4+89tgdowZ1sJoNbz45MsDP9Nanv1ebl6uebH5xhaoR/ZXcPxBBvSQwcGs1ZNwKRTcGIRRF8ZpkNHA4vTw+rs25YpIkLFqzXxTwS5NvjwoNiIsKjosK7tgqqdaf4XB65v62+ecVu0+eu6ST5ZsKmyOIKCMLVu3t17VZ48QoPrGFENQI6dym0aevPzDp5W+cLo8oCNVHWRDwxfzSQyezu7ZNIYRelefhsz5Gve7FR4aeyy7IuFCkk/8Qb4cAKIqa0iDi/efuliWh+jRfhQQAwKH0nKJSm7/FSC5TOHI9ZkHAH790T1pyNK/NgctDggdOZC5cvc9i0pM/w4DN1YscLs/zk4Y+Nba/TpY0jfywZMfYEd2eGNt/yMQPH3ltXm5B+VPjByAEHxnTZ/v+0zsOnJFE8apdRRBWVLqu9c14veJWq0DfIpNusGvblLZNG1BaNdbDKEMIZV4o/H3dgarUam3OjCjgE2cvrd1+rLjMfqmgDADgcHkr7G6bw2Wzu4vL7PuOnV+99ejbny55+p0fdxw8k1tYIQoY45vr7TEARFHIK66QJKFXxzRwOa2DIKSMNYwNCwuyrt1+jAFYXSXEGDpc3oiQgK5tG/HGp2t/TY3QkECrv9Wwfsfx6jnjywcdfvPug0nx4deToOUA/urnTekZl6rjKIygRihG8OMX7729bxuN1Oj5ZQwAMPm1eRfzSv8U9zWEECNYWuGcNmXUMxMHCQIur3ROfn3em5/+Lgh4WJ/W/bs3W7X1yOK1+xPjQlMSoyCAeUVlW/ae1kniNRsLKaMTRvU01CAH4A7hpt0nD6Vny7V8y/+0Zaj9LAIA7C6Px6ug68i98D2URCG/qOLtz5ZEhgUUFFfUrIZCUNUs1Cwl9t5hnds2Szx4MuvHJTs4B/ZNHwFjTC+Lv6/dP6Bb865tU8hlWRo+hzBqUIfMS0Ufz1ml08vwcpCjqGTnwTMVNqe/1UgouzbfgxGklA3q2XLdjuMLVu816XUAAFEQym3OZyYM7NAikd0wweL1qdv2naomtkAIqhrBGH/80j2jBnaoOS5LKcUY/7py9/5j50URszrDgF/bDpd37Ihu9w3vCgCwO91PTftx8dr9kWGBC1bvfeCObmlJ0ffd3vWZ6T8tXX+wb9dmFpMeXqenGCHgcHlucVmGW6rodl04eL2qomg3qMvwMcKySud9w7u2bhJvMuoD/UwBl//4+xmtZoNeJ8VEBs189YExQztNm3LnHf3a+hRSFyFaxpgsifnFlZ/+sE5RVIRQjW4LRgh96eFhT47r7/H4+GgypUwvC7lF5acz87iW2fVud0kUXpl8e7PkWK9PFQVc6XC1a97w0Xv7AgDpDf36zIuFuUUc8DxOIHpZ/vS1B6qRAC8nWAGAuYVlM75be6085HWPAoKaRgBjPlUb2b/dO8/e5W81en3K8+/9smzDoSB/M0LQ6fIuWrMPADC4Z8uk+HCb00M0giDcceCMJGDKrj30kBB6C87x/KPAwAAAQFOJRvhcSO1HRMTIZne9Mvn2Vmnxew5n8DlJQmj1H40QSRQWr9332oyFAACDXn7uocERwX4uj7cuR0TViL/VtHXf6e+X7ODdGTVdalUjrzw6/Mlx/VweL1eFEkUxr7A8O7fk8oms/cxRSqMjgp4aP0Cnk3yK5mc2PD9pSKC/mVCCrp+zBwAcOpFV1U8OoappZoPuq2njh9/W5lria4zRzO/Wnj2fr9fVyQ9BCLncvsjQAEJZamLUu1NH85TGyx8tmLNgi6pppRUOm91NKFu55Yjd6YmLDOrWLuXY6QuE0o/nrt6yN12sbVic75btsrp7PRj+upukaJpGrqsfjBD0+tQGMaExEYGf/bjO7VVqfSFlLNDPPH/Z7u37TgMA4qNCnxzf38ilG+qQyiCECBi99dmSfUczrmR5gAhBVdNeevj2lyffTgFQNCIIyO1RTp/P4x7R9Q4hRIgy1rl1sl4WHS7PPcM6d2+boqjaDUSu+DsdPX2RESZgpKia1WT46u0Jfbs0VTWtZo6Bdy6t2npk/rJdOlmsSwaJdz22a96wV6fUVmnx8957KMDPBACc/sXSGd+tGd63zZ6Fb8569f6XH7393mFdSiscG3adEAR8W5emKiHDH/7k43mrjfob0UU6XF4AbrVJnn+SmwQAAFyB+HJT9FXZHqiqmsmoe3xs/7kLtl7IK9XJIrvS9615cMttzre/WGJzuAFgY+/oFhka4POpdXw+GCGn2zt99jKupsxqfAbOevT0+IGfv/6AxaRze3wGvXwk/UJpuYNPRNT6hpRSBOGc3zYXl9lbpsY/+UB/QcAYoxtJTTPAANh96JxP09weX1iQ35zpE3t1StM0rWbFg1ImCkJObsk7s5f5FFWokey6fpwA7A53k0bRs169f9yI7t++9xCvXk+fvezNz5aEB/sfPJn98KvfrNx8+Njpi5ydcsOuEwCAji2T2jRteOD4+RufcwiBw+n+J2Dh1naTXB6v16eg66RW3B5l4qge+UUVx89eNBuvmNb1eJWr3k4ni8fPXJy3aBtHF7+D8c3Ud6pti04Sdx069+6Xy7n3VXN2mfsww29r+/W0iSEBVq9PiYkIrGIJq70XkAoYL9t06Mv5G3Wy+PSEgcGBFk0jN+YR4s5VXGSwyaBr06TBjx890r19Yx49X3XyKKXvf7Xi6KkLRr2OEHLTkFnTaLvmDWe/OS4hJiSlYWRokDU7t+TJt35467Pfg/3NlDGX23smK3/HgbPrdhz7fd0Bu9Oz72hmUaktNMh6W5cmflbjTfXOK+z/DDfpFs0m8fjW6fLSWrXbELI53U0axdw9uNOU6T/xzHp1MpsylpoYlZNXwtsieHSLEfT61OmzlzVqENGlTSO3x8fDQVkSeN/HTdMsAsZzF25p1CBizNBORCMQ/8HsxK/knh1S573/0Lodx198ZCiCqCYv4FVIyMgpeOeLpfnFFc89NGRYn9acs6wuBuqXmY+t23GsQ/NEfz8TZ7S/0uAwjNGMeat/WrbT32rUbooEACilkiSOv7MH53vOKyqf8+vmpRsOZl8qDvQz89IEQkiWUPUvywCy2dz7jmUO7tmqffOGwQGWwpLKG2ZIYbnNWQ+Gv2oVLksbVtjdtapaUMYEjLu1axwbFRwUYOZBM66iRAeEMh41ct0DQoiqEUXVIkICdDpBFNGvK3bn5JWajbpWafGnM/NyC8u50syNM0uCgL0+9b2vVzRuGNkiNe6qs84nuds0bdCmaQNKKa3Bg1bzTRBEDpdn+hfLj5+5OKhHixcfHkopraMHwdtyB3RvUeVoXfn+nL1v+cbD73210mTS15HmmvdNff7j+u0HzoQH++04eHbH/tNmo95iMtRapOPjhzanZ9ehc0N6tWqSHJOaGJVXWH6DVDWEoLzSVQ+Gvw4HDJGmEYfLg9DVUuQQAk0j/lZjxxYNKWNTJw426uUl6w8Wl9mq0+Tb9p2JjgiMjQgKDrSEB/s3jA1JjAsPCbRGhPrlF1d8/uN6VdWaNYqdM33ipfyyz+dvWLvtGGMA3VD1nFKql8XC4sqp7/38zbsPxkQEXYUHXp+mhAkCrlUOmccbn36/bvHa/Y0SIt577m6DXqaU/pnOTahphFMQXGtwDp3MfumjXymlAkR1KSzwJB0h9Njpi3uPZjLKzCZ9cICFUHaDcjXn8jh++oLd6bGY9L06pu48cIaPgF/P362otwx/z0+Cbq/P7vBgjGoNQyHkTamwQUzo9KdHPfFAf0XV4GU5W0HAkijoZFEnS1xFga+DJ7Oee+/XnLzSlIaRM1+5LzjAEhxgefju3nsOZ5SWO5CIb+z9EkplSTh4IuuFD379atoEk0FHriSPwAhdz9+hjAkI/bx850ffrDIapDen3JkUH65dOcJWh10B1zpUvPH7UkHZ1Hfn5xVVGPRSXbTTGQM+VRMEJGDcNCXG32I8cz7f4fL4FJVbZoxR7e/DgCjgojJ7Zk5hi7T4VmkJer1kd3qF68gWQlBvGf52XtXlUWxO97VnhTEgCNhmd89btK1po9jwYD+dToqNDLr2JvZ4Fafbm1tUfj6nKDuvOP1c7vKNh70+BSHYu1Nag9hQnoj8dtG2/KIKk1FXl0IpodSol1dtPfrKxwvee+5uTnJ60yicy7TtOHDm6Wk/qRp986nhg3q0IH8SCdezV4KAyytdj7/1w/5j5/2tRq1uDhKEoH3zhv26NuvbpWlIoOX1mYv2Hc20mPQaoQhBn6K63D6jQea96wgh+of0CRAFXFbhOH+xqGVafFpStNmor7S7oXAd9RMIy22OejD8LTR4PIrD4cUYXWsYeG143Y4Tdz0+a/SQjklx4TxUcHt8DpfX61NKyu1Zl0ou5JXm5BUXldh4yxpCSBSxIGAR4l+W76aU3T+868Hj55euP6D/M/O4lDGjTpq3eBsA4O2nRxn1Uq2dSNVOhapqoiicPp9391Of2R2epycOmnxPn+s1IP1JJDCMcVmlc9LL32zceaKOSOBVcAGjyff24RHIhbySts0bdGufwihjDMiyeDG/dN7CbTm5JXwC0eZwW4w6iHihnfLit0/VAACyJKQmRV0qKKvVxeSbWl5Z7yb9veX2+uwuN0a1u0mUMYNOOpOV/8gr3zKXF5n03H0XRcHjcCNJtJj0AkaCgE1GHYR/KKxrhLo9CmPsk29Xz1+6S5ZFroamaeRPfTyDXv5u8XYI4dtTqmQ8a+vMA1wd9HB69rBJH5eWO+4Z1vly0Az+Jhj4tEClzT35tW/XbDsaYDWphMC6fSNC0O1Vpr73i14nJcWFW02GMUM6X/Wye4Z2njlvzYzv1pqN+n5dm+46dE5VNJ+qWUw6SgGltNpWxIYH1Sy/XOsmVdjctxgpzD8pm8R4rcDu8CKEbpCm0DQ6uHerpskxv6zY7VNUSRTKKp0TJwy8mFe271gm4sKaDKiapqpE1TRNo0EB5s5tko06meuJlFU4Dp/MqbS5zCZ93Y0DAwACaNDL3/++w+NT3312tNWsvzYA0DQqYHzi7MW7n/i0pMzet0vT6U+P0uukunhWdTjQqMLmevS1eau2HAmwGuuIhGqTopPF/KKKp97+MSTQKgo4LNjPatbLkiBLkk4WBIxDg62PP9DPz2L88JtVbq/i9ipNk6MTYkJWbznKGLOYDQFWE7/7jUb5xpbIp2out894HR6NejDcfHk8is3l0UkiY7WbfoSQy+194PaukeH+3yzYAgCw+zyRIf7d2jb+9Pu1bq9PEgTGGKEsITq0RWpcWlJUamJUeIhfcIBZFATKKIJQVcm5nMLlGw99//sOBhjP3EMIawpSXT/RCfU68beVe0rK7F+9PT7Q31wTD5QyQcBllc6XP16QnVvSoUXijJfvDQ601GTh/RveESosqXzklW837DrpZzVq5E+PjFHKjHq5oLjy/MVifq1QSjFGGCNRwJSwiDD/tKToxx/ot3DNvs2701+aPGzsHd0sZsNdA8/c+fingf7mlIaR/Eo6nZl/A0Yw3tJbVuE0GnTsaob1ejBcL7txZQDtdPsqba6osABFpbU6vpRSs0kfFGAOCbDqdZLD5REwemrcgBWbDx84nhUW4tc0ObpXx9ROrRslRIeYjbrrneyQIGvHlkktGsc9/c5PgDGEkMenGHSSJInXVLKvtWDQoJe27Dk5bNLHCz97IizYj08X8EFqRdXe/vT3TbvTGydGzXrtgfjokOrJm79sEBhjGOPTmflPvPXd3iOZflbDX1bO5IOeYcFWn6J5fapOEhlggAEEodPjjQwN4Hf/Hf3aPjCi67gRVTrn/bo1n/feg/c9M3vDjhMhw6w/L9+569DZWufUq9FACC2zOWMigy4T6v1h/+vBcB2np8ZdAgBweXw3fpScYdKnqHFRwc1TYn9fd+C1x4cbTbpFa/ZOGNVz/J3dmiTHVL+6wua0OTx2p6fc5iyrcGga9bMYggPMSQkRJoMOITh6SEenx/v0tJ9MRl14sN+nr499Z/bSo6cuiMKNhgH45LBOJ6dn5HYf89aqOVMbxIZy+6Bq5J3Zy+Ys2BIdHvjpaw80bRSjkb+FBB5zY4w27jrx7Ds/X8grsZj1fxkJvADfODHy+w8e2Xc04/2vV5RXuqqU5gTs8SpRYQFhwVZK2aP39uVkshjDI+k53y3eNv2ZUbf3bfP250s++W5NSZlNJ4s3aDGEAFLGKmyua6+zejDc3DLwbaq0u4Trj6QxBiBGHq+y/3hW48SoU5l5g3q27NOpyaQXvu7YMumjF+/GGDvd3ryiirPn8/cdyzx+9lL2paJLBeWKovGWJE0jep00qEeLZyYOatIomlKWGBvGAEAYPXBHt5QGkTanp45GnTFm0EmlZY7Oo16f+86DA3u0AABM+2LpR3NXBlhNM165t3Pr5L9pE3gxQdPI5z9unD57GSHUUIt+VJ2RAKHPpzVLif3izfFc0b1xw6iRj810e3wIYUoZQqhZSowsiTwS4/QWOw6cmTLtx8wLRTNfvf/uwR2XbjgIINRfqQ1XKxoopTyhxK4gQKm3DHWwDNzrtjnc15txu3w+iNVs+Hn5rm37T9sc7kmje63fecLl9n7y0r2nz+dvP3Bm37HMY6cunM7MxwLSy5IoYotJzxXc+I2FEPxtzV6XR/nmvYl+ZuO+o5mqqnm8yuz5G+Yv25VfUsGZHuuYb9XrJJ+qTnjh69efGKGo2uc/rpdE8bUn7ritS7O/jQQiCEJRqW3aZ0u/X7rNqNeJIqZ/4zBhAdsrHCP6tU1NjNQIUVWybONBn6LxGUCvT20QG9ahRSKfwuXBz6I1+17+eEFxmZ3zmDSICY0IDXA4PTewCX9YBkor7K7Ldxistwx/osaAIKKUVjrcCN1oOpMXSkvK7FkXi4f1bW026b5duDU+NvTlTxZcyivLzi8pK6oY0LdNXFTwjgNnTQZZI7SmUwEh1AgLD/Lbuje9otJ1/kLRjO/Wdm6dPPy2thV2l8Pp2XMk48ipHItRX8djp1EqS6JP0V6bsUiSBErpmKGdx47o9neQwMMSQRD2Hsl4fdbi3YfPWc0GrmX4dzZZ04i/xfD1b5t9PvXJcQN+XLJjxrw1BoMOIwgho4xajHJwgBUhiJAAAPjy541vf77U61MMelnVCGXMajEkRAcdOJZlMMjXytRfdctRyiouW4b6bNKfRAMEiqrZ7C6Mbt5jIwjYYtIP7N7iYn5Zuc3Jctghe5ZRL1PCenVr/sDwrjO+X8vYH33XfEhN06iqaQJGKtQcbu+3i7ctXrPPaJA+eH5Mi9Q4fgpLK5wz5q2e+d1aTutyc9sGACFUEjBE0OX2Nmsc+8aTI7gM+l+GAUJII/TLnzZ+9M2qCpvTajb8bSBU1yhwXmHFh9+sXrTuQHGZzWTUU8o8Xq5owbJzS0ZM/mRQz5ZPjev/9a+bP/5mFQNAr5MUVfMzG3g9R6+T6nhNEMrKeEcGqwfDn0eDpl22DHV4rpTRNk0TDhzPYgwIAvK3mgBgxKeOHtzR5nDvOXQuJjJYU6vGwXyKpiiaySDFRIROuLN7Qkzo7J83rNh4yGzSv/zIsGYpsT5FEzDCGAUHmF96ZFhhceXCtfv8zAatzqGqqhF/i3HWy/f7W4x/raSgEcI1w09n5r0x6/eVW46YDNKNiU1vGCujmhxhNeMcylhGToEoCj5FNRv0kaH+yQkRIUEWu8O9/3jWjHlrtu07df5iMd9YRiljwN9qRBBQykid+z4orSWArgdDXZeiapV2N8aoLlcPoyAhOsRkkKMjAssrnXqd5PGqARZjckL46q3HIICMUpUQr0sFkIUF+TVvHDewe/O7h3YSMGaMCSLKulCsatreo5m/rzvgVZTQIL/BPVt2aJFo0MsdWyXNW7w9wGoCdXz2CPo86vvPjU5Ljv4LSOAnTBSE0nLHorV7P5q7uqCkMtDf/PyDgwtLK7+Yv1Go20BStbGijDldHoO+FqooTuOnlyWfovXskDritrajh3QCAJw4c3HR2v2H03N0sngmKx9CyJsyVFUDjPlZTABAn6I6Xb5ryQ5r/RSEUj7SUO8m/ZWlqqSi0oVQnYg4OQl7RGjAG0/cMWXaT5pGMIKCgCNDAxNjQwMDzAjBYH9LbGRQ00YxvTqm9uqYxrlidh0+98vyXet2HM8vrqSE6nVSg5jQ+KjgJesO/rJi968zHuvSttGJs5f0OpGBqlDyJoEpRnaH+65BHYff1pb8Se5ExgCnLwAArNpy5KufN27ak04ZGNij2WP39evWNqXc5txx4Gx6Ru5VKs439k9MBrlP5yab96RrhAqoluEQj095/P5+Lzw8VBKFknL7Zz+s++qXTU6X12TUcaEgp9vbOilhUI8W075YxgBIiA4GAHi8vgqHC2NEb/aAeNGtsooToL4C/Rcsg6ZV2F036MW4yrE6f7HI32q8a1DHSrv75Y8XUMq8PuXo6ZyxI7s3axzrcHplSYiPCgkNtvLkzMbd6b+v3b/z4NlLhWVGvRzkZ/YqSnCA5bv3H/Iq6sQX556/ULh+53GjQf5t1R6uMKuoml4n3Thf6fWpMRFBj9zTx2TQaRpBdY4WeHuFhIQjp3K+W7xt8dr9BcWVaUnRd/Rv+8iYPkH+ZkXVAqymx+6/bdxzX9c9HOfxxcNjendqlfzyxwsgBBj+gQcIgcPpmTJ+wGuP3wEAOJdd+PqsRUvXH/SzGgL8TVyvjVf/WzaOGz+yx2+r9h07c4EXnt0exWZ319pGWevOKKpKOGkaY/BWrULfwpaBB9B1QAMFbMOuE1xLfMKoHiaj7sufN57KyH3xw992HTrXo33jpo1io8MDeBZly95T3yzceuhEVlGZ3aAT/S1GShmlhBDaukl8alL01Hfnn8rIC/Q3LV67f92OE7w0mxAb2rxRzNINB2/wICGEPkXr07lpk+QYRdXE2pTOrsUAvLwq7a5P5q35fe3+jJxCP4vh3mFdpowf0LRRDA9CRAEzxvp3a9a9XcqOg2fqSEQnCrjC5lq+6cg7z4yyOz0fzV1FEOMkaBBCn6L27Jj2zIRBAIDMC4WPvPrNkVMXgvzNlNJquUTCqF6W0pJjNI0E+Zt8PjWlQQQAwO1VKm0u4zUSo7WHgBAqKnG4PH5mI7mFCcVuxdQqAEBRVbvTE2A1aoTV5eL5fvH2zq2Tu7ZJIYTeM7TzkJ4tV2w6vHrb0RWbDv22cg/CSBJxQlSI0+3NvFjsdHkFjHSySAh1ur28ZZ8xtmXPqZS+z9gcbn+rURSxx6s63T5/i7HC7goLtBp08g1aayCEHp8SHRZwz9BOCEHEbnJ58/ls3uhaaXf9unLPnF83n80uEAXcIjXumQkDB3RvwRvLKa3qmGIA6GRp3MhuW/ak62WJ1M1Vwhit2HhwWO9Wz04c5FPUGfPWcIZgjKDbqzwwvIvJqCuvdL3w4a/7j5/3MxsJveKNGWU6ndSpVZJX0RRFs5r1DWNDAQCVNpfT7TOb9XUYtAYQQlXRKmwuP7PxVnaUbrkKND9sZZUuwOq6b7wf7sGXvvn01fv6dG4KGDOZ9GOGdR4zrLPN4d5z+NyWfad2HjxXWuHUiBYR4sc1rKpvVoSgJAqyLFhMBotRHxcdlJIQ2TAuTMAYI1TpcC1cs3fZ+kO7D5+7gX8CASCENU6MapkWf+PCAqWUMsDtRmFJ5ZptR7+Yv+FcVqEk4caJUY+M6TO0Tyt/ixEAQCiFNbhcecWqZ4fU27o227DruEFfyzQSn9VmlJNzAMaYThYvFpS9OmPhz588+vLk2y/kly1YucdqMRBCLSZdckIEAGDJhv0rNx3hJB3XuPsgpWFkg5jQ/cfOn8rIva1rs5BAKwDg9Pl8UcR1DF0gBIpKbDY3iPrjqdZXoG+4YX88AlBpd9XdseSPvLTMPunVb197bPiIfu0MepkfO6Ne7teteb9uzQEAbre3wuFh9AoKF0qZJAp+VoNOvm480LZpwsmzuYfSsy/ra9SWDKXUoJeG9GoJwHWtB6GUEipJIgbg/MWiDTtO/LBkx/GzF00GndWinzJuwJNjB3BfjhACIULXsD9RSo0G3W3dmi7fdNhkhNd6HALGdodHpxMlQeCiVYRQq9mw50jG+Oe/nvvug5+8eE9+YfmOg2cCrCbNSwQBu9zeD75eGWA1XoUEnk51e5VHxvQBAGRdLMrNKez+2HCDXnZ7fWfO50nXyKXeKGbQtKoYmv3x69SD4WaWAQIAQJnNiSCqu0mllOl0otPlnfruz+t3nLy9b+smydFJ8eE15wsMBp3BoLt57K6oXp8GIWAA6CQBQIgQlmWRcalWdt373mLUD+jegofCtRVDmIAxwDgnt2Tp+oML1uw9dvqCUS8H+JkUVTPo5EsF5YvW7OvVMc3fWmUWALv6xFDKEAItGseGhVh9PhVBQGucLUXVendLa5YSN/e3zUWlNpNBx9liNI36WYybdp+c9PI333/48Oy3xt35+KyM7AJFJXaHO8jf5HB5VUJkSawZAEiSUF7h6NkhtV+3Zh6vsn7niagGER1aJAIAPB71UHqOJAmsbgEAQlBV1Qr7FdnVestwc8vA/1Ne6YTXaJTcFA8CxhCCJRsObN5zMiEmJDzIL7lBRIPY0NBAS0RoQLC/hdVg9oIQaITlFpblFVaUVTpKKxxlFY5Ku9vh9qoKQRja7J7E+NCvp01cv/P4mfP5ep3E6HWVfhgFDePCAv1NV9e2LmsRIAD2HctcvHb/nsPnTpy9hDAK8jcTSjl9WKXN9ekP635evqtlWnzXNikDezRPS4oGlwlba2p8AAAC/cyJsaEHT2QbDXJ19YMxBhgoLrU9PX5A26YJU6b9eDargLtDEFZJ9K7feXzquz9//sbYee89NPGFOXuPZG7YdeL5JkO/fGv81Pd+zisqNxn0vBMXAlBcZmvTJOGjF8eIAr6QV7Jg5Z4HRnZr1CACAHAmKy/rUrGxbswDgDEIkaKQSvsVGrj1lqFuqGCsotIJ0V+wLgwwEOhn0jRyOjPv6KkLG3adMJv0AkY6WZJFASIoVBfyIGCUeXyq0+XxKiohzKeoXFiWMebzae1bJj40utfxMxdf+miBy+0RxRvxZDHA2jVveJUKKMZV/v72/adnfb/u5LlLhSU2CIHZpAcM1CwnI4zCgv00jew8cPbA8fPfLd7Wv1uzyff0aRAbVm1YqottwQGWqPDAPUcyr6KjFAR06FTOkvUHbu/b5teZjz/59g87Dp41GWQerGuEWkz6X1bujgjxe2ny7V++PX7ii3Pf+2rFHf3aDu7VskF0yJwFW5ZtOOjy+EQBR0cETuzc9MG7ekaGBQAAvlu83WLWj+jXThIFANjm3el14fSvvg4QAoqmVdpv9SL0rZhapYyV2VwIwr+QeWAAaBqBEOp1kkEvQwgqHe7xI3rERgUVFFXuOnT22OkLOlni5Olc+LVP57Snxg14Y9biUxl5Oln0+lRC6RNjBzw1tv/6HcenfbG0sLiyyk26oZfXsnEcr/JyRVCMkUbokfTsd75cvu9Ihk/VIIQmo8xZ2muJOjQCIbSY9JSxknL7j0t2rNl27L7bu9w7rHNUeCCGkBAKINAI0euk6PAAn6JedbciBDFDU9+dr6rkzoHt5894dPxzX63fecJirJLtYZTJovDFTxuiwgPvH97162kTHnppzkMvzv3pk0cbJ0V98vK9b00ZyZ1BjFF1UeXA8fMfzlk5on+7zq2TGQN2p2fL3lMCQnWvoEEAVZVwkslbefLzFgVDRaXzBjPmdTERjAEIuaEwP3pvX04M88GclYfSs40GWdUIvNy088QD/VIaRmZfKoYQuD0+nV56/sEhQ/u0emb6T7+t2psUH67TiYSymxl1FhHqB2q0FZ3KzP3ql80/L9+FEBQw5glNStkNzhBjjOc1eRmhvNL54dyVv67a88DwrkN6teRWwuP1CRhHhwVKAr6m3QhgjBwu72Nvfnc2u+CFh4fOfmv82Oe+3L7/rMWk0zQKIMAY+RR1+udL4yKDu7VL2fjTS+99ueK9r5dPvqdvTESQqUZMxSmh7E7Pk2//EBsZ9Mg9fSCCEIIP56w6fvaidF0C+trAgKCiapWOW90y3IrEw5Swskrn3/cpMUJOj7d3h1SOBIfLu+fIOb0s8Q5WhFBZpaNnh9TOrRu9O3uZ0+XzKVp8TOi37zzoZzYMmvDBso2HPn5xzD3DOjndPowg59zmym61WoZAPxMhVBQEh8szc96awRM//HbhVr0sahp1e3x/6lLkr8QY6WSpqMT2+szFIx+b9f3v2+wOt14nE0KD/C1Vo89XSaYzhjGWRWHmvDWvz1wU5G/+4o1xzVNiHC6vICCORr0sFZXbp0z/KSOn0KCT33hyxHMPDr6QV+r2+Bioor3wKSrG2Kdoz74zPz0j//lJQzu2TMIILVyzb+6CLfjP9EdV5Z0Zc7l9t2aocIuCgVVZBlphc0L0d00qpUwShLPZBXN+3XLg+PkVGw/uO3qe07rwK9xs1I/s385md23dd9rl8TVuGDXr5Xt3Hjj76Bvzzl8sevvpkQ+O7nUkPYcQKmCsaMTh9jrcXq9X5TXjmkdQkgSjQYcxOpyePf75r16budjl9gX6mWwOT+smCT07pCqKesPq9XVRgTGymg2X8suefefncc9/te9oJm8Zuh5/PYTQ6fH5VPWLn9bPW7Q1Ojxw5qv3RYb6+3wqh7GqUatJf/5C4WNvfFdW4SCERoQG9OncJMDPRAkBVUzDYtbF4smvfbtozf6XHxk6dkQ3AMDC1ften7mIUipi/KceDQNAQMjt9nH13lu2Q+kWJR4uKXdg+LfZ5hiTJDE9I/fVGQtCAq1en6ppRBAQu8zj3aFF0uBerb6cvyHrYlFEiN/Eu3rMXbjl15V7jXo5MtQ8YWTPo6cvbNqdbjHqKmyuJo2i05KiIYCFpZV7j2R4FVUnSQhVtYLqZBEh9OXPG2d+t7aguMJi0jMAnG5feIjfO8+Mspr1Qx78qLC0sqZabk3QcmK86+FBI0SWBcbA+h0nzpzPf/GRYQhChKBG2JX6KQAAWFpuHzWoQ5fWyc9/8NsbsxY3SY5p3STh1UeHP/7m96wqV8tUjVjM+n1Hz098cc437zzk72estLt0kqjTSQCA8xeLFq3Zf/hk1rEzFxlgOw+eiY0MWrv92IZdJxVFE+s8/VcTDRhCt9fn8vhMtzBhzK0IBo9X8frU/xCumF6WKGP5RRUIQa5Tz7m9zCb9g3f1pJSs2X5MIxRjvGLT4XU7j/tbjQ6n555hnSVJ2HHgTHmlMzkh/PM3x/Xt0lSvExkFHq+vqNQ+57fNPyzZoaqaJAmUMlUlIx+deeZ8nk/RLCYDT/BDwO4c2L5lWjwA4IER3d77ajkvKte8xX2KGh8V0qhB+O7DGU6XV7gOSSPPCFkthqIy+5RpP6Ylx/hbjXlF5dLlmgZCUNOoRrRJY3q/88xdep104mzu7Pkbnn1n/uIvnho1qMP+45lzfttiNRv4YJqmUaNB2rwn/f6pX/wy4zGE4KNvfLfjwFmdLBr10quP33HPsE6yKK7feXzKtB/3HTvvUzRRxCLGf2HwmgEAMfJ4FIfTY6pDqafeTfpjlVU4+JzXfyoc5yzFwh8RJ1Q1mhQXfke/tkvWHzhwPMvPYnS4PNsPnLEY9ZRSq1l/7+1dfIq6bOOh+Ojgr6dP7NUx1eHylJTZbQ630aBLiAl559m75n8yOcDfzN0PytjxMxcYYwa9xEBV+51GKB93tNldD43umdIgUlWv0M7CCDpd3o4tEru3b+z2KDceZmIMEEJlUQAAnjh7saTcLgpCdXShqIQy9tTYATNevo8ngiaO6pGWHH3gZNabn/6uEfL4/f1bNI7jwhTVADMZddv3n73zsVmUstefGJHSMDK/uPyVx+7o17VZZGhAUID57iGdls95lieXBPyXB68ZgtDlVRxuLwDgls0n3TJgqNohBgAo/09PRVW34lV9SRlE4NF7+3q8yu/rDqqXVXP4gFt5pWv0kE4RIf6l5fbMnMJ3p47u0CLxoZe/6Tnm7UETPxj12MxXPlm4csuR/OKK7u0af/H6A2aTgRCKIJREASGkqFqFzcUoEzDSCMm8WEQZyy0s3304Iyo8AF/dlA4JpXqDpJckUjehBq78UPN9BIy9XtWgE998csRLk4fxTVy8Zt+ox2fmFpYZ9fJPy3b+umJ3bGTQ4/f308lSzcQupcxklHcdOjv6yc9kSVj65ZRv3n2of7emAIBKu2vx2v1nsvLbNm3w/ENDbHUbPLxuMgMjj9dnd3qqn/It6CzdMmCocWGW21z0v0m9RiiNCg24vW/rPUcytuw9ZTXrudwT14AyGeUB3ZoDAEoqnInx4YN7tTpzPu9URm5eYfmlvLIjpy988u2qux6f9cCzs39Ysr1nx7SnxvW3OdwCQpzhr1VqwiuPDgcQeBVVwAIhzO32pSZFfzR31cLVe0VRuIKoD1Y1UBkvl8b+QsbM5fGFh/h9+vrYSXf3BgCUVzqnfb708Te/Lyl3SAJumRofFRbw3lcrMnOK7ujX9rYuTX1XqglTyiwmw57D5+6Z8nnWpeIhvVrxauD2A2c+mLMyr7CcMTCwR4uwICsvZv+1xAiCyO1VnC5vdZrkFkwr3WJuUhVps+O/Z0o53/o9wzoTQheu3qdoWnXDEULI4fR2b9c4NTEKAGDUS62bxAsYZeQUur2KTpYEEUui4G8xBfiZDh7PeuyN76ZM/6lnh9SeHVJtTreqkbAQ//eeu+u5hwZ/8sp9Rr1MGXW4PLkFZZSxEf3bhQX784YOVasS9oQAUAYkUZBE4XosmjfOWbo8vrbNGsx9Z+Lgni0BAIXFlWOf+2rGvNWUAUkSFZWMG9Ft9OCOp8/nvzZzkcPpeXvKnVHhAVzYrvptVE0L9Dev33Jk+/7ThFKMMACgdVrCmm+n9uqYBiGQJSEkyKqRv0gRywBACHo8itPlAbewn3QrxgzlFa7/0m5BCBhjBr1816CO2bmlC1fv9TP9MekPIVQ0rVvblAA/EwDMbNQ3bhjFuJdFGQDM61MFjAwGWVFUs0lnMui/+nnT6zMWeXwqf+sR/ds2SY7xeJVRA9rfd3sXScB5heUnzl1CELZv3hBBEBpkeWny7cEBFs+VEcKfS9tDCAHQNOLxquPv7P7jR4+0bdYQAFBSbr//2dkbd5/QyRKXETKZ9O2aN9x18FyQv2ndjmNvfb4kItT/3WdHaxphNboABYztTnf71o06tEjCCPkUjVIaEervbzXxFxw5lXM6M08Shb9KW8Ywhm6vYnf+YRnqwVCnOkOZ7b9lGRBEHq/Ss0NqWKD14InzqqZV9wIiBD1epVFCRMeWSTwZH+hvGtC9OQQgPirYaJB9ihYSYHl7yp1d2zZyOL28JO1nMWzZd+pURq5RL0MIl64/+Pu6/Xqd5FPUI6cuYozLK13rdhwnhDRtFBMTGQwRmnR3749euDc02M/jVXkBTyPUqyh1wQNCkAu/exS1YVzYZ6/e/84zdwX5mwEA57ILRj02a/eRcwFWE2MUAqCqpGPLxLzC8j1HzwkYyZLw9a+bv/pl04DuzV+efLvN4QawKkyCEHi86qS7eycnhAPAfl6+q9XQF1+bsWjZhoNb9qZ/9sO6J976kcuy/OWYDUHo9ipVgtC3KhpuxdRqaYXjv2UZEPR41Y6tEgURO1wejHH1mD+E0OXxpSZFt0iN+2313l7tGwcGWIL9zZTSlMSosGC/7NySh+/prdNJi9fu9/czVjN58RF+xpggoIKSymemzxdFcdfBM9v2nTIbdTqdmJ6Reza7oHHDqDZNEtbvPH4uq6Bft6aJ8c+MnfrlsdMXJVEsLrUlRAfrJJFch00DXh5u8PhUVdH8/Yy3dW322mPDw0P8+Qu27E1/evpPWRdL/MxGHh8jBFVV69gyce324xAifuRNBjj9i6UtUuOmjB9QYXfO/G6dgCF3DieO6jFqYHvGGKF06cYD2ZdKvpi/gY8Ice2s6+V867zzyOdTHS4PuJJksh4MN8gmXQbDf8cy8PmY5PgIAECDmFBNI4pKdJLIn5DFqO/UItHrU2d9tzY0wNK9fWPKGGNMwHj8yB7Hz15atGZ/Rk4BF4mDAHAlG84xzLU7dJLg8vjGP/clQkivEyljOlnMzCnMyCls3DAqMsxf04jd4ea/3fRn7vpx6c4fl+zIyCmcfE+flmnxm/ekB/ubCf0jgQkRhACoGrE7vYyyuOjg1mkJo4d07NUhFSIEACgpd/zw+/avf9lUZnOajfIfE8YQUMD8zMZlGw5phJRVePlYtiQKk1/99sePHnnrqTsjQvwXrdnn9ig9OqY+P2mILIsQwh37z+w9kqnXyahKPLUq8fN3HwhjGCObw8MTyoSy+nmGOmWTKmxuPm38X9iuqluJMdCtbeM3nhzx5S+bLuSVMsZUTQsP9u/SptGJs5eyLxW/+dnvHVslcd+AMTaif9sjp7Lf/XKFv8WAMEIQUsYopYQwp9sb6G/SSaKiagxAQcAYQXY5dSgKQlmlc/+x80N7t9YI9XiUgpJKCGFRqe2bBVsYAAa9dLGgDCL09tN3jn/uqyOnLuhkkVejIQCKqlHKosMD2jdP7NWxcbvmiS1T43nZGwKw69DZ979euXXvKYQg11+rkSOiBp0857ctR0/nRIQE9O2cFhUWWFzu2H808/Cp7PuenT1n2sSHx/QZ1KOF26skJ0TwYWuPT/lg7ipuWBhj/0GHhlf9HU4PZQwhRIhWP89Qp1Vhc14+tew/bX6YgNGRUxd6dUwTRfzUuAF9OjcpKq10uBWbzYUwTIgJKSq1Tbq796bdJx9++Zsv3honSyJlDDD26mN3tEyNX7H5SG5BmdPtNeilID9zRJh/hxZJfmY9VyTRy5KqEY9GwGX1AwGpXq9aUFJJKdt96FxJhX3V1iODerbo2DLpUkHZ6Cc/DQ/2Kyyu+G7x9mlP3/nrzMf3Hs3IulScV1hBGWWMJcdHJCdExEYGhYf4BweY+SnnMuMff7N6yfqDl/LLkhLCGkSH7j9+vtLu0uuk6kOGIDh8Muvhe/rcP/z/tXfV8VUdaXvk2PUYcQhJIAkS3N0LLRRa6qXuut26t9t2691u3d2NlgLFobhr8IQACcTl+j02M98fk1zihLa06beZH+0vhCvnzJl35pXnfZ5RXVPiuYEdPlZ2zX3vbt1z+IaHP3jlkcsG9+kKAOAq2hjDB1/8ev223FNSuGv91CMEfYGQpukWRW6PGVoT4ELdMHXDhKfHqzRN6nJa3/hsce+sThNHZAMAemZ05D1lYWtJ7Rj7wE3Tb79i8qJVO2546P1n7704vkMEgFCR0XlTBs+YNEDTDEKZICAOYiWEPvjSN4XFVRaLHAyqPbp2PG/KIMqYw6ZYFdlhUxLjolKTO6zZsn/3wUKLIq/ZcmBLTv7gPl0vPGtoeqf4SVc8LWL81dy1IwdkTB7dJz0ljhCqGyYAgAFmbbRuDIP8uHjDe9+u2LH3CEIo0mW98tzRV8wc5Q+o63fk3vfcl16/KkuCqhlx0c43n7h6WP8MAZ9APaUmx948a+L1D75/9Fj5rDvfvPzckRdNHdopscOhgtIX3p/3w4KNFkU6HWcyAzXw8lBItygyazeG1mRLKqt8JqHclzlN3xIIaVfc/eY/rppywZlDXE6rLAoAgJBmSCJ22Cy82S3Cab1w6rA9uUWDznn4omnDzxiZ3SUlXpFFUcAcfBEM6fnHyuYt2/rzsm3HS6ssiqTrRlxMxPP3Xzq0b5fGUeLHs1d5fCGHTTleUv2fD355/5nrbTZlQHbqpy/edOW971S6fU+8/mNap7iM1ASMkQVLYePkOz1jzOMLbc459P7Xy5et3wMh5D0PCKOemclOu8Vpt0wd2/ep13/yeEM8Dn7l0StGDerGl7WmG/6gqutmXEzEyIFZUZH2kKp7/cHXPl38zlfLuLKtppuKLDVmofyjrAEj5PWHgqoe1VZTq23uZKhyB8z6JaE/fIgYMQCefmvOi+/PH9q3a0KHCELpkWPlF00bdu0FYw/kHd+bd3zyqN52mzKgV+rTb/340+JN73+zXJLE1OQY3jSkanpZhc8XCIkCFgVskSXAAGDw0rOHD+3bRdcNURS4MZuEllZ4fl665dcNewWMTELtNmXl5v2vfLzwoVtn6IY5dVy/D5+9/tH/fp97uPjif7w2a8aIKWP6dEqItioyA4wQVlJRfeho6dqtB9dsPbBxey4WkChgAWOEIKFMwLik3O3xBV0O65Fj5SFV53HqY7efO35YTwCAbpgbd+R+t2Dj3rzjlW7fRVOHXTR1qCgIfqIKgsAYMwkFJoWwhr3mNMW1XAXGF1BDHILJ2o2hFWF0lcf/28v+p1LNcNgUwMC6rQdNSgADGKMJw7O5juU7Xy8Lqtrl54yqcvuT4qLGD+u5ctP+SrfvcGEZXypcTirCYaUnIE8MYxRUtUBQtVkVwzQRRBgjVdPf/3bF658uwhhJokAo5aT4r36yEEDw8C3naJpx9oT+PTKSr77/3a278//16uxPf1w9qFe63apwPsZdBwt27Svw+kN2m6IoUkjVJYsQVLVgSIcQCBg/9cZPc5ZsnTgi+8DhYn9Q1TTjomlDrzl/LACgsKjimbd/nrdie5Xbb1VkCNnz7/y8a1+BxxcIg8+b74z4g2cdI+j1h7hMHmuT1tDmAuhqT8AkFEF4ujNvvLygKCKEEoLQGwhtzcmHECbHR3303I3+QIhQumjVrm7pSR0iHf6gCgGsm2sPt2iGk7aMgfe/WXG8tPrWyyYN7JXOg12M0CXThmEEX/5oAc/D8kSQKOIX3p1nmuTxf5ynaXp6p7h3n7rmjqc+27gzr6Tc/fHsVU67xarIBcfLIyPsVosUG+3kWlJjh/ZYsmbX0L4ZYwd30wk5Vlz1w4KNR49X/LJyhygIEIKh/bs+decFkS7b4WPldzz56ZI1OZEua5TLxhO2kijOX7HdZv2zQ1jGarJJLWtG/sWOSVu7II83SAj50xRSuc6ASaiA8O7cY5t35QMAkuOjstKTVm7c98OizZNGZHfpHK9qBt9Kw6Pxw+b9EvOXb7/kjtcfffl7ry+EELJa5IzUhPtuOPv5ey8RMKqLGHXYLc+/O/fuZ76QZYlQkpmW+MkLN02f0F83zM7JMR89f8Pa7x5/6aHLLIrICbpNQi2yePHUoYZBLp429P6bpj944/T/PnL5K49dER1hj3RYFVnECN119Vlx0S7TJM++NWfJ2pwO0U4AoEkoP8QIpU6H5S+pI2GMfIFaY2DtxtCKUeUN/AZV49+fcpVlsazSe9/zX+7JLXR7gz8u3nTjw+/3zEiedc4IEO74ZSf5EAiBokhuX+CNzxefde3zc5ZuDVepr71w7MzJg8NFMY4qj450vP7Z4ll3vuHzqwCA2GjnU/+8wGm39OueOnlk7+T4qDuvOfPBm8/x+UPcHmRJdNoVl9PaKTGa5xusijRr+ohzJg2o9gVNk9w0a8LYoT0AAF/OXTdn6dZIp42YZgPT/c0Cob+/zuD1hbiIa9vMJrU9Y/D4T3cA3cwRQRVZ3LW/YPqN/xl2/mM3PPxheZVv2ri+sdGuwb3Sk+OjTEIaU+U1Ph8opZIoWi1Spdt/y2MfPvjiN/mFpYZBGGOdk2JgfeMxTZIUF7ly497zbvlv7pESAEB0pH1wny7FZdXHSqr4y7zegG6YUZF2h82S1qnD8ZJqqyIjjH0BlRd0GWMZqYl+Xyg7s9Nd15yFENy2+/BL78/nUim0Ta07CDhwtW2yArQ5Y6h2B0xC/pLyJGNMloRAQK3y+GVRIJSVVfkAAJlpiRdNHRoIaAYhAkYtXxpGiDLaMSFqQHYqpezZ13448+rnDxwughAuWbubNtqkh/TpMm18/2Xrdt/4yAcFRRWUMkkSNu/Kv+Wxj9Zs2b9he+5/PlzQvWvyC/ddktaxQ1J8dGmlxzDN975adstjH93y2Icffb8SQuj1BSWMrr1gjMNmUTXjuXfn5heWKbJI2xL/O2cD4OxJbZMjo80F0BXVfsOkNgjJX4Fd4cDmMCKnuKxa1QxJxLdefkaVO/DN/PXlVV6n3SrgJnZcLlGjm0TV9LyjpbsPHsvO7HT5uaOy0hK6dk74YcHGLTmHBAHzkhaEQNNJQgfXmEHd3/56WVJ81MYdec++8/OT/zx/X26R02FZvz332gfes1pkhNHrj1+R1jGuvMoX5bIFVd3nVxes2skINQhdvCbn0NGSn5ZsGTMye+q4fgCAxWt2/bpxr8t5CiJ0f5qnhBDk4m6/p2nuf8EYahZXIKi2BQgXZcwiS7lHSnbuOzq4TxdRwE/ffeFZ4/p+/MOqZev2lJRVy6LAGr6FWhU5JTG6W5fk7l2TBvZKT0mKSe8UBwB447PFz7w1R8C4bkkLQiCKuLC06uDhYkFACbERGZ0Tdu4tOHi42Gm3iFZc6fZ7fKEPn71+WL/MrXsOU8oAYwghhGCYDxxB+MbnSxRFfOrOC+w2xRsIvf7JIkKogNueJghjCCGPL0ApRb+DIe5/wBgYAACYJtEME6G/fqYYY7IsFBZXffT9ysF9uggYmyYZ0T+zX/fUKo+/ospbUuEJBLTwyxHGyXGRMVFOWRYcVsVhr8nYeH3BB1/65tMfV1sUScSYU6YCCDiR2fHS6g+/+zUrPfHs8X0vOHNoZlrigy99w5XsTJMBAJ6/7+KzxvYFAOw+UFhW5RVFgfdkEq7yAAASMCF09KBuk0f1BgDMXrhp54EC+VTo7v7UGBojty9kGIQrJrYbQ0vngscfVDUdQdgW8g2E0AiH9aPvf+2V1fHKmaO55oNFEZMtUcnxUfWvHTa2pYpq34JVOz+fvWZLziGnzcKVSxmlqm6YJrFZldho2+DeXaaM6TN+WM/oCDsAYOvuwx9//6tFkRgAIU2/69qzLp0+HADw06LNT7z2I6VUwIjDlmoCPoQCQTUjLfGBG6criuT1hz79cRUhVMCoLeZrGEAQerxBgxAZCKAdwt2Stw6A1xfSdKPtOJQmIbHRrruf+WLlpv0P3TIjLTnWblOaSJEAYJim1xeq9gQ8vtDR4+UrN+3dvufowSPFAsZ2u8U0STCghjTdabcmxUX16Jo0enD3UYOyuqUn8Y+orPbPWbrlgRe+ZoBZZNnjC1x41tA7rzkLIbRkTc6dT38WVA2EkGaQbunJvMWCQGoYZoTT9szdF/bulgIA+HzOmn2HikQBt83MJatRQw0ZhgmsSrubdJKTwRdQNc2Ev4l/+3SdD5RGRzgWr961Y++RIX26Zmd16pwU47ArHMOg6UaF219W4Skqqy4ucx8rrjxyvAIjlJwQtWPfUU0zEEKKLMZEObLSE7PSEgf0Su+V2bF/z9RwOiWvoPTX9XvnLtu6bluuICBJFD3+4OC+XZ/45/lWRcovLL3nmS98QU2WRKLT1Rv3XXr28E5JMbmHSxRZVGTxgZumc/htQVHFR9+t1DTT2krZhL/iISMI3f6AYVLQJpvd2owxMAYA8PiCqm4ghNrUwySU2q2K1x/6ccnmr+aus1tlp8NSI8Som1XeACNMkrCAsSDgy84ZefV5Y5x2y7Y9h/0BFWOkyGJUhD0lMSa1Y2z4M1VNX789b8X6Pb9u3Lcnt9A0qdNhAQwEQlrnpA7/eWBWXIwrpOr3P//10aIKm1XhyI49eceLyqpeefTyd75c5g+qV5476pxJA01CgiH9uXfmHj1ebrXItK3KaTIGEEJeX8g0zbZ5hW0rjvH6QmF+XNDG7AEhFOGwQheihGoGgbVee3y0C9TmiFRV75oSl53ZkTKWkhTTpM3vyT2+YsOepWty9ucXFxZXSpLgtFm4mEgwpMV3iPjkhRt7ZCQDAJ54/cdFq3c5bBa+vjGGukHe+Wr5ly/fOqR3F19A7RDlBAAgAL6Ys+bTH1e7HJa2rH7AERlub8gwSbsxnDRkAG5fQNUN1CYrMowxkzBAKORIz9oRfrQYI80wF6/OuXjasDDJCn+jYZJKt//X9Xvmrdi+fnueqhmBoBoTZX/5oVnPvTev2uPnqca0TnGvP3YFDwC++HntJz+sslnkMJ8SY0AU8PJ1e/7xxKf/umNmhyinYRLA2FtfLn3itdkOm1JXwrSNxgwIenwB3SCgTSIy2lgA7Q9pmiEKuA2T69RwIzb+PefG25yTf9u/Prn6gjFdU+IhBBXV/q05+Vt3H169eX9JhQcwxuHfNptMKbv83FGiKLz6yUJBwEP6dH34lhnxHSIAAKs27fv3Gz8ZhinLDamKMEafzF61Zsv+UYOyZFksOF6xcPUuWRBOV1POacjR1ZBMtmeTml1hENQYg27KkkDo3+C5Nnm4McYWrtz505ItaZ1iMUZHCsu5lo8kCmJtmz8DADLgD6qf/7T6uovGnzmmDwAgvkMEX82bduX989+fFZdV221KY1AdY8xmlY+VVn0yezVXb7BIImvb8lD1Um8QVnn8oF3g8KQryevnqVUroQT8bYcsixaLVFbhBYDZrQqAgHNP1M2bAQAQRC9/tLBXVsrgPl3CC+WHhZuefuun/IIyh01pDk/BaQ1qG9P+NmbAbx4hWFXdbgwtDu6F+wMq+zs922ajC0IYxohH3s35WoKAKqq81z/0/qwZI3pmJAMAV6zf89X8dcGgZrcphtlSu9/fzAZO3DWDEFa6/TWi2u3G0OTqwRgCAPwhDWMM/u7WUHtTJz0MJVEoKqt+4d25LqeVMVBZ7ZNl0arIp7vx9a/d9So9flpftKXdGBrMEQIABGqkNBj43xiUMVkUKGMeXwgCYLPIrPnD5LfMKoJt6wxhAEJYVe2jrL0Huvn8DEJQN8xAUEMY8r9ihFog5QxzjHF3/JSeN0KQi942uW/xBkmOMG0ij1S/l51fAKOs7tOtFRNp4gt4x2g97fQa4j3Mf+YazC3MVOtNBUIYVHWMaqKL1i4IjGvA6E1dfMu1bQQhbKFGxGqYb6rcgd8mRvG/cTIwgDEKhNRAUMUQAwb8Qc0fUEURw8a+MrcQCCAAEEJJFBRFEjEmtUzAJ10i/qAWUnVJxHXZtQAAJqEhVbPbLLIolFZ4iUlQnXXJBT5r/8f/AxghUcSSIEiSUBsqQJ9fDaq6IosY11sanO0CI9RYYp3/FUJACPX4Qxgj1FDTFnCOPYfN0kpLME3SK6OTNxAqLqtuZbQKISyr9FDGJFEQhHqTbxIqCpjzzDb33pCmq5op4CbUgbkVWSwSQrDS7WubgJE2cjIwhFAwqAWCOkKAUDpqYNa4YT3Kyj11DwcGAIIQY8QAoIRSxnSD5BeW7j5QWFxebVFkSRRatgcEYUjTRw/K6t8zrbC4sqLai2AY+sGiXPY+3VKWrN2dX1Dy4M3Tk+KjfP4QX0aEUN0khmEahmmYxDCpaZqEMG8gVFhUeaSo/HBhuYCQ1SK5fcHJo3oP6p2+/1CxxxfgOWJYS4/n9YeqPIH9h4pkqeGl8uUb4bTNmDTA7Q1ydCqsYVNjGCFFFiVRWLhyZ2tkjRBCwVDwnuun7s079tw7P8uSeNKNAkKoavq910+zyFJBcUVltc+kFIIa3tioCNvxkuqd+442aVeccb5P95Ru6YmVHr+mmbBGjIVbMrVaZErZrn1HSys8VZ4ApbQ9m9T8yYCgP6QFQirGGGOUX1jWozz5kVtnWC0KpSy803j8ofIKDwQwwmWNjnQAAMqrvOVVvpUb932/YOOW3fktK6vytvSKal9phXvyqF4Thmfrhlkj6szYkrU567bnFhRVqJq5cuO+q84fc955g1u+cMMwq7wBf0BdsX7PN/M37NpfYJGlvKOlGakJN148vktqvFnLuypL4ltfLN20M6+y2ifgJrSQuQthmgRBdNHUYSP6ZyCECG/owai4rHrzrvwfFm3iwJCTLmvDMNNT4vt279wxPvq5t+e28jEIGG/dfTgxNnLmlEHD+2WEVB0hBBEEjH38w6p9eUUOm8XrDza+AAaAJOCSMndax9hpY/ufPaGfYRBac9xBAaOVm/bPXrjR61cFQahy+9pmKgwmDLnpL8+6UMpeeODSnhnJM29+WdW4Nr0RDGpnT+z/yqOXx0a5NN2QJfGHRRtvfexjDkNACA7p0/WBm87ukhLPP+dYceU///3ZsnV7WubNhRAYOjEoiYt2PXfvxdMnDuAByMYdeRfe/qrbG8AYiYIQCGkmobNmDH/t0SsJpbIoaLrx77fm7N5fWFLh1nQjoUPk9ReNO3fyoPAnF5VWX/LP1/fmHiOUAcDiO0Qs//zhuBgX/9cfFm6659kvQqpuEtrCCcYYwxgDwP559Zl3XXNW+Je3/+uT7xZs5HySJ91RBYyqvYFLzx7x6qOXU8Zm3vTfTTmHeKR+UivyBVQAWHqnuDcev2pY/wxuomu27J923UsWWcQYmbRp7hIu44sRslrk6RP6//eRy8P/9MonC1/7ZFEgqFFGMYIIoV3znn3hvXlvfrHU6bCQNtOeitrGwQAQgsGQxrNJvDE/KsI+b/m2jTsOMQB4OOD1qyXFlZXV/ooqb1mld/aiTefc+J/l6/dQykyTJCdEf/XfWy88a4g/qLYQgzIGRBFbZKmsypNzsJAxpukmY8zrC3m8QbtV4RpQkU6bVZbWbjm460CBzSJjjBCC67YeXLVpX35hWWFx1aZdh25+7KMX35+naoZhEEJpYlzkfTdMMwm1WiRJFEvK3bmHSxhjmm4wxrbk5Lt9QQCgJOIWbbWGyPWT71cWFFcwxgghqm6UV/vc3oAiC630/Rllg/ukC4IgicKkUb1Cmg5bAX9kjDntSpTLtmPvkYWrdoYvPvdwqarpWEAtsPjw008QkNsbmLd8e+6REk70zxj7au668iovhEBAiEs9VLoDoF3gsLmJxAj5g6o/qGGEAGDcNSKE7th7hCdYINdckiVJwpIkSCK2WeWSCs8ND72fc6AAY6wbpiAI1100rmNCdEg1WnBJWW3aRBAwrB0YIy4UzVcqpRQhKIr1ImxRwLIsKLJkUSSrIkEEn35jzpufL4YIUMIAAEP6dh3ePyMY0jFGsiQgFP54WJNsaQXBNQRAlgQAAayRk4YIQlHAgoBb41zwbaVXVsrIgd143mzM4G4dIh2tRLjwfUcQMMao7uTw/aXlBcynThCwJGFCSDjjEAppAsbhLhXGWKXb1wbrKG3oZAipuqpqqL5SsigITaUmOUMRU2SxvMr3yicLOW8uIbRnRsdemZ0MwzxN+05YUpoyJiAoiuidr5ZvzckXRUwps1vkrLREXTdQo0VvmAScip6vYdDf1pnA3ZXhAzI7JUYfyC/WDbNLStzQfhmBFg/MP3iWKOAdPOFLavCCP1zq+/+PMSAIdYN4fCoAsAElbcuRFiHUZpWXrsnZsusQhNCkVBKFrPREScJ/QvKOUKbIUlFZ1dzl202TQAhEUYhw2posBeiGyRXSWrmgDUJ+Q2UKQmgYJDbaNX5od0kUXnhvrs8fslmVicN7Mq7Pdvo3ZAgAZdQwmuvggYyxao8fItjW6IfbhjEgqGp6tcePT72TnTEWVPVl6/eGM3n8fP9zrpxSJopCzoGCam+Af2lz32w2onls8aQEpvlbjAFBGFS1tE6xIwdlHTlWvmnXod0HCxkDg/t0zUhNUFUdQvQnWANjwGymg4c7ipVuf7ub1KyPpGqGxx/Cv6nhE0FYWFwRdmPQn2cLgDEmCcKR4xUeXzB8AU3GKIZBWw9O4znW35B/JJRaFHnskO42i7Jtz5FqT3DTznwIQWZawqBe6aEa5pHTbg0MMINQ0AyuhgFW5fa3B9BNzw2ESNUNjzeAEPoNPR+MMS4wzHVa/QHVJH8qDiyMvPAH1eOlVYIgNL6HuprTJ58QAIxTNwYIgWESl93CZUq27Tlc7fFt3JXHeR2nje8XG+3UDeN0bxUQAMaAYRgt3GBFdfvJ0LybpGmG2xfk1eXf5q4AADCCwZC2bc9hXSd/ZiM1hDUEccGQtjfvmCw1SJ4yAADfKWGd/FJzA0DIM2mnHvZASmlmWsKAnmnVbv/W3fmUspwDhUePVwAAhvTu2r1Lsqr9xtQCbOWooeesORma8wWqPP42xYHCx19fgeZYDFUzPN4gbgY/d9IHxTUHBIz3HC4sKffIsvgn4SIRMHUSG+XkFGP78o7vO1QkSWLddcx/UlXDMIhhktYscYZQUNVP1RgopaIgnDWmL8Zof37x8ZJqm0XRNGPjzrzOyR0iI2wThvfYujufEvYb1qFhmqZJTsrfigAwCNUNUltKY00epFXVftgprq1VodsEHANBoOmm1x/6Dds5hIAxlhQXyT3mL+euO3Ks3G6V/5zGUQHhQNDfu1un2GgnAOCHRZtVzXQK2GT19lQAQGwHZ5fOcU67pTVLHGNU7QmcEtoU1JTMrGeM6gUAWL/9YH5hWVSE3R9Ut+zKv/CsoYTSKWP6vP3l8kq3TxJPjdBOwCgzLcFha9XFU8AEhDj1fHNBQ3m1j0N029Th0AaMgQEEoaYbXn+IczC2cFKjOjUsHjobJol02s4e1x8AsGPPkZ+Xbv0TKOV43gghGNL0yAjbxBG9BAHPXrTph4WbbBapgR0KGDPGXnrgUkJoa30DCBhjVkVuPaANQmgSOrx/RmrHWLc3uHHnIT5NhNDNu/M9voDDbs1ITRw/rMc38zec0vHLGJs5ZdC0Cf1aG4bBGvZ53qLd5Oypml7tDbQFUt22dzJgRAj1+UMt425Mk5iGGS4SE0p1w6SU3XXNmT0zO5ZVeh5++buySq/VKp8+uAs3RUKoaRJCKYTwyX+ef8bIXrsPFL7w7rxanc8mL54aptnalQ2gYZqKJLa+TMbX/ZTRvQEAeUeLt+Tku+wWDmwpLffs2Hd01MBuAIDzpgz+acmWUwWNEkJ1g7T2HQxACC12qYU5JISWV3kRQm3qaPjrjQFCQCktKXf7AmpzPTd8T4p02eLjosInQ4TDltqxw9ih3f9x5eRAULv/ua9Wb94f6bKdPkvgfMAmIZIkdoh2dIyPvuOqKVPG9NmSk3/vc1/mHi2RpSborw3TlCXxnme/WL1lv9NubU1dmS+X7167I7Vjh9a9HhBKOyd3GDOkOwBg3bbcwqLK+A4RpmlijErK3eu25o4e1N0kZMzgrL7dUzbvyhdwa3dlCOGPizY//fYch93SmosxTRrptL35r6sy0xMJpaipq9UNs6TM3bIj8L9oDAihkKpv3nXIJLS5mIFvkGMGdf/qv7eWVnkoZRCA6AjHgOxUTtd11X2v/7Rka9RpswQIAWMQIzh+eM+xg7pbLFLH+Khu6UmCiF/5eMHbXy2rrPYpUktRe0WV90hhucthO+l64uXn1OSY1vO2I4S8/uCogVnREY5Kt3/2os1J8ZGCgEUJY4QoZeu2HSyr9HaIckAIZkwcuGLD3iiXvfVNc4SyQwVlrZleCIFukGC01twJya9W082jRZXcgWw3hgZeKWjBEsJRsstp5Ttfg31XEAQBY1kWTl8GiXGqIwCq3YE9uccMk6wyiarqx0qr8o6WAgAUSWx5bcmSKIqCICB6MvXG2vaKVvcuQwgYkARhypg+GCNRQA/dMiNMSsk9KFSLtAMAThyR3bVzfEm5B+NT0BeWhBpc48nPeQZOuso5Hrat9fe0Rc2IJpOGGOODh4uXb9hjtyqGaaYkxowb2hMAgBCGALz66BUlle4tuw5bFfE05ZEgAJSyLTn5G3ce4sR4CEFZEiyyBGBLrclhVlZQC/I7+f2eilVjCEOanp3VMTuzIwDAabdOHJ7d3BJkjHVKjJ4xccAL782LjnSYraY9pc1o/jb3La3xvtraMvubGAMDGIDjpVXPvf2zUasFOnJA5hN3nN+lc7xpEpfT+sQ/zp911xtenyqK+PQxUdstslSng7kGv9qKpStgdJpq4hDBYEgb2rdrQmykSeh5t/x336HjdossioIkYkkSZEmQRFGRxafvvCC1UxwA4JxJA76at44rVf/9ear+OI/9b3StnE7UMCkhlJh0/oodF93x2sadeYKATZMM7tPljqumGKbBm7NOm1kyQmj4D23VHg4BADX99eyPnxOT0Nho19ih3SGAeUeKt+7Or6jyFRRXHioo3ZdXtHNvwaYd+Rt35H09d93O/QWMMUppRueE8UN7+oMaRrDdBv6WxgDqlBoABE6H5XBB2XUPvp9zoEAQMKX02gvGXn3emKCqt0UaEozgaVD1Qwj6/WpWemLvrBQIwbe/bNQ0Q5EEScCSgCWx5g/GKCrC8fX8DapuAAgtFnna+H6RTpv5/5et7P+/MdRL4RFqs8oFReX3PvdleaWXMSAIwn03nj16YJaqtqXgDHJjwH/8JUFIKZMlYfzQHnExrkq3b9GqXRwcy0C9P4RQWRLWbj2Qd6QEQUgIHdo3Y0i/LrWsbe3jb24MEACDULtV2bD90H8/+gVjRAntEOV86JYZES6bYZptas9DAjodD0/VjOSEyDPH9mWMrd+WW1RahVHTyXuEoM8fmv/rDh7qRDit508e7HJYDYPA9tPh724M4QyPooifzVn745LNoog1wxzYK/3Bm6czBghhbecxn46TgTIGIRg9qFu39EQI4cYdef6gKjSDaOJdsj8v3eoPqIKATUKnTxzQr0dnwzjthOd/F1tr68ZQdwHVRSXVHRhCf0B94tXZB/KLZFEghFx93ph7rptKKKWE4uZZhv5MUxEF7o6w37aAmrxSQqnDppw9YQBCqLLat27bQd1sCTQBIcwvLPvl1+38cJBE4YpzRyqKRE5D8q3u3BLC2o3hD5hQQk7sW6ZJOOdC4w3SapGPHi9//r25qmZQBiil914/7eFbzjEpNQhpcrPk6lInJgLC09oFhjGG6BSKXOE8Fe+VobThKQcBYBT07dF55MBMAMCuAwVFZe6WmfMghKZBfly8mVKGEGCMTR7Vp3vXpJPeNkKnPDl1Kxh2mwLbjeE3D969SSmNcNpALS1AdKQ90mVv0h4YpRZFnrts2wffrhAFbBJqEvqPKyc//o9zIYSBoMqpSuoOiyzFRTtr41ug6oZhElTvIAIixnUPFqFJGtFmll2DVmwRY4TQScnwwgeg3aoItQoPgoC4jGfdt2MBU0avv3C8iAUAwK79BcVl1ZLYkgIYhJBBsCe3qLzaixFmjFoU6bIZI93eoFD3aiFAqOZGuWlFRdhV3RBahRqEnEIvOtLOOEgbgOH9MwWMIIDtxvCbPGwBVbkD6SnxE0ZkAwAggITQHl2Txw7t4fWHGGsIaeANnwiiF96b99H3v0qiAAEwTXrLrDPefPyqnhkdPb5gDYKad82HdLtVOXfSoPAK65ae2DExOqjpNWsCwUBQwxglx0fxkqokij26JreGNJe3X3p8QV03Qa0Oy8De6RhBH0f5n2yUlnt6dE2OjrAxxghlAsajB3UTBewL1HC/MsYKiypmTR8+dmgPzTAYAIXFVR5vQMAtcStxdvGKau+v6/cyBghljLFp4/qdN2WQP6hpusEv3jQpAMBuVWqnFmSkJnRKiHH7Qid1LClj/kCoa2pCdKSD1GJjB2SnhjQjpOlt3BiwI3lgmzNQhPxBtV/3zt++9o8uKXEAAE5ohxEa1rerIODdB4+F69B1DxOMsaobKzftC4X0MUO6872tW5ekM8f0cTosR45VVHkCAkYmZZ2TYl599IruXZM4qgIAEOG0dU2N37WvwO0PQgAopf2z0+66dioXMOcv65XZiTJa7fV7A2oLHoWmm1npCddfNP6cSQNEUeDG1jU1oVdmRwghxzI168YQGh1hv+6isbdddkZMlBNCyKnCu3dNzkiNd3uDx0qqGWBpybHP33/xHVeeKUmCgDEEQBTwlt1HOKlCS0cuZTMmDrjk7OERTitGCEJoUaSp4/omxUepql7l9qua7rBZLpk27PJzRkRF2LmHGRVh75+deuR4eUWVnxDSpMvE8WNWi3zVzNH/vutCm1VGtdQMXTvHZ6YlhFT9eGk1Y6zNxtN/Pddq4wWh6UZCbOSHz14fHeEoKKpgtdxbPObTDVLp8b/1xZLdBwoEoSFpKULQMAlj4MwxfW6+dEJ2ZieEoCyJjLGySk9INV7+8Je5y7fPefvO2Gjn0eLKYFCrdQYYgsjjCxiUPvv2zyMHZJ0xqpciCVz7IUxCoxtEVY28gpI3Pl/i9QUasNxhjD3ewLlnDPzXHedHOK0QgrrHiC+gVlT5Vm/Z/+bnS9zeAK6PZuN89DarcuPF44f2zaCU1jB4Q27nEEKoqvr6HXkFRRUXTx0mSyJljBACAeT9NKpmfPjdr6u37G/SGUMIBkP603dfkJGaVO3xFRZXUlbjgXJ5Va8/ZJh0w/bc+66f1rtbCucXDL89GNKPFlfomnHHk58VllTyKa1/mOPKav89102dPKpX3QZRxgDGiHu6C1bu+Oyn1fyBtkEUSJszhjrbDKihyK5/CmOEGjynJjxjxnTDlCUhKz2pW3qiLIkYQ8MgKzftLyqt4qvQMAls4Ghx0ASEHNBBKSOENOTER5BvqCe9AEJoPeUyVsMBjvHJ4UCEUFrrcIe/GgAg4Jqooyb6r0vRB6GA0UkXGe+UaJA+YrWCvBhyxx4SQimjdb+eASBgzJlwW052m5QSQuueHnUvvi1DodqoMfxR5sS3qPADkCQBIwTaR/toMlL9/3pjfP2LoiBJ9Tzmdohm+/ifM4awA9C+/NvHn2oMjfMD4SXIvcyTObKgESMvCzvfp3QhJ7UNTnHV3EnSujs9+VXV/5aT+dnN3yaqqdO1ilGjJq8PW3VrsH49n/fVNXcZEACIYGtyylz2qu6EtzhF4GQz08Q9tmljYKxGui/8Gy5pweX9giFdkcWWAzvdIKZJwlUqxhhXNjAM0oKiXoNhmgRAgCCqkQGtSRHV/BiWDiCE1qWcqFUWrAmLW1ZJ5Dl4iKCAUXMrg0eQjDJUK1JIKa0RRGw+XG7yBXz2ZEloDWyEUIIg5HJvtdMIKFcurVOA5y2gjAFNN1RN5yUFAIEsCrIsigJubBIQApNQUycWRWrBHiCEumGaJuF6obw4IwpCk1VKTiZLKG2hcZwBwOrX3QkhEILfRsj7ZxgDz/pZRcUXVAWM+AOIdFohhG5fEDDQvUvS4WPlLemsMZAYG2m3Kb5AqObmITAMQimLjrTnF5RSvp2zGu49jkCmNelqCGoyPLBDtJMQGgxpXKGDl9j4zxhBRZEgALzOEAhxSRRAKcMYMcAIob6ASil12i0Cxs2g/KFpkkiXTdWMQEhTZLHJ7nhCqdNuEQXB5w+ZhCCEJAm3oM8LAbDbFEKoGq731UmdZaUnFhRV6IYZ3nE5MoIyVldXnAHmtFt1w0Q1i6xGFcRuUyyKFKa85uvS6wtRxpLiIrukxEVF2Lk1HiupKiiqdHsDFkXCCJE6/dOmSV0Oa1SE7VBBmSyJTXYRQggN00zoEOFyWKu9AQQhQlAUcEW1P6Tqje3BMEmUy2a3KUeOlTfO0tacihDyViqefyOEuhxWxpg/eLpg57/fGBhG6KKpQ/v06BwKaQBCiyyu2LB37dYDCEJfUH3t0SuXrMt55u05dovSJCCMMRYT5ThzTJ9+PVMdVsUkBCH48EvfRTqtz91/ycadeQhAiACjAGGkG6ZhmDaLLAiYUMbpSFVVVzVj4aqdibGRw/plyJKAEIqLdiqyyJEFlDDdMH9YtOn7BRtvvGRCp8QYvm5EUfB4gwCy6Aj7oYLyfXnHVm7a5/YG7VbFaIR4wxhWeYLnTBo4aWSvq+97h2d4G6wM3r4jYjwgO613VscOUU7++1VbDixetasxbxIh1Gm3XH3BmHVbD/66YW9dbQdCaHpK3Ccv3JR3tMQXUFEt+RjnX5JEQRQF/u0IIZ8/FBvjeun9+Z0SY4b36ypJIp/ZnAOFG3bkVVT7+L7AK+JD+3WdPKr36MHdolx2h10BAEiCENL0fXlFn/64es7SrQYgsiTwQwAiGAzo/Xumvfro5Vfd9/ae3CK7TW6QleZmZhgkOSHqoqlDu3VJ4rtS7uGSr+au33WgwKpIDbZ/XTcvOXt4VlrCrLveTOggG/VbsRGEqmZ0To65/8bplFKuZm21SJt25i9avcsbCGEonA5/6fcaA0KQUrZi497xw3uOmzIYALA5J3/zu3MLiysdNgsxqcOh3H3dVJ8/9NIHv3SIchqG2cCpRQju2l9QXFpdWe27/4aznQ7rfc99mXOg8JFbZ3RO6sBhMwAAjJHXH8pMTYhw2nbsO1pYVBkZYXE5rAywPt06AwC+nrd+X17R6EHdzj1jEADgk9mrSsrdLodVkcROSTHjhvb47KfV/oC6dN3u1x+7MiM1AQDw7fz1G3fkYoTGDutx7/VTCaWLVu184IVvjh6vcNiVBhs/b9q0KOK5Zwx0ewP3Pvslv6q6T4UxJgq4tNKzdXc+pfStJ6922Cxfz12/e38BAw2RdgjBoGq4nNE3XjwBMLZq034GGPcnEYKqRob27dq1c3wwpAkC4hULBkDHhGiXw1pZ7TtUUOawKZQxTTdSEmOiIx0ffb9yS05+n+4p1144DgDwzfz1q7YcOFJYihDiKmFpHWNvnjXxgrOGFJdVfzt/4+qtB9zeADeGvt1TZs0Y+eYTV00c0fOVjxbszy/iYrW1bhLp0jn+/Weuv/TO1/OOljmsDfc1QqhFkXbuO1pS7vnPQ7PGDO6ec7Dgzn9/rhukgYYddyMddmV4/4y0TnG9s1KOHCuX5XoHDmMACygQ0jdsz73tyskpiTEAgG/mb9iwI7es0iMKwmmKHP6AmAFjtH7Dnp+WbB41MIsytmDljoOHix12C2MMIGAYJgTw0dvO1Q3zPx8sSIyPaAygV2TpWEnl/F93XDx1WPeuyZ/PWaPIYlSE48aHP1i4eqciiwBAwzAS46JeeeTyXpmdFq3a+eJ78y2KKMsiAyApNvLdp681DHNfbuGydXtmTBxgUvL2l0s37siz2ywCRg6r/MAt54RUgwGwdO3uFz+Y98rDV5iEfPPLxtkLNlgs8ncLNxYUV9x3/dlnjukbHeG48ZH3C4urFLkhfzBCiAFoEnL1+WOcduWGhz/gfQp1Hw2lzCJLZRXeHxZuuu7CscMHZK3Zsn/jjryOSTGNj0QRC+OG9oh02YYPyEqKX1Ne5ZNEAYAaDdy+3Tu/+9WyZ975WRYxY4AyIAr4naeuGdq364H84rue+bys0qtIQlA1kuOjvnn1dqdN2b0990tFuvnSiQCA5ev3bNqR2ykxhjLmD2hZ6YmvP35l/55pb3+59MX355WUexCCXCWMUrprf8FPS7Zce+G4R287t3+P1GsffG/X/gKrRebhF9/yMtMSf3jjzslXPVtS7rZZlcb+EgRw/6Gi2Ys2jxyQVVLm2ZlzKLljHGrg4kNACE1IjOzfM9XltPXv2TnnQIHFItH6JT4BY19Afem/36elxF1/4bhASHvt04Xb9xyJcNpOXwz9B1SgGAOy3RrpsgsCFgUc4bRa5BORFkIIQoAxevqei264eFxxmbsxoJoLRUY6bbIiYowinbYIp2Xb7vyPZ68KqXpVtd/tCZRV+gAALodVEHBUhB0ioBvE4w16vcFd+wtWrN9TXu23WhWnXREELGAcF+OMjXG5HBaLIgU1Y8manJIKD0IwOsJuEooxkkQhOsIeFeWMi3FJovD6p4sX/rqDUja4T5c+3TqrmtEYZclFFgWMCSHnTRny7r+v002TMYAa+fqiKES57JQBASOHXbHZlMahgmHSCKd18qjeldW+Qb3Tu6UnmXW78yBglL3yyUK3J1DlDlR5AlVuv9sTsCqyIGCnw2KYpKLaV+n2q5q+YUfeq58sLK/yii6bRZFEAYsCToqLjHDZGAAhVe+aGv/641f175l2+78+eeilb9yeYKTL5nJYLYpoUUS7VXE6LKpuvvzhL/986vMuneNfe+zKtE6xmm6gWqUfLiiTkhTz0fM3RLpsHMXYYFkyAGxWiXv5GCPJamlMOMAYgBCOHpzlclgZZRNGZMfFuAzDbIQ0Y6KAxCiHRRbD68reaBrbnDHwqDG8T1Bar7TF84Y+v4oReuGBS2eeMajS7W9MIcpDJe4XY4wLiqo+n7M2ymUTMRZFQRQFSRTCVsQ9YIwR/yebVX78ldmBoMpx/+GMVo3EAWOSKKzfdnDb7sOSIBgmCT8hQikh1CRUFAV/UP1q3nqONuuekWSzNtHyAiHk761w+yllMycP+vc/L/AHtXBsWndvI5QahNRMSOMkDASEkOzMjp2TOrz15TIE4fQJ/S2yxH0zQqjdqtz7/JdVbr+1hvRF4HFCrRgp4/bMgYCx0c6Pvl+5Jeew1XKCZ9YiyxhhQoiI8VUzR/XvmbphR+78FdsghIoihdk9KGV8HkQBK7L4+U+rFvy6Mzuz4y2zJiJYk6jlX7r/UFFxmXtIn67z3r8nNsYZDGliIxlfSkEwpPK5bZJEhwEgYDRuaI+v561ftWnf2ME9EmMjNd2ATWYp60h5NT2NbdAYmj81gCwKlW7/Y698b5pEkcV3/33dpOE9Pb4g94MbptLqpztBLXcVT9Sh2jXH96RaVqsandzmL6GmvBDeeho+odoUbO7Rkiq3DwAQDBmENAJXMm4/DADw9Jtz1m8/CAC48rzRd1w1OajpfMNr8AazWZE/fg1wyqg+x4orv5m//nhJ1cQRvaIjHSY5EbjzSgCrP+rXE0+Mxkp2FosoCigYMnpkJs+cPBgAMGfJVm8gJEsCbSaTwYFPn81ZQymbMqZPr24pXn8IY8w7deYu3/bFnLUAgO5dkue+e4/VIgdDmijWo5eFEARCOrfnJqs+lJC0TnGDeqV9+fPaVZv3R0fa+/boDCFqC2KHpxuowyCCEIJ3vlr2xZy1EEKHXXnziav790itcgfEE/bAEICmeULhoqkqHoOwBqYmtCK1VievWoONaylbzwCCkDEWCOkQwtzDxZpmovpagBylxz+joKjirqe/OF5SZVGkh26eceusSVw8PPwVPNjVm28vZow5bPLwgZnrth/MPVy8JedwQmzE0H5dAYB/lEvMC38Igp5dO8ZGOwuKKn7dtM8wKGpZ4xDCzTvzduw7Eh8TMaxvBoIwfNAbhvnUaz/8umkfACAjNf7zl26JcNhCqlb3nIcAhlS9prrSRLoFabo5YVhPtze0esuBzbsO+QPqjEkDrBbJNOlf3vxz2lFrPEwUMLrv+a9+3bAXAJAQG/nh8zdMGpFd5QmeUB1HkKdNGWPNdeSGmw8RRictNmu64QuoPn/I4w9WewKKLOq6CZuvplEACGVxMa4jx8pzjxQ3dgAAYBBAASEAgN2qbNxy4PYnPnH7grIkPnjzjCvOHaVqRr23MGA0q3gJDYMM6t0lOT5q254jJqGbdx2ilE0d24/9oZ4ApUCWxZTEGMbYhh15xWXVFkWqB0dt9LAEAYU0Y8P2PMbY2KHdE+MiNcPg0y4K2OMP/fPJT1du2gsAGD2429P3XIgxrsevAYGqGdyraVBA5i6oJAqTR/deveUApSyvoDTnYOHIgVmdkztQSv9ysYY/A8JpEiqIGEJ44e2v7tpfAABITY597r6LszOT/QEVI8QZ/U2TmCahlDV5YvKNucZNOhnylDEwYVjPx/8x8+l7LnzlkSu+f+OOhR/dP354T1U3G4R0nBRPN4lpkoHZqbIkvvj+vAP5JTaL3ERlFAJY24ppd9mWrt19x5OfMsZkWXzqzgumT+gfqs9fZppNu0kIQs0wJ4/qXeX2bdtzJNJl232wsMrjP2NUr/SUuHBH3h+yE2GMOkQ7IISqpmuacdIPFhD2+oLb9h6GEA7rl5EYG2HoZthlFSWhqLT6zn9/fiC/CAAw84xBj91+LoTMNHmZkkEADNPkD73RXSNVMwb1Ts/OSF65aa/DJh8rqtq+57BFliaNyGZtQKnhzzAGXs/n+eaJVzy9L+84AKBLSvy7/742IzUhqOoII94qaXC8NWvWk+FbVMsSHnwFXHnumKtmjr707OHnTxk8fljP9E5xmm7AWjFRzjGj6YYkCBgjRRL7dEu5edbEnxZvnr1ws0VpGiMAay8AAkAJdTmt85Zve+Tl7wClFkV67fErRw/KCoZOFJKbPBk46CMuxjVhRM+NOw4dPV5OTLpqy/6Dh4tlSZw2rp/aiiV76v5Ss9wijTcdCGHBsYqKap8kCpIkktqp4NNusyp5R0tvfPiDknIPxujGSyY+ctu5vI2J6xty57Cxm4QQDKn6mWP6VHkC81dsD4a0QEjbsCNP1Y3pEwfIogj+F4yBrx5CKS+ajr7kyb25xyCEPTM6PnfvxdERdt0wBYR0wzRMQikNB9INHlP4ZBAQbvnZU0qvvPetPmc9MPbSpyZe+cysO1+vqPYWFFUItTUyHlXPPGPQt6/d/tYTV7/15NU/vn2nw2598KVvGWBN998wADl/cG2+CACgSOIbny9+9dPF3Hf69KVbJo3sbRgmT67zZdHgk3jH2ZA+XeJjIsurfSP6Zw7p26V3Zqd9uccBANMnDohy2f7YTDr/NNQ6YwC18DjenFT3SgSMEEQmIS6HddOuQ9fc/05FlQ8CcMusSfdeP1XTTQQggkAzTG4MDR6KqhtdO8dNHtX7UEFZZmpi726dh/brgiDyB9RemZ0mjcxWNQP9pS2hfwaEG0EgYlxTTxDFkKZPufq5ZZ8/nN4pbvTgbi89NOuWRz/k+pAmIYQ2leqANTsWF7jHtRy+sFkThw67RTOM4rJqk9CikqrvF24sr/RyW4KAszKKXVLivP5QYmxkty5JAICi0qpIp7WkrNpus1BAmvbTIAwnUvlSsVnkR1/+1qJI1180zmFT3nryqgtvf23H3iOigI2mskkQQtM0JwzPVjW9Z0bywOw0vlI9/lBRaXVmavyEEdlfz10X4bLXpcn5PduQIGIGQFxMBC9dCwJu2SXhR6vVIkEI+VTXGgPGGALGTEI7RDmXrN19678+fvvJqx12y21XTC6p8Lzz1TKbReZ3TUg9CXiModunDe2XmRgXJWL81cu38vSXqhkcLHjR1GHzlm+Hf2k/6Gk3BsYAQshqkXiqjTJmVWRVN6594J0Pnr0hNbnDtHH9iElueOQDShmAgBLKQ9Wm3CSEaoyhFprabEQMZFHgJQuEkGGSlz74xSBUQIgBwADDGGqG8cw7Py9ZkxMX5bx85sgbL56QGBf1wv2XXn3/O5XVPlmWmjRKhBEAQJbEOnoLwG5THn35u5hI27lnDI5y2R+//dxZd75R5Qk0hiAjiHTdSO0YO2pQ1oYduU+/8ROANX6MSeilZw+/8ZIJZ4/vN3fZNs4Awn63KRiEVLt9EIBuXZKiImxFpdXhYkVzxsMAiOsQ4bBZKqq9fr8adkoFAYe5K3XDjO/gWrZu9z3Pfvne09dBQB+/fWYwpH/202qXaQWAEUrD4EJYo21lnTC8hyKLr3yy8HhptSQJ/K6z0pLuv2naiIGZ/Xumbsk5pCjy6VMU+OuzSRBBq6IwRvniIJRKorBj79F7nvmi0h2gjM2YNPCBG6cDACCDNU2aTdgC4+hUAABGGJ7MS1YUkdURBwmF9LoZKMaAgJHNIhsGqXD7n3t77n3PfeX2Bob1z3j89pkWRWqSnQlCwHO7kiRi1CA1zu5/4ZuVm/YBAIb3z/jw2RuddouuGw2nG0OvPzSwd3qnxOgV6/du2X14576CnXuP7txXsG3PkaXrdgMARg7IGtK3i7fOKvzNA2Okqsb8FTu9/lBCbMSQvl1P2oFNKLVa5F5ZnQAAW3MOF5VWy7XGIwgI4RN3bZpElvAPCzY98doPCCFZFp+77+JzJg6ocvsbuEkIoWBI75ISN2lE9tJ1uz/+cdXsxZt/WLjx+4Wbvp2/Yf6KbaGQbpGlmZMHGYSiU8ke/LFe1Z8RM2CErFap7jMghDrt1uUb9t733Jc+fwgAcOvlky6dMYz/3NyGiBCEmGsdnHwOZFGs+zkYIQpAXSxqmKZOlgRFEr+Zv+Ffr/1ICL1g6tALpw4Nqnoj/5WFK9CKJEB0QsSWE4BXuv13PPHplpx8AODYod2fueciXjKvW0QzTRIVYT9nwgBK2ZK1ORZFtNssNqtitUguu2VLTv7GnXkup/WCM4fYLBKhvzetxBiQRDHnQMGSNTkIwrPH94tw2nTDbK5Ow+kCIp22M8f0MUzyyY+rSys9kijwGxUFoSb1V+fzFUV89ZNF/3rtBwShRRLfevKabulJgZBG65AhUEZFAY8e1N1pt343f4Ohm4mxEVEue5TLlhAbcaiwbPWW/QjBM0b1GpCd5g+qTbJ7wEaJWgCAaVLYBo3hRL0J1ssh8kVsUaQGCXSTELtF/nHx5hsefr+i2idgfOusMwb1Tnd7g02vAHYimYPxydXCFUVEtcsZwhpajehIByEsnJnl9V1KGIRQkoRv56/7Yu5aBOG9103rldmp2huoB6NiAEHIhcplScT1NYwppVZFOlRYeu+zXxaVVgMALjpr6LihPRg74QNDCEOq3i09adTgbsvX7amo9mGEaM1gAIBASJu/fDuEcNKIXn27pfiDWnMBZQvBcHih87sTRRxU9afe/HHr7sOjBna77fJJCEHSlIIen95gSLvgrCFZaYnzlm1ds+WARZEoY5yNUMAYY8TAiROWL3hJFF79ZOGTr8+mgCmyNOedu20WRdfNGqYNCHWDRLpsU8f1DQTV/IJSAKBpUs56aBJKKJ2zZCtgrFNizMwzBtUVh66bAePtX3UWGwQAOOyWP1C17A8zhjAkhtKa1YYxMgkhjEEIBAHhRjpOlDGrRVq4ateV97x19HhFUnxUXIcInz/IGGiyOUoSefNcDXAANuGRn1gHmm6GVEPASBSwgHEwpI8amDl2aPdgSNN1k69RkxCeHaKMiRirmvnSe/O27jncIdr54gOX9O7Wqdrt54ySPGmIENRNwh0GkROz1J+BCKdt065Dl931ZsHxCkHA3dKTNE3nYu8QAASBIOCxQ7q7HNZl63Z7vMG6nDcQQkro8vV7yqu8MVGOi84e7rRbAKyHesK1d22YBADY2I/iISmoLRjzuVJkMf9o6d3PfJ5fWHbHVVPuvPoswySEUFHEHFHHYU6MMbcv2D877Y4rp6zbdvDJ138MBjVRwBAC3TRrEiECxhg2TsUqkvTKxwufeWsOY9RmkerWGfjsdUqMHtgrfcXGvfsPF9et4TDGBIxWbNp7qLAMAHD2hP69Mjupmi6KmENl+bpCCEU4bV5fSMBIlkQAQGml5+zx/W+7/IxKt08UcJswBr7pChjbrTLf4WRJ9AVVAGG1J+By2GRR0DSz2h2o9gRoo0IMY8BuVdZsOXDdg+8dPV4BAHD7gpQ1rMxDCDRd9/pCHFUWG+0MBFXdqKdIgiDUdJMBxhFi44f16JISX+UJFJe7C0sqRw7KvHnWpJ37jooCzkxPhBBACCIc1spqP/8uQqnNIhcUVT7z5pyQqg/u0/W9p68f3KerP6hpummYpq6bgZCelhxrEuK0W6u9QX9QbWCPhkGiIx0bd+bOuvvN3QcLAQD+oFrtCQgIEcZKK72dEmPOP2tIMKTt3H9UM8z65sQEjI8cK1+1eb9J6PlnDukYH33seIWqmeFCgdcfCqk6ITQ6wmaapPEpapqka0o8fxDxHSIgAJpucCvdvCv/mvvfWb8t974bpj12+0zGWHml1+ML+fwhn18tKK4EANwya+Kij+/PPVJyzf3vHjleYVEkQqk/qMXHRBBKnU5rSNWrqgMNgSqMAQAssvTyhwuefvMnTqxGTAohQBAGgprHFzxn0kCT0KVrdpdXekWpXgSPEHJ7gnOWbCWEJsdHzZw8KKTqbm8wGNIlSbBZZUIoRvAfV04e2Cut2hs4cqRYN8yLpw577B8zoyJslP5hNcrfSy8JITAMMrhPl7uvmxoT6UQIdu0cf+BISWm5u2/3lA+euyErPVGWxPROcVZFKq/0+oNag/2MMWZRpMPHyw/mF08e1bus0vv9gg1m/SospSwtOe6mWRP690xDEMZGu6IjnXlHSiqr/aKIOUjOMEhMlOPOa85K7xQLIcxKS5wyus/IgZm9u6Vce8HYO646M9JpferNn6aM7v3cvRfLkihg3D09qbC4sqTCzYu+lFJFEg8VlHr8oWF9M5LiIs8Y1Qtj6PYEY6OcIU3/7D83nz2hP0JoQHZqcnx0tTdQUu6u6+BCCAghDpvlyLGK1Vv298zomBgb+eEPK0srPU675YIpQ56/7+KM1ARRFPbnF+3LO97gDIQQDu7d5ZwzBiTGRooCHjEgs3PH2EBQPV5aLQqCYZrnnjHohkvGCwKOcNoyOscfK6kuKXfXDUj6dk957r5LOkQ7IYTduyQXlblLyz2qZhDC7Dbl6LHylZv2mYTMmjHizLF9UxJjOiXGpHaM7dM95fIZI++/6ezJo3t/+8uGR/7zbUm5x2qRKaMh1bjpkglP332R3apkpSemJnfAGOYeKW2CwwFCScCrthzQDXPEoKyd+44uXpMDIOzfM/WmSyfePGuigPHhY2XrtuU2DAAYs1rkSSN79e+ZCgAY1Ds9LtqJIMIYnTW2z7UXjrNZZYxRx4TomZMHTRrZ64JpQ6+/aPwtl01y2JTZCzdt3HnIUtuH9Ht39t9DIsZTY0675ZbLJtmtsmEQTTdMSovL3dtyDheXuzNTE1TdYABIglDp9hWXuZtU/+U97IGgNm1cv5GDs55/e57Hd8Jfp4xJojCsb9fEuEgB49ruZ3CsuGr/oaLjpVWSJGqakRAXcdn0ETFRDp46ZIzZLDLGKBjSLYqEENq8M2/xmpwrZ44uLKnUdRNBCBH0+dU1Ww+Ulrv5u3gllVI2YkDWdReMmTAyW8B44aodn85eXVbpzUiNP17qDoZUWRJNQguLK6vc/iYowRkQBeT1h9I6xV5w5tD5v27P2V8wIDutW3pSpMsWCGkQAn9AW7o2xxdUwwEMZwUeP6xHdKRDwIgyZrdadMPYffDYum0HEYJdU+KzMzu6HDaTEAiAKArHSyuXrdvDLZnTct48a2Jap7hQSNN00zRJcbk7v7Bs/bbcMNpX001KaZ9uKRdNHZreOd4myyYhAAKPP7Rpx6HFa3blHSmhlMmyyEn7stIS+vRIcdptmmZwpu4qty/vaGnOgcLGuONaLkNyydnDXHbLi+/P75XVqVt6YkyUE2NEKQ0EteMl1TkHjgbr1NcoZV06x/XrmWq3KLzEQSmr9vg5fjvSZeXNtIwyWRasFhlBqBsmRshht8xfsWNzziFri0wFf5IxhP0TWRJDms5ru4QyScQIopCqqbVLnxN6SpLQfERYQ4BnUaS6HHgnYjsENY6E4y+F0KJIgLNEQsg5IBRZDKl6HQR8jbsZPklFASOE/LW0wQwwSRRQfRKUMLOlVZFlqaaJwh9UIQBef4jfIwehKZIoNO+tIgR1g2AEMcaEEFHAukl03eSrXxRxk/UlCDlXLONBCMZIEjFHa0kCNkzCKTc5PULjVnpZEnTDpAwAxihlgoAxRnWlEvjNarqBELIqkiQKfPZCmh4M6QAARRbDE8IYkCRB0wzDNMPMkLyzQm8Gnc4/zSREkUTDJBxzoOkmYwwCiDFSZDF8g3VjIZNQbuT8EUuiIGCkG2ZdjBOljDLKSTUxxo1lBv56Y+AO94nMDaxxIhHiPDon0Aut0gNvpjmhMQa7bttDbaqUNhbVqDEfwC+F8bRSvQ9pyuXkSUae5YG1sBxUW8HmH9sa9iR6gjyY1fUOmoOUN3WbJ3iXGzgYjV9MKauTRGjiLTWXDyFfWLXYFMj5LE68p94kN3BqmvjMxmU7yhiq5YOq5/Eyhpo4S5v4Fv7IWsLd/9Eax39MBboBjDR8GjBwyj0bLaTAT5p4brJKxV8VzvXjhu+CzU00QhDVB0Ex1mpGrxNPq7mrbf1ttnYGGs9e0/YGAGAMQoAbNTY0Nu/WfGkTn1+b2Wsh43fSb2lNy8rfrALdPtrH32X8f+BahbVnM2vGhW1FSR/W3zebDmmabRw9xbpk8wdJSyfV7/miJrb82i289sWtZbBsN4a/YISbmxvkWBszMfJCWC2bYw3vEP8E0ySCgFtAvPEkDCGUq5hxKCFCkONTw3SXhkEFAekG4WXa8FU157byUCHstPCOJcMgJy6e1Uhv1b0SAaOQqocjkzCCGiEoCLimPkhPTtuq6RwLT/nVYowwQrWVyhNhOkIIYxhSdS6MdBJzgIAQygV86152A2bRuiV5VCdRFn4o7cbwWyxBFAVZEvwB1TQJgBAARkxqtcqcZCX8PChlcTEu0ySBkAZ4UVmoYbmURMHikLz+EAOghdRNx4RoqyIFVV3VDMaALGHdIKqmq5phEgIYEAQc38Hl9YfiYiI03VB1wzQIp8fj1YkGWBrGmM0qGyZRVZ3HgIokSqIQHelQNf1EQwWnj2A1IimEUK8/mNoxNhDUePsyRjXF75BmVFb7fH5VFLFFkZqkteTxvW4YjIG4GFd0hF2RJU03dMMMqUZI0xGCwaDG+40IpZEum2GSQFDjOPZgSAuvcW4zXE4ufGogCB12xR9QNd3UdRNhxK/QabOEVJ3Ul1ZBCFpkxR9SGWOMAoSgzSKH/uimpf8JY+DABEUWszM6ZaUlRLisfDt02JRDBaVzlm7TjJCAUC3znDFiQGa/Hp1dDmsopEMIi8vd73+7orTCMyA76YX7L37p/fm/rNzptFsaryGMoEfVRwzIOnfSAN0g0ZH2Crf/cEHpig17GWPduyTbrDJPuvsDoc9/WjN1XN/Ujh0inDafL1Tl8Yc0PfdI6dI1OQ2ocUxColy2Yf0zE2MjAACabhYWVxw5XnH1zDFD+nUJR5aSKMiSIIqCYZjBkL56y/7H/vv9v+44b1B2WiCkMQC8/pA/qPLFlF9YtnTt7s05hw4dKXU5rZzauUHoHFK1DtGuq84bPX1CP37uZHSORwjtyT32+CvfS5LQLT25Q6SDMuYPqgjB7xdshAAu+eyB4nL38eIqjDH3NEOqbhimLItWReYkFxAAX1BLSYh+8MVvFEUcN6RHRbUPYxwMabv2H928K79B+gtBOLhPl+5dk2rUeihbsXHPtt1HWkaP/+WjLQocAgAwRoGQVlnt79Y18dHbZo4YkDViQCalbM7SrYePlQu19FWMAUHABw+XqJpxzsQBU8b0SYiNWLw6J+dggaYbnZNi7r52at/unddsPVBc5pYkocGDIIxZFXHzrkNrtx2EEFx13mhV059/d+7WnMO6YU4Z0+eWWZNGDMgsrfS88M5cb0DlNb7JI3vNmDRwaL+MlISYr+dt8AVDum6i+gq5JeWeKJf1tcevGjEg0yTk6/kb8gtKl63fa5GlqeP6RTht81ds/2np1ryjpXtyj3m8wX7ZaZtz8ucv37Zs3Z7uXZL6Z6c57ZbvFmz88NsVyzbsLiyqnDl50OXnjBzSu8vx0qo9ucesilwP0QChqhuJcVFv/evqS6cP/+i7Vc+8/fObXy5Zu+XgwOx0RRaff+/n/YeKMtMSHrhp+sBeaR0Top5/d96e3GO3XjZp5MCsotJqX0Dlvg2lrH+PtF5ZKZIoHDlWIYkCpdQwaWpybFZ64tJ1ew4Xll9zwZgLzho6YkBmdkbyfz9aWFHtU2qRrQAAjKEvqDkdljcfv2rMkO7D+2eu235w8eoc0jSdc/vJcNJqA2OiIOiG+dL7v1w0dXh2RnJFle/BF79euWl/UmykUb8FjFK6ePWutI6xvbul/Lhky7tfL49wWBBEEEK3N9Clc/z7T19/xT1vHSks54XVukEkpcxlsxwvrjxyvJxSVun2Hz5WLgj46PGKZWt3zzp7OABg/vLt+QVlHZNiTEJWrN/rsFmyszq57NaQbuzYdwQw1kCqkFJmtUibc/KDIc0wyVtfLN2yKz8pPrKi2jd78ab7bpgGAPh56bZvvl0uRzooBZKI33jiykNHSyGEhcWVr326eMyQHlaLtPtg4bJ1e2RJXLv54LqtBz954aY+3Tu/+ugVF9z+2sH8YknCtUUMSBmwW5Vn77lo9OBu385f/+h/v7PbFEkQ5q3YLmD08G3nBlUDALh4Tc7txZUJsRE79h39dW1ORJSjY0L0V3PXPfXGj1VuP8KIUYYQ/PSFm0cP6bZ+e+6tj30siQInREtJjOmVlbIl59C+vKJzbvzPB8/eMGF4T0WRhvTpUlzmpoDVOxkQ7BgfbVJaeLTkiddmf79go8NuxQi28fC77aZWOTxBkgTImCBgkxCMUHSEnTRiOkEI2qxKDfpSwC6HAlFNzMzxjD26Jn/x8i2dkztoWhP06IRSSRJkUUAIihjxXhZJFBycqVLALodVlgQe0POmnOXr9ggC7pzUYdrYvpreAG9Xg5kdOSDLapE37zq0esv+hNgILlwQ4bTxSCPCaXXERSbFRybFRwoi/vyntas27QcAKbLI67tclNZht9isclSEPfdI8QffrQiqWmJc1MwzBvqDobpAdN0wUpJi+menEUK/nLvO6bBYZBFAEOmy7TpQuHbrQX9ARQg6bLxojq2KLFtlRZJ+WLTp0Ze/Ky5zQ86PxBhjgLPSRzrtDqvCpVMxwtt2Hykpd0c6bU6HEgzpj/732/2HjtutyqwZI6wWySRh7C0wTOK0WW67fJJFlp59e+63v2yIiXIK+G+QxG/Tl8gYBYzphAAANMOs8vibedmJvipOsRHeoS2KtH5HblmlNzM18bOXbk7tFKvpZuMHQ+sUY2t+YCfIDCml4V/y2P2Ln9dWewOyLI4cmKXrZuNSl2GSs8b0IYR8OXedphmMMt4jGo5bCKGGQTiay2aR9+UdP1RQKgqIq6XUULNQxkkgDZNYLcr67bmBoMYYyEhN0HSzHmEZA7IkENPEGCXGRhqGSRlgjCEI/UH12bfm2Cxy3e5yxphpUlkSlq7b7Q9qvN05PE6ccrAGgM1lA/KOlBwtqsQIWy3irv2Fz70zT9ONEQOypozuU5cslVF6y2UT+2en/fuNH2cv2tQh0kkI/VvkZNu+vULTIHz1aLWwnBYGh1DA2kUsisLKDXs//2kNAKBbl6SPn78xMS4yqBoN9JtPwX+j1GGzLF2ze+WGvYCx4QMyu3dNqkvrACEkhHRJiZ0ypu+u/YULft1hszYtTFG/vlAHV9LkISmgvXlFwZDGfci6gFEGmCDg4nK3x68yxs6e0A8jHM54EkJVzWiufIEgRBBQ2gSDJTeD8D9BACo9fq4FYxLmtFsXrd65YOVOhODNl02MdNVAqQ2TZKQl3nrZGT8u2vzaZ4sVWaR/H129Nm8MsAk6quYWFX/2DbjcIp22e5/7cvaiTQCAHl07vvboFQKGqmb85oObUqoo4s/Lt0EIk+OjRwzI9Ae1cFc2xsjjC40b2jMqwv75nDWabjaXIeBc2aKIJVHQNNM0SctVuVqIFDt0tFSqo1FAKZNEXFhUtWDldgjhhOHZj9x6jmkQ7lgCcJIEf3PrFNcS84RfxlO9oAarAgzDfOLVH/YdOt4rs9M9155lGETEmBJ62+WT3L7gc+/O5RHI36hOh9q8LQDzVBhTTJNy+ipWJxaPjrDf+MiH3y/cyCgdNajb5/+5RdMM42SLr4XgXsB41ab9Bw4dlyVh/LDs6Ag7p5SDEFBCXQ7LmWN6l1d5F6zcITaj3+7xBX3l7pIKT1Gpu7C4MjMtISbKYZhmCxfEwwkI4a8b91qVeiThlFKLLL771fKtu/MFjG+9/Iyn774QIcTRqb9l0gFACCGIGGCw6R2BWRT5wOHi1z5eBAC4dPqIYf26llZ6BvXuMmPSgA+/+3X3wcIGAhftxvD7Yoaa9X0KxlCjUAgbPlyE4EMvfrthZx5jbMLw7F8+vDeoar/5USEEPb7gD4u2AAAG9U7rkZHsD2qc5NgXUAf2Sh/WL2P2ok1llb7mmDCvOm/0Wy/e/NHzN37/+h0/v3v3Zy/d3LVzPC8/1/WO+EAQ+gJq/56pkU7bZz+tXr8tV6mP4GcMIIzKq3y3/+uTwuIqhOB1F41756lrLIrUWCqudbYAIISwxbK0SUikyz53+bbFq3c57JabZ02yWZVbLpt4rLjqk9mrHHYL+YsYX/7/ngwQntLJQAihtB7tEkYIQCAKqMrte/DFb/KOllJKh/fP/ObV23mXwm84HyCEjIGfl271+IKx0a4Jw3pKXASNAQjhlNG9FVn6dPYqTpPT5Cd075I0aVSvKaP7TJ/Y/6yxfVM7xjbW/qhxSCDUDLNH1+T/PHzZ7txjD7/0LWgKa8QYs1rknAPHrrznrZIyNwBg6rh+n7xwk92qNA7xW1XqQbAB6UGTHmNQ01/+8JdgSJswvOe89+4+Y2Tvt79YVl7pg+DvN/4GCa+wPGtrjhEuBBpetIwxp90iCIJpUkWRdu0ruPq+tw8XljPGpozu8+YTV3kDKoO/ATbDEILlVZ4tOYcYA+OG9UjsEGEYZkjTU5JjJo/qPW/FtqNFlYKAmvPJv1u4cfj5j/ecfG/84JsGTn94f34RhicYjTjvwWO3zVzzzWO/fHj/oo/vn/f+PVlpidc/9J4vEGqu/51S6nJatuTkz7zl5Z37jgIAxgzpPueduxLjI7XmY+jmTz/UnGZ23SEJwq4DhQtW7hQEPKRv17yjJQtX7RQEBCFsN4Y/fvBUaasocwEwCeHMfKCmI5lGuGyyJFDGKGVWq7xzX8H9L3zN5XZmTR/x2G3naprRWIrqZDlfIGDkC6irNx+EEPTpltIrqyNlzCR0cK/0zskdvpyzzh9QxeZzVhxEqOk6xmjngaPL1u5mdVQp+LvKq7z+kG5RxH49UqNcdgDAtHH9a4Sumz0YqdNu2Zd3/JJ/vr5h+0EAQO9uKU/98wKuzXxKAgi8u7Al2sIamwEhVf952VZ+2cvX76n0+EQBgb8hvrXtu0kgzFjamkfJKebrsFwxiyKFaeQIoS6n9Zdft9/7zBeqakAI77zmzBsvGR9S9VN9dAhBTTc37MjzBVQI4XmTh3BBresvHr9z79FNO/NalnMPa6lAAFwO64ff/bprf4GtVh2YH24vffDLuEufmnbdiw+8+PWuAwWmSW67fNLgPl1aFkImlNptSlFp9R1PfXbwcDFjYPywHuNH9PAHVAxbSanCG6YhRCeXTOB+7LHiKlAj26MRwgCAf0eod1s3BlYjTVIDomz5qQAAdJ0wWm83a+BemyaNjnB8PHvVP5/6VNMMAOA9102bPLpPOAfayhOCMSDLQkFRxY69RwAA44b2iI6wD8xOG5Cd9sXcdWWV3rCU8klzU5IoFJZUeXyhcLaXX0JSXITDpri9gfe+Xn71fW/vzi2MdNmfvvvCjgnRumG2kCYyTOq0W3YfOPbaJ4sYYxZFHtE/KxTST8kbRAghgFrZ1ldXbg/8bUfbziZRJgrChu25AACrVYmOtJvNCHnwLk0AQGFxpdQysS4EJiEdopwfz1519zNfIARdDuvrj1+ZHB/FM1e6brZKx4AxWRILiyvnrdgGAHA6LGeO7XvGyN7HSioXrd6pyGLrNXgYY5KAEYINRCEkUaSUiSK2KfKhI6XPvj03GNJ7d0t5/B/nihg34AviaavanmNgmCTCaf1p6Zb12w4CwKIjHPQUcXIIQoRhK9t2/380/bRxOAaTRLxs3e6QqifFRvbJSlE1vYGSHwcLSKIwfXz/YyWVR46VK4pYtw+9yZVNKO0Q7Xzv2+Vc2zwuxvXEP84DAKiayVlWWasuD4gCXrvlYH5BKWPswjMHX33+mC/mrM0/WqYoEmlS7qS+9da9Qt7BU/NXCAAAVosEISCEGYTYbJbFq3Ne+mAeY2zGxIHXXjSOtwdACLlc/KSR2TMmDqi390MQDOn78o9DCI+XViIBn1LQgBHEra5RwPrnc7sxnBYfCSNUVOZ+/NXvNd284eLxaR1j3d4A5p1fAhYETCl1+4Kzpo8Y0rfra58u3rHvKJe2D1OkmCZBCAkCbsArQQiJi3a9/OEvj73yA9/aGWOaYQRVHSKIw11hteTbTXE6UJtV3pN7bN32XMZY/55p5VXenxZvsVqapLMHsI6NYYyDIZ0xJgoYIVjp9p8/Zcig3mmcL6eGo06RObsjzxRJIn79s8WLVu3ECN11zZnTxvWrqvZDAERBAIxFuuwTR2QzBgmhXBJX103G6PB+Gf6gtmzdHqdDMckJC8VN3RGEkPeyAQAIZU1SsjbtoJ4QKzIxRr+l0tduDK30R9/9avlDL32TkZb4zN0XZqYlBkN6eaW3ospbXulFEF17wdjn779k1aZ93y/Y6LBbCKEMgOpqv90mm4TabYrb4y8t9xhGvfouY8AwSVJ85JOvz37h3bmGSSGE/qCq6wZGqNrj9wdVLjNnsyiGSYIhrcHiYayGDvnT2au9/hAAYN7ybTv2H1WUpiuvXM7UNImmm6MHdRs3tLuqGcdLq3Xd7N4ledaMERXVfr8vGBlhwwgZhpmRGufxhYxayVCEIKPs+ffnF5e5nXbrk3ecP2PSAE03qj2BQEiTBHzGyF4j+ncNqXpBUcWx4kpFkZ65++IIl/2BF75asWEPNzMAmEmoYRLdF1AbEbqZJimr9ARDmmkSl8Ma4bT4A9pJH5CmG5pu8LmKdNorq/3+QOjveES00eaeBs6rKAhbcvJLK7wXTRt6wZlDsjM7xcW4+nTrPHVcvzuumnLTpRO/W7Dx0f9+V1ruFgWBUkoovXnWxH/fdWGky54cH9U5OcblsAVDqtsXarAdmoRGuWyzF28ur/ZNHtVrw/a8hat2KpJw5ti+994wLSE2EiGUnhJX7QkYJvH4Qk1EDrKUX1jWrUtiSlLMw//5zusLNbkMKGPxHSLuuvasXlmdBIziO0RceNbQgb3SJo3IvuKckfdcPzU9Je7F9+aNGtTtlUcuj450YIw6J3WodPuOFlWEwxiM8fGSqoNHSnpndUpPiZs6rl9GagJlzGqRHXbLxBG9Zk4elJEaP3xA5vlTBl85c3RmasKtj33005ItToe1c1LMs/dclJ3VCSHYMSHK4bIfLizzB7S6DbRREbbLzhk5a8YIWRYjnLa+3TsfzC8qLvc0t7AhAISw7l2SHr713IzUBIRQvx6pibGRZVXe8koP/LudD38MidjpT7BCjjpO7xz7jysmTxrRKxDSdd0wCTlWUvX9go0/L9uqaSbfkillCR0ixg/vSQh1e4MIQafdQinLLyzdsD1PkhqG15ysrrzKe/m5o+1W+e0vl9ks0iVnD+uZ0cnrD/KjqajMXVhUsWzd7uba/+M6uO6+9qz7n/uKNV8BGN4/Y3DvLlztl1AmYuSwW0UR67qpGeaho6U/Ldk8feKALp3iajEUMBjSVm/Zv23PkXBWgKvjdUyIPnt8/ylj+mR0Tjh6vOKreetmL9rUo2vy1ReMGTekB2Ns98HCr35et2DVrooqr92ueLzB4f26njWuX0jVOTk0IWTL7vz12/ICIRUjBCDUdaNvj84ThmUrisiPI1HEBw4V/bx8WwsgQkLopFG9BvVKN0yTl18sirRuW+4vK7aLAmbtxnCaCg4QQn9Qs1nkSKdNkgQAgKrqvqDqD6qKJHE2T/5iWRK8fjUQVGs4LABwWGWrVTZ00lwMycncXQ5LSK0B8+iGyVnJGGWSJIoC1hop8ZzItZvE5bAGQloLeRVFFnmcED4rCKEMMAgg1wGSRAEjFNL0cGpIELAsiQ3wRQjBQFATBRwVYZclURKxxxfy+IK6SSIcFofdQgn1+kPVnoAsixa5BtKHINRNk/t1PG3lclg1zTBrs0w8P8aZNVCt1q21KbbPBkMShTCfAAdsWy3yKSHK2o3hN7lMCJmkRi4aQIAgFDASMG7AXck5DHGt5jNjNX0OLYSDPK1DCEG1C7EBKSJgrIW4kNtDy8JTlFIIm6101yin1GdfbI5khRPIckIY3gjOQ23DJKZJOKspP4LC0UtjVhtOkFP3d42ZeFqetOZe05p3tcXo9O91uZRSDCGWxPrVCNY4zAB19FPCG2rLmau6y73BukF1EibNZYEbs1I3XsEnTdU37iBtOgKhlG/JdY2GeylCjawRaxDEN/6gxqbblNXBVuxQv+Vd7cbwx+Rb2ybu5c+/qKawq+D3S4T+z452rtX20T7ajaF9tI92Y2gf7aPdGNpH+2g3hvbRPtqNoX20j3ZjaB/to90Y2kf7aDeG9tE+2o2hfbSPdmNoH+2j3RjaR/toN4b20T7ajaF9tI92Y2gf7aPdGNpH+2g3hvbRPtqNoX20j3ZjaB/to90Y2kf7aDeG9tE+2o2hfbSPdmNoH+2j3RjaR/toN4b20T7+ZuP/AHw3ngo7CXQnAAAAAElFTkSuQmCC";
 
 // ─── THEMES ───────────────────────────────────────────────────────────────────
-const DK = {
-  sidebarBg:"#0A1E38",  mainBg:"#050F1C",  card:"#0F2645",  card2:"#132C4E",
-  headerBg:"#0A1E38",   border:"#1E4470",  text:"#EDF6FF",  muted:"#7FADC9",
-  dim:"#4E7E9E",         inputBg:"#081A2E", inputBorder:"#204468",
-  tableRow:"rgba(255,255,255,0.03)", tableRowHover:"rgba(255,255,255,0.07)",
-  scrollbar:"#1E4470",
-  shadow:"0 1px 2px rgba(2,8,16,0.5), 0 10px 28px -10px rgba(2,8,16,0.65)",
-  shadowHover:"0 6px 16px rgba(2,8,16,0.5), 0 20px 48px -14px rgba(2,8,16,0.8)",
-  heroGradient:"radial-gradient(120% 180% at 100% 0%, #1D507C 0%, #0F2C4C 45%, #081A30 100%)",
-  pageTexture:"radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(224,169,74,0.05), transparent 60%), radial-gradient(ellipse 900px 500px at 100% 10%, rgba(31,174,142,0.04), transparent 55%)",
-  mode:"dark", washAlpha:"14", badgeAlpha:"22", glowRing:"30", glowBlur:"55",
-};
-// Light mode — matched directly against the CSS custom properties inside
-// cashflow-dashboard.html (the standalone tab embedded via iframe), so the
-// two tabs read as one consistent product rather than two different apps.
-// Values below are taken verbatim from that file's :root block:
-//   --bg:#F4F6F9  --surface:#FFFFFF  --ink:#101E3B  --muted:#66738C
-//   --line:#E4E9F1  --shadow: 0 1px 2px rgba(16,30,59,.04), 0 8px 24px rgba(16,30,59,.06)
-//   header gradient: linear-gradient(135deg, #0A1A30 0%, #153564 100%)
-const LT = {
-  sidebarBg:"#123C5C", mainBg:"#F4F6F9", card:"#FFFFFF", card2:"#FBFCFE",
-  headerBg:"#FFFFFF", border:"#E4E9F1", text:"#101E3B", muted:"#66738C",
-  dim:"#A6B0C3", inputBg:"#FBFCFE", inputBorder:"#E4E9F1",
-  tableRow:"rgba(16,30,59,0.02)", tableRowHover:"rgba(16,30,59,0.045)",
-  scrollbar:"#E4E9F1",
-  shadow:"0 1px 2px rgba(16,30,59,0.04), 0 8px 24px rgba(16,30,59,0.06)",
-  shadowHover:"0 4px 10px rgba(16,30,59,0.07), 0 16px 36px rgba(16,30,59,0.12)",
-  heroGradient:"linear-gradient(135deg, #0A1A30 0%, #153564 100%)",
-  pageTexture:"radial-gradient(ellipse 1000px 500px at 15% -10%, rgba(201,162,75,0.05), transparent 60%)",
-  mode:"light", washAlpha:"2A", badgeAlpha:"33", glowRing:"55", glowBlur:"85",
-};
+// Palettes now live in ./theme.js. DK/LT are imported above and expose both the
+// new token names and legacy aliases, so components migrate incrementally.
 
 // ─── API ──────────────────────────────────────────────────────────────────────
+// Several components independently ask for the same data as they mount, so
+// the dashboard was firing portfolio_dashboard and settings twice each on
+// every load — duplicate work on the slowest part of startup.
+//
+// This dedupes only requests that are genuinely IN FLIGHT at the same moment:
+// identical GET, same user, overlapping in time, so the answer is necessarily
+// the same. It is deliberately not a cache with a TTL — that would risk
+// serving stale figures straight after someone saves an edit, which on a
+// financial dashboard is a far worse failure than a duplicate fetch.
+const _inFlight = new Map();
+
 const supa = async (path, opts = {}, token = null) => {
+  const method = (opts.method || "GET").toUpperCase();
+  const dedupable = method === "GET" && !opts.body;
+  const key = dedupable ? `${token || "anon"}|${path}` : null;
+  if (key && _inFlight.has(key)) return _inFlight.get(key);
+
+  const run = _supaFetch(path, opts, token);
+  if (key) {
+    _inFlight.set(key, run);
+    run.finally(() => _inFlight.delete(key));
+  }
+  return run;
+};
+
+const _supaFetch = async (path, opts = {}, token = null) => {
   const r = await fetch(SUPA_URL + path, {
     ...opts,
     headers: {
@@ -158,13 +166,72 @@ const supa = async (path, opts = {}, token = null) => {
 
 // ─── FORMATTERS ───────────────────────────────────────────────────────────────
 const fmtM = (n) => n == null ? "—" : (n / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";
+// Exact rupee value, grouped. Project Detail uses this instead of millions:
+// it is the one page where someone is checking a specific figure, and rounding
+// 320,000 to "0.3M" makes 250,000 and 349,999 indistinguishable.
+const fmtFull = (n) => {
+  if (n == null || n === "") return "—";
+  const v = parseFloat(n);
+  if (!isFinite(v)) return "—";
+  return v.toLocaleString("en-PK", { maximumFractionDigits: 0 });
+};
 // Real project codes (IT./RU.) sort first, blank ("-") ones after — used by
 // every project list in the portal (Projects, Campus/Sites, Dashboard
 // drill-downs, Performance), not just one page, so this lives in one place.
-const sortRealCodeFirst = (arr) => {
-  const hasReal = (p) => p.code && p.code !== "-";
-  return [...arr].sort((a,b) => (hasReal(b)?1:0) - (hasReal(a)?1:0));
+// ─── ACTIVITY RANKING ────────────────────────────────────────────────────────
+// Projects where something has actually happened rank above dormant ones, in
+// every list. With 101 of 106 projects sitting at "PDD Not Submitted", the five
+// that are moving were previously scattered through the list and easy to miss.
+//
+// The signals are read from the project record, not from the activity log. The
+// log is not usable here: 101 projects carry an identical baseline of four
+// entries from a bulk import, and the table as a whole is dominated by 2,192
+// creates against 2,182 deletes. Counting log rows would have marked every
+// project as active and the ranking would have done nothing.
+//
+// Weighted so that approval progress dominates, then money, then execution
+// signals — a released project outranks a merely budgeted one, and both outrank
+// anything still sitting at submission.
+const ACTIVITY_STAGE_RANK = {
+  approved:          6,
+  mt_review:         5,
+  ed_review:         4,
+  df_review:         3,
+  identified:        2,   // PDD submitted
+  pdds_submitted:    2,
+  pdd_not_submitted: 0,
 };
+
+export function activityScore(p) {
+  if (!p) return 0;
+  const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+  let score = (ACTIVITY_STAGE_RANK[p.workflow_stage] ?? 0) * 100;
+  if (num(p.amount_released) > 0)  score += 40;   // money has actually moved
+  if (num(p.payments_made) > 0)    score += 25;
+  if (num(p.bac) > 0)              score += 15;   // budget allocated
+  if (p.actual_start_date)         score += 10;   // execution began
+  if (num(p.pct_complete) > 0)     score += 8;
+  if (p.budget_release_date)       score += 6;
+  if (p.code && p.code !== "-")    score += 5;    // registered, has a real ID
+  return score;
+}
+
+// Default ordering for every project list. An explicit column sort replaces
+// this entirely — the ranking is what you see before you choose an order, not
+// something that fights your choice.
+const sortByActivity = (arr) => [...arr].sort((a, b) => {
+  const d = activityScore(b) - activityScore(a);
+  if (d) return d;
+  // Within the same activity level, registered projects first, then by name so
+  // the order is stable rather than dependent on fetch order.
+  const ar = a.code && a.code !== "-" ? 1 : 0;
+  const br = b.code && b.code !== "-" ? 1 : 0;
+  if (br - ar) return br - ar;
+  return (a.name || "").localeCompare(b.name || "");
+});
+
+// Kept as an alias so every existing call site picks up the new ordering.
+const sortRealCodeFirst = sortByActivity;
 // Duration is always derived from start/end dates, never typed manually —
 // uses the same 30.4375-day average-month formula as the one-time database
 // backfill, so a project edited in the UI always agrees with one computed
@@ -181,14 +248,14 @@ const fmtP = (n) => n == null ? "—" : parseFloat(n).toFixed(1) + "%";
 // ─── STAGE METADATA ───────────────────────────────────────────────────────────
 const STAGE = {
   pdd_not_submitted:{ label:"PDD Not Submitted", light:"#94A3B8", dark:"rgba(148,163,184,0.15)" },
-  identified:{ label:"PDD Submitted", light:"#6B9AB8", dark:"rgba(107,154,184,0.15)" },
-  df_review: { label:"DF Review",   light:"#3B82F6", dark:"rgba(59,130,246,0.15)" },
-  ed_review: { label:"ED Review",   light:"#8B5CF6", dark:"rgba(139,92,246,0.15)" },
-  mt_review: { label:"MT Review",   light:"#A855F7", dark:"rgba(168,85,247,0.15)" },
-  approved:  { label:"Approved",    light:"#2DD4BF", dark:"rgba(45,212,191,0.15)" },
-  closed:    { label:"Closed",      light:"#6B7280", dark:"rgba(107,114,128,0.15)" },
+  identified:{ label:"PDD Submitted", light:DATA.info, dark:"rgba(107,154,184,0.15)" },
+  df_review: { label:"DF Review",   light:BRAND.blue, dark:"rgba(59,130,246,0.15)" },
+  ed_review: { label:"ED Review",   light:VIOLET, dark:"rgba(139,92,246,0.15)" },
+  mt_review: { label:"MT Review",   light:VIOLET, dark:"rgba(168,85,247,0.15)" },
+  approved:  { label:"Approved",    light:EMERALD, dark:"rgba(45,212,191,0.15)" },
+  closed:    { label:"Closed",      light:DATA.neutral, dark:"rgba(107,114,128,0.15)" },
 };
-const PRIORITY = { top_priority:"#F87171", first_priority:"#F59E0B", second_priority:"#60A5FA", third_priority:"#2DD4BF", carry_forward:"#A855F7" };
+const PRIORITY = { top_priority:ROSE, first_priority:AMBER, second_priority:DATA.info, third_priority:EMERALD, carry_forward:VIOLET };
 const PRIORITY_LABEL = { top_priority:"1st Priority", first_priority:"First Priority", second_priority:"2nd Priority", third_priority:"3rd Priority", carry_forward:"Carry Forward" };
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
@@ -197,8 +264,10 @@ const NAV = [
   { id:"proj", Icon:FolderKanban,    label:"Projects" },
   { id:"camp", Icon:Building2,       label:"Campus / Sites" },
   { id:"perf", Icon:TrendingUp,      label:"Performance" },
+  { id:"risks", Icon:ShieldAlert,    label:"Risk Register" },
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows & Timelines", pmoOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
+  { id:"photowall", Icon:Camera,     label:"Gallery" },
   { id:"team", Icon:Users,           label:"Team & About" },
 ];
 const PMO_NAV = [
@@ -207,154 +276,493 @@ const PMO_NAV = [
   { id:"set",   Icon:Settings, label:"Settings" },
 ];
 
-function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword }) {
-  const navItems = NAV.filter(n => {
+// Offered once per account (see tutorial_offered_at above), never for PMO.
+// Builds its own step list by role and calls the tour directly — nothing
+// upstream needs to know what a "tour" is beyond rendering this card.
+// Guest-only — a Project Manager is never offered this card at all (see the
+// gating effect below), so the isPM branching that used to live here is
+// unreachable and removed rather than left as dead code.
+function TourInviteCard({ T, show, role, name, onDismiss }) {
+  const tour = useTour();
+  const vpTC = useViewport();
+  const near = useNear();   // must be called before any early return — hooks can't be conditional
+  const [startHover, setStartHover] = useState(false);
+  const [dismissHover, setDismissHover] = useState(false);
+  if (!show || role !== "guest" || vpTC.isCompact) return null;
+  const initial = (name || "G").trim()[0]?.toUpperCase() || "G";
+  return (
+    <div ref={near} className="pmo-near pmo-invite-card" style={{
+      "--near-light": `${BRAND.gold}20`,
+      position: "fixed",
+      right: vpTC.isCompact ? 16 : 26, left: vpTC.isCompact ? 16 : "auto",
+      bottom: vpTC.isCompact ? 84 : 26, zIndex: 1500, width: vpTC.isCompact ? "auto" : 450,
+      background: T.surfaceOver, border: `1px solid ${T.borderStrong}`,
+      borderRadius: R.lg, padding: "20px 24px", boxShadow: T.shadowLg,
+      backdropFilter: "blur(16px) saturate(150%)", WebkitBackdropFilter: "blur(16px) saturate(150%)",
+      borderLeft: `3px solid ${BRAND.gold}`,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
+        <div style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+          background: `linear-gradient(135deg, ${BRAND.gold}, #8A5810)`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 16, fontWeight: 700, color: "#fff",
+          boxShadow: `0 0 0 3px ${T.surfaceOver}, 0 0 16px ${BRAND.gold}55` }}>
+          {initial}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* name.split(" ")[0] took only the first space-separated token, which
+              for a full_name stored as "Mr. Yahya Khan" is just "Mr." — the
+              honorific, not the name. Using the whole string fixes it for every
+              account, not just ones without a title prefix. */}
+          <div style={{ ...TYPE.h3, fontSize: 20, color: T.text, display: "flex", alignItems: "center", gap: 7 }}>
+            Welcome{name ? `, ${name}` : ""}
+            <Sparkles size={15} color={BRAND.gold} className="pmo-live-dot" />
+          </div>
+        </div>
+      </div>
+      <div style={{ ...TYPE.bodySm, fontSize: 17, color: T.textSoft, lineHeight: 1.55, marginBottom: 18 }}>
+        You're set up as a Guest. Want a 2-minute tour of what you can do here?
+      </div>
+      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+        <button className="pmo-focusable pmo-btn" onClick={onDismiss}
+          onMouseEnter={() => setDismissHover(true)} onMouseLeave={() => setDismissHover(false)}
+          style={{ background: dismissHover ? T.surfaceRaised : "transparent",
+            border: "none", borderRadius: R.sm, color: dismissHover ? T.text : T.muted,
+            cursor: "pointer", padding: "10px 15px", ...TYPE.bodySm, fontSize: 16,
+            transition: `all ${MOTION.fast}` }}>Not now</button>
+        <button className="pmo-focusable pmo-btn"
+          onClick={() => { onDismiss(); tour.start(guestSteps()); }}
+          onMouseEnter={() => setStartHover(true)} onMouseLeave={() => setStartHover(false)}
+          style={{ padding: "10px 24px",
+            background: startHover
+              ? `linear-gradient(135deg, #E8B458, ${BRAND.gold})`
+              : `linear-gradient(135deg, ${BRAND.gold}, #C47818)`,
+            border: "none", borderRadius: R.sm, color: "#1A1206", fontWeight: 700,
+            ...TYPE.bodySm, fontSize: 16, cursor: "pointer",
+            transform: startHover ? "translateY(-2px)" : "translateY(0)",
+            boxShadow: startHover ? `0 8px 22px -6px ${BRAND.gold}99` : `0 2px 8px -2px ${BRAND.gold}55`,
+            transition: `all ${MOTION.base}` }}>Start tour</button>
+      </div>
+    </div>
+  );
+}
+
+function SidebarTourButton({ T }) {
+  const tour = useTour();
+  return (
+    <button onClick={() => tour.start(guestSteps())} className="pmo-focusable" style={{
+      width:"100%", marginTop:7, padding:"8px 12px", borderRadius:R.sm, cursor:"pointer",
+      background:"transparent", border:`1px solid ${T.sidebarBorder}`,
+      color:T.sidebarFg, fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+      display:"flex", alignItems:"center", justifyContent:"center", gap:7,
+    }}><Sparkles size={12} /> Take the tour</button>
+  );
+}
+
+function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
+                  T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
+                  fyLabel = "FY 2026-27", navStats = null }) {
+  const roleFiltered = NAV.filter(n => {
     if (n.pmoOnly && session?.role !== "pmo") return false;
-    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp")) return false;
+    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons")) return false;
     return true;
   });
+  // On mobile, the bottom tab bar already surfaces this user's top 4 — a
+  // "More" drawer that repeats them isn't the standard pattern and just
+  // wastes the first screen of taps. Desktop keeps the full list, since it
+  // has no separate bottom bar to defer to.
+  const bottomBarIds = isCompact
+    ? new Set([...roleFiltered].sort((a, b) => {
+        const ai = MOBILE_TAB_PRIORITY.indexOf(a.id), bi = MOBILE_TAB_PRIORITY.indexOf(b.id);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      }).slice(0, 4).map(n => n.id))
+    : new Set();
+  const navItems = roleFiltered.filter(n => !bottomBarIds.has(n.id));
+
+  // Icon-only when collapsed on desktop; full-width drawer on mobile.
+  const mini = collapsed && !isCompact;
+  const W = mini ? 68 : 244;
 
   const NavRow = ({ id, Icon, label, admin }) => {
     const active = page === id;
-    return (
-      <div key={id} onClick={() => setPage(id)} className="pmo-nav-item" style={{
-        display:"flex", alignItems:"center", gap:11, margin:"2px 12px", padding:"8px 10px", cursor:"pointer",
-        borderRadius:9,
-        ...(active ? {
-          background:`linear-gradient(90deg, ${GOLD}26 0%, ${GOLD}0D 100%)`,
-          boxShadow:`inset 3px 0 0 ${GOLD}`,
-          color:"#fff",
-        } : {
-          color: admin ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.6)",
-        }),
-        fontSize:13.5, fontWeight: active ? 600 : 400,
-      }}>
-        <div style={{
-          width:24, height:24, borderRadius:7, flexShrink:0,
-          display:"flex", alignItems:"center", justifyContent:"center",
-          background: active ? GOLD+"2A" : "transparent",
+    const [hover, setHover] = useState(false);
+    const desc = NAV_INSIGHT[id];
+    // §17 — the preview reports the portfolio's actual state for that section,
+    // so hovering navigation tells you something rather than restating the label.
+    const stat = navStats?.[id] || null;
+    const row = (
+      <div
+        onClick={() => { setPage(id); if (isCompact) setMobileOpen(false); }}
+        onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+        role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPage(id); } }}
+        className="pmo-focusable"
+        style={{
+          display:"flex", alignItems:"center", gap:11,
+          margin: mini ? "3px 10px" : "2px 12px",
+          padding: mini ? "9px 0" : "9px 11px",
+          justifyContent: mini ? "center" : "flex-start",
+          cursor:"pointer", borderRadius:R.md, position:"relative",
+          background: active
+            ? `linear-gradient(90deg, ${BRAND.blue}${T.mode === "dark" ? "2E" : "1A"} 0%, ${BRAND.blue}0A 100%)`
+            : hover ? T.sidebarHover : "transparent",
+          boxShadow: active ? `inset 0 0 22px -8px ${BRAND.gold}55` : "none",
+          color: active ? T.sidebarFgOn : admin ? T.sidebarFgSoft : T.sidebarFg,
+          fontFamily:TYPE.body.fontFamily, fontSize:13, fontWeight: active ? 600 : 450,
+          transition:`background ${MOTION.fast}, color ${MOTION.fast}`,
         }}>
-          <Icon size={15} strokeWidth={active ? 2.1 : 1.6} color={active ? GOLD : "currentColor"} />
+        {/* Gold rail marks the active item — the one place gold appears in nav */}
+        {active && (
+          <span style={{
+            position:"absolute", left:0, top:6, bottom:6, width:3,
+            borderRadius:"0 3px 3px 0", background:BRAND.gold,
+            boxShadow:`0 0 10px ${BRAND.gold}88`,
+          }} />
+        )}
+        <div className={hover && !active ? "pmo-hot" : ""} style={{
+          width:26, height:26, borderRadius:R.sm, flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          background: active ? BRAND.blue+T.badge : hover ? BRAND.blue+T.wash : "transparent",
+          transition:`background ${MOTION.fast}`,
+        }}>
+          <Icon className={active ? "pmo-ico-glow" : hover ? "pmo-ico-glow" : ""}
+            size={15} strokeWidth={active ? 2.1 : 1.7}
+            color={active ? BRAND.gold : hover ? BRAND.blueBright : "currentColor"}
+            style={{ transition:`color ${MOTION.fast}` }} />
         </div>
-        <span style={{ flex:1 }}>{label}</span>
-        {id==="upd" && unreadCount>0 && (
-          <span style={{ minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:`linear-gradient(135deg, ${ROSE}, #B33A4A)`, color:"#fff", fontSize:10.5, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", boxSizing:"border-box", boxShadow:`0 2px 6px -1px ${ROSE}88` }}>
-            {unreadCount>99 ? "99+" : unreadCount}
-          </span>
+        {!mini && <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{label}</span>}
+        {id === "upd" && unreadCount > 0 && (
+          <span style={{
+            position: mini ? "absolute" : "static", top: mini ? 4 : undefined, right: mini ? 8 : undefined,
+            minWidth:18, height:18, padding:"0 5px", borderRadius:R.pill,
+            background:DATA.danger, color:"#fff",
+            fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center",
+            boxSizing:"border-box", boxShadow:`0 2px 8px -1px ${DATA.danger}99`,
+          }}>{unreadCount > 99 ? "99+" : unreadCount}</span>
+        )}
+      </div>
+    );
+    // Collapsed: the label itself is the tooltip. Expanded: the label is already
+    // visible, so the hover adds the description instead of repeating it (§10).
+    if (mini) return <TooltipUI T={T} label={label} side="right" key={id}>{row}</TooltipUI>;
+    return (
+      <div key={id} style={{ position:"relative" }}
+        onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+        {row}
+        {desc && (
+          <InsightTip T={T} show={hover && !active} side="right" width={238}
+            tone={BRAND.blueBright} title={label} line={desc} stat={stat} />
         )}
       </div>
     );
   };
 
-  return (
+  const panel = (
     <div style={{
-      width:240, flexShrink:0, display:"flex", flexDirection:"column",
-      background:"linear-gradient(180deg, #164668 0%, #0E2C46 55%, #0A2038 100%)",
-      backgroundImage:"linear-gradient(180deg, #164668 0%, #0E2C46 55%, #0A2038 100%), repeating-linear-gradient(45deg,transparent 0,transparent 22px,rgba(224,169,74,.035) 22px,rgba(224,169,74,.035) 23px),repeating-linear-gradient(-45deg,transparent 0,transparent 22px,rgba(224,169,74,.035) 22px,rgba(224,169,74,.035) 23px)",
-      borderRight:"1px solid rgba(255,255,255,0.07)",
+      width:W, flexShrink:0, display:"flex", flexDirection:"column",
+      background:T.sidebar,
+      borderRight:`1px solid ${T.sidebarBorder}`,
       position:"relative", overflow:"hidden",
+      transition:`width ${MOTION.base}`,
+      height:"100%",
     }}>
-      {/* Signature: faint arch silhouette anchoring the base of the sidebar */}
-      <svg width="200" height="220" viewBox="0 0 200 220" style={{position:"absolute", left:-30, bottom:-20, pointerEvents:"none"}} aria-hidden="true">
-        <path d="M0 220 L0 140 Q0 90 55 78 Q50 100 68 118 Q40 126 40 158 L40 220 Z" fill={GOLD} opacity="0.05" />
+      {/* Institutional arch, anchored at the base — deliberately almost invisible */}
+      <svg width="220" height="240" viewBox="0 0 200 220" aria-hidden="true"
+        style={{ position:"absolute", left:-34, bottom:-24, pointerEvents:"none" }}>
+        <path d="M0 220 L0 140 Q0 90 55 78 Q50 100 68 118 Q40 126 40 158 L40 220 Z"
+          fill={BRAND.gold} opacity={T.mode === "dark" ? 0.05 : 0.09} />
       </svg>
 
-      <div style={{ padding:"22px 20px 18px", borderBottom:"1px solid rgba(255,255,255,0.08)", position:"relative" }}>
-        <img src={LOGO} alt="Riphah" style={{ width:140, filter:"brightness(0) invert(1)", opacity:.92 }} />
-        <div style={{ marginTop:11, display:"flex", alignItems:"center", gap:8 }}>
-          <div style={{ width:14, height:1.5, background:GOLD, opacity:0.6 }} />
-          <div style={{ fontSize:10, fontWeight:600, letterSpacing:2, color:"rgba(255,255,255,0.4)", textTransform:"uppercase" }}>
-            PMO Portal · FY 2026-27
+      {/* Brand */}
+      <div style={{
+        padding: mini ? "18px 10px 14px" : "20px 18px 16px",
+        borderBottom:`1px solid ${T.sidebarBorder}`, position:"relative",
+        display:"flex", alignItems:"center", justifyContent: mini ? "center" : "space-between", gap:8,
+      }}>
+        {mini ? (
+          <img src={CREST_LOGO} alt="Riphah" style={{ width:30, filter:T.sidebarLogoFilter, opacity:.92 }} />
+        ) : (
+          <div style={{ minWidth:0 }}>
+            <img src={LOGO} alt="Riphah International University" style={{ width:136, filter:T.sidebarLogoFilter, opacity:.95 }} />
+            <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:8 }}>
+              <div style={{ width:13, height:1.5, background:BRAND.gold, opacity:0.65 }} />
+              <div style={{ ...TYPE.label, color:T.sidebarFgSoft }}>PMO · {fyLabel}</div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
-      <nav style={{ flex:1, padding:"12px 0", position:"relative", overflowY:"auto" }}>
+
+      <nav className="pmo-scroll" style={{ flex:1, padding:"10px 0", position:"relative", overflowY:"auto", overflowX:"hidden" }}>
         {navItems.map((item) => <NavRow key={item.id} {...item} />)}
         {session?.role === "pmo" && (
           <>
-            <div style={{ display:"flex", alignItems:"center", gap:7, margin:"18px 20px 8px" }}>
-              <div style={{ width:4, height:4, borderRadius:"50%", background:GOLD, opacity:0.7 }} />
-              <span style={{ fontSize:10, color:"rgba(255,255,255,0.32)", letterSpacing:2, textTransform:"uppercase", fontWeight:600 }}>Administration</span>
-            </div>
+            {mini ? (
+              <div style={{ height:1, background:T.sidebarBorder, margin:"14px 16px" }} />
+            ) : (
+              <div style={{ display:"flex", alignItems:"center", gap:8, margin:"18px 20px 8px" }}>
+                <span style={{ ...TYPE.label, color:T.sidebarFgSoft }}>Administration</span>
+                <div style={{ flex:1, height:1, background:T.sidebarBorder }} />
+              </div>
+            )}
             {PMO_NAV.map((item) => <NavRow key={item.id} {...item} admin />)}
           </>
         )}
       </nav>
-      <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", padding:"14px 16px", position:"relative" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:11, marginBottom: session?.role !== "pmo" ? 12 : 0 }}>
-          <div style={{
-            width:36, height:36, borderRadius:"50%", flexShrink:0,
-            background:`linear-gradient(135deg, ${GOLD}, #9A6E1F)`,
-            boxShadow:`0 0 0 2px rgba(255,255,255,0.1), 0 3px 10px -2px ${GOLD}88`,
-            display:"flex", alignItems:"center", justifyContent:"center",
-            fontSize:13, fontWeight:700, color:"#fff",
-          }}>{(session?.username||"P")[0].toUpperCase()}</div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ color:"#fff", fontSize:12.5, fontWeight:600, lineHeight:1.3, wordBreak:"break-word" }}>
-              {session?.full_name || "PMO"}
-            </div>
-            <div style={{ display:"inline-flex", alignItems:"center", marginTop:4, fontSize:10, fontWeight:600, color:GOLD, background:GOLD+"1E", padding:"1.5px 8px", borderRadius:20, letterSpacing:0.3, textTransform: session?.role === "pmo" ? "uppercase" : "capitalize" }}>
-              {session?.role?.replace("_"," ") || "—"}
-            </div>
-          </div>
+
+
+      {/* Abstract light behind the sidebar's lower region. Absolutely
+          positioned and pointer-transparent: navigation must never lose space
+          to decoration, which is exactly what happened when this was in flow. */}
+      {!mini && (
+        <div aria-hidden="true" style={{
+          position:"absolute", left:0, right:0, bottom:64, height:230,
+          pointerEvents:"none", zIndex:0, opacity:.9,
+        }}>
+          <AmbientRibbon T={T} height={230} />
         </div>
-        {session?.role !== "pmo" && (
-          <button onClick={onChangePassword} style={{
-            width:"100%", padding:"8px 12px", borderRadius:9, cursor:"pointer",
-            background:"rgba(224,169,74,0.14)", border:"1px solid rgba(224,169,74,0.35)",
-            color:GOLD, fontSize:12, fontWeight:600, fontFamily:"Inter,sans-serif",
+      )}
+
+      {/* User */}
+      <div style={{ borderTop:`1px solid ${T.sidebarBorder}`, padding: mini ? "12px 10px" : "13px 15px", position:"relative" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:11, justifyContent: mini ? "center" : "flex-start" }}>
+          <div style={{
+            width:34, height:34, borderRadius:"50%", flexShrink:0,
+            background:`linear-gradient(135deg, ${BRAND.gold}, ${BRAND.goldDeep})`,
+            boxShadow:`0 0 0 2px ${T.mode === "dark" ? "rgba(255,255,255,0.1)" : "rgba(16,42,71,0.08)"}`,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontFamily:TYPE.display.fontFamily, fontSize:13, fontWeight:700, color:"#20160A",
+          }}>{(session?.username || "P")[0].toUpperCase()}</div>
+          {!mini && (
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ color:T.sidebarName, fontSize:12.5, fontWeight:600, lineHeight:1.3,
+                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                {session?.full_name || "PMO"}
+              </div>
+              <div style={{
+                display:"inline-flex", alignItems:"center", marginTop:3,
+                fontSize:10, fontWeight:600, letterSpacing:"0.06em", textTransform:"uppercase",
+                color:T.goldText || BRAND.gold, background:BRAND.gold+"1E",
+                padding:"1.5px 7px", borderRadius:R.pill,
+              }}>{session?.role?.replace("_", " ") || "—"}</div>
+            </div>
+          )}
+        </div>
+        {/* Biometric sign-in sits above Change password. Unlike that button
+            it is shown for every role — PMO users want Face ID too — and it
+            hides itself on devices with no platform authenticator. */}
+        {!mini && <BiometricButton T={T} session={session} mini={mini} />}
+        {!mini && <NotificationButton T={T} session={session} mini={mini} />}
+        {session?.role !== "pmo" && !mini && (
+          <button onClick={onChangePassword} className="pmo-focusable" style={{
+            width:"100%", marginTop:11, padding:"8px 12px", borderRadius:R.sm, cursor:"pointer",
+            background:T.sidebarHover, border:`1px solid ${T.sidebarBorder}`,
+            color:T.sidebarFg, fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
             display:"flex", alignItems:"center", justifyContent:"center", gap:7,
-            transition:"background .15s, border-color .15s",
-          }}>
-            <Lock size={12}/> Change Password
-          </button>
+          }}><Lock size={12} /> Change password</button>
+        )}
+        {/* Desktop-only now — mobile never sees the tour at all, not just a
+            repositioned version of it. Gated the same way as the invite
+            card and the offer-effect below. */}
+        {session?.role === "guest" && !mini && !isCompact && (
+          <SidebarTourButton T={T} />
         )}
       </div>
+
+      {/* Collapse control — desktop only */}
+      {!isCompact && (
+        <button className="pmo-focusable pmo-btn" onClick={() => setCollapsed(c => !c)} className="pmo-focusable"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          style={{
+            position:"absolute", top:24, right:-11, width:22, height:22, borderRadius:"50%",
+            background: T.mode === "dark" ? "#14395C" : "#FFFFFF",
+            border:`1px solid ${T.mode === "dark" ? "rgba(255,255,255,0.18)" : T.borderStrong}`,
+            color:T.sidebarFg,
+            cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", zIndex:5,
+            boxShadow:T.shadow,
+          }}>
+          <ChevronRight size={13} style={{ transform: collapsed ? "none" : "rotate(180deg)", transition:`transform ${MOTION.base}` }} />
+        </button>
+      )}
+    </div>
+  );
+
+  if (!isCompact) return panel;
+
+  // Mobile: off-canvas drawer over a scrim
+  return (
+    <>
+      {mobileOpen && (
+        <div onClick={() => setMobileOpen(false)} className="pmo-fade" style={{
+          position:"fixed", inset:0, background:"rgba(3,10,20,0.6)",
+          backdropFilter:"blur(3px)", zIndex:800,
+        }} />
+      )}
+      <div style={{
+        position:"fixed", top:0, bottom:0, left:0, zIndex:801,
+        transform: mobileOpen ? "translateX(0)" : "translateX(-100%)",
+        transition:`transform ${MOTION.base}`, boxShadow: mobileOpen ? "0 0 40px rgba(0,0,0,0.5)" : "none",
+      }}>{panel}</div>
+    </>
+  );
+}
+
+// ─── BOTTOM TAB BAR (mobile) ────────────────────────────────────────────────
+// The single highest-leverage piece of the mobile layout — this is what
+// makes the portal read as a genuine app rather than a desktop site with a
+// hamburger bolted on. Shows a curated top set of destinations (not just
+// the first few in NAV's own array order — dashboard, projects, updates,
+// and gallery are what someone reaching for their phone actually wants),
+// with a fifth "More" tab opening the existing drawer for everything else.
+// Role filtering mirrors Sidebar's own — if that ever changes, this needs
+// to change with it.
+const MOBILE_TAB_PRIORITY = ["cmd", "proj", "upd", "photowall", "camp", "perf", "risks", "cashflow", "team"];
+
+function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0 }) {
+  const filtered = NAV.filter(n => {
+    if (n.pmoOnly && session?.role !== "pmo") return false;
+    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons")) return false;
+    return true;
+  });
+  const ordered = [...filtered].sort((a, b) => {
+    const ai = MOBILE_TAB_PRIORITY.indexOf(a.id), bi = MOBILE_TAB_PRIORITY.indexOf(b.id);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
+  const primary = ordered.slice(0, 4);
+  const overflowCount = ordered.length - primary.length;
+
+  const Tab = ({ id, Icon, label, onClick, active }) => (
+    <button onClick={onClick} className={`pmo-focusable${active ? " pmo-hot" : ""}`} style={{
+      flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      gap: 3, padding: "7px 2px 0", background: "none", border: "none", cursor: "pointer",
+      color: active ? BRAND.gold : T.sidebarFg, position: "relative", minWidth: 0,
+      transition: `color ${MOTION.fast}`,
+    }}>
+      {active && (
+        <span className="pmo-live-dot" style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)",
+          width: 28, height: 3, borderRadius: "0 0 3px 3px", background: BRAND.gold,
+          boxShadow: `0 0 8px ${BRAND.gold}99` }} />
+      )}
+      <div style={{ position: "relative" }}>
+        <Icon className={active ? "pmo-ico-glow" : ""} size={20} strokeWidth={active ? 2.2 : 1.8}
+          color={active ? BRAND.gold : "currentColor"}
+          style={{ transition: `color ${MOTION.fast}` }} />
+        {id === "upd" && unreadCount > 0 && (
+          <span style={{ position: "absolute", top: -4, right: -7, minWidth: 15, height: 15, padding: "0 3px",
+            borderRadius: R.pill, background: DATA.danger, color: "#fff", fontSize: 9, fontWeight: 700,
+            display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </div>
+      <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, fontFamily: TYPE.body.fontFamily,
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+        {label}
+      </span>
+    </button>
+  );
+
+  return (
+    <div id="pmo-bottom-tabs" style={{
+      position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 800,
+      display: "flex", alignItems: "stretch",
+      background: T.sidebar, borderTop: `1px solid ${T.sidebarBorder}`,
+      paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      boxShadow: "0 -8px 24px -8px rgba(0,0,0,0.35)",
+      height: `calc(58px + env(safe-area-inset-bottom, 0px))`,
+    }}>
+      {primary.map(item => (
+        <Tab key={item.id} id={item.id} Icon={item.Icon} label={item.label.split(" ")[0]}
+          active={page === item.id} onClick={() => setPage(item.id)} />
+      ))}
+      {overflowCount > 0 && (
+        <Tab id="more" Icon={Ellipsis} label="More" active={false} onClick={onMore} />
+      )}
     </div>
   );
 }
 
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
-function TopBar({ T, title, subtitle, dark, setDark, onLogout }) {
+// Glass header that reads as part of the page rather than a detached bar.
+function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu,
+                 unreadCount = 0, onBellClick, actions, onSearch, quickActions, sinceLabel, freshness }) {
+  const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
+  const [searchHot, setSearchHot] = useState(false);
   return (
     <div style={{
-      height:68, flexShrink:0, display:"flex", alignItems:"center", padding:"0 28px", gap:18,
-      background:T.headerBg, borderBottom:"1px solid "+T.border,
-      boxShadow: T.mode === "light" ? "0 1px 2px rgba(16,30,59,0.04)" : "none",
+      minHeight:62, flexShrink:0, display:"flex", alignItems:"center",
+      padding: isCompact ? "0 14px" : "0 24px", gap:14,
+      background:T.header,
+      backdropFilter:"blur(14px)", WebkitBackdropFilter:"blur(14px)",
+      borderBottom:`1px solid ${T.border}`,
+      position:"sticky", top:0, zIndex:60,
     }}>
+      {isCompact && (
+        <IconButton T={T} icon={MenuIcon} onClick={onMenu} title="Open navigation" />
+      )}
       <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontSize:19, fontWeight:700, color:T.text, letterSpacing:-0.2, lineHeight:1.2 }}>{title}</div>
-        {subtitle && (
-          <div style={{ display:"flex", alignItems:"center", gap:7, marginTop:2 }}>
-            <div style={{ width:12, height:1.5, background:GOLD, opacity:0.65, flexShrink:0 }} />
-            <div style={{ fontSize:11.5, color:T.muted }}>{subtitle}</div>
+        <h1 style={{ ...TYPE.h1, color:T.text, margin:0, whiteSpace:"nowrap",
+          overflow:"hidden", textOverflow:"ellipsis" }}>{title}</h1>
+        {subtitle && !isCompact && (
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginTop:1 }}>
+            <span style={{ width:11, height:1.5, background:BRAND.gold, opacity:0.7, flexShrink:0 }} />
+            <span style={{ ...TYPE.caption, color:T.muted }}>{subtitle}</span>
           </div>
         )}
       </div>
-      <button
-        onClick={() => setDark(d => !d)}
-        className="pmo-topbar-toggle"
-        title={dark ? "Switch to light mode" : "Switch to dark mode"}
-        style={{
-          display:"flex", alignItems:"center", justifyContent:"center",
-          width:34, height:34, background:T.inputBg, border:"1px solid "+T.border,
-          borderRadius:9, cursor:"pointer", color:T.muted, transition:"background .15s, color .15s, border-color .15s",
-        }}>
-        {dark ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
-      </button>
-      <button
-        onClick={onLogout}
-        className="pmo-topbar-signout"
-        style={{
-          display:"flex", alignItems:"center", gap:7, background:"none", border:"1px solid "+T.border,
-          borderRadius:9, padding:"8px 15px", cursor:"pointer", color:T.muted, fontSize:12.5, fontWeight:600,
-          fontFamily:"Inter,sans-serif", transition:"border-color .15s, color .15s",
-        }}>
-        <LogOut size={13.5} /> Sign out
-      </button>
+      {/* §15 — the interface remembering you. Information rather than
+          atmosphere: it says what has had time to move since you were last in. */}
+      {sinceLabel && !isCompact && (
+        <span style={{ ...TYPE.caption, color:T.dim, marginRight:SP.xs,
+          whiteSpace:"nowrap" }}>{sinceLabel}</span>
+      )}
+      {actions}
+      {/* Contextual quick actions — hidden on narrow screens, where the header
+          has to prioritise the page title and the essential icon controls. */}
+      {!isCompact && quickActions?.map(a => (
+        <Button key={a.label} T={T} variant="ghost" size="md" icon={a.icon} onClick={a.onClick}>
+          {a.label}
+        </Button>
+      ))}
+      {/* Search affordance. Shown as a field on desktop so the shortcut is
+          discoverable rather than hidden behind a keystroke nobody guesses. */}
+      {onSearch && (isCompact ? (
+        <IconButton T={T} icon={Search} onClick={onSearch} title="Search projects" />
+      ) : (
+        <button onClick={onSearch} className="pmo-focusable" title="Search projects"
+          onMouseEnter={() => setSearchHot(true)} onMouseLeave={() => setSearchHot(false)}
+          style={{
+            display:"flex", alignItems:"center", gap:SP.sm, padding:"7px 10px 7px 11px",
+            background: searchHot ? T.rowHover : T.inputBg,
+            border:`1px solid ${searchHot ? T.borderAccent : T.inputBorder}`,
+            borderRadius:R.sm,
+            color: searchHot ? T.text : T.muted,
+            cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontSize:12.5,
+            minWidth:210,
+            boxShadow: searchHot ? T.glowSoft(T.blue) : "none",
+            transition:`border-color ${MOTION.fast}, background ${MOTION.fast}, color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
+          }}>
+          <Search size={13} color={searchHot ? T.blueBright : undefined} />
+          <span data-tour="search-trigger" style={{ flex:1, textAlign:"left" }}>Search projects…</span>
+          <kbd style={{ ...TYPE.caption, border:`1px solid ${T.border}`, borderRadius:4,
+            padding:"1px 5px", color:T.dim, background:T.pageAlt }}>{mac ? "⌘K" : "Ctrl K"}</kbd>
+        </button>
+      ))}
+      <IconButton T={T} icon={Bell} onClick={onBellClick} badge={unreadCount}
+        title={unreadCount > 0 ? `${unreadCount} unread update${unreadCount === 1 ? "" : "s"}` : "Updates"} />
+      <IconButton T={T} icon={dark ? Sun : Moon} onClick={() => setDark(d => !d)}
+        title={dark ? "Switch to light mode" : "Switch to dark mode"} />
+      {isCompact
+        ? <IconButton T={T} icon={LogOut} onClick={onLogout} title="Sign out" />
+        : <Button T={T} variant="ghost" icon={LogOut} onClick={onLogout}>Sign out</Button>}
     </div>
   );
 }
+
+const MenuIcon = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+);
 
 // Small wrapper so useCountUp's hook calls live in their own component instance
 // rather than being invoked inline inside a parent that has conditional early
@@ -371,7 +779,8 @@ function AnimatedNumber({ value }) {
 // visible behind the campus photo on the login screen — rendered as an actual
 // architectural shape rather than a decorative squiggle. Used sparingly, on
 // featured cards and the hero only.
-const ArchMotif = ({ color, size = 72, T }) => {
+const ArchMotif = () => null;   // retired: the arch signature is hero-only now
+const ArchMotifLegacy = ({ color, size = 72, T }) => {
   // Cashflow tab's cards are plain flat white with no decorative watermark —
   // light mode now matches that exactly, so this renders nothing there.
   if (T?.mode === "light") return null;
@@ -389,134 +798,397 @@ const ArchMotif = ({ color, size = 72, T }) => {
 // perspective) — not time-gated, exactly as requested. Reads the same
 // at_risk_projects view the daily email uses, so the two can never disagree
 // about which projects qualify. Shows one project per popup, in sequence.
-function DeadlineAlertPopups({ T, session }) {
+function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlertActive }) {
   const [queue, setQueue] = useState(null); // null = not yet loaded; [] = loaded, none at risk
   const [idx, setIdx] = useState(0);
   const firedFor = useRef(null);
+  const holdingLock = useRef(false);
 
   useEffect(() => {
     if (session?.role !== "pmo") return;
     if (firedFor.current === session.access_token) return; // once per session, not per render
     firedFor.current = session.access_token;
-    (async () => {
+    // Hold the alert for 5s after load. It is a full-screen modal that blocks
+    // every other control, so firing it immediately means the PMO's first
+    // interaction with the portal is dismissing something — the dashboard
+    // should be on screen and settled first.
+    let cancelled = false;
+    const timer = setTimeout(async () => {
       try {
         const rows = await supa("/rest/v1/at_risk_projects?select=*", {}, session.access_token);
-        setQueue(Array.isArray(rows) ? rows : []);
-      } catch { setQueue([]); }
-    })();
+        if (!cancelled) setQueue(Array.isArray(rows) ? rows : []);
+      } catch { if (!cancelled) setQueue([]); }
+    }, 5000);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [session?.access_token, session?.role]);
+
+  // This is the first alert system to fire (unchanged 5s timing), so it gets
+  // first claim on the shared lock — the newer PDD-reminder popups wait for
+  // it to release before showing themselves, rather than both stacking.
+  useEffect(() => {
+    const showing = !!queue && queue.length > 0 && idx < queue.length;
+    if (showing && !holdingLock.current) { holdingLock.current = true; setBlockingAlertActive?.(true); }
+    else if (!showing && holdingLock.current) { holdingLock.current = false; setBlockingAlertActive?.(false); }
+  }, [queue, idx]);
 
   if (!queue || queue.length === 0 || idx >= queue.length) return null;
   const p = queue[idx];
   const overdue = p.days_remaining < 0;
   const urgent = !overdue && p.days_remaining <= 7;
-  const badgeColor = overdue ? "#E4576B" : urgent ? "#E2A83D" : "#185078";
+  const badgeColor = overdue ? T.danger : urgent ? T.warning : T.info;
   const daysLabel = overdue ? `${Math.abs(p.days_remaining)} day${Math.abs(p.days_remaining)===1?"":"s"} OVERDUE`
     : p.days_remaining === 0 ? "Due today"
     : `${p.days_remaining} day${p.days_remaining===1?"":"s"} remaining`;
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div className="pmo-card-in" style={{ width:420, background:T.card, border:"1px solid "+T.border, borderRadius:14, boxShadow:T.shadow, overflow:"hidden" }}>
-        <div style={{ background:badgeColor, padding:"14px 22px", display:"flex", alignItems:"center", gap:10 }}>
-          <AlertTriangle size={17} color="#fff" />
-          <span style={{ color:"#fff", fontWeight:700, fontSize:13, letterSpacing:0.3 }}>DEADLINE ALERT</span>
-          {queue.length > 1 && <span style={{ marginLeft:"auto", color:"rgba(255,255,255,0.85)", fontSize:11.5 }}>{idx+1} of {queue.length}</span>}
-        </div>
-        <div style={{ padding:"22px 22px 18px" }}>
-          <div style={{ display:"inline-block", background:badgeColor+"20", color:badgeColor, fontSize:11, fontWeight:700, padding:"3px 11px", borderRadius:20, marginBottom:12 }}>
-            {daysLabel.toUpperCase()}
+    <div style={{
+      position:"fixed", inset:0, zIndex:1300,
+      background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)",
+      backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:SP.xl,
+      animation:"pmoFade .18s ease",
+    }}>
+      <div className="pmo-scale" role="dialog" aria-modal="true" style={{
+        width:460, maxWidth:"100%", background:T.surface,
+        border:`1px solid ${T.border}`, borderRadius:R.xl,
+        boxShadow:T.shadowLg, overflow:"hidden",
+      }}>
+        {/* Severity band rather than a solid red bar: the alert should read as
+            urgent, not alarming, and it sits inside an executive dashboard. */}
+        <div style={{
+          display:"flex", alignItems:"center", gap:SP.md,
+          padding:`${SP.md}px ${SP.xl}px`,
+          background:`linear-gradient(90deg, ${badgeColor}${T.washStrong}, transparent)`,
+          borderBottom:`1px solid ${badgeColor}44`,
+        }}>
+          <div style={{
+            width:30, height:30, borderRadius:R.sm, flexShrink:0,
+            background:`${badgeColor}${T.badge}`, border:`1px solid ${badgeColor}44`,
+            display:"flex", alignItems:"center", justifyContent:"center",
+          }}>
+            <AlertTriangle size={15} color={badgeColor} strokeWidth={2} />
           </div>
-          <div style={{ fontSize:11, color:T.dim, fontFamily:"monospace", marginBottom:4 }}>{p.code || "-"}</div>
-          <div style={{ fontSize:16, fontWeight:700, color:T.text, lineHeight:1.35, marginBottom:14 }}>{p.name}</div>
-          <div style={{ fontSize:12.5, color:T.muted, lineHeight:1.8 }}>
-            <div>Campus: <span style={{color:T.text}}>{p.campus || "Unspecified"}</span></div>
-            <div>Stage: <span style={{color:T.text}}>{p.workflow_stage}</span></div>
-            <div>Planned End Date: <span style={{color:T.text}}>{p.end_date}</span></div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ ...TYPE.label, color:T.textOf(badgeColor) }}>Deadline alert</div>
+            <div style={{ ...TYPE.caption, color:T.muted, marginTop:1 }}>
+              {idx + 1} of {queue.length}
+            </div>
           </div>
         </div>
-        <div style={{ padding:"14px 22px", borderTop:"1px solid "+T.border, display:"flex", justifyContent:"flex-end" }}>
-          <button onClick={() => setIdx(i => i + 1)}
-            style={{ padding:"8px 18px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
+
+        <div style={{ padding:`${SP.lg}px ${SP.xl}px` }}>
+          <Badge T={T} color={badgeColor} style={{ marginBottom:SP.md }}>{daysLabel}</Badge>
+          {p.code && p.code !== "-" && (
+            <div style={{ ...TYPE.mono, color:T.muted, marginBottom:4 }}>{p.code}</div>
+          )}
+          <div style={{ ...TYPE.h2, color:T.text, lineHeight:1.35, marginBottom:SP.md }}>
+            {p.name}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"auto 1fr", gap:`6px ${SP.md}px` }}>
+            {[
+              // The at_risk_projects view exposes this as `campus`, not
+              // `campus_name` — so this read undefined and every alert showed
+              // an em dash regardless of the project actually having a campus.
+              ["Campus", p.campus || "—"],
+              ["Stage", STAGE_META[p.workflow_stage]?.label || p.workflow_stage || "—"],
+              ["Planned end", p.end_date || "—"],
+            ].map(([k, v]) => (
+              <div key={k} style={{ display:"contents" }}>
+                <span style={{ ...TYPE.caption, color:T.muted }}>{k}</span>
+                <span style={{ ...TYPE.bodySm, color:T.text }}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{
+          display:"flex", justifyContent:"flex-end", gap:SP.sm,
+          padding:`${SP.md}px ${SP.xl}px`, borderTop:`1px solid ${T.border}`,
+          background:T.pageAlt,
+        }}>
+          <Button T={T} variant="primary" onClick={() => setIdx(i => i + 1)}>
             {idx + 1 < queue.length ? "Next" : "Dismiss"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
   );
 }
 
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false }) {
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false, trendPoints = null }) {
+  const vpK = useViewport();
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
   const [eSub,    setESub]    = useState("");
+  const [eIns,    setEIns]    = useState("");
   const [saving,  setSaving]  = useState(false);
   const [hover,   setHover]   = useState(false);
   const displayVal = useCountUp(editing ? null : value);
 
-  const startEdit = () => { setEVal(String(value)); setESub(sub||""); setEditing(true); };
+  const startEdit = () => {
+    setEVal(String(value)); setESub(sub || "");
+    // Pre-fill with whatever is currently shown, so the PMO edits the sentence
+    // in front of them rather than starting from a blank box.
+    setEIns(insightOverride || insight || "");
+    setEditing(true);
+  };
   const cancel    = () => setEditing(false);
   const save      = async () => {
     setSaving(true);
     // lockSub cards (live counts, not editable labels) never persist a sub
     // override — only the number can be manually corrected.
-    await onSave(kpiKey, { value: eVal, sub: lockSub ? "" : eSub });
+    // insightOnly cards (Campus/Sites) may edit the wording but not the
+    // figures: their values are filtered to the selected campus, so writing one
+    // back as a portfolio-wide override would be wrong. Undefined here leaves
+    // the existing value/sub untouched rather than clearing them.
+    await onSave(kpiKey, insightOnly
+      ? { insight: eIns.trim() }
+      : {
+          value: eVal,
+          sub: lockSub ? "" : eSub,
+          // Blank means "use the generated default" rather than "no hover text".
+          insight: eIns.trim(),
+        });
     setSaving(false); setEditing(false);
   };
 
-  const valFontSize = String(value).length > 8 ? 19 : String(value).length > 5 ? 24 : 28;
   const shownVal = editing ? value : (displayVal ?? value);
-  const clr = accent || GOLD;
-  const light = T.mode === "light";
+  const clr = accent || BRAND.blue;
+  // Which icon micro-animation suits this metric (§6): money nudges upward,
+  // approvals tick, warnings breathe, carry-forward shifts as if layered.
+  const ICON_ANIM = {
+    su_requested:"pmo-ico-up", df_recommended:"pmo-ico-up", total_capex:"pmo-ico-up",
+    approved:"pmo-ico-tick", approved_projects:"pmo-ico-tick",
+    budgeted:"pmo-ico-tick", budgeted_projects:"pmo-ico-tick", payments_made:"pmo-ico-tick",
+    non_budgeted:"pmo-ico-pulse", non_budgeted_projects:"pmo-ico-pulse", payments_pending:"pmo-ico-pulse",
+    carry_forward:"pmo-ico-shift", pcds_received:"pmo-ico-glow",
+    pdd_not_submitted:"pmo-ico-pulse", pdds_submitted:"pmo-ico-up",
+    in_df:"pmo-ico-shift", in_ed:"pmo-ico-shift", in_mt:"pmo-ico-shift",
+    active_projects:"pmo-ico-glow", on_schedule:"pmo-ico-tick",
+    delayed:"pmo-ico-pulse", over_budget:"pmo-ico-pulse",
+    scope_change:"pmo-ico-shift", closed:"pmo-ico-tick",
+    budget_released:"pmo-ico-up", remaining_capex:"pmo-ico-up",
+  };
+  const iconAnim = ICON_ANIM[kpiKey] || "pmo-ico-glow";
+  const cl = useCursorLight(true);   // §51
+  const nearRef = useNear();          // §1 proximity · §7 anticipation · §8 dwell
+  // §2 — what this card is ABOUT, so related things elsewhere can respond.
+  const focusKey = kpiKey ? `metric:${kpiKey}` : null;
+  const src = useFocusSource(focusKey);
+  // Numeric share of the portfolio for the spark bar. Parsed from the displayed
+  // figure so it works for both live values and PMO overrides.
+  const numOf = (v) => {
+    const m = String(v ?? "").replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : 0;
+  };
+  const shareOf    = numOf(value);
+  const shareTotal = (() => {
+    const t = numOf(dashData?.total_capex ? (+dashData.total_capex / 1e6) : 0);
+    return String(value).includes("M") && t > 0 ? t : (dashData?.total_projects || 0);
+  })();
+  // Short explanation of what this metric means, with live figures where the
+  // copy references them. Never fabricated — see KPI_INSIGHT in theme.js.
+  const KEY_ALIAS = {
+    approved_projects:"approved", budgeted_projects:"budgeted",
+    non_budgeted_projects:"non_budgeted", total_capex_portfolio:"total_capex",
+    budget_released:"released", remaining_capex:"remaining",
+  };
+  const insight = (() => {
+    if (insightOverride) return insightOverride;          // PMO's own wording wins
+    const k = KEY_ALIAS[kpiKey] || kpiKey;
+    const fn = valueOverridden ? KPI_INSIGHT_PLAIN[k] : KPI_INSIGHT[k];
+    if (!fn) return null;
+    try { return fn(dashData); } catch (_) { return null; }
+  })();
+  const long = String(shownVal ?? "").length;
+  const valSize = long > 9 ? "metricSm" : long > 6 ? "metric" : "metricXL";
 
   return (
     <div
-      className={onCardClick && !editing ? "pmo-card-in pmo-lift" : "pmo-card-in"}
-      style={{ animationDelay: (index*45)+"ms", flex:featured?1.25:1, minWidth:0 }}
-      onClick={()=>{ if(!editing && onCardClick) onCardClick(); }}
-      onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      className={onCardClick && !editing ? "pmo-in pmo-lift" : "pmo-in"}
+      style={{ animationDelay:(160 + index*55)+"ms",
+        flex: vpK.isCompact ? "0 0 auto" : (featured ? 1.22 : 1),
+        minWidth: vpK.isCompact ? 132 : 0,
+        display:"flex", position:"relative",
+        // Sibling cards are also positioned, so without this the next card in
+        // the DOM paints over this one's insight layer.
+        zIndex: hover && !editing ? 30 : undefined }}
+      onClick={() => { if (!editing && onCardClick) onCardClick(); }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => { setHover(false); cl.onMouseLeave(); }}
     >
-      <div style={{
-        flex:1,
-        background: light ? T.card : `linear-gradient(165deg, ${T.card} 0%, ${T.card} 60%, ${clr}${T.washAlpha} 100%)`,
-        border: isSelected ? "1px solid "+clr : "1px solid "+T.border,
-        borderRadius:12, padding:"16px 18px",
-        borderTop: light ? "1px solid "+T.border : "3px solid "+clr,
-        minWidth:0, position:"relative", overflow:"hidden",
-        cursor:onCardClick&&!editing?"pointer":"default",
-        boxShadow: isSelected ? `0 0 0 1px ${clr}${T.glowBlur}, ${T.shadow}` : (hover && onCardClick ? (light ? T.shadowHover : `0 0 0 1px ${clr}${T.glowRing}, 0 0 24px -6px ${clr}${T.glowBlur}, ${T.shadowHover}`) : T.shadow),
-        transition:"border-color .18s, box-shadow .22s, background .22s",
+      <div
+        ref={(n) => { cl.ref.current = n; nearRef.current = n; }}
+        onMouseMove={cl.onMouseMove}
+        {...src}
+        className={`pmo-near ${hover && !editing ? "pmo-hot" : ""}`} style={{
+        "--near-light": `${clr}22`,
+        flex:1, minWidth:0, position:"relative",
+        // The sheen needs clipping; the insight tip must escape it. Clip the
+        // sheen at its own layer instead of the card.
+        overflow:"visible",
+        background: hover && !editing
+          ? `linear-gradient(158deg, ${T.surfaceHi} 0%, ${T.surfaceRaised} 52%, ${clr}${T.washStrong} 100%)`
+          : `linear-gradient(158deg, ${T.surfaceRaised} 0%, ${T.surface} 55%, ${clr}${T.wash} 100%)`,
+        border:`1px solid ${isSelected ? clr : hover ? clr + "66" : T.border}`,
+        borderRadius:R.lg, padding:`${SP.lg}px ${SP.lg}px ${SP.md}px`,
+        cursor: onCardClick && !editing ? "pointer" : "default",
+        // Glow is a token, so it can't drift brighter card by card (§19).
+        boxShadow: isSelected ? T.glowRingHover(clr)
+                 : hover && !editing ? T.glowSoft(clr)
+                 : `0 0 0 1px ${clr}00, ${T.shadow}`,
+        transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, background ${MOTION.base}`,
       }}>
-        <ArchMotif T={T} color={clr} size={76} />
+        {/* One slow sheen pass on hover — the "expensive" cue (§52) */}
+        <span className="pmo-sheen" />
+        {/* Light following the pointer inside the card (§51) */}
+        <span className="pmo-cursor-light" style={{
+          background:`radial-gradient(340px circle at var(--mx,50%) var(--my,50%), ${T.cursorLight}, transparent 68%)`,
+        }} />
+
+        {/* Contextual insight (§2–§4). Floating rather than in-card: expanding
+            the card in place clipped longer copy and made the hovered card
+            taller than its neighbours, which reads as a glitch rather than a
+            flourish. */}
+        {insight && !editing && (
+          <InsightTip T={T} show={hover} tone={clr} side="bottom" align="left"
+            width={252} title={label} line={insight} />
+        )}
+        {/* Accent hairline across the top — the card's status colour, stated once */}
+        <div style={{
+          position:"absolute", top:0, left:0, right:0, height:2,
+          background:`linear-gradient(90deg, ${clr}, ${clr}44 70%, transparent)`,
+          opacity: isSelected || hover ? 1 : 0.6,
+          transition:`opacity ${MOTION.base}`,
+        }} />
+
         {editing ? (
           <div>
-            <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6, fontWeight:600, opacity:0.6 }}>{label}</div>
-            <input value={eVal} onChange={e=>setEVal(e.target.value)} style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+GOLD, borderRadius:6, padding:"5px 8px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:5 }} />
-            {!lockSub && <input value={eSub} onChange={e=>setESub(e.target.value)} placeholder="Sub-label" style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"4px 8px", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:8 }} />}
-            {lockSub && <div style={{ fontSize:10, color:T.dim, marginBottom:8, fontStyle:"italic" }}>Subtitle always stays live — only the number above can be corrected.</div>}
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>{label}</div>
+            {!insightOnly && (
+              <>
+                <Input T={T} size="sm" full value={eVal} onChange={e => setEVal(e.target.value)}
+                  placeholder="Value" style={{ marginBottom:6 }} />
+                {!lockSub && (
+                  <Input T={T} size="sm" full value={eSub} onChange={e => setESub(e.target.value)}
+                    placeholder="Sub-label" style={{ marginBottom:6 }} />
+                )}
+              </>
+            )}
+            {insightOnly && (
+              <div style={{ ...TYPE.caption, color:T.muted, marginBottom:6, lineHeight:1.45 }}>
+                Editing the hover text. This wording is shared with the same
+                metric on the dashboard.
+              </div>
+            )}
+            {/* Hover text. Blank falls back to the generated description, so
+                the PMO only writes copy where the default is wrong. */}
+            <Input T={T} size="sm" full value={eIns} onChange={e => setEIns(e.target.value)}
+              placeholder="Hover text (leave blank for default)" style={{ marginBottom:SP.sm }} />
             <div style={{ display:"flex", gap:5 }}>
-              <button onClick={save} disabled={saving} style={{ flex:1, padding:"4px 0", background:NAVY, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer" }}>{saving?"…":"Save"}</button>
-              <button onClick={async ()=>{ setSaving(true); await onSave(kpiKey,{value:"",sub: lockSub ? "" : eSub}); setSaving(false); setEditing(false); }} style={{ padding:"4px 7px", background:"none", border:"1px solid rgba(45,212,191,0.4)", borderRadius:5, color:"#2DD4BF", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }} title={lockSub ? "Reset to fully live — number and subtitle both recompute" : "Reset value to live — keeps your custom sub-label"}>↺ Live</button>
-              <button onClick={cancel} style={{ padding:"4px 7px", background:"none", border:"1px solid "+T.border, borderRadius:5, color:T.muted, fontSize:11, cursor:"pointer" }}>✕</button>
+              <Button T={T} variant="primary" size="sm" onClick={save} loading={saving} full>Save</Button>
+              {!insightOnly && <Button T={T} variant="accent" tone={T.positive} size="sm"
+                onClick={async () => { setSaving(true); await onSave(kpiKey, { value:"", sub: lockSub ? "" : eSub, insight: eIns.trim() }); setSaving(false); setEditing(false); }}
+                title="Reset the number to the live calculated value — keeps your labels">Live</Button>}
+              <Button T={T} variant="ghost" size="sm" onClick={cancel} title="Cancel">✕</Button>
             </div>
           </div>
         ) : (
           <>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:SP.sm, marginBottom:SP.md }}>
+              <div style={{ display:"flex", alignItems:"center", gap:SP.sm, minWidth:0 }}>
                 {Icon && (
-                  <div style={{ width:26, height:26, borderRadius:8, background:clr+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                    <Icon size={14} color={clr} strokeWidth={2.25} />
+                  <div style={{
+                    width:28, height:28, borderRadius:R.sm, flexShrink:0,
+                    background: hover ? `${clr}${T.washStrong}` : `${clr}${T.badge}`,
+                    border:`1px solid ${clr}${hover ? "4D" : "26"}`,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    transition:`background ${MOTION.base}, border-color ${MOTION.base}`,
+                  }}>
+                    <Icon className={iconAnim} size={14} color={clr} strokeWidth={2} />
                   </div>
                 )}
-                <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, fontWeight:600, opacity:0.6 }}>{label}</div>
+                <div style={{ ...TYPE.label, color:T.muted, minWidth:0, lineHeight:1.3,
+                  letterSpacing:"0.07em",
+                  display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical",
+                  overflow:"hidden" }} title={label}>{label}</div>
               </div>
               {canEdit && (
-                <button onClick={e=>{ e.stopPropagation(); startEdit(); }} style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, padding:"1px 3px", fontSize:10, lineHeight:1, opacity:.55, fontFamily:"Inter,sans-serif" }} title="Edit">✏</button>
+                // Three problems fixed here, all of which made this unclickable:
+                //   · 16×16px is below the 24px minimum for a pointer target
+                //   · zIndex:auto let the tilt wrapper sit on top, so clicks
+                //     landed on the card and never reached the button
+                //   · className was declared twice, so the second silently
+                //     dropped `pmo-btn` and its press feedback
+                <button
+                  className="pmo-focusable pmo-btn"
+                  onClick={e => { e.stopPropagation(); startEdit(); }}
+                  onMouseDown={e => e.stopPropagation()}
+                  title={insightOnly ? "Edit hover text" : "Edit value, sub-label and hover text"}
+                  aria-label={insightOnly ? `Edit hover text for ${label}` : `Edit ${label}`}
+                  style={{
+                    background: hover ? T.surfaceHi : (vpK.isCompact ? T.surfaceHi : "transparent"),
+                    border:`1px solid ${hover ? T.borderAccent : (vpK.isCompact ? T.border : "transparent")}`,
+                    borderRadius:R.sm, cursor:"pointer",
+                    color: (hover || vpK.isCompact) ? T.text : T.dim,
+                    // Full 32px hit area is kept — only the ink is reduced, so
+                    // it stays as easy to click while sitting quietly at rest.
+                    // On touch there's no hover to ever brighten it first, so
+                    // mobile skips the dim-at-rest treatment entirely.
+                    width:32, height:32, flexShrink:0, padding:0,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    position:"relative", zIndex:5,
+                    opacity: (hover || vpK.isCompact) ? 1 : 0.4,
+                    transition:`opacity ${MOTION.fast}, background ${MOTION.fast}, color ${MOTION.fast}`,
+                  }}>
+                  <Edit2 size={13} />
+                </button>
               )}
             </div>
-            <div style={{ fontSize:featured?valFontSize+3:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.1, fontVariantNumeric:"tabular-nums" }}>{shownVal}</div>
-            {sub && <div style={{ fontSize:11, color:T.muted, marginTop:6, lineHeight:1.4 }}>{sub}</div>}
+
+            {/* Fill, border and glow keep the saturated accent; only the text
+                resolves to the AA-safe variant, which matters on light cards
+                where raw gold reads at ~2:1.
+
+                Double-clicking the figure opens the same editor. A 32px corner
+                target is fine when you know it is there; the value itself is a
+                target the size of the card. */}
+            <div
+              onDoubleClick={canEdit ? (e) => { e.stopPropagation(); startEdit(); } : undefined}
+              title={canEdit ? "Double-click to edit" : undefined}
+              style={{ ...TYPE[valSize], color: accent ? T.textOf(accent) : T.text,
+                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+                cursor: canEdit ? "text" : "inherit", position:"relative", zIndex:2 }}>{shownVal}</div>
+
+            {sub && (
+              <div style={{ ...TYPE.caption, color: hover ? T.textSoft : T.muted,
+                marginTop:6, lineHeight:1.4, transition:`color ${MOTION.base}` }}>{sub}</div>
+            )}
+
+            {/* A real cumulative series where one exists, otherwise the share
+                hairline. Seven cards of identical shape read as wallpaper; this
+                gives each its own shape, drawn from actual data. */}
+            {trendPoints?.length > 1
+              ? <div style={{ marginTop:10, marginBottom:-2 }}>
+                  <MicroTrend T={T} points={trendPoints} color={clr} delay={index * 60} />
+                </div>
+              : shareOf > 0 && <SparkBar T={T} value={shareOf} total={shareTotal} color={clr} delay={index * 60} />}
+
+
+
+            {onCardClick && (
+              <div style={{
+                display:"flex", alignItems:"center", gap:4, marginTop:SP.sm,
+                ...TYPE.caption, color: isSelected ? clr : T.dim, fontWeight:600,
+                opacity: hover || isSelected ? 1 : 0.55, transition:`opacity ${MOTION.fast}`,
+              }}>
+                {isSelected ? "Showing projects" : "View projects"}
+                <ChevronRight size={11} style={{
+                  transform: isSelected ? "rotate(90deg)" : "none",
+                  transition:`transform ${MOTION.base}`,
+                }} />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -524,27 +1196,56 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   );
 }
 
-function KCard({ T, label, value, sub, accent, featured, onClick, isSelected }) {
-  const valFontSize = String(value).length > 8 ? 19 : String(value).length > 5 ? 24 : 28;
-  const clickable = typeof onClick === "function";
+// ─── KCARD ───────────────────────────────────────────────────────────────────
+// Campus/Sites and the Performance page rendered their KPI strips through a
+// separate, plainer card: no hover lift, no accent glow, no icon, no contextual
+// insight, no entrance stagger. Two implementations of the same object meant
+// the same metric looked alive on one page and inert on another.
+//
+// This is now a thin wrapper over the one card in the product. It resolves the
+// icon and insight key from the label, so the Campus strip gains everything the
+// dashboard strip has without every call site being rewritten.
+const KCARD_META = {
+  "PDDs Not Submitted": { key:"pdd_not_submitted", Icon:FileText },
+  "PDDs Submitted":     { key:"pdds_submitted",    Icon:ClipboardList },
+  "DF Review":          { key:"in_df",             Icon:Landmark },
+  "ED Review":          { key:"in_ed",             Icon:Shield },
+  "MT Review":          { key:"in_mt",             Icon:Users },
+  "Approved":           { key:"approved",          Icon:CheckCircle },
+  "Active Projects":    { key:"active_projects",   Icon:Activity },
+  "On Schedule":        { key:"on_schedule",       Icon:CheckCircle },
+  "Delayed":            { key:"delayed",           Icon:Clock },
+  "Over Budget":        { key:"over_budget",       Icon:AlertTriangle },
+  "Change in Scope":    { key:"scope_change",      Icon:RefreshCw },
+  "Closed":             { key:"closed",            Icon:PauseCircle },
+};
+
+function KCard({ T, label, value, sub, accent, featured, onClick, isSelected, index = 0, Icon, dashData,
+                canEdit = false, insightOverride, onSaveInsight }) {
+  // Looked up at render rather than module load, and normalised so a label that
+  // differs only in case or spacing still resolves. Falls back to a generic
+  // icon so a card can never render with an empty tile.
+  const norm = String(label || "").trim().toLowerCase();
+  const meta = KCARD_META[label]
+    || Object.entries(KCARD_META).find(([k]) => k.toLowerCase() === norm)?.[1]
+    || {};
+  const ov = insightOverride?.[meta.key];
+  const ovText = ov?.insight && ov.insight !== "" ? ov.insight : null;
   return (
-    <div
-      onClick={onClick}
-      title={clickable ? (isSelected ? "Click to clear filter" : "Click to see these projects") : undefined}
-      style={{
-        flex:1, background:T.card,
-        border:"1px solid "+(isSelected ? (accent||GOLD) : T.border),
-        borderRadius:10, padding:"15px 18px",
-        borderTop: featured ? "3px solid "+(accent||GOLD) : "3px solid "+T.border+"60",
-        minWidth:0,
-        cursor: clickable ? "pointer" : "default",
-        boxShadow: isSelected ? `0 0 0 1px ${accent||GOLD}55` : "none",
-        transition:"border-color .15s, box-shadow .15s",
-      }}>
-      <div style={{ fontSize:10, color:T.text, textTransform:"uppercase", letterSpacing:1.5, marginBottom:8, fontWeight:600, opacity:0.6 }}>{label}</div>
-      <div style={{ fontSize:valFontSize, fontWeight:700, color:accent||T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.1 }}>{value}</div>
-      {sub && <div style={{ fontSize:11, color:T.muted, marginTop:5, lineHeight:1.4 }}>{sub}</div>}
-    </div>
+    <EditableKCard
+      T={T} label={label} value={value} sub={sub}
+      accent={accent} featured={featured}
+      Icon={Icon || meta.Icon || BarChart3}
+      kpiKey={meta.key}
+      dashData={dashData}
+      canEdit={canEdit}
+      insightOnly
+      insightOverride={ovText}
+      onSave={onSaveInsight}
+      index={index}
+      onCardClick={onClick}
+      isSelected={isSelected}
+    />
   );
 }
 
@@ -556,7 +1257,7 @@ function Funnel({ T, title, children }) {
         <div style={{ width:3, height:14, background:GOLD, borderRadius:2 }} />
         <div style={{ fontSize:11, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2, opacity:0.7 }}>{title}</div>
       </div>
-      <div style={{ display:"flex", gap:10 }}>{children}</div>
+      <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>{children}</div>
     </div>
   );
 }
@@ -594,15 +1295,29 @@ const chartBaseOptions = (T) => ({
   maintainAspectRatio: false,
   plugins: {
     legend: { display: false },
+    // Matched to the Recharts tooltip (see ChartTooltip in charts.jsx) so the
+    // three remaining chart.js charts read as the same product: same surface,
+    // same hairline, same radius, same type. §12 rules out anything that looks
+    // like a chart library's stock tooltip.
     tooltip: {
-      backgroundColor: T.mode === "light" ? "#101E3B" : T.card2,
-      titleColor: "#fff", bodyColor: T.mode === "light" ? "#DCE4F2" : T.text,
-      titleFont: { family: "Inter", weight: "700", size: 12 },
-      bodyFont: { family: "Inter", size: 12 },
-      padding: 10, cornerRadius: 8, displayColors: false,
-      borderColor: T.border, borderWidth: 1,
+      backgroundColor: T.mode === "dark" ? "rgba(20,36,60,0.97)" : "rgba(255,255,255,0.98)",
+      titleColor: T.muted,
+      bodyColor: T.text,
+      titleFont: { family: "Inter", weight: "600", size: 10, lineHeight: 1.4 },
+      bodyFont:  { family: "Inter", weight: "700", size: 12 },
+      titleMarginBottom: 6,
+      padding: { top: 9, bottom: 9, left: 13, right: 13 },
+      cornerRadius: R.md,
+      displayColors: true, boxWidth: 8, boxHeight: 8, boxPadding: 5, usePointStyle: true,
+      borderColor: T.borderStrong, borderWidth: 1,
+      caretSize: 5,
     },
   },
+  // Hover emphasis (§11/§12): the nearest element highlights across the whole
+  // index rather than only under the cursor, and animates rather than snapping.
+  interaction: { mode: "index", intersect: false },
+  hover: { mode: "index", intersect: false, animationDuration: 180 },
+  animation: { duration: 850, easing: "easeOutCubic" },
   scales: {
     x: { grid: { color: T.border, drawBorder: false }, ticks: { color: T.muted, font: { family: "Inter", size: 11 } } },
     y: { grid: { color: T.border, drawBorder: false }, ticks: { color: T.muted, font: { family: "Inter", size: 11 } } },
@@ -676,46 +1391,309 @@ function StrategicPriorityStackedBar({ T, byStrat, height = 340 }) {
   );
 }
 
-function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320 }) {
-  const sorted = useMemo(() => [...rows].filter(r => (r[field]||0) > 0).sort((a,b)=>(b[field]||0)-(a[field]||0)).slice(0,10).reverse(), [rows, field]);
-  const data = {
-    labels: sorted.map(r => r.name.length > 42 ? r.name.slice(0,40)+"…" : r.name),
-    datasets: [{
-      data: sorted.map(r => (r[field]||0)/1e6),
-      backgroundColor: color, borderRadius: 5, borderSkipped: false,
-      barThickness: 18,
-    }],
-  };
-  const options = {
-    ...chartBaseOptions(T), indexAxis: "y",
-    plugins: {
-      ...chartBaseOptions(T).plugins,
-      tooltip: { ...chartBaseOptions(T).plugins.tooltip, callbacks: { label: (ctx) => `PKR ${valueFmt(ctx.parsed.x*1e6)}` } },
-    },
-    scales: {
-      x: { ...chartBaseOptions(T).scales.x, ticks: { ...chartBaseOptions(T).scales.x.ticks, callback: (v) => v+"M" } },
-      y: { ...chartBaseOptions(T).scales.y, grid: { display:false } },
-    },
-  };
-  if (sorted.length === 0) return <div style={{padding:40, textAlign:"center", color:T.dim, fontSize:12}}>No projects with this figure yet.</div>;
-  return <div style={{height}}><Bar data={data} options={options} /></div>;
+function TopProjectsBarChart({ T, rows, field, color, valueFmt, height = 320, onSelectProject, ramp }) {
+  // Was a chart.js horizontal bar: every bar the same flat gold, project names
+  // clipped to 40 characters, and the figure only visible on hover. Rebuilt on
+  // the same ranked treatment as the rest of the Overview tab, so a reader can
+  // compare these against the organisation and segment rows without switching
+  // visual language mid-page.
+  const items = useMemo(() => {
+    const top = [...rows]
+      .filter(r => (r[field] || 0) > 0)
+      .sort((a, b) => (b[field] || 0) - (a[field] || 0))
+      .slice(0, 10);
+    const peak = top.length ? (top[0][field] || 0) : 0;
+    // `ramp` lets the caller pick the family: the neutral blue-to-teal ramp for
+    // ranked value, the amber-to-coral ramp where the list means "pending".
+    const stops = ramp || RANK_RAMP;
+    return top.map((r, i) => ({
+      key: r.id || r.code || `${i}`,
+      // Full name — a ranked row gives the label the whole width, which is why
+      // truncating to 40 characters is no longer necessary.
+      label: r.name,
+      value: r[field] || 0,
+      // Hue carries rank alongside length. Ten bars in one colour left rows
+      // 8-10 (17.5M / 16.5M / 15.1M) nearly indistinguishable, and ten gold
+      // bars made gold the theme rather than an accent.
+      color: rampColor(i, top.length, stops),
+      meta: [r.code && r.code !== "-" ? r.code : null, STAGE_META[r.workflow_stage]?.label]
+        .filter(Boolean).join(" · "),
+      _id: r.id,
+    }));
+  }, [rows, field, ramp]);
+
+  if (items.length === 0) return (
+    <EmptyState T={T} icon={BarChart3} compact tone={T.info}
+      title="Nothing recorded yet"
+      message="No project currently carries a value for this figure. This chart fills in as the PMO records the data." />
+  );
+
+  return (
+    <RankedBars
+      T={T} items={items} fmt={valueFmt} showTarget={false} barH={9}
+      onPick={onSelectProject ? (k) => {
+        const hit = items.find(x => x.key === k);
+        if (hit?._id) onSelectProject(hit._id);
+      } : undefined}
+    />
+  );
 }
 
 // Approvals pipeline funnel — rendered as a horizontal bar in fixed stage
 // order (not sorted by value), which reads as a funnel since a healthy
 // pipeline naturally narrows stage to stage.
+// ─── APPROVAL PIPELINE ───────────────────────────────────────────────────────
+// Replaces the horizontal bar chart, which failed at exactly the job it existed
+// to do: with 102 projects in one stage and 0-2 in the rest, every other bar
+// collapsed to a stub and the pipeline read as "nothing is happening anywhere".
+//
+// Fix: a proportional flow strip where each stage keeps a minimum width, so a
+// stage holding 1 project is still visible, still labelled and still clickable,
+// while the 96% stage is still obviously the 96% stage. The bottleneck is then
+// named in plain words underneath rather than left for the reader to infer.
+// ─── FINANCIAL FLOW ──────────────────────────────────────────────────────────
+// §16 asked for Budget → Commitment → Payment. There is no "committed" field in
+// the schema, so the flow is built from the four stages that ARE recorded:
+//   DF recommended → approved → released → paid
+// Each step shows the absolute figure, its share of the original recommendation
+// and the value that fell away at that step, so the leakage is legible rather
+// than implied.
+function FinancialFlow({ T, d, isCompact }) {
+  const steps = [
+    { key:"df",       label:"DF Recommended", value:+d.df_recommended_total || 0, color:T.textOf(T.info),
+      note:"After Finance Director review" },
+    { key:"approved", label:"Approved",       value:+d.approved_total || 0,       color:BRAND.blue,
+      note:"Sanctioned for execution" },
+    { key:"released", label:"Released",       value:+d.budget_consumed || 0,      color:T.textOf(T.positive),
+      note:"Funds transferred to projects" },
+    { key:"paid",     label:"Paid",           value:+d.payments_made_total || 0,  color:T.textOf(T.cyan),
+      note:"Finance-confirmed payments" },
+  ];
+  const base = steps[0].value || 1;
+  const pending = +d.payments_pending_amount || 0;
+
+  return (
+    <Section T={T} tone={T.gold} pad={SP.lg} style={{ flexShrink:0 }}>
+      <SectionTitle
+        T={T} icon={Wallet}
+        title="Where the money is"
+        sub="Each stage of the CAPEX flow, as a share of the DF-recommended budget"
+      />
+
+      <div style={{ display:"flex", flexDirection:"column", gap:SP.md, marginTop:SP.sm }}>
+        {steps.map((st, i) => {
+          const pct  = (st.value / base) * 100;
+          const prev = i === 0 ? null : steps[i - 1].value;
+          const drop = prev == null ? null : prev - st.value;
+          const last = i === steps.length - 1;
+          return (
+            <div key={st.key} style={{ position:"relative" }}>
+              {/* Connective cue (§22): a short rail from each stage down to the
+                  next, tinted from this stage's colour to the following one, so
+                  the four figures read as money moving through the system
+                  rather than four unrelated bars. */}
+              {!last && (
+                <span aria-hidden="true" style={{
+                  position:"absolute", left:4, top:"100%", height:SP.md, width:2,
+                  background:`linear-gradient(180deg, ${st.color}99, ${steps[i+1].color}55)`,
+                  borderRadius:2,
+                }} />
+              )}
+              <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between",
+                gap:SP.md, marginBottom:6, flexWrap:"wrap" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:9, minWidth:0 }}>
+                  <span style={{ width:9, height:9, borderRadius:3, background:st.color, flexShrink:0 }} />
+                  <span style={{ ...TYPE.h3, color:T.text }}>{st.label}</span>
+                  {!isCompact && <span style={{ ...TYPE.caption, color:T.dim }}>{st.note}</span>}
+                </div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:SP.md }}>
+                  {drop != null && drop > 0 && (
+                    <span style={{ ...TYPE.caption, color:T.textOf(T.danger) }}>
+                      −{fmtM(drop)} vs {steps[i - 1].label.toLowerCase()}
+                    </span>
+                  )}
+                  <span style={{ ...TYPE.caption, color:T.muted, fontVariantNumeric:"tabular-nums" }}>
+                    {pct.toFixed(1)}%
+                  </span>
+                  <span style={{ ...TYPE.metricSm, color:T.textOf(st.color), minWidth:74, textAlign:"right" }}>
+                    {fmtM(st.value)}
+                  </span>
+                </div>
+              </div>
+              <Progress T={T} value={st.value} max={base} color={st.color} height={9} delay={i * 110} />
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display:"flex", alignItems:"flex-start", gap:9, marginTop:SP.lg,
+        padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+        background:T.pageAlt, border:`1px solid ${T.border}` }}>
+        <AlertCircle size={13} color={T.muted} style={{ marginTop:1, flexShrink:0 }} />
+        <span style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.55 }}>
+          {fmtM(steps[3].value)} has been paid against {fmtM(steps[2].value)} released.
+          {pending > 0
+            ? ` ${fmtM(pending)} is awaiting transfer across ${d.payments_pending_count} project${d.payments_pending_count === 1 ? "" : "s"}.`
+            : " No payments are currently flagged as pending."}
+          {" "}A commitment stage (POs raised) is not recorded in the portal, so it is not shown.
+        </span>
+      </div>
+    </Section>
+  );
+}
+
+function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
+  // §2 — publish the stage under the pointer, and respond when a stage is
+  // focused from anywhere else in the interface.
+  const focus = useFocusKey();
+  const setRel = useSetFocus();
+  const relCls = (k) => !focus ? "" : focus === k ? "pmo-rel-on" : "pmo-rel-off";
+  const stages = [
+    { key:"pdd_not_submitted", label:"PDD Not Submitted", short:"Not Submitted", value:d.pdd_not_submitted_count || 0, note:"Awaiting submission" },
+    { key:"pdds_submitted",    label:"PDD Submitted",     short:"Submitted",     value:d.pdds_submitted || 0,          note:"With the PMO" },
+    { key:"in_df",             label:"DF Review",         short:"DF",            value:d.in_df || 0,                   note:"Director Finance" },
+    { key:"in_ed",             label:"ED Review",         short:"ED",            value:d.in_ed || 0,                   note:"Executive Director" },
+    { key:"in_mt",             label:"MT Review",         short:"MT",            value:d.in_mt || 0,                   note:"Managing Trustee" },
+    { key:"approved",          label:"Approved",          short:"Approved",      value:d.approved_count || 0,          note:"Sanctioned" },
+  ].map((st, i) => ({ ...st, color: STAGE_META[STAGE_ORDER[i]]?.color || T.neutral }));
+
+  // "closed" sits outside STAGE_ORDER, which models PDD-to-approval only, so
+  // completed projects were left out of the funnel entirely — the total read
+  // 109 against a real 110. Appended with an explicit colour rather than the
+  // index lookup above, which only covers the six approval stages.
+  if ((d.closed_count || 0) > 0) {
+    stages.push({
+      key:"closed", label:"Closed", short:"Closed",
+      value:d.closed_count, note:"Completed & handed over",
+      color: STAGE_META.closed?.color || T.neutral,
+    });
+  }
+
+  const total = stages.reduce((a, b) => a + b.value, 0) || 1;
+  // Stages where work is sitting with a named person, waiting on them to act.
+  // Those breathe; submitted-and-done or not-yet-started stages do not (§10).
+  const AWAITING = new Set(["in_df", "in_ed", "in_mt"]);
+  const inReview = stages.slice(2, 5).reduce((a, b) => a + b.value, 0);
+
+  // The bottleneck is the stage holding the most work that has not yet cleared.
+  const blocked = stages.slice(0, 5);
+  const worst = blocked.reduce((a, b) => (b.value > a.value ? b : a), blocked[0]);
+  const worstPct = ((worst.value / total) * 100).toFixed(1);
+
+  const donut = stages
+    .filter(st => st.value > 0)
+    .map(st => ({ key:st.key, name:st.label, value:st.value, color:st.color }));
+
+  return (
+    <Section T={T} tone={T.info} pad={SP.lg} style={{ flexShrink:0 }}>
+      <SectionTitle
+        T={T} icon={ClipboardList}
+        title="Approvals pipeline"
+        sub="Where every project sits, PDD submission through to approval"
+        right={<span style={{ ...TYPE.caption, color:T.muted }}>{total} projects · click a stage to filter</span>}
+      />
+
+      {/* Proportional flow strip */}
+      <div style={{ display:"flex", gap:3, marginTop:SP.sm }} data-tour="pipeline-stages">
+        {stages.map((st) => {
+          const pct = (st.value / total) * 100;
+          const on  = activeCard === st.key;
+          const dim = activeCard && !on;
+          return (
+            <button className="pmo-focusable pmo-btn"
+              key={st.key} onClick={() => onPick(st.key)}
+              className="pmo-focusable"
+              title={`${st.label} — ${st.value} project${st.value === 1 ? "" : "s"} (${pct.toFixed(1)}%)`}
+              style={{
+                flex:`${Math.max(st.value, 0.35)} 1 0`,
+                minWidth: isCompact ? 54 : 92,
+                background:"none", border:"none", padding:0, cursor:"pointer",
+                textAlign:"left", opacity: dim ? 0.42 : 1,
+                transition:`opacity ${MOTION.base}`,
+              }}>
+              <div className={AWAITING.has(st.key) && st.value > 0 ? "pmo-awaiting" : ""} style={{
+                height:38, borderRadius:R.sm, position:"relative", overflow:"hidden",
+                background:`linear-gradient(180deg, ${st.color}${T.washStrong}, ${st.color}${T.wash})`,
+                border:`1px solid ${on ? st.color : st.color + "44"}`,
+                boxShadow: on ? `0 0 0 1px ${st.color}${T.ring}` : "none",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
+              }}>
+                <span style={{ ...TYPE.metricSm, fontSize:16, color:T.textOf(st.color) }}>{st.value}</span>
+              </div>
+              <div style={{ ...TYPE.label, color: on ? T.text : T.muted, marginTop:7, lineHeight:1.25,
+                display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
+                {isCompact ? st.short : st.label}
+              </div>
+              {!isCompact && (
+                <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>{pct.toFixed(1)}%</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <InsightNote T={T} insight={portfolioInsights(d).pipeline} />
+
+      {/* Bottleneck, stated plainly (§5 micro-insights) */}
+      <div style={{
+        display:"flex", alignItems:"flex-start", gap:9, marginTop:SP.lg,
+        padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+        background:`${worst.color}${T.wash}`, border:`1px solid ${worst.color}33`,
+      }}>
+        <AlertTriangle size={14} color={worst.color} style={{ marginTop:1, flexShrink:0 }} />
+        <div style={{ ...TYPE.bodySm, color:T.textSoft, lineHeight:1.55 }}>
+          The pipeline is held at <strong style={{ color:T.text }}>{worst.label}</strong> — {worst.value} of {total} projects
+          ({worstPct}%) sit there. {inReview} {inReview === 1 ? "project is" : "projects are"} currently
+          with a reviewer, and {d.approved_count || 0} {(d.approved_count || 0) === 1 ? "has" : "have"} been approved.
+        </div>
+      </div>
+
+      {/* Distribution */}
+      {donut.length > 1 && (
+        <div style={{ display:"flex", flexWrap:"wrap", alignItems:"center", gap:SP.xl, marginTop:SP.lg }}>
+          <div style={{ width: isCompact ? "100%" : 260, flexShrink:0 }}>
+            <Donut T={T} data={donut} height={200} total={total} totalLabel="Total projects"
+              activeKey={activeCard} onSlice={onPick} />
+          </div>
+          <div style={{ flex:1, minWidth:210, display:"flex", flexDirection:"column", gap:2 }}>
+            {stages.map(st => {
+              const on = activeCard === st.key;
+              return (
+                <button className="pmo-focusable pmo-btn" key={st.key} onClick={() => onPick(st.key)} className="pmo-focusable"
+                  style={{
+                    display:"flex", alignItems:"center", gap:10, padding:"6px 9px",
+                    background: on ? T.rowActive : "transparent", border:"none",
+                    borderRadius:R.sm, cursor:"pointer", textAlign:"left", width:"100%",
+                    transition:`background ${MOTION.fast}`,
+                  }}>
+                  <span style={{ width:9, height:9, borderRadius:3, background:st.color, flexShrink:0 }} />
+                  <span style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft }}>{st.label}</span>
+                  <span style={{ ...TYPE.caption, color:T.dim, flex:1 }}>{st.note}</span>
+                  <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.text,
+                    fontVariantNumeric:"tabular-nums", minWidth:34, textAlign:"right" }}>{st.value}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function PipelineFunnelChart({ T, d, height = 300 }) {
   const stages = [
     { label:"PDD Not Submitted", value:d.pdd_not_submitted_count||0, color:T.muted },
-    { label:"PDD Submitted",     value:d.pdds_submitted||0,          color:"#5B9FE8" },
-    { label:"DF Review",         value:d.in_df||0,                   color:GOLD },
+    { label:"PDD Submitted",     value:d.pdds_submitted||0,          color:DATA.info },
+    { label:"DF Review",         value:d.in_df||0,                   color:(T.goldText || GOLD) },
     { label:"ED Review",         value:d.in_ed||0,                   color:GOLD_DEEP },
-    { label:"MT Review",         value:d.in_mt||0,                   color:VIOLET },
-    { label:"Approved",          value:d.approved_count||0,          color:EMERALD },
+    { label:"MT Review",         value:d.in_mt||0,                   color:T.textOf(VIOLET) },
+    { label:"Approved",          value:d.approved_count||0,          color:T.textOf(EMERALD) },
   ];
   const data = {
     labels: stages.map(s=>s.label),
-    datasets: [{ data: stages.map(s=>s.value), backgroundColor: stages.map(s=>s.color), borderRadius:6, borderSkipped:false, barThickness:30 }],
+    datasets: [{ data: stages.map(s=>s.value), backgroundColor: stages.map(s=>s.color), borderRadius:R.sm, borderSkipped:false, barThickness:30 }],
   };
   const options = {
     ...chartBaseOptions(T), indexAxis:"y",
@@ -874,7 +1852,7 @@ function DonutChart({ slices, T }) {
       {/* Centre */}
       <circle cx={cx} cy={cy} r={innerR-6} fill={T.card2} opacity="0.5" />
       <text x={cx} y={cy - 12} textAnchor="middle" fill={T.text}
-        fontSize={22} fontWeight={700} fontFamily="DM Serif Display,serif">
+        fontSize={22} fontWeight={700} fontFamily={TYPE.display.fontFamily}>
         {fmtM(total)}
       </text>
       <text x={cx} y={cy + 8} textAnchor="middle" fill={T.muted}
@@ -887,10 +1865,13 @@ function DonutChart({ slices, T }) {
 
 // ─── BREAKDOWN SECTION ────────────────────────────────────────────────────────
 const ORG_COLORS  = { Riphah:GOLD, Trust:EMERALD };
-const SEG_COLORS  = { Academic:"#5B9FE8", Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
+const SEG_ICONS   = { Academic:Layers, Academics:Layers, Healthcare:Activity,
+                      Management:Shield, Investment:Wallet, Infrastructure:Building2 };
+const SEG_COLORS  = { Academic:DATA.info, Healthcare:EMERALD, Management:VIOLET, Investment:AMBER };
 const STRAT_PAL   = ["#5B9FE8",VIOLET,AMBER,EMERALD,"#F472B6",ROSE,"#FBBF24","#818CF8","#6EE7B7",GOLD];
 
-function BreakdownSection({ T, session }) {
+function BreakdownSection({ T, session, onSelectProject }) {
+  const vpB = useViewport();
   const [projects, setProjects] = useState([]);
   const [targets,  setTargets]  = useState({});
   const [fy,       setFy]       = useState("__all__");
@@ -899,13 +1880,15 @@ function BreakdownSection({ T, session }) {
   const [editBuf,  setEditBuf]  = useState({});
   const [saving,   setSaving]   = useState(false);
   const [loading,  setLoading]  = useState(true);
+  // Which breakdown card is expanded, e.g. { group:"By segment", key:"Academics" }.
+  const [drill,    setDrill]    = useState(null);
   const isPMO = session?.role === "pmo";
 
   useEffect(() => {
     (async () => {
       try {
         const [proj, sett] = await Promise.all([
-          supa("/rest/v1/projects?select=id,bac,amount_released,payments_made,fiscal_year,segments(name),sectors(name),strategic_priority", {}, session.access_token),
+          supa("/rest/v1/projects?portfolio=eq.capex&select=id,code,name,bac,amount_released,payments_made,fiscal_year,start_date,budget_release_date,df_recommended_amount,workflow_stage,priority,segments(name),sectors(name),strategic_priority", {}, session.access_token),
           supa("/rest/v1/settings?key=eq.dashboard_breakdowns&select=value", {}, session.access_token),
         ]);
         setProjects(proj);
@@ -920,14 +1903,23 @@ function BreakdownSection({ T, session }) {
   const fyProjects = fy === "__all__" ? projects : projects.filter(p => p.fiscal_year === fy);
 
   // Aggregate
+  // The same definition the Approved Projects KPI uses, so this section and
+  // that card cannot drift apart: a project counts as approved once it has
+  // reached the approved stage or has had money released against it.
+  const isApproved = (p) =>
+    p.workflow_stage === "approved" || (parseFloat(p.amount_released) || 0) > 0;
+
   const agg = (key) => {
     const m = {};
     fyProjects.forEach(p => {
       const k = key(p) || "Unclassified";
-      if (!m[k]) m[k] = { bac:0, released:0, count:0 };
+      // approvedItems keeps the rows behind each total so a card can list the
+      // projects it is summarising, rather than only the number.
+      if (!m[k]) m[k] = { bac:0, released:0, count:0, approvedCount:0, approvedItems:[] };
       m[k].bac      += parseFloat(p.bac) || 0;
       m[k].released += parseFloat(p.amount_released) || 0;
       m[k].count    += 1;
+      if (isApproved(p)) { m[k].approvedCount += 1; m[k].approvedItems.push(p); }
     });
     return m;
   };
@@ -941,6 +1933,46 @@ function BreakdownSection({ T, session }) {
   const fyTgts   = targets[fyKey] || {};
   const orgTgts  = fyTgts.orgs  || {};
   const segTgts  = fyTgts.segments || {};
+
+  // Rows for the ranked comparison. Value is what has actually been released;
+  // target is the configured planned figure, so every bar answers the same
+  // question and lengths are comparable across rows.
+  const segmentRows = Object.entries(bySeg)
+    .sort(([,a],[,b]) => b.bac - a.bac)
+    .map(([name, d]) => ({
+      key:name, label:name,
+      color: SEG_COLORS[name] || DATA.info,
+      value: d.bac || 0,
+      target: (segTgts[name]?.bac || 0) * 1e6,
+      meta: `${d.approvedCount || 0} approved of ${d.count || 0} projects`,
+    }));
+
+  // Share is of approved budget, which is the question the donut answered.
+  // Everything in this section measures money RELEASED, so the share strip and
+  // the strategic-priority donut use released too. Mixing released cards with
+  // an approved-budget share was what made two totals on one screen disagree.
+  const shareRows = Object.entries(bySeg)
+    .filter(([, d]) => (d.bac || 0) > 0)
+    .sort(([,a],[,b]) => b.bac - a.bac)
+    .map(([name, d]) => ({
+      key:name, label:name, value:d.bac || 0,
+      color: SEG_COLORS[name] || DATA.info,
+    }));
+
+  // Strategic priorities carry no configured target. Ranking released against
+  // approved would reproduce exactly the defect this section was rebuilt to
+  // remove — released equals approved for every priority here, so every bar
+  // would read "100.0% of target" and say nothing. They rank on approved budget
+  // instead, with the released figure carried in the row's metadata.
+  const stratRows = Object.entries(byStrat)
+    .sort(([,a],[,b]) => b.bac - a.bac)
+    .slice(0, 10)
+    .map(([name, d], i) => ({
+      key:name, label:name,
+      color: STRAT_PAL[i % STRAT_PAL.length],
+      value: d.bac || 0,
+      meta: `${d.approvedCount || 0} approved of ${d.count || 0} projects`,
+    }));
   const stratTgts = fyTgts.strategic_priorities || {};
 
   const startEdit = () => {
@@ -966,44 +1998,154 @@ function BreakdownSection({ T, session }) {
 
   if (loading) return null;
 
-  const SectionCard = ({ title, children, note }) => (
-    <div className="pmo-card-in" style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow, position:"relative", overflow:"hidden" }}>
-      <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:note?4:18 }}>{title}</div>
-      {note && <div style={{ fontSize:11, color:T.dim, marginBottom:14 }}>{note}</div>}
-      {children}
-    </div>
-  );
+  // Shown under whichever breakdown card was clicked. Each card was already
+  // summarising a specific set of projects; this exposes that set instead of
+  // leaving the number as a dead end.
+  const DrillPanel = () => {
+    if (!drill) return null;
+    const source = drill.group === "By organisation" ? byOrg
+                 : drill.group === "By segment"      ? bySeg
+                 : byStrat;
+    // Only the approved projects — these make up the figure on the card.
+    // Listing all 52 Trust projects when 12 contribute to the number was
+    // noise, and made the list disagree with the card above it.
+    const rows = (source?.[drill.key]?.approvedItems || [])
+      .slice()
+      .sort((a, b) => (parseFloat(b.bac) || 0) - (parseFloat(a.bac) || 0));
+
+    return (
+      <div style={{ marginTop:SP.lg, background:T.surfaceRaised,
+        border:`1px solid ${T.borderAccent || T.border}`, borderRadius:R.lg, overflow:"hidden" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap",
+          padding:`${SP.md}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}` }}>
+          <div style={{ minWidth:0, flex:1 }}>
+            <div style={{ ...TYPE.label, color:T.muted }}>{drill.group}</div>
+            <div style={{ ...TYPE.h3, color:T.text }}>{drill.key}</div>
+          </div>
+          <div style={{ ...TYPE.caption, color:T.muted }}>
+            {rows.length} approved project{rows.length === 1 ? "" : "s"}
+          </div>
+          <button onClick={() => setDrill(null)} aria-label="Close"
+            className="pmo-focusable"
+            style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm,
+              color:T.muted, cursor:"pointer", padding:"4px 9px", ...TYPE.caption }}>
+            Close
+          </button>
+        </div>
+
+        {rows.length === 0 ? (
+          <div style={{ padding:SP.lg, ...TYPE.bodySm, color:T.dim }}>No approved projects in this group yet.</div>
+        ) : (
+          vpB.isCompact ? (
+          // Same box-per-project card the rest of the portal uses on mobile,
+          // so a project looks the same wherever it is listed. The desktop
+          // table-style rows below stay as they are — they scan better on a
+          // wide screen.
+          <div style={{ display:"flex", flexDirection:"column", gap:SP.sm,
+            padding:SP.md, maxHeight:520, overflowY:"auto" }}>
+            {rows.map((p, i) => (
+              <MobileProjectCard key={p.id} T={T} project={p} index={i}
+                onSelect={onSelectProject}
+                badges={<>
+                  {p.workflow_stage && (
+                    <Badge T={T} color={STAGE_META[p.workflow_stage]?.color || T.neutral} size="sm">
+                      {STAGE_META[p.workflow_stage]?.label || p.workflow_stage}
+                    </Badge>
+                  )}
+                  {p.priority && (
+                    <Badge T={T} color={PRIORITY_META[p.priority]?.color || T.dim} size="sm" dot>
+                      {PRIORITY_LABEL[p.priority]}
+                    </Badge>
+                  )}
+                </>}
+                metrics={[
+                  { label:"Approved", value:fmtM(p.bac), color:(T.goldText || GOLD) },
+                  { label:"Released", value:fmtM(p.amount_released) },
+                ]} />
+            ))}
+          </div>
+          ) : (
+          <div style={{ maxHeight:420, overflowY:"auto" }}>
+            {rows.map((p, i) => (
+              <div key={p.id}
+                onClick={() => onSelectProject && onSelectProject(p.id)}
+                className="pmo-focusable"
+                style={{ display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap",
+                  padding:`${SP.sm}px ${SP.lg}px`, cursor: onSelectProject ? "pointer" : "default",
+                  borderBottom: i < rows.length - 1 ? `1px solid ${T.border}` : "none" }}>
+                <div style={{ flex:1, minWidth:180 }}>
+                  <div style={{ ...TYPE.mono, color:T.muted }}>{p.code || "—"}</div>
+                  <div style={{ ...TYPE.bodySm, color:T.text, lineHeight:1.4 }}>{p.name}</div>
+                </div>
+                <div style={{ textAlign:"right", minWidth:92 }}>
+                  <div style={{ ...TYPE.label, color:T.muted }}>Approved</div>
+                  <div style={{ ...TYPE.bodySm, fontWeight:700, color:(T.goldText || GOLD) }}>
+                    {fmtM(p.bac)}
+                  </div>
+                </div>
+                <div style={{ textAlign:"right", minWidth:92 }}>
+                  <div style={{ ...TYPE.label, color:T.muted }}>Released</div>
+                  <div style={{ ...TYPE.bodySm, fontWeight:700, color:T.textSoft }}>
+                    {fmtM(p.amount_released)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          )
+        )}
+      </div>
+    );
+  };
+
+  const SectionCard = ({ title, children, note, index = 0 }) => {
+    const nref = useNear();
+    return (
+      <Reveal delay={index * 60}>
+        <div ref={nref} className="pmo-near pmo-card-in" style={{
+          position:"relative",
+          background:T.surface, border:`1px solid ${T.border}`,
+          borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 24px",
+          "--near-light": `${BRAND.gold}14`,
+        }}>
+          <div style={{ ...TYPE.label, color:T.muted, marginBottom: note ? 4 : 18,
+            position:"relative" }}>{title}</div>
+          {note && <div style={{ ...TYPE.caption, color:T.dim, marginBottom:14,
+            position:"relative" }}>{note}</div>}
+          <div style={{ position:"relative" }}>{children}</div>
+        </div>
+      </Reveal>
+    );
+  };
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       {/* Header */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"4px 0" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"4px 0",
+        flexWrap: vpB.isCompact ? "wrap" : "nowrap", gap: vpB.isCompact ? 10 : 0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:9 }}>
-          <div style={{ width:26, height:26, borderRadius:8, background:GOLD+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ width:26, height:26, borderRadius:R.md, background:GOLD+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center" }}>
             <BarChart3 size={14} color={GOLD} strokeWidth={2.25} />
           </div>
           <div style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:2 }}>Portfolio Breakdown · Planned vs Actual</div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <select value={fy} onChange={e=>setFy(e.target.value)}
-            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}>
+          <Select T={T} value={fy} onChange={e=>setFy(e.target.value)} className="pmo-select pmo-focusable"
+            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"6px 11px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}>
             <option value="__all__">All Fiscal Years</option>
             {allFYs.map(f=><option key={f} value={f}>{f}</option>)}
-          </select>
+          </Select>
           {isPMO && !editing && (
-            <button onClick={startEdit}
-              style={{ padding:"6px 14px", background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", display:"flex", alignItems:"center", gap:6, transition:"border-color .15s, color .15s" }}>
-              <Edit2 size={11}/> Set Targets
-            </button>
+            <Button T={T} variant="ghost" size="sm" icon={Edit2} onClick={startEdit}>Set Targets</Button>
           )}
           {isPMO && editing && (
             <div style={{ display:"flex", gap:7 }}>
-              <button onClick={saveTargets} disabled={saving}
-                style={{ padding:"6px 15px", background:NAVY, border:"none", borderRadius:8, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
+              <button className="pmo-focusable pmo-btn" onClick={saveTargets} disabled={saving}
+                style={{ padding:"6px 15px", background:NAVY, border:"none", borderRadius:R.md, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
                 {saving?"Saving…":"Save Targets"}
               </button>
-              <button onClick={()=>setEditing(false)}
-                style={{ padding:"6px 11px", background:"none", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, cursor:"pointer" }}>
+              <button className="pmo-focusable pmo-btn" onClick={()=>setEditing(false)}
+                style={{ padding:"6px 11px", background:"none", border:`1px solid ${T.border}`, borderRadius:R.md, color:T.muted, fontSize:12, cursor:"pointer" }}>
                 Cancel
               </button>
             </div>
@@ -1011,185 +2153,311 @@ function BreakdownSection({ T, session }) {
         </div>
       </div>
 
-      {/* ── Organisation split ── */}
-      <div style={{ display:"flex", gap:14 }}>
-        {Object.entries(byOrg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], oi) => {
-          const color      = ORG_COLORS[name] || "#5B9FE8";
-          const OrgIcon    = name === "Trust" ? Landmark : Building2;
-          const plannedAbs = (orgTgts[name]?.bac || 0) * 1e6;
-          const isOver     = plannedAbs > 0 && data.bac > plannedAbs;
-          const barColor   = isOver ? ROSE : color;
-          const pct        = plannedAbs > 0 ? Math.min(100,(data.bac/plannedAbs)*100) : 0;
-          const relPct     = data.bac > 0 ? (data.released/data.bac)*100 : 0;
-          const gradId     = "orgGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
-          const lightMode  = T.mode === "light";
+      {/* ── TARGET EDITOR ──────────────────────────────────────────────────
+          "Set Targets" previously flipped `editing` to true and swapped the
+          header buttons, but no inputs were ever rendered — so the button
+          looked like it did nothing, and Save would have written empty values
+          over any existing targets. This is that missing editor.
+
+          Figures are entered in PKR millions because that is the unit the
+          cards read back in (the stored value is multiplied by 1e6 for
+          display), and typing 145 is far less error-prone than 145000000. */}
+      {isPMO && editing && (
+        <Reveal><Section T={T} tone={BRAND.gold} pad={SP.lg}>
+          <SectionTitle T={T} icon={Edit2}
+            title={`Set targets — ${fy === "__all__" ? "All fiscal years" : fy}`}
+            sub="How much you aim to RELEASE, in PKR millions. The cards compare actual released against this. Blank or 0 removes a target." />
+
+          {[
+            { label:"By organisation",       group:"orgs",  keys:Object.keys(byOrg) },
+            { label:"By segment",            group:"segs",  keys:Object.keys(bySeg) },
+            { label:"By strategic priority", group:"strat", keys:Object.keys(byStrat) },
+          ].filter(s => s.keys.length > 0).map(section => (
+            <div key={section.group} style={{ marginBottom:SP.xl }}>
+              <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>{section.label}</div>
+              <div style={{ display:"grid", gap:SP.sm,
+                gridTemplateColumns: vpB.isCompact
+                  ? "minmax(0,1fr)"
+                  : "repeat(auto-fit, minmax(min(280px,100%), 1fr))" }}>
+                {section.keys.map(k => (
+                  <label key={k} style={{ display:"flex", alignItems:"center", gap:SP.sm,
+                    background:T.surfaceRaised, border:`1px solid ${T.border}`,
+                    borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`, minWidth:0 }}>
+                    <span style={{ ...TYPE.bodySm, color:T.textSoft, flex:1, minWidth:0,
+                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{k}</span>
+                    <input
+                      type="number" inputMode="decimal" min="0" step="0.1"
+                      value={editBuf[section.group]?.[k] ?? ""}
+                      placeholder="0"
+                      onChange={e => setEditBuf(b => ({
+                        ...b,
+                        [section.group]: { ...(b[section.group] || {}), [k]: e.target.value },
+                      }))}
+                      style={{ width:96, flexShrink:0, textAlign:"right",
+                        background:T.inputBg, border:`1px solid ${T.inputBorder}`,
+                        borderRadius:R.sm, padding:"5px 8px", fontSize:12.5,
+                        color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }} />
+                    <span style={{ ...TYPE.caption, color:T.dim, flexShrink:0 }}>M</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div style={{ ...TYPE.caption, color:T.dim, borderTop:`1px solid ${T.border}`, paddingTop:SP.md }}>
+            Targets are saved against{" "}
+            <strong style={{ color:T.textSoft }}>
+              {fy === "__all__" ? "all fiscal years" : fy}
+            </strong>
+            . Switch the fiscal year above before saving to set targets for a different year.
+          </div>
+        </Section></Reveal>
+      )}
+
+      {/* ── CUMULATIVE PLANNED VS ACTUAL ───────────────────────────────────
+          Built entirely from real rows, not a synthetic monthly series:
+            planned = cumulative DF-recommended budget, bucketed by each
+                      project's start_date  (96 of 106 projects carry one)
+            actual  = cumulative amount_released, bucketed by
+                      budget_release_date   (4 projects so far)
+          The gap between the two lines IS the portfolio's story right now,
+          so the chart is honest rather than flattering. Where a bucket has no
+          rows the series simply carries forward — it does not interpolate
+          values that were never recorded. */}
+      {(() => {
+        const money = (p) => parseFloat(p.df_recommended_amount) || 0;
+        const rel   = (p) => parseFloat(p.amount_released) || 0;
+
+        const planBuckets = {}, actBuckets = {};
+        fyProjects.forEach(p => {
+          if (p.start_date && money(p) > 0) {
+            const k = String(p.start_date).slice(0, 7);
+            planBuckets[k] = (planBuckets[k] || 0) + money(p);
+          }
+          if (p.budget_release_date && rel(p) > 0) {
+            const k = String(p.budget_release_date).slice(0, 7);
+            actBuckets[k] = (actBuckets[k] || 0) + rel(p);
+          }
+        });
+
+        const keys = [...new Set([...Object.keys(planBuckets), ...Object.keys(actBuckets)])].sort();
+        if (keys.length < 2) return null;
+
+        // Fill the calendar gaps so the x-axis is evenly spaced in time
+        const months = [];
+        let [y, m] = keys[0].split("-").map(Number);
+        const [ly, lm] = keys[keys.length - 1].split("-").map(Number);
+        while (y < ly || (y === ly && m <= lm)) {
+          months.push(`${y}-${String(m).padStart(2, "0")}`);
+          m++; if (m > 12) { m = 1; y++; }
+        }
+
+        const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        let cp = 0, ca = 0;
+        const data = months.map(k => {
+          cp += planBuckets[k] || 0;
+          ca += actBuckets[k] || 0;
+          const [yy, mm] = k.split("-");
+          return { label:`${MON[+mm - 1]} ${yy.slice(2)}`, planned:cp, actual:ca, key:k };
+        });
+
+        // The header figure and the chart line were the same number —
+        // planTotal was literally data[data.length-1].planned, i.e. the sum
+        // of only the 96 (of 109) projects with a start_date. That made the
+        // header agree with the line but disagree with every other total on
+        // the dashboard (575.8M), which sums all of them. Reported as
+        // 574.2M when the rest of the portal says 575.8M.
+        //
+        // planTotal now matches the portfolio total the KPI cards use. The
+        // chart's own line is untouched — it still only plots what it can
+        // honestly date — so the two now legitimately diverge by design, and
+        // the note beneath explains why rather than leaving it unexplained.
+        const fullDfTotal = fyProjects.reduce((s, p) => s + (parseFloat(p.df_recommended_amount) || 0), 0);
+        const undatedCount = fyProjects.filter(p => !p.start_date && (parseFloat(p.df_recommended_amount)||0) > 0).length;
+        const undatedAmt   = fullDfTotal - data[data.length - 1].planned;
+
+        const planTotal = fullDfTotal;
+        const actTotal  = data[data.length - 1].actual;
+        const pct = planTotal > 0 ? (actTotal / planTotal) * 100 : 0;
+
+        return (
+          <Surface T={T} pad={SP.lg} style={{ flexShrink:0 }}>
+            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
+              gap:SP.lg, flexWrap:"wrap", marginBottom:SP.md }}>
+              <div>
+                <div style={{ ...TYPE.h3, color:T.text }}>Cumulative release against plan</div>
+                <div style={{ ...TYPE.caption, color:T.muted, marginTop:3 }}>
+                  Planned by project start date · actual by budget release date
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:SP.xl, flexWrap:"wrap" }}>
+                <div>
+                  <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Planned</div>
+                  <div style={{ ...TYPE.metricSm, color:T.textOf(T.info) }}>{fmtM(planTotal)}</div>
+                </div>
+                <div>
+                  <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Released</div>
+                  <div style={{ ...TYPE.metricSm, color:T.textOf(T.positive) }}>{fmtM(actTotal)}</div>
+                </div>
+                <WithInsight T={T} side="bottom" align="right" width={264}
+                  tone={pct < 25 ? T.danger : T.positive}
+                  title="Portfolio release progress"
+                  line={`${fmtM(actTotal)} released against ${fmtM(planTotal)} planned.`}
+                  stat={`${pct.toFixed(1)}% of the recommended portfolio`}>
+                <div style={{ cursor:"help" }}>
+                  <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Of plan</div>
+                  <div style={{ ...TYPE.metricSm, color: T.textOf(pct < 25 ? T.danger : pct < 60 ? T.warning : T.positive) }}>
+                    {pct.toFixed(1)}%
+                  </div>
+                </div>
+                </WithInsight>
+              </div>
+            </div>
+
+            <InsightNote T={T} style={{ marginBottom:SP.md }} insight={planTotal > 0 ? {
+              tone: pct < 10 ? "attention" : pct < 50 ? "watch" : "good",
+              title: pct < 10 ? "Release is well behind plan" : "Portfolio release progress",
+              body: `${fmtM(actTotal)} released against ${fmtM(planTotal)} planned — ${pct.toFixed(1)}% of the recommended portfolio.`,
+            } : null} />
+
+            <PlannedActualChart T={T} data={data} height={vpB.isCompact ? 210 : 280}
+              isMobile={vpB.isCompact} fmt={(v) => fmtM(v)} />
+
+            {/* Say plainly what the shape means — an executive shouldn't have to
+                infer it, and a near-flat actual line is easy to misread as a bug */}
+            <div style={{ display:"flex", alignItems:"flex-start", gap:8, marginTop:SP.md,
+              padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+              background: pct < 25 ? `${T.warning}${T.wash}` : T.pageAlt,
+              border:`1px solid ${pct < 25 ? T.warning + "33" : T.border}` }}>
+              <AlertCircle size={13} color={pct < 25 ? T.warning : T.muted} style={{ marginTop:1, flexShrink:0 }} />
+              <span style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.5 }}>
+                {fmtM(actTotal)} of {fmtM(planTotal)} planned CAPEX has been released
+                ({pct.toFixed(1)}%). Release dates are recorded for{" "}
+                {fyProjects.filter(p => p.budget_release_date).length} of {fyProjects.length} projects,
+                so the actual line reflects only those.
+                {undatedCount > 0 && (
+                  <> The plan line ends {fmtM(undatedAmt)} short of the total for the same reason —{" "}
+                  {undatedCount} project{undatedCount === 1 ? "" : "s"} with no start date can't be placed
+                  on a monthly curve, though {undatedCount === 1 ? "it counts" : "they count"} toward the
+                  {" "}{fmtM(planTotal)} above.</>
+                )}
+              </span>
+            </div>
+          </Surface>
+        );
+      })()}
+
+      {/* ── ORGANISATION & SEGMENT COMPARISON ────────────────────────────
+          Replaces two 100%-full "Amount Released" bars, a three-slice donut
+          and a mostly-empty stacked column chart.
+
+          The old cards each drew released ÷ approved — a ratio that is 100% for
+          every organisation and segment here, so a unit at 0.2% of its target
+          rendered a full green bar identical to one at 54%. Everything now sits
+          on ONE shared scale against its target, so bar length means the same
+          thing in every row and the shortfall is visible as distance. */}
+      <Reveal><Section T={T} tone={T.info} pad={SP.lg}>
+        <SectionTitle T={T} icon={Landmark}
+          title="Approved against target"
+          sub="Every organisation and segment on one scale — solid is approved budget, the dashed ghost is target"
+          right={<span style={{ ...TYPE.caption, color:T.muted }}>PKR, all fiscal years</span>} />
+
+        {(() => {
+          const orgRows = Object.entries(byOrg)
+            .sort(([,a],[,b]) => b.bac - a.bac)
+            .map(([name, data]) => ({
+              key:name, label:name, color:ORG_COLORS[name] || DATA.info,
+              value:data.bac || 0,
+              target:(orgTgts[name]?.bac || 0) * 1e6,
+              meta:`${data.approvedCount || 0} approved of ${data.count || 0} projects`,
+              Icon: name === "Trust" ? Landmark : Building2,
+            }));
 
           return (
-            <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(oi*70)+"ms", flex:1, minWidth:0 }}>
-              <div style={{
-                background: lightMode ? T.card : `linear-gradient(165deg, ${T.card} 0%, ${T.card} 55%, ${barColor}${T.washAlpha} 100%)`,
-                border:`1px solid ${T.border}`, borderRadius:14, padding:"20px 22px",
-                borderTop: lightMode ? `1px solid ${T.border}` : `3px solid ${barColor}`, display:"flex", flexDirection:"column", gap:13,
-                position:"relative", overflow:"hidden", boxShadow:T.shadow,
-              }}>
-                <ArchMotif T={T} color={barColor} size={80} />
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", position:"relative" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ width:32, height:32, borderRadius:9, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                      <OrgIcon size={16} color={barColor} strokeWidth={2.25} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{name}</div>
-                      <div style={{ fontSize:11, color:T.dim }}>{data.count} projects · {fy === "__all__" ? "All FY" : fy}</div>
-                    </div>
-                  </div>
-                  {isOver && <span style={{ fontSize:9, fontWeight:700, background:`${ROSE}20`, color:ROSE, padding:"3px 9px", borderRadius:20 }}>OVER TARGET</span>}
+            <div style={{ display:"flex", flexDirection:"column", gap:SP.xl }}>
+              {/* Organisations — the two big splits, side by side */}
+              <div>
+                <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>By organisation</div>
+                <div style={{ display:"grid", gap:SP.md,
+                  gridTemplateColumns: vpB.width >= 900 ? "repeat(2, minmax(0,1fr))" : "minmax(0,1fr)" }}>
+                  {orgRows.map((r, i) => (
+                    <TargetCard key={r.key} T={T} index={i}
+                      name={r.label} icon={r.Icon} meta={r.meta}
+                      value={r.value} target={r.target} color={r.color} fmt={fmtM}
+                      valueLabel="Approved" remainingVerb="approve"
+                      onClick={() => setDrill(d =>
+                        d && d.group === "By organisation" && d.key === r.key
+                          ? null : { group:"By organisation", key:r.key })} />
+                  ))}
                 </div>
+              </div>
 
-                <div style={{ display:"flex", alignItems:"baseline", gap:10, position:"relative" }}>
-                  <div style={{ fontSize:32, fontWeight:700, color:barColor, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></div>
-                  {plannedAbs > 0 && !editing && <div style={{ fontSize:13, color:T.dim }}>/ {fmtM(plannedAbs)} planned</div>}
+              {/* Segments — same treatment, compact, as many across as fit */}
+              <div>
+                <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>By segment</div>
+                <div style={{ display:"grid", gap:SP.md,
+                  gridTemplateColumns:"repeat(auto-fit, minmax(min(250px, 100%), 1fr))" }}>
+                  {segmentRows.map((r, i) => (
+                    <TargetCard key={r.key} T={T} index={i + 2} compact
+                      name={r.label} icon={SEG_ICONS[r.label] || Layers} meta={r.meta}
+                      value={r.value} target={r.target} color={r.color} fmt={fmtM}
+                      valueLabel="Approved" remainingVerb="approve"
+                      onClick={() => setDrill(d =>
+                        d && d.group === "By segment" && d.key === r.key
+                          ? null : { group:"By segment", key:r.key })} />
+                  ))}
                 </div>
-
-                {plannedAbs > 0 && !editing && (
-                  <div style={{position:"relative"}}>
-                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.dim, marginBottom:5 }}>
-                      <span>{pct.toFixed(1)}% of target</span>
-                      <span style={{ color:isOver?ROSE:T.dim }}>{isOver?`+${fmtM(data.bac-plannedAbs)} over`:`${fmtM(plannedAbs-data.bac)} to go`}</span>
-                    </div>
-                    <svg width="100%" height="8" style={{display:"block"}}>
-                      <defs>
-                        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor={barColor} stopOpacity="0.6" />
-                          <stop offset="100%" stopColor={barColor} stopOpacity="1" />
-                        </linearGradient>
-                      </defs>
-                      <rect x="0" y="0" width="100%" height="8" rx="4" fill={T.border} />
-                      <rect x="0" y="0" width={pct+"%"} height="8" rx="4" fill={`url(#${gradId})`} style={{transition:"width .6s cubic-bezier(.16,1,.3,1)"}} />
-                    </svg>
-                  </div>
-                )}
-
-                <div style={{position:"relative"}}>
-                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.muted, marginBottom:5 }}>
-                    <span>Amount Released</span><span style={{ color:EMERALD, fontWeight:600 }}>{fmtM(data.released)} ({relPct.toFixed(1)}%)</span>
-                  </div>
-                  <svg width="100%" height="6" style={{display:"block"}}>
-                    <rect x="0" y="0" width="100%" height="6" rx="3" fill={T.border} />
-                    <rect x="0" y="0" width={Math.min(100,relPct)+"%"} height="6" rx="3" fill={EMERALD} style={{transition:"width .6s"}} />
-                  </svg>
-                </div>
-
-                {editing && isPMO && (
-                  <div style={{ paddingTop:12, borderTop:`1px solid ${T.border}`, position:"relative" }}>
-                    <label style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Planned Budget (M)</label>
-                    <input type="number" step="0.1"
-                      value={editBuf.orgs?.[name] || ""}
-                      onChange={e=>setEditBuf(b=>({...b,orgs:{...b.orgs,[name]:e.target.value}}))}
-                      placeholder={`e.g. ${Math.round(data.bac/1e6/10)*10+50}`}
-                      style={{ width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:7, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
-                    <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Enter in PKR Millions — e.g. 600 means PKR 600M</div>
-                  </div>
-                )}
               </div>
             </div>
           );
-        })}
-      </div>
+        })()}
 
-      {/* ── Segment breakdown — donut chart ── */}
-      <SectionCard title="By Segment">
-        <div style={{ display:"flex", gap:32, alignItems:"center" }}>
-          {/* Donut — 280px */}
-          <div className="pmo-fade-in" style={{ flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <DonutChart T={T}
-              slices={Object.entries(bySeg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data])=>({
-                name, value:data.bac, color:SEG_COLORS[name]||"#5B9FE8"
-              }))}/>
+        {/* Share of approved budget — the question the donut answered, in a
+            line rather than a ring with labels crowding its edge. */}
+        <div style={{ marginTop:SP.xxl, paddingTop:SP.lg, borderTop:`1px solid ${T.border}` }}>
+          <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between",
+            gap:SP.md, marginBottom:SP.sm, flexWrap:"wrap" }}>
+            <div style={{ ...TYPE.label, color:T.muted }}>Share of approved budget</div>
+            <div style={{ ...TYPE.caption, color:T.muted }}>
+              {fmtM(shareRows.reduce((a, r) => a + (r.value || 0), 0))} approved in total
+            </div>
           </div>
-
-          {/* Legend — 2 columns on wide, 1 on narrow */}
-          <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px 16px" }}>
-            {(() => {
-              const total = Object.values(bySeg).reduce((s,d)=>s+d.bac,0)||1;
-              const SEG_ICONS = { Academic:Layers, Healthcare:Activity, Management:Shield, Investment:Wallet };
-              return Object.entries(bySeg).sort(([,a],[,b])=>b.bac-a.bac).map(([name, data], si) => {
-                const color      = SEG_COLORS[name]||"#5B9FE8";
-                const SegIcon    = SEG_ICONS[name] || Layers;
-                const pct        = ((data.bac/total)*100).toFixed(1);
-                const plannedAbs = (segTgts[name]?.bac||0)*1e6;
-                const isOver     = plannedAbs>0 && data.bac>plannedAbs;
-                const barColor   = isOver ? ROSE : color;
-                const relPct     = data.bac>0 ? ((data.released/data.bac)*100).toFixed(1) : "0";
-                const gradId     = "segGrad_"+name.replace(/[^a-zA-Z0-9]/g,"");
-                const lightMode  = T.mode === "light";
-                return (
-                  <div key={name} className="pmo-card-in pmo-lift" style={{ animationDelay:(si*60)+"ms", background: lightMode ? T.card2 : `linear-gradient(160deg, ${T.card2} 0%, ${T.card2} 60%, ${barColor}${T.washAlpha} 100%)`, borderRadius:12, padding:"16px 18px", border: lightMode ? `1px solid ${T.border}` : `1px solid ${barColor}${T.glowRing}`, position:"relative", overflow:"hidden", boxShadow:T.shadow }}>
-                    {/* Header row */}
-                    <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:11, position:"relative" }}>
-                      <div style={{ width:26, height:26, borderRadius:8, background:barColor+T.badgeAlpha, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                        <SegIcon size={13} color={barColor} strokeWidth={2.25} />
-                      </div>
-                      <span style={{ fontSize:14, fontWeight:700, color:T.text }}>{name}</span>
-                      <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{data.count} projects</span>
-                    </div>
-
-                    {/* Big BAC number */}
-                    <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:7, position:"relative" }}>
-                      <span style={{ fontSize:25, fontWeight:700, color:barColor, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtM(data.bac)} /></span>
-                      <span style={{ fontSize:14, color:T.muted, fontWeight:600 }}>{pct}%</span>
-                    </div>
-
-                    {/* Planned row */}
-                    {plannedAbs>0 && !editing && (
-                      <div style={{ fontSize:12, color:isOver?ROSE:T.muted, marginBottom:9, position:"relative" }}>
-                        Target: {fmtM(plannedAbs)}
-                        {isOver && <span style={{ fontSize:10, fontWeight:700, color:ROSE, background:`${ROSE}20`, padding:"1px 6px", borderRadius:20, marginLeft:6 }}>OVER</span>}
-                      </div>
-                    )}
-
-                    {/* Edit input */}
-                    {editing && (
-                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:9, position:"relative" }}>
-                        <span style={{ fontSize:11, color:T.muted }}>Target (M):</span>
-                        <input type="number" step="0.1"
-                          value={editBuf.segs?.[name]||""}
-                          onChange={e=>setEditBuf(b=>({...b,segs:{...b.segs,[name]:e.target.value}}))}
-                          placeholder="e.g. 320"
-                          style={{ flex:1, background:T.inputBg, border:`1px solid ${barColor}`, borderRadius:6, padding:"4px 8px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}/>
-                      </div>
-                    )}
-
-                    {/* Released bar */}
-                    <svg width="100%" height="7" style={{display:"block", position:"relative"}}>
-                      <defs>
-                        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor={EMERALD} stopOpacity="0.6" />
-                          <stop offset="100%" stopColor={EMERALD} stopOpacity="1" />
-                        </linearGradient>
-                      </defs>
-                      <rect x="0" y="0" width="100%" height="7" rx="3.5" fill={T.border} />
-                      <rect x="0" y="0" width={Math.min(100,parseFloat(relPct))+"%"} height="7" rx="3.5" fill={`url(#${gradId})`} style={{transition:"width .6s"}} />
-                    </svg>
-                    <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:11, position:"relative" }}>
-                      <span style={{ color:T.muted }}>Released</span>
-                      <span style={{ color:EMERALD, fontWeight:600 }}>{fmtM(data.released)} ({relPct}%)</span>
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
+          <ShareStrip T={T} items={shareRows} fmt={fmtM} />
         </div>
-      </SectionCard>
 
-      {/* ── Strategic Priority breakdown ── */}
-      <SectionCard title="By Strategic Priority"
-        note={Object.keys(byStrat).length===0 ? "No strategic priorities in current data — import Excel with the 'Strategic Priority' column filled in to populate this section." : null}>
-        <ChartErrorBoundary T={T}>
-          <StrategicPriorityStackedBar T={T} byStrat={byStrat} />
-        </ChartErrorBoundary>
-      </SectionCard>
+        {(drill?.group === "By organisation" || drill?.group === "By segment") && <DrillPanel />}
+      </Section></Reveal>
+
+      {/* ── STRATEGIC PRIORITY ────────────────────────────────────────────
+          Was a vertical stacked column with three categories and a great deal
+          of empty air above them; the labels were truncated because vertical
+          bars give a label only its own width. Horizontal bars give each label
+          the full row. */}
+      <Reveal delay={60}><Section T={T} tone={T.violet} pad={SP.lg}>
+        <SectionTitle T={T} icon={Layers}
+          title="By strategic priority"
+          sub="Share of approved budget by strategic priority — hover a slice for its detail" />
+        {stratRows.length > 0 ? (
+          <ShareDonut
+            T={T}
+            onPick={(k) => setDrill(d =>
+              d && d.group === "By strategic priority" && d.key === k
+                ? null : (k ? { group:"By strategic priority", key:k } : null))}
+            activeKey={drill?.group === "By strategic priority" ? drill.key : null}
+            data={stratRows.map(r => ({ ...r, name:r.label }))}
+            total={fmtM(stratRows.reduce((a, r) => a + (r.value || 0), 0))}
+            totalLabel="Approved budget"
+            fmt={fmtM}
+            height={vpB.isCompact ? 240 : 290}
+          />
+        ) : (
+          <EmptyState T={T} icon={Layers} compact
+            title="No strategic priorities recorded"
+            message="Import projects with the Strategic Priority column filled in and they'll rank here." />
+        )}
+      
+        {drill?.group === "By strategic priority" && <DrillPanel />}
+      </Section></Reveal>
     </div>
   );
 }
@@ -1219,11 +2487,11 @@ function CarryForwardList({ T, session }) {
     return () => { cancelled = true; };
   }, [session.access_token]);
 
-  const th = { padding:"9px 12px", fontSize:10, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1.5, textAlign:"left", borderBottom:"1px solid "+T.border, whiteSpace:"nowrap", opacity:0.65 };
-  const td = { padding:"11px 12px", fontSize:12.5, color:T.text, borderBottom:"1px solid "+T.border+"80", verticalAlign:"middle" };
+  const th = tableStyles(T).th;
+  const td = tableStyles(T).td;
 
-  if (loading) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>Loading…</div>;
-  if (rows.length === 0) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No carry-forward projects on record.</div>;
+  if (loading) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>Loading…</div>;
+  if (rows.length === 0) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No carry-forward projects on record.</div>;
 
   const total = rows.reduce((s,r) => s + (r.amount||0), 0);
   // Fixed inputs from Finance's FY2026 carry-forward reconciliation — not
@@ -1234,21 +2502,21 @@ function CarryForwardList({ T, session }) {
   const carryForward2026 = afterSavings - PAYMENTS;
 
   return (
-    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, overflow:"hidden" }}>
+    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, overflow:"hidden" }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid "+T.border }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:3, height:14, background:GOLD, borderRadius:2 }} />
           <span style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1 }}>
             Carry Forward — Prior FY
           </span>
-          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:20 }}>
+          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:R.pill }}>
             {rows.length} projects
           </span>
         </div>
-        <span style={{ fontSize:11, color:GOLD, fontWeight:700 }}>PKR {fmtM(total)} total</span>
+        <span style={{ fontSize:11, color:(T.goldText || GOLD), fontWeight:700 }}>PKR {fmtM(total)} total</span>
       </div>
       <div style={{ overflowX:"auto", maxHeight:480, overflowY:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <table style={tableStyles(T).table}>
           <thead>
             <tr>
               <th style={th}>#</th>
@@ -1263,9 +2531,9 @@ function CarryForwardList({ T, session }) {
               <tr key={r.id}>
                 <td style={{...td, color:T.dim}}>{i+1}</td>
                 <td style={{...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted}}>{r.code || "-"}</td>
-                <td style={{...td, fontWeight:500}}>{r.name}</td>
+                <td data-peek={r.name} style={{...td, fontWeight:500, maxWidth:300, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.name}</td>
                 <td style={{...td, color:T.muted}}>{r.region || "—"}</td>
-                <td style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600}}>{fmtM(r.amount)}</td>
+                <td style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600}}>{fmtM(r.amount)}</td>
               </tr>
             ))}
           </tbody>
@@ -1287,7 +2555,7 @@ function CarryForwardList({ T, session }) {
         ))}
         <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0 2px", marginTop:6, borderTop:"1px solid "+T.border, fontSize:14.5 }}>
           <span style={{ color:T.text, fontWeight:700 }}>Carry Forward 2026</span>
-          <span style={{ color:GOLD, fontWeight:800, fontVariantNumeric:"tabular-nums" }}>{Math.round(carryForward2026).toLocaleString()}</span>
+          <span style={{ color:(T.goldText || GOLD), fontWeight:800, fontVariantNumeric:"tabular-nums" }}>{Math.round(carryForward2026).toLocaleString()}</span>
         </div>
       </div>
     </div>
@@ -1295,27 +2563,28 @@ function CarryForwardList({ T, session }) {
 }
 
 function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
+  const vpDPL = useViewport();
   if (!projects || projects.length === 0) {
     return (
-      <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>
+      <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>
         No projects match this filter.
       </div>
     );
   }
 
   const cardLabels = {
-    pipeline: { pdd_not_submitted:"PDD Not Submitted", pdds_submitted:"PDD Submitted", in_df:"DF Review", in_ed:"ED Review", in_mt:"MT Review", approved:"Approved" },
+    pipeline: { pdd_not_submitted:"PDD Not Submitted", pdds_submitted:"PDD Submitted", in_df:"DF Review", in_ed:"ED Review", in_mt:"MT Review", approved:"Approved", closed:"Closed" },
     execution: { active_projects:"Active Projects", on_schedule:"On Schedule", delayed:"Delayed", over_budget:"Over Budget", scope_change:"Change in Scope", closed:"Closed" },
     financials: { payments_pending:"Payments Pending" },
-    budgeting: { df_recommended:"DF Recommended", approved_projects:"Approved Projects", budgeted_projects:"Budgeted Projects", non_budgeted_projects:"Non-Budgeted Projects", carry_forward:"Carry Forward", total_projects:"Total Projects" },
+    budgeting: { df_recommended:"DF Recommended", approved_projects:"Approved Projects", budgeted_projects:"Budgeted Projects", non_budgeted_projects:"Non-Budgeted Projects", carry_forward:"Carry Forward", pcds_received:"PCDs Received" },
   };
   const filterLabel = activeCard ? (cardLabels[tab]?.[activeCard] || "All") : "All";
 
-  const th = { padding:"9px 12px", fontSize:10, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1.5, textAlign:"left", borderBottom:"1px solid "+T.border, whiteSpace:"nowrap", opacity:0.65 };
-  const td = { padding:"11px 12px", fontSize:12.5, color:T.text, borderBottom:"1px solid "+T.border+"80", verticalAlign:"middle" };
+  const th = tableStyles(T).th;
+  const td = tableStyles(T).td;
 
   return (
-    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, overflow:"hidden" }}>
+    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, overflow:"hidden" }}>
       {/* List header */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid "+T.border }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1323,7 +2592,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
           <span style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1 }}>
             {tab === "pipeline" ? "PDD Status" : "Project Health"} — {filterLabel}
           </span>
-          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:20 }}>
+          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:R.pill }}>
             {projects.length} {projects.length === 1 ? "project" : "projects"}
           </span>
         </div>
@@ -1331,11 +2600,36 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
       </div>
 
       {/* Table */}
+      {vpDPL.isCompact ? (
+        <div style={{ display:"flex", flexDirection:"column", gap:SP.sm, padding:SP.md }}>
+          {sortRealCodeFirst(projects).map((p, i) => {
+            const st = STAGE_META[p.workflow_stage];
+            const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+            const metrics = [{ label:"BAC", value:fmtM(p.bac), color:(T.goldText || GOLD) }];
+            if (tab === "budgeting" && activeCard === "df_recommended") {
+              metrics.push({ label:"DF Recommended", value:fmtM(p.df_recommended_amount), color:(T.goldText || GOLD) });
+            }
+            return (
+              <MobileProjectCard key={p.id} T={T} project={p} onSelect={onSelectProject} index={i}
+                badges={<>
+                  <Badge T={T} color={st?.color || T.neutral} size="sm">{st?.label || "—"}</Badge>
+                  {p.priority && <Badge T={T} color={pClr} size="sm" dot>{PRIORITY_LABEL[p.priority]}</Badge>}
+                  {p.is_carry_forward && <Badge T={T} color={T.violet} size="sm">Carry forward</Badge>}
+                  {tab === "execution" && p.manual_schedule_flag === "on_time" && <Badge T={T} color={EMERALD} size="sm">On Time</Badge>}
+                  {tab === "execution" && p.manual_schedule_flag === "delayed" && <Badge T={T} color={ROSE} size="sm">Delayed</Badge>}
+                  {tab === "execution" && p.manual_budget_flag === "within" && <Badge T={T} color={EMERALD} size="sm">Within Budget</Badge>}
+                  {tab === "execution" && p.manual_budget_flag === "over" && <Badge T={T} color={ROSE} size="sm">Over Budget</Badge>}
+                </>}
+                metrics={metrics} />
+            );
+          })}
+        </div>
+      ) : (
       <div style={{ overflowX:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <table style={tableStyles(T).table}>
           <thead>
             <tr style={{ background:T.mainBg+"80" }}>
-              <th style={{ ...th, width:40 }}>#</th>
+              <th style={{ ...th, width:58 }}>#</th>
               <th style={th}>Project ID</th>
               <th style={{ ...th, minWidth:220 }}>Project Name</th>
               <th style={th}>Organization</th>
@@ -1357,29 +2651,29 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ ...td, color:T.dim }}>{i+1}</td>
                 <td style={{ ...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted, whiteSpace:"nowrap" }}>
-                  {p.is_carry_forward && <span style={{ fontSize:8, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 4px", borderRadius:3, marginRight:5 }}>CF</span>}
+                  {p.is_carry_forward && <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:(T.goldText || GOLD), padding:"1px 4px", borderRadius:3, marginRight:5 }}>CF</span>}
                   {p.code || "-"}
                 </td>
-                <td style={{ ...td, maxWidth:260, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:500 }}>{p.name}</td>
+                <td data-peek={p.name} style={{ ...td, maxWidth:260, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight:500 }}>{p.name}</td>
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.segments?.name||"—"}</td>
                 <td style={{ ...td, fontSize:12, color:T.muted }}>{p.sectors?.name||"—"}</td>
-                <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600 }}>{fmtM(p.bac)}</td>
+                <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600 }}>{fmtM(p.bac)}</td>
                 {tab === "budgeting" && activeCard === "df_recommended" && (
-                  <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:GOLD, fontWeight:600 }}>{fmtM(p.df_recommended_amount)}</td>
+                  <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600 }}>{fmtM(p.df_recommended_amount)}</td>
                 )}
-                <td style={td}><StageBadge stage={p.workflow_stage}/></td>
+                <td style={td}><StageBadge T={T} stage={p.workflow_stage}/></td>
                 {tab === "execution" && (
                   <td style={td}>
-                    {p.manual_schedule_flag === "on_time"  && <span style={{ fontSize:10, fontWeight:700, color:"#2DD4BF", background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:20 }}>On Time</span>}
-                    {p.manual_schedule_flag === "delayed"  && <span style={{ fontSize:10, fontWeight:700, color:"#F87171", background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:20 }}>Delayed</span>}
+                    {p.manual_schedule_flag === "on_time"  && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(EMERALD), background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>On Time</span>}
+                    {p.manual_schedule_flag === "delayed"  && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(ROSE), background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Delayed</span>}
                     {p.manual_schedule_flag === "not_started" && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                     {!p.manual_schedule_flag && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                   </td>
                 )}
                 {tab === "execution" && (
                   <td style={td}>
-                    {p.manual_budget_flag === "within" && <span style={{ fontSize:10, fontWeight:700, color:"#2DD4BF", background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:20 }}>Within</span>}
-                    {p.manual_budget_flag === "over"   && <span style={{ fontSize:10, fontWeight:700, color:"#F87171", background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:20 }}>Over</span>}
+                    {p.manual_budget_flag === "within" && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(EMERALD), background:"rgba(45,212,191,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Within</span>}
+                    {p.manual_budget_flag === "over"   && <span style={{ fontSize:10, fontWeight:700, color:T.textOf(ROSE), background:"rgba(248,113,113,0.1)", padding:"2px 7px", borderRadius:R.pill }}>Over</span>}
                     {p.manual_budget_flag === "not_started" && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                     {!p.manual_budget_flag && <span style={{ fontSize:10, color:T.dim }}>—</span>}
                   </td>
@@ -1395,19 +2689,54 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
 
 // ─── COMMAND CENTER ───────────────────────────────────────────────────────────
-function CommandCenter({ T, session, onSelectProject }) {
+function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", initialTab, initialCard }) {
+  const vp = useViewport();
+  // §10 — the hero's lighting follows the pointer, so the executive block
+  // responds to attention rather than sitting inert.
+  const heroLight = useCursorLight(true);
+  const [heroHot, setHeroHot] = useState(false);
   const [data,         setData]         = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [kpiOverrides, setKpiOverrides] = useState({});
-  const [activeTab,    setActiveTab]    = useState("budgeting");
+  const [activeTab,    setActiveTab]    = useState(initialTab || "budgeting");
+  useEffect(() => { if (initialTab) setActiveTab(initialTab); }, [initialTab]);
   const [activeCard,   setActiveCard]   = useState(null);
   const [dashProjects, setDashProjects] = useState([]);
+
+  // Real cumulative series by project start month — the only genuine time
+  // dimension this data has. 11 months, built from `start_date`, so every KPI's
+  // sparkline is describing something true rather than a decorative squiggle.
+  const trends = useMemo(() => {
+    if (!dashProjects?.length) return {};
+    const months = [...new Set(dashProjects.map(p => p.start_date?.slice(0, 7)).filter(Boolean))].sort();
+    if (months.length < 2) return {};
+    const cum = (pick, filter) => {
+      let run = 0;
+      return months.map(m => {
+        dashProjects.forEach(p => {
+          if (p.start_date?.slice(0, 7) === m && (!filter || filter(p))) run += (+pick(p) || 0);
+        });
+        return run;
+      });
+    };
+    return {
+      su_requested:   cum(p => p.su_requested_amount),
+      df_recommended: cum(p => p.df_recommended_amount),
+      approved:       cum(p => p.bac, p => p.workflow_stage === "approved"),
+      budgeted:       cum(p => p.bac, p => (+p.bac || 0) > 0),
+      non_budgeted:   cum(() => 1, p => !(+p.bac > 0) && p.workflow_stage === "approved"),
+      pcds_received:  cum(() => 1, p => p.workflow_stage === "closed"),
+      months,
+    };
+  }, [dashProjects]);
+
 
   // Approved / Budgeted / Non-Budgeted figures for the Overview tab. Computed
   // client-side from dashProjects since these aren't in the portfolio_dashboard
@@ -1422,7 +2751,18 @@ function CommandCenter({ T, session, onSelectProject }) {
     // matching the same condition as the Approved Projects card above.
     const budgeted = dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedOrReleased(p));
     const nonBudgeted = dashProjects.filter(p => p.project_type !== "Budgeted" && isApprovedOrReleased(p));
-    const sum = (arr) => arr.reduce((s,p) => s + (p.df_recommended_amount||0), 0);
+    // These three cards report APPROVED BUDGET (bac), not money released and
+    // not what Finance recommended.
+    //
+    // They originally summed df_recommended_amount, which made "Approved
+    // Projects" read 75.9M against 21.8M genuinely released — a recommendation
+    // is not an approval. That was corrected to amount_released, which was
+    // closer but still wrong for a card labelled "Approved": a project can be
+    // approved before any money moves, and the card would then under-report it.
+    // bac is the figure that actually matches the label, and it keeps these
+    // cards consistent with the portfolio breakdown below, which also measures
+    // approved budget.
+    const sum = (arr) => arr.reduce((s,p) => s + (+p.bac||0), 0);
     return {
       approvedAmt: sum(approved), approvedCount: approved.length,
       budgetedAmt: sum(budgeted), budgetedCount: budgeted.length,
@@ -1438,8 +2778,8 @@ function CommandCenter({ T, session, onSelectProject }) {
       const [rows, settings, projs, metrics] = await Promise.all([
         supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token),
         supa("/rest/v1/settings?key=eq.dashboard_kpis&select=value", {}, session.access_token),
-        supa("/rest/v1/projects?select=id,code,name,bac,su_requested_amount,df_recommended_amount,amount_released,project_type,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
-        supa("/rest/v1/project_metrics?select=id,schedule_flag,budget_flag,cpi,spi", {}, session.access_token),
+        supa("/rest/v1/projects?portfolio=eq.capex&select=id,start_date,code,name,bac,su_requested_amount,df_recommended_amount,amount_released,project_type,payments_pending,fiscal_year,workflow_stage,priority,manual_schedule_flag,manual_budget_flag,is_carry_forward,scope_change,segments(name),sectors(name)&order=code.asc", {}, session.access_token),
+        supa("/rest/v1/project_metrics?portfolio=eq.capex&select=id,schedule_flag,budget_flag,cpi,spi", {}, session.access_token),
       ]);
       setData(rows[0]);
       setKpiOverrides(settings[0]?.value || {});
@@ -1455,8 +2795,10 @@ function CommandCenter({ T, session, onSelectProject }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const saveKPI = useCallback(async (key, { value, sub }) => {
-    const updated = { ...kpiOverrides, [key]: { value, sub } };
+  // `insight` joins value/sub in the same JSON blob — no schema change, and it
+  // is saved and cleared through exactly the same path the PMO already knows.
+  const saveKPI = useCallback(async (key, { value, sub, insight }) => {
+    const updated = { ...kpiOverrides, [key]: { value, sub, insight } };
     await supa("/rest/v1/settings", {
       method: "POST",
       body: JSON.stringify({ key: "dashboard_kpis", value: updated }),
@@ -1467,9 +2809,18 @@ function CommandCenter({ T, session, onSelectProject }) {
 
   const kv = (key, calcValue, calcSub) => {
     const ov = kpiOverrides[key];
+    const valueOverridden = ov?.value != null && ov.value !== "";
     return {
-      value: (ov?.value != null && ov.value !== "") ? ov.value : calcValue,
+      value: valueOverridden ? ov.value : calcValue,
       sub:   (ov?.sub   != null && ov.sub   !== "") ? ov.sub   : calcSub,
+      insightOverride: (ov?.insight != null && ov.insight !== "") ? ov.insight : null,
+      // When the PMO has overridden the headline figure, the auto-generated
+      // insight can contradict it — the card showed "1166.33M from 272
+      // proposals" while the insight said "across 106 proposals", because the
+      // generated copy interpolates live counts. So a manual value suppresses
+      // the count-bearing default and falls back to a description that states
+      // only what the metric means.
+      valueOverridden,
     };
   };
 
@@ -1484,9 +2835,12 @@ function CommandCenter({ T, session, onSelectProject }) {
   };
 
   // ── Filter projects for the list panel ────────────────────────────────────
-  const filteredProjects = (() => {
+  // The dashboard's drill-down list returned each filter's raw order, so it was
+  // the one project list not activity-ranked. Wrapping the whole expression
+  // means every branch inherits the ranking rather than each needing its own.
+  const filteredProjects = sortByActivity((() => {
     if (activeTab === "pipeline") {
-      const stageMap = { pdd_not_submitted:"pdd_not_submitted", pdds_submitted:"identified", in_df:"df_review", in_ed:"ed_review", in_mt:"mt_review", approved:"approved" };
+      const stageMap = { pdd_not_submitted:"pdd_not_submitted", pdds_submitted:"identified", in_df:"df_review", in_ed:"ed_review", in_mt:"mt_review", approved:"approved", closed:"closed" };
       return dashProjects.filter(p => p.workflow_stage === (stageMap[activeCard] || "__none__"));
     }
     if (activeTab === "execution") {
@@ -1506,10 +2860,10 @@ function CommandCenter({ T, session, onSelectProject }) {
       if (activeCard === "budgeted_projects")  return dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedOrReleased(p));
       if (activeCard === "non_budgeted_projects") return dashProjects.filter(p => p.project_type !== "Budgeted" && isApprovedOrReleased(p));
       if (activeCard === "carry_forward")      return dashProjects.filter(p => p.is_carry_forward);
-      if (activeCard === "total_projects")     return dashProjects;
+      if (activeCard === "pcds_received")      return dashProjects.filter(p => p.workflow_stage === "closed");
     }
     return [];
-  })();
+  })());
 
   const showList = activeCard !== null && (
     activeTab === "pipeline" ||
@@ -1520,187 +2874,280 @@ function CommandCenter({ T, session, onSelectProject }) {
 
   if (loading) return (
     <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture }}>
-      <div className="pmo-skeleton" style={{ height:104, borderRadius:14, background:T.card, border:"1px solid "+T.border }} />
+      <div className="pmo-skeleton" style={{ height:104, borderRadius:R.lg, background:T.card, border:"1px solid "+T.border }} />
       <div style={{ display:"flex", gap:4, borderBottom:"2px solid "+T.border, paddingBottom:2 }}>
-        {[0,1,2,3].map(i => <div key={i} className="pmo-skeleton" style={{ width:120, height:32, borderRadius:6, background:T.card2 }} />)}
+        {[0,1,2,3].map(i => <div key={i} className="pmo-skeleton" style={{ width:120, height:32, borderRadius:R.sm, background:T.card2 }} />)}
       </div>
-      <div style={{ display:"flex", gap:10 }}>
+      <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
         {[0,1,2,3,4].map(i => (
-          <div key={i} className="pmo-skeleton" style={{ flex:1, height:100, borderRadius:12, background:T.card, border:"1px solid "+T.border }} />
+          <div key={i} className="pmo-skeleton" style={{ flex:1, height:100, borderRadius:R.lg, background:T.card, border:"1px solid "+T.border }} />
         ))}
       </div>
     </div>
   );
-  if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color="#F87171" /><span style={{ color:"#F87171", fontSize:13 }}>{err}</span><button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:6, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
+  if (err)     return <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}><AlertCircle color={ROSE} /><span style={{ color:T.textOf(ROSE), fontSize:13 }}>{err}</span><button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button></div>;
   if (!data) return null;
 
   const d = data;
-  const good = "#2DD4BF", warn = "#F59E0B", bad = "#F87171";
+  const good = EMERALD, warn = AMBER, bad = ROSE;
   const healthColor = d.portfolio_health === "Good" ? good : d.portfolio_health === "At Risk" ? warn : bad;
 
+  // One icon library throughout (§28) — the emoji set read as placeholder art
+  // and rendered differently on every OS.
   const TABS = [
-    { id:"budgeting",  label:"CAPEX Portfolio Overview",     icon:"📋" },
-    { id:"pipeline",   label:"PDD Status",        icon:"🔁" },
-    { id:"execution",  label:"Project Health",    icon:"⚡" },
-    { id:"financials", label:"Payments Status",   icon:"💰" },
+    { id:"budgeting",  label:"CAPEX Overview",  Icon:Wallet,        insight:TAB_INSIGHT.budgeting(d) },
+    { id:"investments", label:"Investments",  Icon:TrendingUp,    insight:TAB_INSIGHT.investments },
+    { id:"pipeline",   label:"PDD Status",      Icon:ClipboardList, count:d.total_projects,  insight:TAB_INSIGHT.pipeline(d) },
+    { id:"execution",  label:"Project Health",  Icon:Activity,      count:d.approved_count,  insight:TAB_INSIGHT.execution(d) },
+    { id:"financials", label:"Payments Status", Icon:PiggyBank,     insight:TAB_INSIGHT.financials(d) },
   ];
 
   return (
-    <div style={{ flex:1, overflow:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture, backgroundAttachment:"local" }}>
+    <div style={{ flex:1, overflowY:"auto", overflowX:"hidden", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20, backgroundImage:T.pageTexture, backgroundAttachment:"local" }}>
 
-      {/* ── HERO ── */}
-      {/* Light mode: full-bleed masthead flush to the page edges, matching
-          cashflow-dashboard.html exactly — negative margin cancels the
-          container's own padding so the hero reaches the true viewport edge,
-          square corners, no shadow (it's part of the page structure, not a
-          floating card). Dark mode keeps its original rounded floating card
-          completely unchanged. */}
-      <div className="pmo-card-in" style={{
-        background:T.heroGradient,
-        borderRadius: T.mode==="light" ? 0 : 16,
-        margin: T.mode==="light" ? "-20px -24px 0" : 0,
-        padding: T.mode==="light" ? "24px 48px 24px 56px" : "24px 32px",
-        display:"flex", alignItems:"center", gap:32,
-        boxShadow: T.mode==="light" ? "none" : T.shadow,
-        position:"relative", overflow:"hidden", minHeight:104,
-      }}>
-        {/* Ambient decoration — dark mode keeps the richer drifting mesh + arch
-            silhouette; light mode matches cashflow-dashboard.html's header
-            exactly: one static gold radial glow, top-right, nothing else. */}
-        {T.mode === "light" ? (
-          <div style={{position:"absolute", right:-60, top:-80, width:280, height:280, borderRadius:"50%", background:`radial-gradient(circle, ${GOLD}2E 0%, transparent 70%)`, pointerEvents:"none"}} />
-        ) : (
-          <>
-            <div className="pmo-mesh" style={{position:"absolute", inset:0, pointerEvents:"none"}}>
-              <div style={{position:"absolute", top:"-30%", right:"-6%", width:340, height:340, borderRadius:"50%", background:`radial-gradient(circle, ${GOLD}22 0%, transparent 68%)`}} />
-              <div style={{position:"absolute", bottom:"-40%", left:"20%", width:280, height:280, borderRadius:"50%", background:`radial-gradient(circle, ${EMERALD}14 0%, transparent 70%)`}} />
+      {/* ── EXECUTIVE HEADER ── */}
+      {/* Top of the visual hierarchy (§30). States the portfolio's position in
+          one glance: health verdict with an explanation, the two performance
+          indices with contextual status, and total CAPEX. When the indices
+          can't be computed it says WHY rather than printing a bare
+          "Insufficient Data" that reads as a broken dashboard (§8). */}
+      {(() => {
+        const health = healthOf(d.portfolio_cpi, d.portfolio_spi);
+        const cpi = perfStatus(d.portfolio_cpi);
+        const spi = perfStatus(d.portfolio_spi);
+        const noData = health.key === "nodata";
+
+        const IDX_INSIGHT = {
+          CPI: "Cost Performance Index — earned value against actual cost. Below 1.00 means spending is ahead of the work delivered. Counts only projects with a % Complete entered — everything else has no earned value to measure yet.",
+          SPI: "Schedule Performance Index — earned value against planned value. Below 1.00 means behind plan, above 1.00 means ahead of it. Counts only projects with a % Complete entered — everything else has no earned value to measure yet.",
+        };
+        const Index = ({ label, value, status, hint }) => (
+          <WithInsight T={T} side="bottom" align="left" width={268}
+            tone={value == null ? T.neutral : status.color}
+            title={label} line={IDX_INSIGHT[label]}
+            stat={value == null ? "No project reports both a baseline and actuals yet" : `${status.label} · threshold 0.95`}>
+          <div style={{ position:"relative", minWidth:96, cursor:"help" }}>
+            <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:6 }}>{label}</div>
+            <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
+              <span style={{ ...TYPE.metricXL, color: value == null ? T.heroFgDim : T.heroFg }}>
+                {value == null ? "—" : <AnimatedNumber value={fmtR(value)} />}
+              </span>
+              {value != null && (
+                <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(status.color) }}>{status.label}</span>
+              )}
             </div>
-            <svg width="230" height="140" viewBox="0 0 230 140" style={{position:"absolute", right:0, bottom:0, pointerEvents:"none"}} aria-hidden="true">
-              <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill="#fff" opacity="0.045" />
-              <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={GOLD} opacity="0.09" />
-            </svg>
-          </>
-        )}
-        <div style={{position:"relative"}}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", textTransform:"uppercase", letterSpacing:1.8, marginBottom:9, fontWeight:600 }}>Portfolio health</div>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div className="pmo-pulse-dot" style={{ width:11, height:11, borderRadius:"50%", background:healthColor, color:healthColor }} />
-            <div style={{ fontSize:32, fontWeight:700, color:healthColor, fontFamily:"DM Serif Display,serif" }}>{d.portfolio_health}</div>
+            <div style={{ ...TYPE.caption, color:T.heroFgMuted, marginTop:3 }}>{hint}</div>
           </div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:5 }}>CPI ≥ 0.95 · SPI ≥ 0.95 thresholds</div>
-        </div>
-        <div style={{ width:1, height:56, background:"rgba(255,255,255,0.16)", flexShrink:0 }} />
-        <div style={{ textAlign:"center", position:"relative" }}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", letterSpacing:1.8, marginBottom:7, fontWeight:600, textTransform:"uppercase" }}>CPI</div>
-          <div style={{ fontSize:32, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtR(d.portfolio_cpi)} /></div>
-          <div style={{ fontSize:11, color:d.portfolio_cpi >= 0.95 ? "#6EE7D0" : "#FCA5AF", marginTop:2 }}>Cost performance</div>
-        </div>
-        <div style={{ width:1, height:56, background:"rgba(255,255,255,0.16)", flexShrink:0 }} />
-        <div style={{ textAlign:"center", position:"relative" }}>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.7)", letterSpacing:1.8, marginBottom:7, fontWeight:600, textTransform:"uppercase" }}>SPI</div>
-          <div style={{ fontSize:32, fontWeight:700, color:"#fff", fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}><AnimatedNumber value={fmtR(d.portfolio_spi)} /></div>
-          <div style={{ fontSize:11, color:d.portfolio_spi >= 0.95 ? "#6EE7D0" : "#FCA5AF", marginTop:2 }}>Schedule performance</div>
-        </div>
-        <div style={{ marginLeft:"auto", textAlign:"right", position:"relative" }}>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", marginBottom:5 }}>Total CAPEX portfolio</div>
-          <div style={{ fontSize:29, fontWeight:700, color:GOLD, fontFamily:"DM Serif Display,serif", fontVariantNumeric:"tabular-nums" }}>PKR <AnimatedNumber value={fmtM(d.total_capex)} /></div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)" }}>{d.total_projects} projects · FY 2026-27</div>
-        </div>
-      </div>
+          </WithInsight>
+        );
+
+        return (
+          <div data-tour="hero" className={`pmo-in pmo-hero${heroHot ? " pmo-hot" : ""}`}
+            ref={heroLight.ref}
+            onMouseMove={heroLight.onMouseMove}
+            onMouseEnter={() => setHeroHot(true)}
+            onMouseLeave={() => { setHeroHot(false); heroLight.onMouseLeave(); }}
+            style={{
+            animationDelay:"0ms",
+            background:T.hero, borderRadius:R.xl,
+            border:`1px solid ${T.heroBorder}`,
+            // The dashboard body is a column flex with overflow:auto — without
+            // flexShrink:0 the browser crushes this block instead of scrolling.
+            flexShrink:0,
+            padding: vp.isCompact ? `${SP.lg}px ${SP.lg}px` : `${SP.xl}px ${SP.xxl}px`,
+            display:"flex", alignItems:"center", flexWrap:"wrap",
+            gap: vp.isCompact ? SP.lg : SP.xxl,
+            boxShadow:T.shadow, position:"relative", overflow:"hidden",
+          }}>
+            {/* Ambient depth — barely visible, never competes with the figures */}
+            <div className="pmo-scan" style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden", borderRadius:R.xl }} />
+            <span className="pmo-cursor-light" style={{
+              background:`radial-gradient(620px circle at var(--mx,50%) var(--my,50%), ${T.cursorLightHero}, transparent 66%)`,
+            }} />
+            <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
+              <div style={{ position:"absolute", top:"-45%", right:"-4%", width:360, height:360, borderRadius:"50%",
+                background:`radial-gradient(circle, ${T.heroGlowA} 0%, transparent 68%)` }} />
+              <div style={{ position:"absolute", bottom:"-55%", left:"22%", width:300, height:300, borderRadius:"50%",
+                background:`radial-gradient(circle, ${T.heroGlowB} 0%, transparent 70%)` }} />
+            </div>
+            {/* Institutional signature — the one decorative element in the header */}
+            <svg width="240" height="150" viewBox="0 0 230 140" aria-hidden="true"
+              style={{ position:"absolute", right:0, bottom:0, pointerEvents:"none" }}>
+              <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill={T.heroMotifA} />
+              <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill={T.heroMotifB} />
+            </svg>
+
+            {/* Health verdict */}
+            <div style={{ position:"relative", minWidth:230, flex:"1 1 240px" }}>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:7 }}>Portfolio health</div>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <StatusDot color={health.color} size={10} ring />
+                <span className="pmo-verdict" style={{
+                  ...TYPE.display, fontSize: vp.isCompact ? 24 : 30,
+                  // On the hero the surface is dark in both themes, so the
+                  // saturated hue is the readable one — textOf would darken it
+                  // against a field it is not sitting on.
+                  color: T.mode === "dark" ? health.color : T.textOf(health.color),
+                  "--vg": `${health.color}66`,
+                }}>{health.label}</span>
+              </div>
+              <div style={{ ...TYPE.bodySm, color:T.heroFgSoft, marginTop:6, maxWidth:330, lineHeight:1.45 }}>
+                {health.note}
+              </div>
+            </div>
+
+            {!vp.isCompact && <div style={{ width:1, alignSelf:"stretch", background:T.heroDivider }} />}
+
+            <Index label="CPI" value={d.portfolio_cpi > 0 ? d.portfolio_cpi : null} status={cpi}
+              hint={`Cost performance · ${d.reporting_progress_count ?? 0} of ${d.total_projects ?? 0} projects`} />
+            <Index label="SPI" value={d.portfolio_spi > 0 ? d.portfolio_spi : null} status={spi}
+              hint={`Schedule performance · ${d.reporting_progress_count ?? 0} of ${d.total_projects ?? 0} projects`} />
+
+            {/* Financial position */}
+            <WithInsight T={T} side="bottom" align="right" width={264} tone={BRAND.gold}
+              title="Total CAPEX portfolio"
+              line={KPI_INSIGHT.total_capex(d)}
+              stat={`${d.total_projects} projects · ${d.approved_count} approved · ${fmtM(d.budget_consumed)} released`}
+              style={{ marginLeft: vp.isCompact ? 0 : "auto" }}>
+            <div style={{ textAlign: vp.isCompact ? "left" : "right", position:"relative", cursor:"help" }}>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:6 }}>Total CAPEX portfolio</div>
+              <div style={{ ...TYPE.metricXL, fontSize: vp.isCompact ? 26 : 32, color:T.heroAccent }}>
+                <span style={{ ...TYPE.caption, fontWeight:600, color:T.heroFgMuted, marginRight:6 }}>PKR</span>
+                <AnimatedNumber value={fmtM(d.total_capex)} />
+              </div>
+              <div style={{ ...TYPE.caption, color:T.heroFgMuted, marginTop:4 }}>
+                {d.total_projects} projects · {fyLabel}
+              </div>
+            </div>
+            </WithInsight>
+          </div>
+        );
+      })()}
 
       {/* ── TAB BAR ── */}
-      <div style={{ display:"flex", borderBottom:"2px solid "+T.border, gap:4 }}>
-        {TABS.map((tab, i) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button key={tab.id} onClick={() => switchTab(tab.id)}
-              style={{
-                padding:"10px 24px", border:"none", borderBottom: isActive ? "2px solid "+GOLD : "2px solid transparent",
-                marginBottom:"-2px", cursor:"pointer", fontFamily:"Inter,sans-serif",
-                fontSize:13, fontWeight: isActive ? 700 : 500, letterSpacing:0.2,
-                background: isActive ? T.card2 : "transparent",
-                borderRadius: isActive ? "8px 8px 0 0" : 0,
-                color: isActive ? GOLD : T.muted,
-                transition:"background .18s, color .18s, border-color .18s", whiteSpace:"nowrap",
-              }}>
-              <span style={{ display:"flex", alignItems:"center", gap:8 }}>
-                {tab.icon && <span style={{ fontSize:14, opacity: isActive ? 1 : 0.6 }}>{tab.icon}</span>}
-                {tab.label}
-              </span>
-            </button>
-          );
-        })}
+      {/* Entrance order (§21): header → tabs → KPI strip → chart, each offset
+          by ~60ms. Total under 900ms, so nobody waits on the animation. */}
+      <div className="pmo-in pmo-scroll" style={{
+        flexShrink:0, animationDelay:"90ms",
+        position:"relative", zIndex:40,
+        overflowX: vp.isCompact ? "auto" : "visible", overflowY:"visible",
+      }}>
+        <TabsUI T={T} tabs={TABS} active={activeTab} onChange={switchTab} isMobile={vp.isCompact} />
       </div>
 
       {/* ── KPI CARDS ── */}
-      {(activeTab === "pipeline" || activeTab === "execution") && (
+      {activeTab === "execution" && (
         <div style={{ fontSize:11, color:T.dim, textAlign:"center", letterSpacing:0.3 }}>
           {activeCard ? "↓ Scroll down to see the project list — click the same card to collapse" : "Click any card below to view its projects"}
         </div>
       )}
-      {activeTab === "budgeting" && (
-        <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested"    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
-          <EditableKCard Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended"  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
-          <EditableKCard Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
-          <EditableKCard Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
-          <EditableKCard Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
-          <EditableKCard Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
-          <EditableKCard Icon={Sparkles} index={6} T={T} label="Total Projects" featured          canEdit={canEdit} kpiKey="total_projects"  onSave={saveKPI} onCardClick={() => toggleCard("total_projects")} isSelected={activeCard==="total_projects"} {...kv("total_projects",  String(d.total_projects), "Capex FY 26-27 projects")} />
-        </div>
-      )}
-      {activeTab === "pipeline" && (
-        <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard Icon={FileText} index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
-          <EditableKCard Icon={ClipboardList} index={1} T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
-          <EditableKCard Icon={Landmark} index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
-          <EditableKCard Icon={Shield} index={3} T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
-          <EditableKCard Icon={Users} index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Management Team")} />
-          <EditableKCard Icon={CheckCircle} index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved"       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
-        </div>
-      )}
-      {activeTab === "pipeline" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
-          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:4 }}>Approvals Pipeline</div>
-          <div style={{ fontSize:11, color:T.dim, marginBottom:16 }}>Where every project sits, PDD submission through to Approved</div>
-          <ChartErrorBoundary T={T}><PipelineFunnelChart T={T} d={d} /></ChartErrorBoundary>
-        </div>
-      )}
-      {activeTab === "execution" && (
-        <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard Icon={Activity} index={0} T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
-          <EditableKCard Icon={CheckCircle} index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
-          <EditableKCard Icon={Clock} index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
-          <EditableKCard Icon={AlertTriangle} index={3} T={T} label="Over Budget"             canEdit={canEdit} kpiKey="over_budget"     accent={bad}    onSave={saveKPI} onCardClick={() => toggleCard("over_budget")}     isSelected={activeCard==="over_budget"}     {...kv("over_budget",     d.over_budget_count,    "CPI < 0.95")} />
-          <EditableKCard Icon={RefreshCw} index={4} T={T} label="Change in Scope"         canEdit={canEdit} kpiKey="scope_change"    accent="#A78BFA" onSave={saveKPI} onCardClick={() => toggleCard("scope_change")}    isSelected={activeCard==="scope_change"}    {...kv("scope_change",    d.scope_change_count||0,"Scope revised projects")} />
-          <EditableKCard Icon={PauseCircle} index={5} T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
-        </div>
-      )}
-      {activeTab === "execution" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
-          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:4 }}>Cost vs Schedule Performance</div>
-          <div style={{ fontSize:11, color:T.dim, marginBottom:16 }}>Every project plotted by CPI and SPI — top-right quadrant is on track</div>
-          <ChartErrorBoundary T={T}><CpiSpiScatterChart T={T} rows={dashProjects} /></ChartErrorBoundary>
-        </div>
-      )}
-      {activeTab === "financials" && (
-        <div style={{ display:"flex", gap:10 }}>
-          <EditableKCard Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
-          <EditableKCard Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
-          <EditableKCard Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
-          <EditableKCard Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
-          <EditableKCard Icon={Clock} index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
-        </div>
-      )}
-      {activeTab === "financials" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
-          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · Payments Pending</div>
-          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" color={warn} valueFmt={fmtM} /></ChartErrorBoundary>
+
+      {activeTab === "investments" && (
+        <div data-tour="investments-panel">
+        <InvestmentsTab
+          T={T} session={session} supa={supa} canManage={session?.role === "pmo"}
+          onSelectProject={onSelectProject}
+          fmtFull={fmtFull} fmtM={fmtM}
+          STAGE_META={STAGE_META} PRIORITY_META={PRIORITY_META}
+          sortByActivity={sortByActivity}
+          MobileProjectCard={MobileProjectCard}
+          // Moving a project between portfolios changes every headline figure,
+          // so the dashboard re-reads rather than waiting for a page reload.
+          onPortfolioChange={load} />
         </div>
       )}
 
-      {/* ── PROJECT LIST ── */}
-      <div id="dash-project-list">
+      {activeTab === "budgeting" && (
+        <div data-tour="kpi-strip" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+          <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested" trendPoints={trends.su_requested}    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
+          <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended" trendPoints={trends.df_recommended}  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard dashData={d} Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard dashData={d} Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
+          <EditableKCard dashData={d} Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
+          <EditableKCard dashData={d} Icon={ClipboardList} index={6} T={T} label="PCDs Received" featured          canEdit={canEdit} kpiKey="pcds_received" trendPoints={trends.pcds_received}  onSave={saveKPI} onCardClick={() => toggleCard("pcds_received")} isSelected={activeCard==="pcds_received"} {...kv("pcds_received",  String(d.closed_count ?? 0), `${d.closed_count ?? 0} of ${d.total_projects ?? 0} projects`)} />
+        </div>
+      )}
+      {activeTab === "pipeline" && (
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+          <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="PDDs Not Submitted" canEdit={canEdit} kpiKey="pdd_not_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdd_not_submitted")} isSelected={activeCard==="pdd_not_submitted"} {...kv("pdd_not_submitted", d.pdd_not_submitted_count||0, "Awaiting PDDs submission")} />
+          <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="PDDs Submitted" canEdit={canEdit} kpiKey="pdds_submitted" onSave={saveKPI} onCardClick={() => toggleCard("pdds_submitted")} isSelected={activeCard==="pdds_submitted"} {...kv("pdds_submitted", d.pdds_submitted, "Awaiting DF Review")} />
+          <EditableKCard dashData={d} Icon={Landmark} index={2} T={T} label="DF Review"      canEdit={canEdit} kpiKey="in_df"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_df")}           isSelected={activeCard==="in_df"}           {...kv("in_df",          d.in_df,           "With Finance Director")} />
+          <EditableKCard dashData={d} Icon={Shield} index={3} T={T} label="ED Review"      canEdit={canEdit} kpiKey="in_ed"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_ed")}           isSelected={activeCard==="in_ed"}           {...kv("in_ed",          d.in_ed,           "With Executive Director")} />
+          <EditableKCard dashData={d} Icon={Users} index={4} T={T} label="MT Review"      canEdit={canEdit} kpiKey="in_mt"          accent={GOLD}   onSave={saveKPI} onCardClick={() => toggleCard("in_mt")}           isSelected={activeCard==="in_mt"}           {...kv("in_mt",          d.in_mt,           "With Managing Trustee")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={5} T={T} label="Approved"       canEdit={canEdit} kpiKey="approved" trendPoints={trends.approved}       accent={good}   featured onSave={saveKPI} onCardClick={() => toggleCard("approved")} isSelected={activeCard==="approved"}        {...kv("approved", d.approved_count, "Sanctioned for execution")} />
+        </div>
+      )}
+      {activeTab === "pipeline" && (
+        <ChartErrorBoundary T={T}>
+          <ApprovalPipeline T={T} d={d} activeCard={activeCard}
+            onPick={toggleCard} isCompact={vp.isCompact} />
+        </ChartErrorBoundary>
+      )}
+      {activeTab === "execution" && (
+        <div data-tour="health-cards" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+          <EditableKCard dashData={d} Icon={Activity} index={0} T={T} label="Active Projects" featured canEdit={canEdit} kpiKey="active_projects" onSave={saveKPI} onCardClick={() => toggleCard("active_projects")} isSelected={activeCard==="active_projects"} {...kv("active_projects", d.approved_count,      "Currently executing")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={1} T={T} label="On Schedule"             canEdit={canEdit} kpiKey="on_schedule"     accent={good}   onSave={saveKPI} onCardClick={() => toggleCard("on_schedule")}     isSelected={activeCard==="on_schedule"}     {...kv("on_schedule",     d.on_time_count,        "SPI ≥ 0.95")} />
+          <EditableKCard dashData={d} Icon={Clock} index={2} T={T} label="Delayed"                 canEdit={canEdit} kpiKey="delayed"         accent={warn}   onSave={saveKPI} onCardClick={() => toggleCard("delayed")}         isSelected={activeCard==="delayed"}         {...kv("delayed",         d.delayed_count,        "SPI < 0.95")} />
+          <EditableKCard dashData={d} Icon={AlertTriangle} index={3} T={T} label="Over Budget"             canEdit={canEdit} kpiKey="over_budget"     accent={bad}    onSave={saveKPI} onCardClick={() => toggleCard("over_budget")}     isSelected={activeCard==="over_budget"}     {...kv("over_budget",     d.over_budget_count,    "CPI < 0.95")} />
+          <EditableKCard dashData={d} Icon={RefreshCw} index={4} T={T} label="Change in Scope"         canEdit={canEdit} kpiKey="scope_change"    accent={VIOLET} onSave={saveKPI} onCardClick={() => toggleCard("scope_change")}    isSelected={activeCard==="scope_change"}    {...kv("scope_change",    d.scope_change_count||0,"Scope revised projects")} />
+          <EditableKCard dashData={d} Icon={PauseCircle} index={5} T={T} label="Closed"                  canEdit={canEdit} kpiKey="closed"          accent={T.muted} onSave={saveKPI} onCardClick={() => toggleCard("closed")}        isSelected={activeCard==="closed"}          {...kv("closed",          d.closed_count,      "Completed & handed over")} />
+        </div>
+      )}
+      {activeTab === "execution" && (() => {
+        // A CPI/SPI plot is only meaningful for projects that actually carry
+        // both values. With a portfolio this early, that set is usually empty —
+        // and an empty quadrant chart reads as a broken panel, so say what is
+        // missing and what would populate it instead (§21).
+        const plottable = (dashProjects || []).filter(
+          p => +p.cpi > 0 && +p.spi > 0
+        );
+        return (
+          <Surface T={T} pad={SP.lg} style={{ flexShrink:0 }}>
+            <SectionTitle
+              T={T} icon={Activity}
+              title="Cost vs schedule performance"
+              sub="Every project plotted by CPI and SPI — the top-right quadrant is on track"
+              right={plottable.length > 0
+                ? <span style={{ ...TYPE.caption, color:T.muted }}>{plottable.length} plotted</span>
+                : null}
+            />
+            {plottable.length > 0 ? (
+              <ChartErrorBoundary T={T}><CpiSpiScatterChart T={T} rows={dashProjects} /></ChartErrorBoundary>
+            ) : (
+              <EmptyState
+                T={T} icon={Activity} tone={T.info}
+                title="No performance data to plot yet"
+                message={`CPI and SPI are calculated from a project's baseline budget and schedule against its actuals. ${d.approved_count || 0} of ${d.total_projects} projects are approved, and none yet record both a baseline and progress, so there is nothing to plot. The chart fills in as approved projects begin reporting.`}
+              />
+            )}
+          </Surface>
+        );
+      })()}
+      {activeTab === "financials" && (
+        <div data-tour="payments-flow" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+          <EditableKCard dashData={d} Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
+          <EditableKCard dashData={d} Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
+          <EditableKCard dashData={d} Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
+          <EditableKCard dashData={d} Icon={Clock} index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
+        </div>
+      )}
+      {activeTab === "financials" && (
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
+          <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · Payments Pending</div>
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects.filter(p=>p.payments_pending)} field="bac" valueFmt={fmtM} ramp={ALERT_RAMP} onSelectProject={onSelectProject} /></ChartErrorBoundary>
+        </div>
+      )}
+
+      {activeTab === "financials" && (
+        <ChartErrorBoundary T={T}>
+          <FinancialFlow T={T} d={d} isCompact={vp.isCompact} />
+        </ChartErrorBoundary>
+      )}
+
+      {/* ── PROJECT LIST ── (§13 target for the causality pulse) */}
+      <div id="dash-project-list" data-filter-target>
         {showList && activeTab === "budgeting" && activeCard === "carry_forward" && (
           <CarryForwardList T={T} session={session} />
         )}
@@ -1710,12 +3157,12 @@ function CommandCenter({ T, session, onSelectProject }) {
       </div>
 
       {/* ── BREAKDOWN: Planned vs Actual — Overview tab only ── */}
-      {activeTab === "budgeting" && <BreakdownSection T={T} session={session} />}
+      {activeTab === "budgeting" && <BreakdownSection T={T} session={session} onSelectProject={onSelectProject} />}
 
       {activeTab === "budgeting" && (
-        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"20px 24px", boxShadow:T.shadow }}>
+        <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
           <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:2, marginBottom:16 }}>Top 10 Projects · DF Recommended Budget</div>
-          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" color={GOLD} valueFmt={fmtM} /></ChartErrorBoundary>
+          <ChartErrorBoundary T={T}><TopProjectsBarChart T={T} rows={dashProjects} field="df_recommended_amount" valueFmt={fmtM} onSelectProject={onSelectProject} /></ChartErrorBoundary>
         </div>
       )}
 
@@ -1734,20 +3181,39 @@ const STAGE_FILTERS = [
   { id:"cf",         label:"Carry Forward" },
 ];
 
-function StageBadge({ stage, size = 11 }) {
-  const s = STAGE[stage] || { label:stage, light:"#aaa", dark:"rgba(170,170,170,0.15)" };
+function StageBadge({ T, stage, size }) {
+  // Routes through the shared Badge so stage pills inherit the AA-safe text
+  // colour in light mode. Previously it read STAGE.light directly, which is
+  // tuned for dark surfaces and measured ~2.3:1 on white.
+  const meta = STAGE_META[stage];
+  if (!T) {
+    const s = STAGE[stage] || { label:stage, light:"#aaa", dark:"rgba(170,170,170,0.15)" };
+    return (
+      <span style={{
+        display:"inline-flex", alignItems:"center", padding:"2px 8px", borderRadius:20,
+        background:s.dark, color:s.light, fontSize:size || 11, fontWeight:600, whiteSpace:"nowrap",
+      }}>{s.label}</span>
+    );
+  }
   return (
-    <span style={{
-      display:"inline-flex", alignItems:"center", padding:"2px 8px", borderRadius:20,
-      background:s.dark, color:s.light, fontSize:size, fontWeight:600, whiteSpace:"nowrap",
-    }}>{s.label}</span>
+    <Badge T={T} color={meta?.color || T.neutral} size="sm"
+      hintTitle={meta?.label} hint={STAGE_HINT[stage]}>
+      {meta?.label || stage || "—"}
+    </Badge>
   );
 }
 
+
 // ─── PROJECT FORM MODAL (add / edit) ─────────────────────────────────────────
 const Sec = ({T,title})=><div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",margin:"14px 0 10px",paddingBottom:6,borderBottom:`1px solid ${T.border}`}}>{title}</div>;
-const Row = ({children,mb=14})=><div style={{display:"flex",gap:12,marginBottom:mb}}>{children}</div>;
-const Col = ({children,flex=1})=><div style={{flex}}>{children}</div>;
+const Row = ({children,mb=14})=>{
+  const vpF = useViewport();
+  return <div style={{display:"flex",gap:12,marginBottom:mb,flexWrap:vpF.isCompact?"wrap":"nowrap"}}>{children}</div>;
+};
+const Col = ({children,flex=1})=>{
+  const vpF = useViewport();
+  return <div style={{flex,minWidth:vpF.isCompact?150:0}}>{children}</div>;
+};
 
 function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
   const isEdit = !!project;
@@ -1764,6 +3230,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     scope_change:project?.scope_change||false,
     su_requested_amount:project?.su_requested_amount||0, df_recommended_amount:project?.df_recommended_amount||0,
     bac:project?.bac||0, amount_released:project?.amount_released||0, payments_made:project?.payments_made||0,
+    actual_cost:project?.actual_cost||0,
     budget_release_date:project?.budget_release_date||"",
     start_date:project?.start_date||"", end_date:project?.end_date||"",
     actual_start_date:project?.actual_start_date||"", actual_end_date:project?.actual_end_date||"",
@@ -1797,6 +3264,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         bac:parseFloat(form.bac)||0, amount_released:parseFloat(form.amount_released)||0,
         budget_release_date:form.budget_release_date||null,
         payments_made:parseFloat(form.payments_made)||0, pct_complete:parseFloat(form.pct_complete)||0,
+        actual_cost:parseFloat(form.actual_cost)||0,
         scope_change:form.scope_change||false,
       };
       if (isEdit) {
@@ -1814,18 +3282,38 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     setSaving(false);
   };
 
-  const inp = {background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",outline:"none",width:"100%",boxSizing:"border-box"};
-  const sel = {...inp,cursor:"pointer"};
-  const lbl = {display:"block",fontSize:10,fontWeight:700,color:T.muted,letterSpacing:1,textTransform:"uppercase",marginBottom:5};
+  // These three objects style all 27 controls in this form, so upgrading them
+  // here is what brings the PMO's main data-entry surface onto the design
+  // system without rewriting every field.
+  const inp = {
+    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+    padding:"9px 11px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
+    outline:"none", width:"100%", boxSizing:"border-box",
+    transition:`border-color ${MOTION.fast}, box-shadow ${MOTION.fast}`,
+  };
+  const sel = {...inp, cursor:"pointer", appearance:"none", WebkitAppearance:"none", MozAppearance:"none",
+    backgroundImage:"url(\"data:image/svg+xml;charset=UTF-8,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237C95AF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")",
+    backgroundRepeat:"no-repeat", backgroundPosition:"right 10px center", paddingRight:26 };
+  const lbl = {...TYPE.label, display:"block", color:T.muted, marginBottom:5};
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:700,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:"DM Serif Display,serif"}}>{isEdit?`Edit — ${project.code || "-"}`:"New Project"}</div>
-          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
-        </div>
-        {err&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:7,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#F87171",fontSize:13,display:"flex",gap:8}}><span>⚠</span>{err}</div>}
+    <Modal T={T} onClose={onClose} width={720} icon={FolderKanban}
+      title={isEdit ? `Edit project${project.code && project.code !== "-" ? ` — ${project.code}` : ""}` : "New project"}
+      sub={isEdit ? project.name : "Add a capital project to the FY 2026-27 portfolio"}
+      footer={<>
+        <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button T={T} variant="primary" onClick={save} loading={saving}>
+          {isEdit ? "Save changes" : "Create project"}
+        </Button>
+      </>}>
+      <div>
+        {err && (
+          <div style={{marginBottom:SP.md, padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+            background:`${T.danger}${T.wash}`, border:`1px solid ${T.danger}44`,
+            color:T.textOf(T.danger), ...TYPE.bodySm, display:"flex", gap:8, alignItems:"flex-start"}}>
+            <AlertCircle size={14} style={{marginTop:1, flexShrink:0}} />{err}
+          </div>
+        )}
 
         <Sec T={T} title="Basic"/>
         <Row>
@@ -1835,20 +3323,20 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
 
         <Sec T={T} title="Classification"/>
         <Row>
-          <Col><label style={lbl}>Segment</label><select value={form.sector_id} onChange={e=>set("sector_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.sectors.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Col>
-          <Col><label style={lbl}>Region</label><select value={form.region_id} onChange={e=>set("region_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.regions.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></Col>
-          <Col><label style={lbl}>Organization</label><select value={form.segment_id} onChange={e=>set("segment_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.segments.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Col>
+          <Col><label style={lbl}>Segment</label><Select T={T} value={form.sector_id} onChange={e=>set("sector_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.sectors.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</Select></Col>
+          <Col><label style={lbl}>Region</label><Select T={T} value={form.region_id} onChange={e=>set("region_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.regions.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</Select></Col>
+          <Col><label style={lbl}>Organization</label><Select T={T} value={form.segment_id} onChange={e=>set("segment_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.segments.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</Select></Col>
         </Row>
         <Row mb={0}>
-          <Col flex={2}><label style={lbl}>Cost Centre</label><select value={form.cost_center_id} onChange={e=>set("cost_center_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.cost_centers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Col>
-          <Col flex={2}><label style={lbl}>Campus / Site</label><select value={form.campus_id} onChange={e=>set("campus_id",e.target.value)} style={sel}><option value="">— None —</option>{(lookups.campuses||[]).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Col>
+          <Col flex={2}><label style={lbl}>Cost Centre</label><Select T={T} value={form.cost_center_id} onChange={e=>set("cost_center_id",e.target.value)} style={sel}><option value="">— None —</option>{lookups.cost_centers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Select></Col>
+          <Col flex={2}><label style={lbl}>Campus / Site</label><Select T={T} value={form.campus_id} onChange={e=>set("campus_id",e.target.value)} style={sel}><option value="">— None —</option>{(lookups.campuses||[]).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Select></Col>
           <Col><label style={lbl}>Project Type</label><input value={form.project_type} onChange={e=>set("project_type",e.target.value)} placeholder="e.g. Construction" style={inp}/></Col>
-          <Col><label style={lbl}>Priority</label><select value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="">— None —</option><option value="top_priority">1st Priority</option><option value="second_priority">2nd Priority</option><option value="third_priority">3rd Priority</option><option value="carry_forward">Carry Forward</option></select></Col>
+          <Col><label style={lbl}>Priority</label><Select T={T} value={form.priority} onChange={e=>set("priority",e.target.value)} style={sel}><option value="">— None —</option><option value="top_priority">1st Priority</option><option value="second_priority">2nd Priority</option><option value="third_priority">3rd Priority</option><option value="carry_forward">Carry Forward</option></Select></Col>
         </Row>
 
         <Sec T={T} title="Workflow"/>
         <Row mb={0}>
-          <Col flex={2}><label style={lbl}>Stage</label><select value={form.workflow_stage} onChange={e=>set("workflow_stage",e.target.value)} style={sel}><option value="pdd_not_submitted">PDD Not Submitted</option><option value="identified">PDD Submitted</option><option value="df_review">DF Review</option><option value="ed_review">ED Review</option><option value="mt_review">MT Review</option><option value="approved">Approved</option><option value="closed">Closed</option></select></Col>
+          <Col flex={2}><label style={lbl}>Stage</label><Select T={T} value={form.workflow_stage} onChange={e=>set("workflow_stage",e.target.value)} style={sel}><option value="pdd_not_submitted">PDD Not Submitted</option><option value="identified">PDD Submitted</option><option value="df_review">DF Review</option><option value="ed_review">ED Review</option><option value="mt_review">MT Review</option><option value="approved">Approved</option><option value="closed">Closed</option></Select></Col>
           <Col>
             <label style={{...lbl,marginBottom:10}}>Flags</label>
             <div style={{display:"flex",flexDirection:"column",gap:7}}>
@@ -1868,7 +3356,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
           <Col><label style={lbl}>Amount Released</label><input type="number" step="0.1" value={form.amount_released} onChange={e=>set("amount_released",e.target.value)} style={inp}/></Col>
           <Col><label style={lbl}>Budget Released Date</label><input type="date" value={form.budget_release_date} onChange={e=>set("budget_release_date",e.target.value)} style={inp}/></Col>
           <Col><label style={lbl}>Payments Made</label><input type="number" step="0.1" value={form.payments_made} onChange={e=>set("payments_made",e.target.value)} style={inp}/></Col>
-          <Col/>
+          <Col><label style={lbl}>Actual Cost</label><input type="number" step="0.1" value={form.actual_cost} onChange={e=>set("actual_cost",e.target.value)} style={inp}/></Col>
         </Row>
 
         <Sec T={T} title="Schedule"/>
@@ -1886,8 +3374,8 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         </Row>
         <Row mb={0}>
           <Col><label style={lbl}>% Complete</label><input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>set("pct_complete",e.target.value)} style={inp}/></Col>
-          <Col><label style={lbl}>Schedule Status</label><select value={form.manual_schedule_flag} onChange={e=>set("manual_schedule_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="on_time">On Time</option><option value="delayed">Delayed</option></select></Col>
-          <Col><label style={lbl}>Budget Status</label><select value={form.manual_budget_flag} onChange={e=>set("manual_budget_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="within">Within Budget</option><option value="over">Over Budget</option></select></Col>
+          <Col><label style={lbl}>Schedule Status</label><Select T={T} value={form.manual_schedule_flag} onChange={e=>set("manual_schedule_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="on_time">On Time</option><option value="delayed">Delayed</option></Select></Col>
+          <Col><label style={lbl}>Budget Status</label><Select T={T} value={form.manual_budget_flag} onChange={e=>set("manual_budget_flag",e.target.value)} style={sel}><option value="">— Auto —</option><option value="not_started">Not Started</option><option value="within">Within Budget</option><option value="over">Over Budget</option></Select></Col>
         </Row>
 
         <Sec T={T} title="Additional"/>
@@ -1899,11 +3387,9 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         <textarea value={form.notes} onChange={e=>set("notes",e.target.value)} rows={3} placeholder="Additional notes…" style={{...inp,resize:"vertical",lineHeight:1.6,marginBottom:18}}/>
 
         <div style={{display:"flex",gap:10}}>
-          <button onClick={onClose} style={{flex:1,padding:"10px",borderRadius:8,border:`1px solid ${T.border}`,background:"none",color:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Inter,sans-serif"}}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{flex:2,padding:"10px",borderRadius:8,border:"none",background:saving?T.muted:NAVY,color:"#fff",cursor:saving?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:"Inter,sans-serif"}}>{saving?"Saving…":isEdit?"Save Changes":"Create Project"}</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -2023,7 +3509,8 @@ const EXCEL_COL_LOOKUP = (() => {
   return m;
 })();
 
-function downloadTemplate() {
+async function downloadTemplate() {
+  const XLSX = await loadXLSX();
   const headers = Object.keys(EXCEL_COLS);
   // sample row matching headers order
   const sample = [
@@ -2056,6 +3543,7 @@ function downloadTemplate() {
 }
 
 function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
+  const [dragging, setDragging] = useState(false);
   const [step,     setStep]     = useState("pick"); // pick | preview | done
   const [parsed,   setParsed]   = useState([]);
   const [errors,   setErrors]   = useState([]);
@@ -2069,6 +3557,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
     if (!file) return;
     setFileName(file.name);
     const ab   = await file.arrayBuffer();
+    const XLSX = await loadXLSX();
     const wb   = XLSX.read(ab, {type:"array",cellDates:true});
     const ws   = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws,{header:1});
@@ -2141,6 +3630,43 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       for (const name of newL.segments)     { const r=await supa("/rest/v1/segments",    {method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.segments[name.toLowerCase()]=r[0].id; }
       for (const name of newL.cost_centers) { const r=await supa("/rest/v1/cost_centers",{method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.cost_centers[name.toLowerCase()]=r[0].id; }
       for (const name of (newL.campuses||[])) { const r=await supa("/rest/v1/campuses",  {method:"POST",body:JSON.stringify({name}),headers:{"Prefer":"return=representation"}},session.access_token); if(r[0]) lmap.campuses[name.toLowerCase()]=r[0].id; }
+
+      // 3. Delete all existing projects.
+      //
+      // This CASCADEs through project_attachments, which is how four uploaded
+      // PDD documents were silently unlinked on 21 Aug: the PDFs stayed in the
+      // storage bucket but every row pointing at them went with the old
+      // project ids, so they vanished from the portal with no error at all.
+      //
+      // Re-linking afterwards is manual, so the import now stops and asks
+      // whenever files would be detached.
+      setProgress("Checking for uploaded files");
+      const atRisk = await supa(
+        "/rest/v1/project_attachments?select=id,file_name,kind,project_id",
+        {}, session.access_token).catch(() => []);
+      const rows = Array.isArray(atRisk) ? atRisk : [];
+      if (rows.length > 0) {
+        const docCount   = rows.filter(a => a.kind === "document").length;
+        const mediaCount = rows.filter(a => a.kind === "site_visit").length;
+        const affected   = new Set(rows.map(a => a.project_id)).size;
+        const parts = [];
+        if (docCount)   parts.push(docCount + " document" + (docCount === 1 ? "" : "s"));
+        if (mediaCount) parts.push(mediaCount + " site visit file" + (mediaCount === 1 ? "" : "s"));
+        const proceed = window.confirm(
+          "This import replaces every project in the portal.\n\n" +
+          parts.join(" and ") + " attached to " + affected + " project" +
+          (affected === 1 ? "" : "s") + " will be detached and will no longer appear " +
+          "anywhere in the portal.\n\n" +
+          "The files stay in storage, but re-linking them has to be done by hand, " +
+          "one file at a time.\n\n" +
+          "Continue with the import?"
+        );
+        if (!proceed) {
+          setProgress(null);
+          setErr("Import cancelled - no projects were changed.");
+          return;
+        }
+      }
 
       // 3. Delete all existing projects (CASCADE removes comments / milestones / assignments)
       setProgress("Removing existing project data…");
@@ -2248,35 +3774,63 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
   const totalNew = Object.values(newL).reduce((s,a)=>s+a.length,0);
 
   if (step==="done") return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"44px 40px",width:420,textAlign:"center",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
-        <div style={{fontSize:40,marginBottom:16}}>✅</div>
-        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"DM Serif Display,serif",marginBottom:8}}>Import Complete</div>
-        <div style={{fontSize:14,color:T.muted,lineHeight:1.8,marginBottom:28}}>{parsed.length} projects loaded successfully.<br/>Dashboard KPIs updated automatically.</div>
-        <button onClick={onImported} style={{width:"100%",padding:"12px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>View Projects</button>
+    <div style={{position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", animation:"pmoFade .18s ease"}}>
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:R.xl,padding:"40px 36px",width:420,textAlign:"center",boxShadow:T.shadowLg,animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)"}}>
+        <div style={{width:52,height:52,borderRadius:"50%",margin:"0 auto 16px",
+          background:T.positive+T.badge,border:`1px solid ${T.positive}44`,
+          display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <CheckCircle2 size={24} color={T.positive} strokeWidth={2} />
+        </div>
+        <div style={{...TYPE.h2, color:T.text, marginBottom:8}}>Import complete</div>
+        <div style={{...TYPE.bodySm, color:T.muted, lineHeight:1.7, marginBottom:SP.xl}}>
+          {parsed.length} project{parsed.length === 1 ? "" : "s"} loaded. Dashboard figures have been updated.
+        </div>
+        <Button T={T} variant="primary" size="lg" full onClick={onImported}>View projects</Button>
       </div>
     </div>
   );
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"26px 28px",width:620,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text,fontFamily:"DM Serif Display,serif"}}>{step==="pick"?"Import Projects from Excel":`Preview — ${fileName}`}</div>
-          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}}><X size={17}/></button>
-        </div>
+    <Modal T={T} onClose={onClose} width={660} icon={Upload}
+      title={step === "pick" ? "Import projects from Excel" : `Preview — ${fileName}`}
+      sub={step === "pick"
+        ? "Bulk-load or update the portfolio from a spreadsheet"
+        : "Check what will be created and updated before committing"}>
+      <div>
 
         {step==="pick" && (
           <>
-            <label style={{display:"block",border:`2px dashed ${T.border}`,borderRadius:10,padding:"44px 30px",textAlign:"center",cursor:"pointer",marginBottom:18}}>
-              <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
-              <div style={{fontSize:36,marginBottom:12}}>📂</div>
-              <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Click to select an Excel file</div>
-              <div style={{fontSize:12,color:T.muted}}>Accepts .xlsx · .xls · .csv — first row must be column headers</div>
+            <label
+              onDragOver={e => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={e => { e.preventDefault(); setDragging(false);
+                const f = e.dataTransfer?.files?.[0]; if (f) handleFile(f); }}
+              style={{
+                display:"block", textAlign:"center", cursor:"pointer", marginBottom:SP.lg,
+                border:`2px dashed ${dragging ? T.blueBright : T.borderStrong}`,
+                borderRadius:R.lg, padding:"38px 30px",
+                background: dragging ? `${T.blue}${T.wash}` : T.pageAlt,
+                transition:`border-color ${MOTION.fast}, background ${MOTION.fast}`,
+              }}>
+              <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}}
+                onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
+              <div style={{
+                width:46, height:46, borderRadius:R.lg, margin:"0 auto 12px",
+                background:T.blue+T.badge, border:`1px solid ${T.blue}33`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+              }}>
+                <Upload size={20} color={T.blueBright} strokeWidth={1.8} />
+              </div>
+              <div style={{...TYPE.h3, color:T.text, marginBottom:5}}>
+                {dragging ? "Drop the file to continue" : "Drop a spreadsheet here, or click to browse"}
+              </div>
+              <div style={{...TYPE.caption, color:T.muted}}>
+                Accepts .xlsx · .xls · .csv — the first row must be column headers
+              </div>
             </label>
             <div style={{display:"flex",gap:10}}>
-              <button onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Inter,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
-              <button onClick={onClose} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Inter,sans-serif"}}>Cancel</button>
+              <button className="pmo-focusable pmo-btn" onClick={downloadTemplate} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily,display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><Download size={13}/>Download Template</button>
+              <button className="pmo-focusable pmo-btn" onClick={onClose} style={{flex:1,padding:"10px",background:"none",border:`1px solid ${T.border}`,borderRadius:R.md,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:TYPE.body.fontFamily}}>Cancel</button>
             </div>
           </>
         )}
@@ -2285,17 +3839,17 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
           <>
             {/* Stats row */}
             <div style={{display:"flex",gap:10,marginBottom:16}}>
-              {[{l:"To Import",v:parsed.length,c:"#2DD4BF"},{l:"Parse Errors",v:errors.length,c:errors.length?"#F87171":T.dim},{l:"New Lookups",v:totalNew,c:totalNew?GOLD:T.dim}].map((s,i)=>(
-                <div key={i} style={{flex:1,background:T.card2,border:`1px solid ${T.border}`,borderRadius:8,padding:"12px",textAlign:"center"}}>
-                  <div style={{fontSize:24,fontWeight:700,color:s.c,fontFamily:"DM Serif Display,serif"}}>{s.v}</div>
+              {[{l:"To Import",v:parsed.length,c:T.textOf(EMERALD)},{l:"Parse Errors",v:errors.length,c:errors.length?"#F87171":T.dim},{l:"New Lookups",v:totalNew,c:totalNew?GOLD:T.dim}].map((s,i)=>(
+                <div key={i} style={{flex:1,background:T.surfaceRaised,border:`1px solid ${T.border}`,borderRadius:R.md,boxShadow:T.shadow,padding:"12px",textAlign:"center"}}>
+                  <div style={{fontSize:24,fontWeight:700,color:s.c,fontFamily:TYPE.display.fontFamily}}>{s.v}</div>
                   <div style={{fontSize:11,color:T.muted,marginTop:3}}>{s.l}</div>
                 </div>
               ))}
             </div>
 
             {/* Deletion warning */}
-            <div style={{background:"rgba(248,113,113,0.07)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"12px 14px",marginBottom:12,fontSize:13,color:"#F87171",lineHeight:1.8}}>
-              <strong>⚠ This will permanently replace all existing data:</strong><br/>
+            <div style={{background:"rgba(248,113,113,0.07)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:T.textOf(ROSE),lineHeight:1.8}}>
+              <strong>This will permanently replace all existing data:</strong><br/>
               • {counts.projects} existing projects will be deleted<br/>
               • <strong>{counts.comments} discussion comments</strong> will be deleted<br/>
               A full snapshot is saved first — restore from Activity Log at any time.
@@ -2303,7 +3857,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
             {/* New lookups */}
             {totalNew>0&&(
-              <div style={{background:"rgba(216,152,64,0.07)",border:"1px solid rgba(216,152,64,0.3)",borderRadius:8,padding:"12px 14px",marginBottom:12,fontSize:13,color:GOLD,lineHeight:1.8}}>
+              <div style={{background:"rgba(216,152,64,0.07)",border:"1px solid rgba(216,152,64,0.3)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,fontSize:13,color:(T.goldText || GOLD),lineHeight:1.8}}>
                 <strong>✦ Auto-creating {totalNew} new values:</strong><br/>
                 {newL.sectors.length>0&&<span>Sectors: {newL.sectors.join(", ")}<br/></span>}
                 {newL.regions.length>0&&<span>Regions: {newL.regions.join(", ")}<br/></span>}
@@ -2315,58 +3869,107 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
 
             {/* Parse errors */}
             {errors.length>0&&(
-              <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:8,padding:"12px 14px",marginBottom:12,maxHeight:110,overflow:"auto"}}>
-                <div style={{fontSize:11,fontWeight:700,color:"#F87171",marginBottom:5,textTransform:"uppercase",letterSpacing:1}}>Errors — rows skipped</div>
-                {errors.map((e,i)=><div key={i} style={{fontSize:12,color:"#F87171",lineHeight:1.7}}>• {e}</div>)}
+              <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:R.md,padding:"12px 14px",marginBottom:12,maxHeight:110,overflow:"auto"}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.textOf(ROSE),marginBottom:5,textTransform:"uppercase",letterSpacing:1}}>Errors — rows skipped</div>
+                {errors.map((e,i)=><div key={i} style={{fontSize:12,color:T.textOf(ROSE),lineHeight:1.7}}>• {e}</div>)}
               </div>
             )}
 
             {/* Progress */}
-            {progress&&<div style={{background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.3)",borderRadius:8,padding:"9px 14px",marginBottom:12,fontSize:13,color:"#2DD4BF"}}>⏳ {progress}</div>}
+            {progress&&<div style={{background:`${T.positive}${T.wash}`,border:`1px solid ${T.positive}44`,borderRadius:R.md,padding:`${SP.sm}px ${SP.md}px`,marginBottom:SP.md,...TYPE.bodySm,color:T.textOf(T.positive),display:"flex",alignItems:"center",gap:7}}><Spinner size={13} color={T.positive} />{progress}</div>}
 
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={onClose} disabled={importing} style={{flex:1,padding:"11px",background:"none",border:`1px solid ${T.border}`,borderRadius:8,color:T.muted,cursor:"pointer",fontSize:13,fontFamily:"Inter,sans-serif"}}>Cancel</button>
-              <button onClick={executeImport} disabled={importing||parsed.length===0} style={{flex:2,padding:"11px",background:importing||parsed.length===0?"#555":NAVY,border:"none",borderRadius:8,color:"#fff",cursor:importing?"default":"pointer",fontSize:13,fontWeight:700,fontFamily:"Inter,sans-serif"}}>
-                {importing?"Importing…":`Confirm — Import ${parsed.length} Projects`}
-              </button>
+            <div style={{display:"flex", gap:SP.sm, justifyContent:"flex-end"}}>
+              <Button T={T} variant="ghost" onClick={onClose} disabled={importing}>Cancel</Button>
+              <Button T={T} variant="primary" onClick={executeImport}
+                loading={importing} disabled={parsed.length === 0}>
+                {`Import ${parsed.length} project${parsed.length === 1 ? "" : "s"}`}
+              </Button>
             </div>
           </>
         )}
       </div>
-    </div>
+    </Modal>
+  );
+}
+
+// ─── SHARED MOBILE PROJECT CARD ──────────────────────────────────────────────
+// The Projects page's own card design, lifted out so every other place a
+// project list appears (dashboard drill-downs, Campus/Sites, Performance)
+// can render the same box-per-project layout on mobile instead of a dense
+// table — one design, one place it's defined, instead of copies drifting
+// apart. `metrics` is the flexible part: each caller passes whatever
+// figures matter in its own context (DF Rec/Approved here, %Done/BAC/EV on
+// Performance, Stage/Campus on Campus·Sites) as a plain {label, value,
+// color?} list, rather than this component assuming one fixed shape.
+function MobileProjectCard({ T, project: p, onSelect, badges, metrics, rightSlot, index = 0 }) {
+  return (
+    <Surface T={T} pad={SP.md} interactive
+      onClick={() => onSelect && onSelect(p.id)}
+      className="pmo-in"
+      // Same trap as the dashboard header and the Projects list itself:
+      // a card in a flex column inside a scrolling container gets crushed
+      // unless it explicitly opts out of shrinking.
+      style={{ animationDelay:`${Math.min(index, 8) * 35}ms`, flexShrink:0 }}>
+      <div style={{ minWidth:0 }}>
+        <div style={{ ...TYPE.mono, color:T.muted, marginBottom:3 }}>{p.code || "—"}</div>
+        <div data-peek={p.name} style={{ ...TYPE.h3, color:T.text, lineHeight:1.35 }}>{p.name}</div>
+      </div>
+      {badges && (
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginTop:SP.sm }}>
+          {badges}
+        </div>
+      )}
+      <div style={{ display:"flex", gap:SP.xl, marginTop:SP.md, alignItems:"flex-end", flexWrap:"wrap" }}>
+        {(metrics || []).map((m, i) => (
+          <div key={i}>
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:2 }}>{m.label}</div>
+            <div style={{ ...TYPE.bodySm, fontWeight:700, color:m.color || T.textSoft }}>{m.value}</div>
+          </div>
+        ))}
+        {rightSlot || <div style={{ marginLeft:"auto", alignSelf:"flex-end" }}><ChevronRight size={15} color={T.dim} /></div>}
+      </div>
+    </Surface>
   );
 }
 
 // ─── PROJECTS ─────────────────────────────────────────────────────────────────
-function ProjectsPage({ T, session, onSelectProject }) {
+function ProjectsPage({ T, session, onSelectProject,
+  search, setSearch, fFY, setFFY, fOrg, setFOrg, fCode, setFCode, fName, setFName,
+  fSeg, setFSeg, fPri, setFPri, fStrat, setFStrat, fStage, setFStage, fCC, setFCC }) {
   const isPMO = session?.role === "pmo";
   const [rows,         setRows]         = useState([]);
   const [lookups,      setLookups]      = useState({sectors:[],regions:[],segments:[],cost_centers:[],campuses:[]});
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
-  const [search,       setSearch]       = useState("");
   const [hoverId,      setHoverId]      = useState(null);
-  // Column-level filters
-  const [fFY,     setFFY]     = useState("");
-  const [fOrg,    setFOrg]    = useState("");
-  const [fCode,   setFCode]   = useState("");
-  const [fName,   setFName]   = useState("");
-  const [fSeg,    setFSeg]    = useState("");
-  const [fPri,    setFPri]    = useState("");
-  const [fStrat,  setFStrat]  = useState("");
-  const [fStage,  setFStage]  = useState("");
-  const [fCC,     setFCC]     = useState("");
+  // Column-level filters — search and the 9 filters below are now props from
+  // App(), not local state: this component previously unmounted entirely
+  // whenever a project was opened (it's swapped out for ProjectDetailPage,
+  // not kept mounted alongside it), so every filter silently reset on
+  // "Back to Projects". Lifting the state up means it now lives in a
+  // component that survives that swap.
   const [showForm,     setShowForm]     = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [editProject,  setEditProject]  = useState(null);
   const [showImport,   setShowImport]   = useState(false);
   const [confirmDel,   setConfirmDel]   = useState(null);
   const [deleting,     setDeleting]     = useState(false);
+  // Enterprise data-workspace controls (§13)
+  // null means "no explicit sort" — the list keeps its activity ranking until
+  // the reader chooses a column, rather than silently re-ordering to code.
+  const [sort,     setSort]     = useState(null);
+  const [page,     setPage]     = useState(1);
+  const [perPage,  setPerPage]  = useState(50);
+  const [hiddenCols, setHiddenCols] = useState([]);
+  const [showCols, setShowCols] = useState(false);
+  const vpP = useViewport();
+  const summaryNear = useNear();   // the slice summary responds to approach
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
       const [data, sectors, regions, segments, cost_centers, campuses] = await Promise.all([
-        supa("/rest/v1/projects?select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,df_recommended_amount,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,campus,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
+        supa("/rest/v1/projects?portfolio=eq.capex&select=id,code,name,fiscal_year,strategic_priority,workflow_stage,priority,bac,df_recommended_amount,amount_released,pct_complete,is_carry_forward,payments_pending,project_type,campus,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",{},session.access_token),
         supa("/rest/v1/sectors?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/regions?select=id,name&order=name.asc",{},session.access_token),
         supa("/rest/v1/segments?select=id,name&order=name.asc",{},session.access_token),
@@ -2403,6 +4006,53 @@ function ProjectsPage({ T, session, onSelectProject }) {
     return sortRealCodeFirst(r);
   }, [rows,search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC]);
 
+  // Sorting. Text sorts case-insensitively; money/percent sort numerically;
+  // stage and priority sort by their real workflow order rather than
+  // alphabetically, which would put "Approved" before "DF Review".
+  const SORTERS = {
+    code:      (p) => (p.code || "").toLowerCase(),
+    name:      (p) => (p.name || "").toLowerCase(),
+    fiscal_year:(p) => p.fiscal_year || "",
+    org:       (p) => (p.segments?.name || "").toLowerCase(),
+    segment:   (p) => (p.sectors?.name || "").toLowerCase(),
+    df:        (p) => +p.df_recommended_amount || 0,
+    bac:       (p) => +p.bac || 0,
+    priority:  (p) => Object.keys(PRIORITY_META).indexOf(p.priority),
+    stage:     (p) => STAGE_ORDER.indexOf(p.workflow_stage),
+    strategic: (p) => (p.strategic_priority || "").toLowerCase(),
+    cc:        (p) => (p.cost_centers?.name || "").toLowerCase(),
+  };
+
+  const sorted = useMemo(() => {
+    // No column chosen: `filtered` already arrives activity-ranked.
+    if (!sort?.key) return filtered;
+    const fn = SORTERS[sort.key] || SORTERS.code;
+    const mul = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const x = fn(a), y = fn(b);
+      if (x < y) return -1 * mul;
+      if (x > y) return  1 * mul;
+      return 0;
+    });
+  }, [filtered, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
+  const pageSafe   = Math.min(page, totalPages);
+  const paged      = useMemo(
+    () => sorted.slice((pageSafe - 1) * perPage, pageSafe * perPage),
+    [sorted, pageSafe, perPage]
+  );
+  // Any change to the result set sends the reader back to the first page —
+  // otherwise filtering while on page 3 shows an empty table.
+  useEffect(() => { setPage(1); }, [search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC,perPage]);
+
+  const toggleSort = (key) =>
+    // asc → desc → back to the activity ranking, so the default order is
+    // reachable again without a page reload.
+    setSort(s => !s || s.key !== key ? { key, dir:"asc" }
+              : s.dir === "asc"      ? { key, dir:"desc" }
+              : null);
+
   const activeFilterCount = [fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC].filter(Boolean).length;
   const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); setFCC(""); };
 
@@ -2438,7 +4088,8 @@ function ProjectsPage({ T, session, onSelectProject }) {
     fCC          && { key:"cc",     label:"Cost Ctr",  val:fCC,                                clear:()=>setFCC("") },
   ].filter(Boolean);
 
-  const downloadExport = () => {
+  const downloadExport = async () => {
+    const XLSX = await loadXLSX();
     const headers = ["Sr #","Fiscal Year","Organization","Project ID","Project Name","DF Recommended (M)","Approved Budget (M)","Segment","Priority","Strategic Priority","Stage","Cost Centre","Campus/Site"];
     const data = filtered.map((p,i) => [
       i+1,
@@ -2468,7 +4119,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
   const downloadDataTemplate = async () => {
     try {
       const projects = await supa(
-        "/rest/v1/projects?select=*,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",
+        "/rest/v1/projects?portfolio=eq.capex&select=*,sectors(name),regions(name),segments(name),cost_centers(name)&order=code.asc",
         {}, session.access_token
       );
       const headers = Object.keys(EXCEL_COLS);
@@ -2504,6 +4155,7 @@ function ProjectsPage({ T, session, onSelectProject }) {
         p.project_type                                         || "",
         p.notes                                                || "",
       ]);
+      const XLSX = await loadXLSX();
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
       ws["!cols"] = headers.map((_, i) => ({ wch: i === 3 ? 45 : 24 }));
@@ -2529,297 +4181,665 @@ function ProjectsPage({ T, session, onSelectProject }) {
     setDeleting(false);
   };
 
-  const th = {fontSize:10,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1.2,padding:"11px 12px 9px",whiteSpace:"nowrap",textAlign:"left",background:T.card2,boxShadow:"inset 0 -1px 0 "+T.border};
-  const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
+  // ── Column model. One definition drives headers, sorting, visibility and the
+  //    mobile card, so a column can never drift out of sync with its filter.
+  const COLS = [
+    { key:"fiscal_year", label:"Fiscal Year", sort:"fiscal_year", min:92 },
+    { key:"org",         label:"Organization",sort:"org",         min:104 },
+    { key:"code",        label:"Project ID",  sort:"code",        min:118 },
+    { key:"name",        label:"Project Name",sort:"name",        min:230, grow:true },
+    { key:"df",          label:"DF Rec",      sort:"df",          min:96,  num:true },
+    { key:"bac",         label:"Approved",    sort:"bac",         min:96,  num:true },
+    { key:"segment",     label:"Segment",     sort:"segment",     min:104 },
+    { key:"priority",    label:"Priority",    sort:"priority",    min:104 },
+    { key:"strategic",   label:"Strategic Priority", sort:"strategic", min:150 },
+    { key:"stage",       label:"Stage",       sort:"stage",       min:132 },
+    { key:"cc",          label:"Cost Centre", sort:"cc",          min:112 },
+  ];
+  // Rather than guessing breakpoints, measure: add up what the columns actually
+  // need and drop the lowest-value ones until the table fits the space it has.
+  // Hidden columns stay reachable through the Columns menu and the export, so
+  // nothing is lost — the reader just isn't forced to discover a sideways
+  // scroll to find the approval stage (§13, §26).
+  const DROP_ORDER = ["strategic", "cc", "fiscal_year", "segment", "org"];
+  const autoHidden = useMemo(() => {
+    const sidebar = vpP.width >= BP.tablet ? 244 : 0;
+    const avail = vpP.width - sidebar - 24;          // page gutters
+    const fixed = 44 + (isPMO ? 78 : 0);             // row number + actions
+    const drop = [];
+    const width = () => COLS
+      .filter(c => !hiddenCols.includes(c.key) && !drop.includes(c.key))
+      .reduce((sum, c) => sum + c.min, fixed);
+    for (const key of DROP_ORDER) {
+      if (width() <= avail) break;
+      drop.push(key);
+    }
+    return drop;
+  }, [vpP.width, hiddenCols, isPMO]);
+  const visible = COLS.filter(c => !hiddenCols.includes(c.key) && !autoHidden.includes(c.key));
+
+  const maxBac = summary.maxBac;
+
+  const SortHead = ({ col }) => {
+    const on = sort?.key === col.sort;
+    return (
+      <th style={{
+        ...TYPE.label, color: on ? T.text : T.muted, textAlign: col.num ? "right" : "left",
+        padding:"10px 12px 8px", whiteSpace:"nowrap", background:T.surfaceRaised,
+        boxShadow:`inset 0 -1px 0 ${T.border}`, minWidth:col.min, cursor:"pointer",
+        userSelect:"none", position:"sticky", top:0, zIndex:3,
+      }}
+        onClick={() => toggleSort(col.sort)}
+        title={`Sort by ${col.label}`}>
+        <span style={{ display:"inline-flex", alignItems:"center", gap:4,
+          flexDirection: col.num ? "row-reverse" : "row" }}>
+          {col.label}
+          <span style={{ display:"inline-flex", opacity: on ? 1 : 0.25, color: on ? T.blueBright : T.dim }}>
+            {on && sort.dir === "desc"
+              ? <ArrowDownRight size={11} style={{ transform:"rotate(-45deg)" }} />
+              : <ArrowUpRight size={11} style={{ transform:"rotate(45deg)" }} />}
+          </span>
+        </span>
+      </th>
+    );
+  };
+
+  const td = { ...TYPE.bodySm, color:T.text, padding:"10px 12px",
+    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle",
+    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" };
+
+  // ── Cell renderers, shared by the table and the mobile card ───────────────
+  const cell = (p, key, hovered) => {
+    const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+    switch (key) {
+      case "fiscal_year": return <span style={{ color:T.muted, whiteSpace:"nowrap" }}>{p.fiscal_year || "—"}</span>;
+      case "org":         return <span style={{ color:T.muted }}>{p.segments?.name || "—"}</span>;
+      case "code": return (
+        <span style={{ display:"inline-flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>
+          {p.is_carry_forward && (
+            <span title="Carried forward from a prior fiscal year" style={{
+              ...TYPE.caption, fontWeight:700, fontSize:10, letterSpacing:"0.05em",
+              background:T.violet + T.badge, color:T.textOf(T.violet), padding:"1px 5px", borderRadius:R.sm }}>CF</span>
+          )}
+          <span style={{ ...TYPE.mono, color: hovered ? T.text : T.textSoft }}>{p.code || "—"}</span>
+        </span>
+      );
+      case "name": return (
+        <span data-peek={p.name} style={{ display:"block", overflow:"hidden",
+          textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight: hovered ? 600 : 450,
+          color:T.text, transition:`font-weight ${MOTION.fast}` }}>{p.name}</span>
+      );
+      case "df": return (
+        <span style={{ fontVariantNumeric:"tabular-nums", fontWeight:600, color:T.textSoft }}>
+          {fmtM(p.df_recommended_amount)}
+        </span>
+      );
+      case "bac": {
+        const v = +p.bac || 0;
+        const pct = maxBac > 0 ? Math.round((v / maxBac) * 100) : 0;
+        return (
+          <span style={{ display:"inline-flex", flexDirection:"column", alignItems:"flex-end", gap:3, minWidth:64 }}>
+            <span style={{ fontVariantNumeric:"tabular-nums", fontWeight:700,
+              color: v > 0 ? (T.goldText || BRAND.gold) : T.dim }}>{fmtM(p.bac)}</span>
+            {/* Replaces the earlier full-cell tint, which read as a muddy
+                block in dark mode. A hairline under the figure carries the
+                same comparison without fighting the row background. */}
+            {v > 0 && (
+              <span style={{ display:"block", width:56, height:2, borderRadius:2,
+                background: T.mode === "dark" ? "rgba(255,255,255,0.07)" : "rgba(16,42,71,0.07)" }}>
+                <span style={{ display:"block", width:`${pct}%`, height:"100%", borderRadius:2,
+                  background:BRAND.gold, opacity:0.75 }} />
+              </span>
+            )}
+          </span>
+        );
+      }
+      case "segment":   return <span style={{ color:T.muted }}>{p.sectors?.name || "—"}</span>;
+      case "priority":  return p.priority
+        ? <Badge T={T} color={pClr} size="sm" dot
+            hintTitle={PRIORITY_META[p.priority]?.label} hint={PRIORITY_HINT[p.priority]}>
+            {PRIORITY_META[p.priority]?.label || p.priority}
+          </Badge>
+        : <span style={{ color:T.dim }}>—</span>;
+      case "strategic": return (
+        <span title={p.strategic_priority || ""} style={{ color:T.muted, display:"block",
+          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.strategic_priority || "—"}</span>
+      );
+      case "stage": {
+        const st = STAGE_META[p.workflow_stage];
+        return (
+          <Badge T={T} color={st?.color || T.neutral} size="sm"
+            hintTitle={st?.label} hint={STAGE_HINT[p.workflow_stage]}>
+            {st?.label || p.workflow_stage || "—"}
+          </Badge>
+        );
+      }
+      case "cc": return <span style={{ color:T.muted }}>{p.cost_centers?.name || "—"}</span>;
+      default: return null;
+    }
+  };
 
   if (loading) return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div className="pmo-skeleton" style={{height:64,flexShrink:0,background:T.card2,borderBottom:"1px solid "+T.border}}/>
-      <div className="pmo-skeleton" style={{height:46,flexShrink:0,background:T.headerBg,borderBottom:"1px solid "+T.border}}/>
-      <div style={{flex:1,padding:"12px 20px",display:"flex",flexDirection:"column",gap:8,overflow:"hidden"}}>
-        {[0,1,2,3,4,5,6,7,8,9,10,11].map(i=>(
-          <div key={i} className="pmo-skeleton" style={{height:26,borderRadius:6,background:T.tableRow,opacity:1-(i*0.06)}}/>
-        ))}
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
+      <Skeleton T={T} h={72} radius={0} />
+      <div style={{ padding:SP.lg, display:"flex", gap:SP.sm }}>
+        <Skeleton T={T} w={240} h={34} /><Skeleton T={T} w={110} h={34} style={{ marginLeft:"auto" }} />
       </div>
+      <SkeletonRows T={T} rows={14} />
     </div>
   );
-  if (err)     return <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><AlertCircle color="#F87171"/><span style={{color:"#F87171",fontSize:13}}>{err}</span><button onClick={load} style={{padding:"6px 16px",background:NAVY,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:12}}>Retry</button></div>;
+  if (err) return (
+    <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", background:T.page }}>
+      <EmptyState T={T} icon={AlertCircle} tone={T.danger}
+        title="Couldn't load projects" message={err}
+        action={<Button T={T} variant="primary" icon={RefreshCw} onClick={load}>Try again</Button>} />
+    </div>
+  );
 
   return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      {/* ── LIVE SLICE SUMMARY ── */}
-      {/* Restates the portfolio for the current filter, so the register always
-          answers "how much money is in what I'm looking at right now". */}
-      <div className="pmo-fade-in" style={{
-        flexShrink:0, background:T.heroGradient, padding:"13px 24px",
-        display:"flex", alignItems:"center", gap:26, position:"relative", overflow:"hidden",
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
+
+      {/* ── SLICE SUMMARY ── */}
+      {/* Restates the portfolio for whatever is filtered, so the register always
+          answers "how much money is in what I'm looking at". */}
+      <div ref={summaryNear} className="pmo-fade pmo-near" style={{
+        flexShrink:0, background:T.hero, position:"relative", overflow:"hidden",
+        borderBottom:`1px solid ${T.heroBorder}`,
+        "--near-light": `${BRAND.gold}12`,
+        padding: vpP.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.md}px ${SP.xxl}px`,
+        display:"flex", alignItems:"center", gap: vpP.isCompact ? SP.lg : SP.xxl, flexWrap:"wrap",
       }}>
-        <div className="pmo-mesh" style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-          <div style={{position:"absolute",top:"-70%",right:"6%",width:260,height:260,borderRadius:"50%",background:`radial-gradient(circle, ${GOLD}1F 0%, transparent 68%)`}}/>
+        <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
+          <div style={{ position:"absolute", top:"-70%", right:"7%", width:260, height:260, borderRadius:"50%",
+            background:`radial-gradient(circle, ${T.heroGlowA} 0%, transparent 68%)` }} />
         </div>
-        <svg width="180" height="80" viewBox="0 0 180 80" style={{position:"absolute",right:0,bottom:0,pointerEvents:"none"}} aria-hidden="true">
-          <path d="M180 80 L180 32 Q180 8 152 3 Q155 17 141 27 Q159 32 159 50 L159 80 Z" fill="#fff" opacity="0.045"/>
-          <path d="M180 80 L180 44 Q180 24 160 20 Q162 31 152 39 Q164 43 164 56 L164 80 Z" fill={GOLD} opacity="0.09"/>
-        </svg>
-        <div style={{position:"relative"}}>
-          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>
-            {activeFilterCount||search.trim() ? "In this view" : "All projects"}
+        <div style={{ position:"relative" }}>
+          <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>
+            {activeFilterCount || search.trim() ? "In this view" : "All projects"}
           </div>
-          <div style={{display:"flex",alignItems:"baseline",gap:7}}>
-            <span style={{fontSize:26,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{filtered.length}</span>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>of {rows.length}</span>
+          <div style={{ display:"flex", alignItems:"baseline", gap:7 }}>
+            <span style={{ ...TYPE.metric, color:T.heroFg }}>{sorted.length}</span>
+            <span style={{ ...TYPE.caption, color:T.heroFgMuted }}>of {rows.length}</span>
           </div>
         </div>
-        <div style={{width:1,height:38,background:"rgba(255,255,255,0.16)",flexShrink:0}}/>
-        <div style={{position:"relative"}}>
-          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>DF Recommended</div>
-          <div style={{fontSize:19,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.df)}</div>
+        <div style={{ position:"relative" }}>
+          <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>DF Recommended</div>
+          <div style={{ ...TYPE.metricSm, color:T.heroFg }}>PKR {fmtM(summary.df)}</div>
         </div>
-        <div style={{width:1,height:38,background:"rgba(255,255,255,0.16)",flexShrink:0}}/>
-        <div style={{position:"relative"}}>
-          <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.8,fontWeight:600,marginBottom:4}}>Approved Budget</div>
-          <div style={{fontSize:19,fontWeight:700,color:GOLD,fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>PKR {fmtM(summary.bac)}</div>
+        <div style={{ position:"relative" }}>
+          <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved Budget</div>
+          <div style={{ ...TYPE.metricSm, color:T.heroAccent }}>PKR {fmtM(summary.bac)}</div>
         </div>
-        <div style={{marginLeft:"auto",display:"flex",gap:18,position:"relative"}}>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.6,fontWeight:600,marginBottom:4}}>Approved</div>
-            <div style={{fontSize:17,fontWeight:700,color:"#6EE7D0",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.approved}</div>
+        {!vpP.isCompact && (
+          <div style={{ marginLeft:"auto", display:"flex", gap:SP.xl, position:"relative" }}>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved</div>
+              <div style={{ ...TYPE.metricSm, color:T.textOf(T.positive) }}>{summary.approved}</div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Carry fwd</div>
+              <div style={{ ...TYPE.metricSm, color:T.heroFg }}>{summary.cf}</div>
+            </div>
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1.6,fontWeight:600,marginBottom:4}}>Carry fwd</div>
-            <div style={{fontSize:17,fontWeight:700,color:"#fff",fontFamily:"DM Serif Display,serif",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{summary.cf}</div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* ── TOOLBAR ── */}
-      <div style={{padding:"11px 20px",display:"flex",alignItems:"center",gap:10,flexShrink:0,borderBottom:"1px solid "+T.border,background:T.headerBg,flexWrap:"wrap"}}>
-        {/* Search */}
-        <div style={{display:"flex",alignItems:"center",gap:8,background:T.inputBg,border:"1px solid "+(search?GOLD+"88":T.inputBorder),borderRadius:8,padding:"7px 12px",flex:1,maxWidth:260,transition:"border-color .15s"}}>
-          <Search size={13} color={search?GOLD:T.muted}/>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or project ID…" style={{background:"none",border:"none",outline:"none",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",flex:1,minWidth:0}}/>
-          {search && <button onClick={()=>setSearch("")} title="Clear search" style={{background:"none",border:"none",cursor:"pointer",color:T.dim,padding:0,display:"flex"}}><X size={12}/></button>}
-        </div>
+      <div style={{
+        padding:`${SP.sm}px ${vpP.isCompact ? SP.md : SP.xl}px`, display:"flex", alignItems:"center",
+        gap:SP.sm, flexShrink:0, borderBottom:`1px solid ${T.border}`,
+        background:T.surface, flexWrap:"wrap", position:"relative", zIndex:20,
+      }}>
+        <Input T={T} icon={Search} value={search} onChange={e => setSearch(e.target.value)}
+          onClear={() => setSearch("")} placeholder="Search name or project ID…"
+          style={{ flex:"1 1 210px", maxWidth:280 }} />
 
-        {/* Active filter chips */}
-        {chips.length>0&&(
-          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",minWidth:0}}>
-            {chips.map(c=>(
-              <span key={c.key} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 6px 4px 10px",background:GOLD+T.washAlpha,border:"1px solid "+GOLD+"55",borderRadius:20,fontSize:11,color:T.text,maxWidth:210,whiteSpace:"nowrap"}}>
-                <span style={{color:GOLD,fontWeight:700}}>{c.label}</span>
-                <span style={{overflow:"hidden",textOverflow:"ellipsis",opacity:.85}}>{c.val}</span>
-                <button onClick={c.clear} title={"Remove "+c.label+" filter"} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:0,lineHeight:0}}><X size={11}/></button>
+        {vpP.isCompact && (
+          <button className="pmo-focusable pmo-btn" onClick={() => setShowMobileFilters(true)} style={{
+            display:"flex", alignItems:"center", gap:6, padding:"9px 13px", position:"relative",
+            background: activeFilterCount > 0 ? BRAND.blue + T.wash : "none",
+            border:`1px solid ${activeFilterCount > 0 ? BRAND.blue + "66" : T.border}`,
+            borderRadius:R.md, color: activeFilterCount > 0 ? T.text : T.muted, cursor:"pointer",
+            fontSize:13, fontFamily:TYPE.body.fontFamily,
+          }}>
+            <SlidersHorizontal size={14} /> Filters
+            {activeFilterCount > 0 && (
+              <span style={{ minWidth:17, height:17, padding:"0 4px", borderRadius:R.pill, background:BRAND.gold,
+                color:"#1A1206", fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        )}
+
+        {chips.length > 0 && (
+          <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", minWidth:0 }}>
+            {chips.map(c => (
+              <span key={c.key} style={{
+                display:"inline-flex", alignItems:"center", gap:6, padding:"3px 6px 3px 9px",
+                background:BRAND.blue + T.wash, border:`1px solid ${BRAND.blue}55`,
+                borderRadius:R.pill, ...TYPE.caption, color:T.text, maxWidth:210, whiteSpace:"nowrap",
+              }}>
+                <span style={{ color:T.blueBright, fontWeight:700 }}>{c.label}</span>
+                <span style={{ overflow:"hidden", textOverflow:"ellipsis", opacity:.85 }}>{c.val}</span>
+                <button onClick={c.clear} title={`Remove ${c.label} filter`} className="pmo-focusable"
+                  style={{ background:"none", border:"none", cursor:"pointer", color:T.muted,
+                    display:"flex", padding:0, lineHeight:0 }}><X size={11} /></button>
               </span>
             ))}
-            <button onClick={clearAllFilters} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:11,textDecoration:"underline",fontFamily:"Inter,sans-serif",padding:"0 2px"}}>Clear all</button>
+            <Button T={T} variant="subtle" size="sm" onClick={clearAllFilters}>Clear all</Button>
           </div>
         )}
 
-        {/* Right buttons */}
-        <div style={{marginLeft:"auto",display:"flex",gap:7,alignItems:"center"}}>
-          <button onClick={downloadExport}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:EMERALD+T.washAlpha,border:"1px solid "+EMERALD+"66",borderRadius:8,color:EMERALD,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}
-            title={activeFilterCount>0?"Download the projects currently in view":"Download all projects"}>
-            <Download size={13}/>
-            {activeFilterCount||search.trim()?`Export ${filtered.length}`:"Export all"}
-          </button>
-          {isPMO&&(
+        <div style={{ marginLeft:"auto", display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", position:"relative" }}>
+          {!vpP.isCompact && (
+            <div style={{ position:"relative" }}>
+              <Button T={T} variant="ghost" size="md" icon={Layers} onClick={() => setShowCols(v => !v)}
+                title="Choose which columns to show">Columns</Button>
+              {showCols && (
+                <>
+                  <div onClick={() => setShowCols(false)} style={{ position:"fixed", inset:0, zIndex:30 }} />
+                  <div className="pmo-scale" style={{
+                    position:"absolute", right:0, top:"calc(100% + 6px)", zIndex:31, minWidth:210,
+                    background:T.surface, border:`1px solid ${T.borderStrong}`, borderRadius:R.md,
+                    boxShadow:T.shadowLg, padding:SP.sm,
+                  }}>
+                    <div style={{ ...TYPE.label, color:T.muted, padding:`4px ${SP.sm}px 6px` }}>Visible columns</div>
+                    {COLS.map(c => {
+                      const auto = autoHidden.includes(c.key);
+                      const on = !hiddenCols.includes(c.key) && !auto;
+                      return (
+                        <label key={c.key} style={{
+                          display:"flex", alignItems:"center", gap:8, padding:`5px ${SP.sm}px`,
+                          borderRadius:R.sm, cursor: auto ? "not-allowed" : "pointer",
+                          opacity: auto ? 0.45 : 1, ...TYPE.bodySm, color:T.textSoft,
+                        }}
+                          title={auto ? "Hidden automatically — not enough width" : undefined}>
+                          <input type="checkbox" checked={on} disabled={auto}
+                            onChange={() => setHiddenCols(h => h.includes(c.key) ? h.filter(k => k !== c.key) : [...h, c.key])} />
+                          {c.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <Button T={T} variant="accent" tone={T.positive} icon={Download} onClick={downloadExport}
+            title={activeFilterCount ? "Download the projects currently in view" : "Download all projects"}>
+            {activeFilterCount || search.trim() ? `Export ${sorted.length}` : "Export all"}
+          </Button>
+          {isPMO && (
             <>
-              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",background:NAVY,border:"1px solid "+NAVY,borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif",boxShadow:T.shadow,whiteSpace:"nowrap"}}><Plus size={13}/>New project</button>
-              <button onClick={()=>setShowImport(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}><Upload size={13}/>Import</button>
-              <button onClick={downloadDataTemplate} title="Download every project pre-filled in the import template format" style={{display:"flex",alignItems:"center",gap:6,padding:"7px 13px",background:"none",border:"1px solid "+T.border,borderRadius:8,color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"Inter,sans-serif",whiteSpace:"nowrap"}}><Download size={13}/>Data template</button>
+              <Button T={T} variant="primary" icon={Plus}
+                onClick={() => { setEditProject(null); setShowForm(true); }}>
+                {vpP.isCompact ? "New" : "New project"}
+              </Button>
+              <Button T={T} variant="ghost" icon={Upload} onClick={() => setShowImport(true)}>Import</Button>
+              <Button T={T} variant="ghost" icon={Download} onClick={downloadDataTemplate}
+                title="Download every project pre-filled in the import template format">Template</Button>
             </>
           )}
         </div>
       </div>
 
-      {/* Table */}
-      <div style={{flex:1,overflow:"auto",backgroundImage:T.pageTexture,backgroundAttachment:"local"}}>
-        <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0}}>
-          <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
-            {/* Column headers */}
-            <tr>
-              <th style={th}>#</th>
-              <th style={th}>Fiscal Year</th>
-              <th style={th}>Organization</th>
-              <th style={{...th,minWidth:120}}>Project ID</th>
-              <th style={{...th,minWidth:220}}>Project Name</th>
-              <th style={{...th,textAlign:"right"}}>DF Rec Budget</th>
-              <th style={{...th,textAlign:"right"}}>Approved Budget</th>
-              <th style={th}>Segment</th>
-              <th style={th}>Priorities</th>
-              <th style={{...th,minWidth:160}}>Strategic Priorities</th>
-              <th style={th}>Stage</th>
-              <th style={th}>Cost Centre</th>
-              {isPMO&&<th style={{...th,textAlign:"center",width:80}}>Actions</th>}
-            </tr>
-            {/* Filter row */}
-            {(()=>{
-              const fSel = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:"Inter,sans-serif",outline:"none",cursor:"pointer"};
-              const fInp = {width:"100%",background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:6,padding:"4px 6px",fontSize:11,color:T.text,fontFamily:"Inter,sans-serif",outline:"none"};
-              const fc   = {padding:"5px 8px",background:T.card2,boxShadow:`inset 0 -2px 0 ${activeFilterCount>0?GOLD+"99":T.border}`};
-              const highlight = (val) => val ? {...fSel,border:"1px solid "+GOLD,color:GOLD,fontWeight:600} : fSel;
-              const highlightI = (val) => val ? {...fInp,border:"1px solid "+GOLD,color:GOLD,fontWeight:600} : fInp;
-              return (
-                <tr>
-                  <td style={fc}></td>
-                  <td style={fc}>
-                    <select value={fFY} onChange={e=>setFFY(e.target.value)} style={highlight(fFY)}>
-                      <option value="">All FY</option>
-                      {distinctFYs.map(v=><option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <select value={fOrg} onChange={e=>setFOrg(e.target.value)} style={highlight(fOrg)}>
-                      <option value="">All Orgs</option>
-                      {distinctOrgs.map(v=><option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <input value={fCode} onChange={e=>setFCode(e.target.value)} placeholder="Filter ID…" style={highlightI(fCode)}/>
-                  </td>
-                  <td style={fc}>
-                    <input value={fName} onChange={e=>setFName(e.target.value)} placeholder="Filter name…" style={highlightI(fName)}/>
-                  </td>
-                  <td style={fc}></td>
-                  <td style={fc}></td>
-                  <td style={fc}>
-                    <select value={fSeg} onChange={e=>setFSeg(e.target.value)} style={highlight(fSeg)}>
-                      <option value="">All Segments</option>
-                      {distinctSegs.map(v=><option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <select value={fPri} onChange={e=>setFPri(e.target.value)} style={highlight(fPri)}>
-                      <option value="">All</option>
-                      <option value="top_priority">1st Priority</option>
-                      <option value="second_priority">2nd Priority</option>
-                      <option value="third_priority">3rd Priority</option>
-                      <option value="carry_forward">Carry Forward</option>
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <input value={fStrat} onChange={e=>setFStrat(e.target.value)} placeholder="Filter…" style={highlightI(fStrat)}/>
-                  </td>
-                  <td style={fc}>
-                    <select value={fStage} onChange={e=>setFStage(e.target.value)} style={highlight(fStage)}>
-                      <option value="">All Stages</option>
-                      {Object.entries(STAGE).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                  </td>
-                  <td style={fc}>
-                    <select value={fCC} onChange={e=>setFCC(e.target.value)} style={highlight(fCC)}>
-                      <option value="">All Cost Centres</option>
-                      {lookups.cost_centers.map(cc=><option key={cc.id} value={cc.name}>{cc.name}</option>)}
-                    </select>
-                  </td>
-                  {isPMO&&<td style={fc}></td>}
-                </tr>
-              );
-            })()}
-          </thead>
-          <tbody>
-            {filtered.map((p,i)=>{
-              const hovered = hoverId===p.id;
-              const pClr    = PRIORITY[p.priority]||T.dim;
-              // Right-anchored proportional fill on Approved Budget — makes the
-              // relative size of 99 budgets scannable at a glance. Painted as a
-              // background gradient so it costs zero row height.
-              const bacPct  = summary.maxBac>0 ? Math.round(((+p.bac||0)/summary.maxBac)*100) : 0;
-              return (
-              <tr key={p.id} onClick={()=>onSelectProject&&onSelectProject(p.id)} onMouseEnter={()=>setHoverId(p.id)} onMouseLeave={()=>setHoverId(null)}
-                style={{background:hovered?T.tableRowHover:i%2===0?"transparent":T.tableRow,cursor:onSelectProject?"pointer":"default",transition:"background .12s"}}>
-                <td style={{...td,color:T.dim,fontSize:11.5,width:40,fontVariantNumeric:"tabular-nums",boxShadow:hovered?"inset 3px 0 0 "+pClr:"none",transition:"box-shadow .12s"}}>{i+1}</td>
-                <td style={{...td,fontSize:12,color:T.muted,whiteSpace:"nowrap"}}>{p.fiscal_year||"—"}</td>
-                <td style={{...td,fontSize:12,color:T.muted}}>{p.segments?.name||"—"}</td>
-                <td style={{...td,fontFamily:"'JetBrains Mono',monospace",fontSize:11.5,color:hovered?T.text:T.muted,whiteSpace:"nowrap",transition:"color .12s"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:5}}>
-                    {p.is_carry_forward&&<span title="Carry forward from prior FY" style={{fontSize:9,fontWeight:700,background:GOLD+T.badgeAlpha,color:GOLD,padding:"1px 5px",borderRadius:4,letterSpacing:.5}}>CF</span>}
-                    {p.code || "-"}
+      {/* ── MOBILE: cards, not a squeezed table ── */}
+      {vpP.isCompact ? (
+        <div className="pmo-scroll" style={{ flex:1, overflowY:"auto", padding:SP.md,
+          display:"flex", flexDirection:"column", gap:SP.sm, backgroundImage:T.ambient }}>
+          {paged.map((p, i) => {
+            const st = STAGE_META[p.workflow_stage];
+            const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+            return (
+              <Surface key={p.id} T={T} pad={SP.md} interactive
+                onClick={() => onSelectProject && onSelectProject(p.id)}
+                className="pmo-in"
+                // Column flex + overflow:auto crushes children unless they opt
+                // out of shrinking — the same trap that flattened the dashboard
+                // header. Any card in a scrolling column list needs this.
+                style={{ animationDelay:`${Math.min(i, 8) * 35}ms`, flexShrink:0 }}>
+                <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:SP.sm }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ ...TYPE.mono, color:T.muted, marginBottom:3 }}>{p.code || "—"}</div>
+                    <div style={{ ...TYPE.h3, color:T.text, lineHeight:1.35 }}>{p.name}</div>
                   </div>
-                </td>
-                <td style={{...td,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:hovered?600:400,transition:"font-weight .12s"}} title={p.name}>{p.name}</td>
-                <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:T.muted}}>{fmtM(p.df_recommended_amount)}</td>
-                <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:600,color:GOLD,
-                  backgroundImage: bacPct>0 ? `linear-gradient(to right, transparent ${100-bacPct}%, ${GOLD}1C ${100-bacPct}%)` : "none"}}>{fmtM(p.bac)}</td>
-                <td style={{...td,fontSize:12,color:T.muted}}>{p.sectors?.name||"—"}</td>
-                <td style={td}>
-                  {p.priority
-                    ? <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:20,background:pClr+T.badgeAlpha,color:pClr,fontSize:10.5,fontWeight:700,whiteSpace:"nowrap"}}>{PRIORITY_LABEL[p.priority]||p.priority}</span>
-                    : <span style={{color:T.dim,fontSize:12}}>—</span>}
-                </td>
-                <td style={{...td,fontSize:12,color:T.muted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.strategic_priority||""}>{p.strategic_priority||"—"}</td>
-                <td style={td}><StageBadge stage={p.workflow_stage}/></td>
-                <td style={{...td,fontSize:12,color:T.muted}}>{p.cost_centers?.name||"—"}</td>
-                {isPMO&&(
-                  <td style={{...td,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
-                    {confirmDel?.id===p.id?(
-                      <div style={{display:"flex",gap:4,justifyContent:"center"}}>
-                        <button onClick={doDelete} disabled={deleting} style={{padding:"3px 8px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:5,color:"#F87171",fontSize:11,fontWeight:700,cursor:"pointer"}}>{deleting?"…":"Yes"}</button>
-                        <button onClick={()=>setConfirmDel(null)} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:5,color:T.muted,fontSize:11,cursor:"pointer"}}>No</button>
-                      </div>
-                    ):(
-                      <div style={{display:"flex",gap:6,justifyContent:"center",opacity:hovered?1:0.4,transition:"opacity .12s"}}>
-                        <button onClick={async ()=>{ const full = await supa(`/rest/v1/projects?id=eq.${p.id}&select=*`,{},session.access_token); setEditProject(full[0]||p); setShowForm(true); }} style={{background:"none",border:"none",cursor:"pointer",color:T.muted,display:"flex",padding:2}} title="Edit project"><Edit2 size={13}/></button>
-                        <button onClick={()=>startDelete(p)} style={{background:"none",border:"none",cursor:"pointer",color:"#F87171",display:"flex",padding:2}} title="Delete project"><Trash2 size={13}/></button>
-                      </div>
-                    )}
-                  </td>
+                  <span style={{ width:3, alignSelf:"stretch", borderRadius:2, background:pClr, flexShrink:0 }} />
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginTop:SP.sm }}>
+                  <Badge T={T} color={st?.color || T.neutral} size="sm">{st?.label || "—"}</Badge>
+                  {p.priority && <Badge T={T} color={pClr} size="sm" dot>{PRIORITY_META[p.priority]?.label}</Badge>}
+                  {p.is_carry_forward && <Badge T={T} color={T.violet} size="sm">Carry forward</Badge>}
+                </div>
+                <div style={{ display:"flex", gap:SP.xl, marginTop:SP.md, alignItems:"flex-end" }}>
+                  <div>
+                    <div style={{ ...TYPE.label, color:T.muted, marginBottom:2 }}>DF Rec</div>
+                    <div style={{ ...TYPE.bodySm, fontWeight:700, color:T.textSoft }}>{fmtM(p.df_recommended_amount)}</div>
+                  </div>
+                  <div>
+                    <div style={{ ...TYPE.label, color:T.muted, marginBottom:2 }}>Approved</div>
+                    <div style={{ ...TYPE.bodySm, fontWeight:700, color: +p.bac > 0 ? (T.goldText || BRAND.gold) : T.dim }}>{fmtM(p.bac)}</div>
+                  </div>
+                  {isPMO && (
+                    <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }} onClick={e => e.stopPropagation()}>
+                      {confirmDel?.id === p.id ? (
+                        <>
+                          <Button T={T} variant="danger" size="sm" onClick={doDelete} loading={deleting}>Yes</Button>
+                          <Button T={T} variant="ghost" size="sm" onClick={() => setConfirmDel(null)}>No</Button>
+                        </>
+                      ) : (
+                        <>
+                          <IconButton T={T} icon={Edit2} size={13} title="Edit project"
+                            onClick={async () => {
+                              const full = await supa(`/rest/v1/projects?id=eq.${p.id}&select=*`, {}, session.access_token);
+                              setEditProject(full[0] || p); setShowForm(true);
+                            }} />
+                          <IconButton T={T} icon={Trash2} size={13} title="Delete project"
+                            tone={T.danger} onClick={() => startDelete(p)} />
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {!isPMO && <div style={{ marginLeft:"auto", alignSelf:"flex-end" }}>
+                    <ChevronRight size={15} color={T.dim} />
+                  </div>}
+                </div>
+              </Surface>
+            );
+          })}
+          {sorted.length === 0 && (
+            <EmptyState T={T} icon={Search}
+              title={rows.length === 0 ? "No projects yet" : "No projects match these filters"}
+              message={rows.length === 0 ? "Nothing has been added to the portfolio yet." : "Try removing a filter to widen the search."}
+              action={chips.length > 0
+                ? <Button T={T} variant="primary" onClick={clearAllFilters}>Clear all filters</Button> : null} />
+          )}
+        </div>
+      ) : (
+        /* ── DESKTOP TABLE ── */
+        <div className="pmo-scroll" style={{ flex:1, overflow:"auto", backgroundImage:T.ambient, backgroundAttachment:"local" }}>
+          {/* tableLayout:"fixed" with an explicit colgroup is what actually
+              guarantees no horizontal overflow — with "auto", a long project
+              name silently overrides every min-width and pushes Stage and
+              Actions off the right edge, which is the bug this page shipped
+              with. Widths are proportional to each column's declared minimum. */}
+          <table data-tour="projects-table" style={{ width:"100%", borderCollapse:"separate", borderSpacing:0, tableLayout:"fixed" }}>
+            <colgroup>
+              <col style={{ width:58 }} />
+              {(() => {
+                const totalMin = visible.reduce((a, c) => a + c.min, 0) || 1;
+                return visible.map(c => (
+                  <col key={c.key} style={{ width:`${(c.min / totalMin) * 100}%` }} />
+                ));
+              })()}
+              {isPMO && <col style={{ width:78 }} />}
+            </colgroup>
+            <thead data-tour="projects-thead">
+              <tr>
+                <th style={{ ...TYPE.label, color:T.muted, padding:"10px 12px 8px", width:58,
+                  background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
+                  position:"sticky", top:0, zIndex:3, textAlign:"left" }}>#</th>
+                {visible.map(c => <SortHead key={c.key} col={c} />)}
+                {isPMO && (
+                  <th style={{ ...TYPE.label, color:T.muted, padding:"10px 12px 8px", width:78,
+                    textAlign:"center", background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
+                    position:"sticky", top:0, zIndex:3 }}>Actions</th>
                 )}
               </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              {/* Filter row, pinned directly under the headers as one control band */}
+              <tr data-tour="projects-filters">
+                {(() => {
+                  const fc = { padding:"5px 8px", background:T.surfaceRaised, position:"sticky", top:36, zIndex:2,
+                    boxShadow:`inset 0 -2px 0 ${activeFilterCount > 0 ? BRAND.gold + "99" : T.border}` };
+                  const F = {
+                    fiscal_year:<Select T={T} size="sm" full active={!!fFY} value={fFY} onChange={e=>setFFY(e.target.value)}>
+                      <option value="">All FY</option>{distinctFYs.map(v=><option key={v} value={v}>{v}</option>)}</Select>,
+                    org:<Select T={T} size="sm" full active={!!fOrg} value={fOrg} onChange={e=>setFOrg(e.target.value)}>
+                      <option value="">All orgs</option>{distinctOrgs.map(v=><option key={v} value={v}>{v}</option>)}</Select>,
+                    code:<Input T={T} size="sm" full value={fCode} onChange={e=>setFCode(e.target.value)} placeholder="Filter ID…" />,
+                    name:<Input T={T} size="sm" full value={fName} onChange={e=>setFName(e.target.value)} placeholder="Filter name…" />,
+                    segment:<Select T={T} size="sm" full active={!!fSeg} value={fSeg} onChange={e=>setFSeg(e.target.value)}>
+                      <option value="">All segments</option>{distinctSegs.map(v=><option key={v} value={v}>{v}</option>)}</Select>,
+                    priority:<Select T={T} size="sm" full active={!!fPri} value={fPri} onChange={e=>setFPri(e.target.value)}>
+                      <option value="">All</option>
+                      {Object.entries(PRIORITY_META).filter(([k])=>k!=="first_priority").map(([k,v])=>
+                        <option key={k} value={k}>{v.label}</option>)}</Select>,
+                    strategic:<Input T={T} size="sm" full value={fStrat} onChange={e=>setFStrat(e.target.value)} placeholder="Filter…" />,
+                    stage:<Select T={T} size="sm" full active={!!fStage} value={fStage} onChange={e=>setFStage(e.target.value)}>
+                      <option value="">All stages</option>
+                      {STAGE_ORDER.map(k=><option key={k} value={k}>{STAGE_META[k].label}</option>)}</Select>,
+                    cc:<Select T={T} size="sm" full active={!!fCC} value={fCC} onChange={e=>setFCC(e.target.value)}>
+                      <option value="">All centres</option>
+                      {lookups.cost_centers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</Select>,
+                  };
+                  return (
+                    <>
+                      <td style={fc} />
+                      {visible.map(c => <td key={c.key} style={fc}>{F[c.key] || null}</td>)}
+                      {isPMO && <td style={fc} />}
+                    </>
+                  );
+                })()}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((p, i) => {
+                const hovered = hoverId === p.id;
+                const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+                const n = (pageSafe - 1) * perPage + i + 1;
+                return (
+                  <tr key={p.id}
+                    onClick={() => onSelectProject && onSelectProject(p.id)}
+                    onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId(null)}
+                    style={{
+                      background: hovered
+                        ? `linear-gradient(90deg, ${pClr}14, ${T.rowHover} 22%)`
+                        : i % 2 === 0 ? "transparent" : T.rowAlt,
+                      cursor: onSelectProject ? "pointer" : "default",
+                      transition:`background ${MOTION.fast}`,
+                    }}>
+                    <td style={{ ...td, color:T.dim, fontVariantNumeric:"tabular-nums", width:58,
+                      boxShadow: hovered ? `inset 3px 0 0 ${pClr}` : "none",
+                      transition:`box-shadow ${MOTION.fast}` }}>{n}</td>
+                    {visible.map(c => (
+                      <td key={c.key} style={{ ...td, textAlign: c.num ? "right" : "left",
+                        position: c.key === "name" ? "relative" : undefined }}>
+                        {cell(p, c.key, hovered)}
+                        {/* Open affordance appears in the name cell on hover, so
+                            the row states what clicking will do (§14). */}
+                        {c.key === "name" && hovered && onSelectProject && (
+                          <>
+                          <span aria-hidden="true" style={{
+                            position:"absolute", right:0, top:0, bottom:0, width:96,
+                            background:`linear-gradient(90deg, transparent, ${T.surface} 55%)`,
+                            pointerEvents:"none",
+                          }} />
+                          <span className="pmo-rise" style={{
+                            position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
+                            display:"inline-flex", alignItems:"center", gap:3,
+                            ...TYPE.caption, fontWeight:700, color:T.blueBright,
+                            background:T.surfaceRaised, borderRadius:R.pill,
+                            padding:"2px 8px", border:`1px solid ${T.blueBright}44`,
+                            boxShadow:T.shadowSm, pointerEvents:"none",
+                          }}>Open <ChevronRight size={11} /></span>
+                          </>
+                        )}
+                      </td>
+                    ))}
+                    {isPMO && (
+                      <td style={{ ...td, textAlign:"center" }} onClick={e => e.stopPropagation()}>
+                        {confirmDel?.id === p.id ? (
+                          <div style={{ display:"flex", gap:4, justifyContent:"center" }}>
+                            <Button T={T} variant="danger" size="sm" onClick={doDelete} loading={deleting}>Yes</Button>
+                            <Button T={T} variant="ghost" size="sm" onClick={() => setConfirmDel(null)}>No</Button>
+                          </div>
+                        ) : (
+                          <div style={{ display:"flex", gap:2, justifyContent:"center",
+                            opacity: hovered ? 1 : 0.4, transition:`opacity ${MOTION.fast}` }}>
+                            <IconButton T={T} icon={Edit2} size={13} title="Edit project"
+                              onClick={async () => {
+                                const full = await supa(`/rest/v1/projects?id=eq.${p.id}&select=*`, {}, session.access_token);
+                                setEditProject(full[0] || p); setShowForm(true);
+                              }} />
+                            <IconButton T={T} icon={Trash2} size={13} title="Delete project"
+                              tone={T.danger} onClick={() => startDelete(p)} />
+                          </div>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
 
-        {/* Empty state — previously the table just went blank when filters matched nothing */}
-        {filtered.length===0&&(
-          <div className="pmo-fade-in" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,padding:"64px 20px",textAlign:"center"}}>
-            <div style={{width:46,height:46,borderRadius:14,background:GOLD+T.badgeAlpha,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <Search size={20} color={GOLD}/>
-            </div>
-            <div style={{fontSize:15,fontWeight:600,color:T.text,fontFamily:"DM Serif Display,serif"}}>
-              {rows.length===0 ? "No projects yet" : "No projects match these filters"}
-            </div>
-            <div style={{fontSize:12,color:T.muted,maxWidth:340,lineHeight:1.5}}>
-              {rows.length===0
-                ? (isPMO ? "Add your first project, or import a filled-in template to load the portfolio in bulk." : "Nothing has been added to the portfolio yet.")
+          {sorted.length === 0 && (
+            <EmptyState T={T} icon={Search}
+              title={rows.length === 0 ? "No projects yet" : "No projects match these filters"}
+              message={rows.length === 0
+                ? (isPMO ? "Add your first project, or import a filled-in template to load the portfolio in bulk."
+                         : "Nothing has been added to the portfolio yet.")
                 : "Try removing a filter to widen the search."}
-            </div>
-            {rows.length>0&&chips.length>0&&(
-              <button onClick={clearAllFilters} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>Clear all filters</button>
-            )}
-            {rows.length===0&&isPMO&&(
-              <button onClick={()=>{setEditProject(null);setShowForm(true);}} style={{marginTop:4,padding:"7px 16px",background:NAVY,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>New project</button>
-            )}
+              action={
+                rows.length > 0 && chips.length > 0
+                  ? <Button T={T} variant="primary" onClick={clearAllFilters}>Clear all filters</Button>
+                  : rows.length === 0 && isPMO
+                    ? <Button T={T} variant="primary" icon={Plus}
+                        onClick={() => { setEditProject(null); setShowForm(true); }}>New project</Button>
+                    : null} />
+          )}
+        </div>
+      )}
+
+      {/* ── PAGINATION ── */}
+      {sorted.length > 0 && (
+        <div style={{
+          flexShrink:0, display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap",
+          padding:`${SP.sm}px ${vpP.isCompact ? SP.md : SP.xl}px`,
+          borderTop:`1px solid ${T.border}`, background:T.surface,
+        }}>
+          <span style={{ ...TYPE.caption, color:T.muted }}>
+            {(pageSafe - 1) * perPage + 1}–{Math.min(pageSafe * perPage, sorted.length)} of {sorted.length}
+          </span>
+          {!vpP.isCompact && (
+            <Select T={T} size="sm" value={perPage} onChange={e => setPerPage(+e.target.value)}
+              title="Rows per page">
+              {[25, 50, 100, 250].map(n => <option key={n} value={n}>{n} per page</option>)}
+            </Select>
+          )}
+          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}>
+            <Button T={T} variant="ghost" size="sm" disabled={pageSafe <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Button>
+            <span style={{ ...TYPE.caption, color:T.textSoft, minWidth:78, textAlign:"center" }}>
+              Page {pageSafe} of {totalPages}
+            </span>
+            <Button T={T} variant="ghost" size="sm" disabled={pageSafe >= totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Delete confirmation banner with comment count */}
       {confirmDel&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.card,border:"1px solid rgba(248,113,113,0.4)",borderRadius:10,padding:"12px 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"center",gap:14,fontSize:13,whiteSpace:"nowrap"}}>
-          <span style={{color:"#F87171"}}>⚠ Delete <strong>{confirmDel.code || "-"}</strong>?</span>
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.card,border:"1px solid rgba(248,113,113,0.4)",borderRadius:R.md,padding:"12px 20px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",zIndex:200,display:"flex",alignItems:"center",gap:14,fontSize:13,whiteSpace:"nowrap"}}>
+          <span style={{color:T.textOf(T.danger), display:"flex", alignItems:"center", gap:6}}><AlertTriangle size={14}/>Delete <strong>{confirmDel.code && confirmDel.code !== "-" ? confirmDel.code : "this project"}</strong>?</span>
           {confirmDel.comments>0&&<span style={{color:T.muted}}>({confirmDel.comments} comment{confirmDel.comments!==1?"s":""} will also be deleted)</span>}
-          <button onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:"#F87171",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
-          <button onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:6,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
+          <button className="pmo-focusable pmo-btn" onClick={doDelete} disabled={deleting} style={{padding:"5px 14px",background:ROSE,border:"none",borderRadius:R.sm,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{deleting?"Deleting…":"Delete"}</button>
+          <button className="pmo-focusable pmo-btn" onClick={()=>setConfirmDel(null)} style={{padding:"5px 12px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:12,cursor:"pointer"}}>Cancel</button>
         </div>
       )}
 
       {/* Modals */}
       {showForm&&<ProjectFormModal T={T} session={session} project={editProject} lookups={lookups} onSaved={()=>{setShowForm(false);setEditProject(null);load();}} onClose={()=>{setShowForm(false);setEditProject(null);}}/>}
       {showImport&&<ImportExcelModal T={T} session={session} lookups={lookups} onImported={()=>{setShowImport(false);load();}} onClose={()=>setShowImport(false)}/>}
+
+      {/* Mobile filter sheet — desktop shows all 8 filters inline in the
+          table's own filter row; that row is simply absent on a phone-width
+          screen, so this surfaces the exact same filter state through a
+          full-screen sheet instead, rather than leaving mobile with search
+          only. */}
+      {showMobileFilters && (
+        <div style={{ position:"fixed", inset:0, zIndex:1400, background: T.mode === "dark" ? "rgba(3,8,16,0.85)" : "rgba(12,30,51,0.5)",
+          display:"flex", flexDirection:"column" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+            padding:`${SP.md}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}`, background:T.surface, flexShrink:0 }}>
+            <div style={{ ...TYPE.h3, color:T.text }}>Filters</div>
+            <button className="pmo-focusable" onClick={()=>setShowMobileFilters(false)}
+              style={{ background:"none", border:"none", color:T.dim, cursor:"pointer", padding:4 }}><X size={18} /></button>
+          </div>
+          <div className="pmo-scroll" style={{ flex:1, overflow:"auto", padding:SP.lg, background:T.surface,
+            display:"flex", flexDirection:"column", gap:SP.md }}>
+            {[
+              ["Fiscal Year", fFY, setFFY, [["", "All FY"], ...distinctFYs.map(v=>[v,v])]],
+              ["Organization", fOrg, setFOrg, [["", "All orgs"], ...distinctOrgs.map(v=>[v,v])]],
+              ["Segment", fSeg, setFSeg, [["", "All segments"], ...distinctSegs.map(v=>[v,v])]],
+              ["Priority", fPri, setFPri, [["", "All"], ...Object.entries(PRIORITY_META).filter(([k])=>k!=="first_priority").map(([k,v])=>[k,v.label])]],
+              ["Stage", fStage, setFStage, [["", "All stages"], ...STAGE_ORDER.map(k=>[k, STAGE_META[k].label])]],
+              ["Cost Centre", fCC, setFCC, [["", "All centres"], ...lookups.cost_centers.map(c=>[c.name,c.name])]],
+            ].map(([label, val, setter, options]) => (
+              <div key={label}>
+                <label style={{ ...TYPE.label, color:T.muted, display:"block", marginBottom:6 }}>{label}</label>
+                <Select T={T} value={val} onChange={e=>setter(e.target.value)} style={{ width:"100%" }}>
+                  {options.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                </Select>
+              </div>
+            ))}
+            <div>
+              <label style={{ ...TYPE.label, color:T.muted, display:"block", marginBottom:6 }}>Project ID contains</label>
+              <Input T={T} value={fCode} onChange={e=>setFCode(e.target.value)} placeholder="Filter ID…" style={{ width:"100%" }} />
+            </div>
+            <div>
+              <label style={{ ...TYPE.label, color:T.muted, display:"block", marginBottom:6 }}>Name contains</label>
+              <Input T={T} value={fName} onChange={e=>setFName(e.target.value)} placeholder="Filter name…" style={{ width:"100%" }} />
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:SP.sm, padding:SP.lg, borderTop:`1px solid ${T.border}`, background:T.surface, flexShrink:0 }}>
+            <button className="pmo-focusable pmo-btn" disabled={activeFilterCount===0}
+              onClick={()=>{ setFFY("");setFOrg("");setFCode("");setFName("");setFSeg("");setFPri("");setFStrat("");setFStage("");setFCC(""); }}
+              style={{ flex:1, padding:12, borderRadius:R.md, border:`1px solid ${T.border}`, background:"none",
+                color: activeFilterCount===0 ? T.dim : T.muted, cursor: activeFilterCount===0 ? "default" : "pointer",
+                fontSize:13, fontFamily:TYPE.body.fontFamily }}>Clear all</button>
+            <button className="pmo-focusable pmo-btn" onClick={()=>setShowMobileFilters(false)}
+              style={{ flex:2, padding:12, borderRadius:R.md, border:"none", background:"#185078",
+                color:"#fff", fontWeight:700, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>
+              Show {sorted.length} project{sorted.length===1?"":"s"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── CAMPUS / SITES ───────────────────────────────────────────────────────────
-function CampusPage({ T, session, onSelectProject }) {
+function CampusPage({ T, session, onSelectProject,
+  sel, setSel, q, setQ, fCode, setFCode, fName, setFName, fSite, setFSite,
+  fPri, setFPri, fStage, setFStage, fCC, setFCC }) {
+  const vpC = useViewport();
   const [rows,     setRows]     = useState([]);
   const [campuses, setCampuses] = useState([]);
-  const [sel,      setSel]      = useState("");
   const [activeCard, setActiveCard] = useState(null);
-  const [q,        setQ]        = useState("");
+  // sel, q, and the 6 filters below are props from App() now, not local
+  // state — same reason as ProjectsPage: this component unmounts entirely
+  // whenever a project is opened, so anything kept as local state here was
+  // silently lost on "Back to Campus / Sites".
+  const [hoverRow, setHoverRow] = useState(null);
+  const costCentreOptions = useMemo(
+    () => [...new Set(rows.map(r => r.costCentre).filter(Boolean))].sort(),
+    [rows]);
+
+  // Sorting. Stage and priority sort by workflow order rather than alphabet —
+  // "Approved" must not lead simply because A precedes D.
+  const CAMPUS_SORT = useMemo(() => ({
+    code:     r => (r.code && r.code !== "-") ? r.code.toLowerCase() : null,
+    name:     r => (r.name || "").toLowerCase(),
+    campus:   r => (r.campus || "").toLowerCase(),
+    costCentre: r => (r.costCentre || "").toLowerCase(),
+    df:       r => +r.df_recommended_amount || 0,
+    bac:      r => +r.bac || 0,
+    priority: r => { const i = Object.keys(PRIORITY_META).indexOf(r.priority); return i < 0 ? 99 : i; },
+    stage:    r => { const i = STAGE_ORDER.indexOf(r.workflow_stage); return i < 0 ? 99 : i; },
+  }), []);
   const [loading,  setLoading]  = useState(true);
   const [err,      setErr]      = useState(null);
 
@@ -2827,12 +4847,19 @@ function CampusPage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const [metrics, projs, camps] = await Promise.all([
-        supa("/rest/v1/project_metrics?select=id,code,name,bac,df_recommended_amount,amount_released,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
-        supa("/rest/v1/projects?select=id,campus",{},session.access_token),
+        supa("/rest/v1/project_metrics?portfolio=eq.capex&select=id,code,name,bac,df_recommended_amount,amount_released,workflow_stage,priority,pct_complete,is_carry_forward,schedule_flag,budget_flag,cpi,spi&order=code.asc",{},session.access_token),
+        supa("/rest/v1/projects?portfolio=eq.capex&select=id,campus,cost_centers(name)",{},session.access_token),
         supa("/rest/v1/campuses?select=id,name&order=name.asc",{},session.access_token),
       ]);
-      const campusById = Object.fromEntries((projs||[]).map(p=>[p.id, p.campus||null]));
-      setRows((metrics||[]).map(m=>({ ...m, campus: campusById[m.id] || null })));
+      const byId = Object.fromEntries((projs||[]).map(p => [p.id, {
+        campus: p.campus || null,
+        costCentre: p.cost_centers?.name || null,
+      }]));
+      setRows((metrics||[]).map(m => ({
+        ...m,
+        campus:     byId[m.id]?.campus     || null,
+        costCentre: byId[m.id]?.costCentre || null,
+      })));
       setCampuses(camps||[]);
     } catch(e) { setErr(e.message); }
     setLoading(false);
@@ -2860,8 +4887,17 @@ function CampusPage({ T, session, onSelectProject }) {
       const s = q.toLowerCase();
       out = out.filter(r => (r.code||"").toLowerCase().includes(s) || (r.name||"").toLowerCase().includes(s));
     }
+    if (fCode.trim())  out = out.filter(r => (r.code||"").toLowerCase().includes(fCode.toLowerCase()));
+    if (fName.trim())  out = out.filter(r => (r.name||"").toLowerCase().includes(fName.toLowerCase()));
+    if (fSite)         out = out.filter(r => (r.campus || UNASSIGNED) === fSite);
+    if (fPri)          out = out.filter(r => r.priority === fPri);
+    if (fStage)        out = out.filter(r => r.workflow_stage === fStage);
+    if (fCC)           out = out.filter(r => (r.costCentre || "") === fCC);
     return sortRealCodeFirst(out);
-  }, [rows, sel, q]);
+  }, [rows, sel, q, fCode, fName, fSite, fPri, fStage, fCC]);
+
+  const colFilterCount = [fCode, fName, fSite, fPri, fStage, fCC].filter(Boolean).length;
+  const clearColFilters = () => { setFCode(""); setFName(""); setFSite(""); setFPri(""); setFStage(""); setFCC(""); };
 
   const k = useMemo(() => {
     const active = st => filtered.filter(r => r.workflow_stage===st && !r.is_carry_forward).length;
@@ -2882,7 +4918,34 @@ function CampusPage({ T, session, onSelectProject }) {
     };
   }, [filtered]);
 
-  const good="#2DD4BF", warn="#F59E0B", bad="#F87171";
+  // Hover-text overrides live in the same `dashboard_kpis` settings row the
+  // dashboard uses, keyed by the same metric keys — so a correction made here
+  // fixes the wording on the dashboard too, and vice versa. One definition of
+  // what "DF Review" means, editable from wherever you noticed it was wrong.
+  const isPMOUser = session?.role === "pmo";
+  const [kpiOv, setKpiOv] = useState({});
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/settings?select=value&key=eq.dashboard_kpis", {}, session.access_token)
+      .then(rows => { if (alive && rows?.[0]?.value) setKpiOv(rows[0].value); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
+
+  const saveCardInsight = useCallback(async (key, patch) => {
+    // Merge rather than replace: the dashboard's value/sub overrides for this
+    // same key must survive a wording edit made from Campus.
+    const next = { ...kpiOv, [key]: { ...(kpiOv[key] || {}), ...patch } };
+    await supa("/rest/v1/settings?key=eq.dashboard_kpis", {
+      method: "PATCH",
+      body: JSON.stringify({ value: next }),
+      headers: { "Prefer": "return=minimal" },
+    }, session.access_token);
+    setKpiOv(next);
+  }, [kpiOv, session?.access_token]);
+
+  const good = EMERALD, warn = AMBER, bad = ROSE;
 
   // Each KPI card maps to a predicate over the campus-filtered rows, so clicking
   // a card drills the list down to exactly the projects it counted.
@@ -2902,125 +4965,251 @@ function CampusPage({ T, session, onSelectProject }) {
 
   const toggleCard = (id) => setActiveCard(c => c === id ? null : id);
 
-  const visible = useMemo(() => {
+  const preSort = useMemo(() => {
     if (!activeCard || !CARD_FILTERS[activeCard]) return filtered;
     return filtered.filter(CARD_FILTERS[activeCard].fn);
   }, [filtered, activeCard]);
+  const { sorted: visible, sort, toggle } = useTableSort(preSort, CAMPUS_SORT);
 
-  const th = {fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",whiteSpace:"nowrap",textAlign:"left",borderBottom:"1px solid "+T.border};
-  const td = {fontSize:12.5,color:T.text,padding:"9px 12px",borderBottom:"1px solid "+T.border,verticalAlign:"middle"};
-  const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:"Inter,sans-serif",outline:"none"};
+  const th = {...TYPE.label, color:T.muted, padding:"10px 12px 8px", whiteSpace:"nowrap",
+    textAlign:"left", background:T.surfaceRaised, boxShadow:`inset 0 -1px 0 ${T.border}`,
+    position:"sticky", top:0, zIndex:2};
+  const td = {...TYPE.bodySm, color:T.text, padding:"10px 12px",
+    borderBottom:`1px solid ${T.border}`, verticalAlign:"middle",
+    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"};
+  const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:R.sm,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
 
   if (loading) return <div style={{color:T.muted,fontSize:13,padding:20}}>Loading campuses…</div>;
-  if (err)     return <div style={{color:"#F87171",fontSize:13,padding:20}}>{err}</div>;
+  if (err)     return <div style={{color:T.textOf(ROSE),fontSize:13,padding:20}}>{err}</div>;
 
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",padding:"16px 20px 24px"}}>
+      <div className="pmo-scroll" style={{flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",
+        padding:`${SP.lg}px ${SP.xl}px ${SP.xxl}px`, backgroundImage:T.ambient}}>
 
-      {/* Campus selector */}
-      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
-        <select value={sel} onChange={e=>setSel(e.target.value)} style={{...ctl,cursor:"pointer",minWidth:230,...(sel?{border:"1px solid "+GOLD,color:GOLD}:{})}}>
-          <option value="">All Campuses ({rows.length})</option>
-          {campusOptions.map(name => (
-            <option key={name} value={name}>{name} ({countByCampus[name]||0})</option>
-          ))}
-        </select>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Quick search…" style={{...ctl,flex:"0 1 400px",minWidth:180}}/>
-        <div style={{flex:1,display:"flex",gap:26,alignItems:"baseline",justifyContent:"flex-end",flexWrap:"wrap",minWidth:0}}>
-          {[
-            {label:"Projects",  value:String(filtered.length), color:T.text},
-            {label:"DF Rec",    value:fmtM(k.dfBudget),        color:T.text},
-            {label:"Approved",  value:fmtM(k.budget),          color:GOLD},
-            {label:"Released",  value:fmtM(k.released),        color:"#2DD4BF"},
-            {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:"#60A5FA"},
-          ].map(s => (
-            <div key={s.label} style={{textAlign:"right",whiteSpace:"nowrap"}}>
-              <div style={{fontSize:9,color:T.muted,letterSpacing:1.2,textTransform:"uppercase",marginBottom:2}}>{s.label}</div>
-              <div style={{fontSize:14,fontWeight:700,color:s.color,fontVariantNumeric:"tabular-nums"}}>{s.value}</div>
-            </div>
-          ))}
+      {/* Campus selector + slice summary. Same pattern as Projects: the figures
+          restate the portfolio for whichever campus is selected. */}
+      <Surface T={T} pad={SP.md} style={{marginBottom:SP.lg, flexShrink:0}}>
+        <div style={{display:"flex", gap:SP.sm, alignItems:"center", flexWrap:"wrap"}}>
+          <Select T={T} value={sel} active={!!sel} onChange={e=>setSel(e.target.value)}
+            style={{minWidth:230}}>
+            <option value="">All campuses ({rows.length})</option>
+            {campusOptions.map(name => (
+              <option key={name} value={name}>{name} ({countByCampus[name]||0})</option>
+            ))}
+          </Select>
+          <Input T={T} icon={Search} value={q} onChange={e=>setQ(e.target.value)}
+            onClear={()=>setQ("")} placeholder="Search projects…"
+            style={{flex:"0 1 340px", minWidth:180}} />
+          <div style={{flex:1, display:"flex", gap:SP.xl, alignItems:"baseline",
+            justifyContent:"flex-end", flexWrap:"wrap", minWidth:0}}>
+            {[
+              {label:"Projects",  value:String(filtered.length),     color:T.text},
+              {label:"DF Rec",    value:fmtM(k.dfBudget),            color:T.textSoft},
+              {label:"Approved",  value:fmtM(k.budget),              color:T.goldText || BRAND.gold},
+              {label:"Released",  value:fmtM(k.released),            color:T.textOf(T.positive)},
+              {label:"Remaining", value:fmtM(k.dfBudget - k.budget), color:T.textOf(T.info)},
+            ].map(x => (
+              <div key={x.label} style={{textAlign:"right", whiteSpace:"nowrap"}}>
+                <div style={{...TYPE.label, color:T.muted, marginBottom:3}}>{x.label}</div>
+                <div style={{...TYPE.metricSm, fontSize:15, color:x.color}}>{x.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </Surface>
 
       {/* Approvals */}
       <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Approvals</div>
-        <div style={{display:"flex",gap:10}}>
-          <KCard T={T} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" onClick={()=>toggleCard("pddNot")}   isSelected={activeCard==="pddNot"} />
-          <KCard T={T} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review"      onClick={()=>toggleCard("pddSub")}   isSelected={activeCard==="pddSub"} />
-          <KCard T={T} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} onClick={()=>toggleCard("df")} isSelected={activeCard==="df"} />
-          <KCard T={T} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} onClick={()=>toggleCard("ed")} isSelected={activeCard==="ed"} />
-          <KCard T={T} label="MT Review"          value={String(k.mt)}       sub="With Management Team"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
-          <KCard T={T} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured onClick={()=>toggleCard("approved")} isSelected={activeCard==="approved"} />
+        <div className="pmo-card-row" style={{display:"flex",gap:10}}>
+          <KCard index={0} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="PDDs Not Submitted" value={String(k.pddNot)}   sub="Awaiting PDD submission" onClick={()=>toggleCard("pddNot")}   isSelected={activeCard==="pddNot"} />
+          <KCard index={1} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="PDDs Submitted"     value={String(k.pddSub)}   sub="Awaiting DF Review"      onClick={()=>toggleCard("pddSub")}   isSelected={activeCard==="pddSub"} />
+          <KCard index={2} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="DF Review"          value={String(k.df)}       sub="With Finance Director"   accent={GOLD} onClick={()=>toggleCard("df")} isSelected={activeCard==="df"} />
+          <KCard index={3} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="ED Review"          value={String(k.ed)}       sub="With Executive Director" accent={GOLD} onClick={()=>toggleCard("ed")} isSelected={activeCard==="ed"} />
+          <KCard index={4} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="MT Review"          value={String(k.mt)}       sub="With Managing Trustee"    accent={GOLD} onClick={()=>toggleCard("mt")} isSelected={activeCard==="mt"} />
+          <KCard index={5} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Approved"           value={String(k.approved)} sub="Sanctioned for execution" accent={good} featured onClick={()=>toggleCard("approved")} isSelected={activeCard==="approved"} />
         </div>
       </div>
 
       {/* Execution */}
       <div style={{marginBottom:16}}>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Execution</div>
-        <div style={{display:"flex",gap:10}}>
-          <KCard T={T} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured onClick={()=>toggleCard("active")}  isSelected={activeCard==="active"} />
-          <KCard T={T} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good}    onClick={()=>toggleCard("onTime")}  isSelected={activeCard==="onTime"} />
-          <KCard T={T} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn}    onClick={()=>toggleCard("delayed")} isSelected={activeCard==="delayed"} />
-          <KCard T={T} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad}     onClick={()=>toggleCard("over")}    isSelected={activeCard==="over"} />
-          <KCard T={T} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} onClick={()=>toggleCard("closed")} isSelected={activeCard==="closed"} />
+        <div className="pmo-card-row" style={{display:"flex",gap:10}}>
+          <KCard index={6} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Active Projects" value={String(k.approved)} sub="Currently executing" featured onClick={()=>toggleCard("active")}  isSelected={activeCard==="active"} />
+          <KCard index={0} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="On Schedule"     value={String(k.onTime)}   sub="SPI ≥ 0.95" accent={good}    onClick={()=>toggleCard("onTime")}  isSelected={activeCard==="onTime"} />
+          <KCard index={1} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Delayed"         value={String(k.delayed)}  sub="SPI < 0.95" accent={warn}    onClick={()=>toggleCard("delayed")} isSelected={activeCard==="delayed"} />
+          <KCard index={2} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Over Budget"     value={String(k.over)}     sub="CPI < 0.95" accent={bad}     onClick={()=>toggleCard("over")}    isSelected={activeCard==="over"} />
+          <KCard index={3} T={T} canEdit={isPMOUser} onSaveInsight={saveCardInsight} insightOverride={kpiOv} label="Closed"          value={String(k.closed)}   sub="Completed & handed over" accent={T.muted} onClick={()=>toggleCard("closed")} isSelected={activeCard==="closed"} />
         </div>
       </div>
 
       {/* Project list */}
-      <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:10,overflow:"hidden"}}>
+      <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:R.md,overflow:"hidden"}}>
         {activeCard && CARD_FILTERS[activeCard] && (
           <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:"1px solid "+T.border,background:T.card2}}>
             <span style={{fontSize:12,color:T.muted}}>
               Showing <strong style={{color:T.text}}>{CARD_FILTERS[activeCard].label}</strong> — {visible.length} project{visible.length===1?"":"s"}
               {sel ? ` in ${sel}` : ""}
             </span>
-            <button onClick={()=>setActiveCard(null)}
-              style={{marginLeft:"auto",background:"none",border:"1px solid "+T.border,borderRadius:6,color:T.muted,fontSize:11,padding:"4px 10px",cursor:"pointer",fontFamily:"Inter,sans-serif"}}>
+            <button className="pmo-focusable pmo-btn" onClick={()=>setActiveCard(null)}
+              style={{marginLeft:"auto",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,padding:"4px 10px",cursor:"pointer",fontFamily:TYPE.body.fontFamily}}>
               ✕ Clear
             </button>
           </div>
         )}
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
+        {/* Settles in as it reaches the viewport — the table sits well below
+            the KPI strips, so it is genuinely below the fold. */}
+        {vpC.isCompact ? (
+          <div style={{ display:"flex", flexDirection:"column", gap:SP.sm }}>
+            {visible.length === 0 ? (
+              <EmptyState T={T} icon={Search} title="No projects match this filter"
+                message="Try widening the campus or search filter above." />
+            ) : visible.map((p, i) => {
+              const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+              return (
+                <MobileProjectCard key={p.id} T={T} project={p} onSelect={onSelectProject} index={i}
+                  badges={<>
+                    <StageBadge T={T} stage={p.workflow_stage} />
+                    {p.priority && <Badge T={T} color={pClr} size="sm" dot>{PRIORITY_LABEL[p.priority]}</Badge>}
+                  </>}
+                  metrics={[
+                    { label:"Campus", value: p.campus || "—" },
+                    { label:"DF Rec", value: fmtM(p.df_recommended_amount) },
+                    { label:"Approved", value: fmtM(p.bac), color:(T.goldText || GOLD) },
+                  ]} />
+              );
+            })}
+          </div>
+        ) : (
+        <Reveal><div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,tableLayout:"fixed",
+            minWidth: vpC.isCompact ? 900 : undefined}}>
             <thead style={{position:"sticky",top:0,background:T.card2,zIndex:2}}>
               <tr>
-                <th style={{...th,width:44}}>#</th>
-                <th style={th}>Project ID</th>
-                <th style={th}>Project Name</th>
-                <th style={th}>Campus / Site</th>
-                <th style={{...th,textAlign:"right"}}>DF Rec Budget</th>
-                <th style={{...th,textAlign:"right"}}>Approved Budget</th>
-                <th style={th}>Priority</th>
-                <th style={th}>Stage</th>
+                <th style={{...th,width:58}}>#</th>
+                <SortHeader T={T} label="Project ID"      sortKey="code"     sort={sort} onToggle={toggle} minWidth={118} />
+                <SortHeader T={T} label="Project Name"    sortKey="name"     sort={sort} onToggle={toggle} />
+                <SortHeader T={T} label="Campus / Site"   sortKey="campus"   sort={sort} onToggle={toggle} />
+                <SortHeader T={T} label="Cost Centre"     sortKey="costCentre" sort={sort} onToggle={toggle} />
+                <SortHeader T={T} label="DF Rec Budget"   sortKey="df"       sort={sort} onToggle={toggle} align="right" />
+                <SortHeader T={T} label="Approved Budget" sortKey="bac"      sort={sort} onToggle={toggle} align="right" />
+                <SortHeader T={T} label="Priority"        sortKey="priority" sort={sort} onToggle={toggle} minWidth={104} />
+                <SortHeader T={T} label="Stage" sortKey="stage" sort={sort} onToggle={toggle} />
+              </tr>
+              {/* Filter band, pinned directly beneath the headers so the
+                  controls visibly belong to the columns they filter. */}
+              <tr>
+                {(() => {
+                  const fc = { padding:"5px 8px", background:T.surfaceRaised,
+                    position:"sticky", top:36, zIndex:2,
+                    boxShadow:`inset 0 -2px 0 ${colFilterCount > 0 ? BRAND.gold + "99" : T.border}` };
+                  return (
+                    <>
+                      <td style={fc} />
+                      <td style={fc}>
+                        <Input T={T} size="sm" full value={fCode}
+                          onChange={e=>setFCode(e.target.value)} placeholder="Filter ID…" />
+                      </td>
+                      <td style={fc}>
+                        <Input T={T} size="sm" full value={fName}
+                          onChange={e=>setFName(e.target.value)} placeholder="Filter name…" />
+                      </td>
+                      <td data-tour="campus-filter" style={fc}>
+                        <Select T={T} size="sm" full active={!!fSite} value={fSite}
+                          onChange={e=>setFSite(e.target.value)}>
+                          <option value="">All sites</option>
+                          {campusOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                        </Select>
+                      </td>
+                      <td style={fc}>
+                        <Select T={T} size="sm" full active={!!fCC} value={fCC}
+                          onChange={e=>setFCC(e.target.value)}>
+                          <option value="">All cost centres</option>
+                          {costCentreOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                        </Select>
+                      </td>
+                      <td style={fc} /><td style={fc} />
+                      <td style={fc}>
+                        <Select T={T} size="sm" full active={!!fPri} value={fPri}
+                          onChange={e=>setFPri(e.target.value)}>
+                          <option value="">All</option>
+                          {Object.entries(PRIORITY_META).filter(([k])=>k!=="first_priority")
+                            .map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                        </Select>
+                      </td>
+                      <td style={fc}>
+                        <Select T={T} size="sm" full active={!!fStage} value={fStage}
+                          onChange={e=>setFStage(e.target.value)}>
+                          <option value="">All stages</option>
+                          {STAGE_ORDER.map(k => <option key={k} value={k}>{STAGE_META[k].label}</option>)}
+                        </Select>
+                      </td>
+                    </>
+                  );
+                })()}
               </tr>
             </thead>
             <tbody>
               {visible.length===0 ? (
                 <tr><td colSpan={8} style={{...td,textAlign:"center",color:T.dim,padding:"28px 12px"}}>No projects match this filter.</td></tr>
-              ) : visible.map((p,i) => (
-                <tr key={p.id}>
-                  <td style={{...td,color:T.dim}}>{i+1}</td>
+              ) : visible.map((p,i) => {
+                const hovered = hoverRow === p.id;
+                const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+                return (
+                <tr key={p.id}
+                  onClick={() => onSelectProject?.(p.id)}
+                  onMouseEnter={() => setHoverRow(p.id)}
+                  onMouseLeave={() => setHoverRow(null)}
+                  style={{
+                    cursor: onSelectProject ? "pointer" : "default",
+                    background: hovered
+                      ? `linear-gradient(90deg, ${pClr}14, ${T.rowHover} 22%)`
+                      : i % 2 === 0 ? "transparent" : T.rowAlt,
+                    transition:`background ${MOTION.fast}`,
+                  }}>
+                  <td style={{...td, color:T.dim,
+                    boxShadow: hovered ? `inset 3px 0 0 ${pClr}` : "none",
+                    transition:`box-shadow ${MOTION.fast}` }}>{i+1}</td>
                   <td style={td}>
-                    <button onClick={()=>onSelectProject?.(p.id)} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:GOLD,fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
+                    <button className="pmo-focusable pmo-btn"
+                      onClick={(e)=>{ e.stopPropagation(); onSelectProject?.(p.id); }} style={{background:"none",border:"none",padding:0,cursor:"pointer",color:(T.goldText || GOLD),fontSize:12.5,fontFamily:"monospace"}}>{p.code || "-"}</button>
                   </td>
-                  <td style={{...td,minWidth:220}}>{p.name}</td>
+                  <td data-peek={p.name} style={{...td, minWidth:220, position:"relative", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
+                    {p.name}
+                    {hovered && onSelectProject && (
+                      <>
+                        <span aria-hidden="true" style={{
+                          position:"absolute", right:0, top:0, bottom:0, width:92,
+                          background:`linear-gradient(90deg, transparent, ${T.surface} 55%)`,
+                          pointerEvents:"none" }} />
+                        <span className="pmo-rise" style={{
+                          position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
+                          display:"inline-flex", alignItems:"center", gap:3,
+                          ...TYPE.caption, fontWeight:700, color:T.blueBright,
+                          background:T.surfaceRaised, borderRadius:R.pill,
+                          padding:"2px 8px", border:`1px solid ${T.blueBright}44`,
+                          pointerEvents:"none" }}>Open <ChevronRight size={11} /></span>
+                      </>
+                    )}
+                  </td>
                   <td style={{...td,color:T.muted}}>{p.campus || "—"}</td>
+                  <td style={{...td,color:T.muted}} title={p.costCentre || ""}>{p.costCentre || "—"}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtM(p.df_recommended_amount)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtM(p.bac)}</td>
                   <td style={td}>
                     <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
-                      <span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY[p.priority]||"#aaa"}}/>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:PRIORITY_META[p.priority]?.color||T.dim}}/>
                       <span style={{fontSize:12,color:T.muted}}>{PRIORITY_LABEL[p.priority]||"—"}</span>
                     </span>
                   </td>
-                  <td style={td}><StageBadge stage={p.workflow_stage}/></td>
+                  <td style={td}><StageBadge T={T} stage={p.workflow_stage}/></td>
                 </tr>
-              ))}
+              ); })}
             </tbody>
           </table>
-        </div>
+        </div></Reveal>
+        )}
       </div>
       </div>
     </div>
@@ -3029,30 +5218,44 @@ function CampusPage({ T, session, onSelectProject }) {
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 function SettingsPage({ T, session }) {
+  const vpS = useViewport();
   // ── helpers ──────────────────────────────────────────────────────────────
   const Msg = ({ status }) => {
     if (!status) return null;
     const ok = status.ok;
     return (
       <div style={{
-        display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:8, marginTop:14,
+        display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:R.md, marginTop:14,
         background: ok ? "rgba(45,212,191,0.1)" : "rgba(248,113,113,0.1)",
         border: `1px solid ${ok ? "rgba(45,212,191,0.3)" : "rgba(248,113,113,0.3)"}`,
-        color: ok ? "#2DD4BF" : "#F87171", fontSize:13,
+        color: ok ? EMERALD : ROSE, fontSize:13,
       }}>
-        <span>{ok ? "✓" : "⚠"}</span>{status.msg}
+        {ok ? <CheckCircle2 size={14} style={{flexShrink:0}} /> : <AlertCircle size={14} style={{flexShrink:0}} />}{status.msg}
       </div>
     );
   };
 
-  const SectionCard = ({ title, children }) => (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"24px 28px", marginBottom:20 }}>
-      <div style={{ fontSize:13, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>
-        {title}
-      </div>
-      {children}
-    </div>
-  );
+  // Wrapped so every settings card joins the proximity field and settles in as
+  // it reaches the viewport, without each card being touched individually.
+  // Wrapped so every settings card joins the proximity field and settles in as
+  // it reaches the viewport, without each card being touched individually.
+  const SectionCard = ({ title, children, index = 0 }) => {
+    const nref = useNear();
+    return (
+      <Reveal delay={index * 55}>
+        <div ref={nref} className="pmo-near pmo-card-in" style={{
+          position:"relative",
+          background:T.surface, border:`1px solid ${T.border}`,
+          borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 24px",
+          "--near-light": `${T.blue}1A`,
+        }}>
+          <div style={{ ...TYPE.label, color:T.muted, marginBottom:18,
+            position:"relative" }}>{title}</div>
+          <div style={{ position:"relative" }}>{children}</div>
+        </div>
+      </Reveal>
+    );
+  };
 
   const Field = ({ label, hint, children }) => (
     <div style={{ marginBottom:18 }}>
@@ -3063,15 +5266,15 @@ function SettingsPage({ T, session }) {
   );
 
   const inp = {
-    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8,
-    padding:"10px 14px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif",
+    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md,
+    padding:"10px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", width:"100%", boxSizing:"border-box",
   };
 
   const Btn = ({ onClick, loading, disabled, children, variant="primary" }) => (
-    <button onClick={onClick} disabled={loading || disabled} style={{
-      padding:"10px 22px", borderRadius:8, border:"none", cursor: loading||disabled ? "default" : "pointer",
-      fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif",
+    <button className="pmo-focusable pmo-btn" onClick={onClick} disabled={loading || disabled} style={{
+      padding:"10px 22px", borderRadius:R.md, border:"none", cursor: loading||disabled ? "default" : "pointer",
+      fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily,
       background: loading||disabled ? T.muted : variant==="primary" ? NAVY : "transparent",
       color: variant==="primary" ? "#fff" : T.muted,
       border: variant==="primary" ? "none" : `1px solid ${T.border}`,
@@ -3114,8 +5317,10 @@ function SettingsPage({ T, session }) {
     (async () => {
       try {
         const rows = await supa("/rest/v1/settings?select=key,value", {}, session.access_token);
+        // Existing rows were saved double-encoded; unwrap them on read so the
+        // portal shows the intended text without a data migration.
         const map = {};
-        rows.forEach(r => { map[r.key] = r.value; });
+        rows.forEach(r => { map[r.key] = unquote(r.value); });
         setCfg(map);
       } catch(e) { setCfg({}); }
       setCfgLoading(false);
@@ -3135,7 +5340,10 @@ function SettingsPage({ T, session }) {
       for (const [key, val] of patches) {
         await supa(`/rest/v1/settings?key=eq.${key}`, {
           method:"PATCH",
-          body: JSON.stringify({ value: typeof val === "string" ? JSON.stringify(val) : val }),
+          // No JSON.stringify on the value: `settings.value` is jsonb, so the
+          // request body encoding already handles it. Double-encoding is what
+          // baked literal quote marks into the stored string.
+          body: JSON.stringify({ value: val }),
           headers: { "Prefer":"return=minimal" }
         }, session.access_token);
       }
@@ -3156,13 +5364,19 @@ function SettingsPage({ T, session }) {
   ];
 
   return (
-    <div style={{ flex:1, overflow:"auto", padding:"24px 28px", maxWidth:700 }}>
-      <div style={{ marginBottom:24 }}>
-        <div style={{ fontSize:13, color:T.muted }}>
+    <div className="pmo-scroll" style={{ flex:1, overflow:"auto",
+      padding:`${SP.xl}px ${SP.xxl}px`, backgroundImage:T.ambient }}>
+      <div style={{
+        maxWidth:1180,
+        display:"grid", alignItems:"start", gap:SP.lg,
+        gridTemplateColumns: vpS.width >= 1100 ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)",
+      }}>
+      <Surface T={T} pad={SP.md} style={{ gridColumn:"1 / -1" }}>
+        <div style={{ ...TYPE.bodySm, color:T.muted }}>
           Signed in as <span style={{ color:T.text, fontWeight:600 }}>{session.username}</span>
-          <span style={{ color:T.dim }}> · {session.role}</span>
+          <span style={{ color:T.dim }}> · {session.role?.replace("_", " ")}</span>
         </div>
-      </div>
+      </Surface>
 
       {/* ── Security ── */}
       <SectionCard title="Security">
@@ -3171,7 +5385,7 @@ function SettingsPage({ T, session }) {
             <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&changePassword()}
               placeholder="Enter new password" style={inp} />
-            <button onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
+            <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
               <Eye size={15} />
             </button>
           </div>
@@ -3181,7 +5395,7 @@ function SettingsPage({ T, session }) {
             <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&changePassword()}
               placeholder="Re-enter new password" style={inp} />
-            <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
+            <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}>
               <Eye size={15} />
             </button>
           </div>
@@ -3197,30 +5411,30 @@ function SettingsPage({ T, session }) {
         ) : cfg && (
           <>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
-              <Field label="CPI Threshold" hint="Projects below this are flagged Over Budget.">
+              <Field label="CPI Threshold" hint="Projects below this are flagged Over Budget. Drives the Portfolio Health verdict, the Over Budget card on Project Health, and the budget status column on Performance.">
                 <input type="number" min="0" max="1" step="0.01"
                   value={cfg.cpi_threshold ?? 0.95}
                   onChange={e=>set("cpi_threshold", e.target.value)}
                   style={{ ...inp, width:"100%" }} />
               </Field>
-              <Field label="SPI Threshold" hint="Projects below this are flagged Delayed.">
+              <Field label="SPI Threshold" hint="Projects below this are flagged Delayed. Drives the Portfolio Health verdict, the Delayed and On Schedule cards, and the schedule status column on Performance.">
                 <input type="number" min="0" max="1" step="0.01"
                   value={cfg.spi_threshold ?? 0.95}
                   onChange={e=>set("spi_threshold", e.target.value)}
                   style={{ ...inp, width:"100%" }} />
               </Field>
             </div>
-            <Field label="Portfolio Health Override" hint="Force a specific status, or leave on Auto to let CPI & SPI determine it.">
-              <select value={cfg.health_override ?? ""} onChange={e=>set("health_override", e.target.value)}
+            <Field label="Portfolio Health Override" hint="Force a specific status, or leave on Auto to let CPI and SPI determine it. Shown as the headline verdict at the top of the dashboard.">
+              <Select T={T} value={cfg.health_override ?? ""} onChange={e=>set("health_override", e.target.value)}
                 style={{ ...inp, cursor:"pointer" }}>
                 {HEALTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </Select>
             </Field>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
-              <Field label="Dashboard Title">
+              <Field label="Dashboard Title" hint="Shown as the page title on the Capex Dashboard.">
                 <input value={cfg.dashboard_title ?? "PMO CAPEX Dashboard"} onChange={e=>set("dashboard_title", e.target.value)} style={{ ...inp, width:"100%" }} />
               </Field>
-              <Field label="Fiscal Year">
+              <Field label="Fiscal Year" hint="Appears in the dashboard subtitle, the hero footer and the sidebar strapline.">
                 <input value={cfg.fiscal_year ?? "FY 2026-27"} onChange={e=>set("fiscal_year", e.target.value)} style={{ ...inp, width:"100%" }} />
               </Field>
             </div>
@@ -3248,6 +5462,7 @@ function SettingsPage({ T, session }) {
           ))}
         </div>
       </SectionCard>
+      </div>
     </div>
   );
 }
@@ -3255,17 +5470,53 @@ function SettingsPage({ T, session }) {
 // ─── PERFORMANCE / EVM ────────────────────────────────────────────────────────
 // ─── PROJECT CASHFLOWS & TIMELINES ─────────────────────────────────────────────
 // Embeds a separately-authored standalone HTML dashboard (Chart.js + a frozen
-// data snapshot) completely unmodified, via an iframe. This is deliberate: the
-// file has its own <script> tags doing the filtering/charting, and scripts
-// injected into React via dangerouslySetInnerHTML never execute — an iframe is
-// the only way to embed it verbatim and keep it fully interactive. It also
-// keeps its CSS/JS in an isolated browsing context so nothing here can clash
-// with the portal's own styles or globals.
-function CashflowPage() {
+// 151-row data snapshot) via an iframe. The file has its own <script> tags
+// doing the filtering and charting, and scripts injected through
+// dangerouslySetInnerHTML never execute — an iframe is the only way to embed it
+// verbatim and keep it interactive, and it isolates its CSS from the portal's.
+//
+// Its palette has been remapped onto src/theme.js and it now honours the
+// portal's light/dark toggle through the theme bridge below. NOTE: that file
+// exists twice (repo root for production, public/ for the build). Edit both —
+// deploy-preview.py aborts if they drift.
+function CashflowPage({ T, dark, session }) {
+  // The embedded dashboard runs on a snapshot saved in August, so its own
+  // project count disagrees with the live portfolio. Read the authoritative
+  // count here and pass it in, so the tab reports the same number as every
+  // other page rather than a figure frozen at export time.
+  const [projectCount, setProjectCount] = useState(null);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/portfolio_dashboard?select=total_projects", {}, session.access_token)
+      .then(rows => {
+        const n = Array.isArray(rows) ? rows[0]?.total_projects : null;
+        if (alive && n) setProjectCount(n);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
+
+  const frame = useRef(null);
+  // The src was hardcoded to the production URL, so the preview build loaded
+  // production's copy of this file. A relative path keeps each deployment
+  // self-contained.
+  const src = `cashflow-dashboard.html?theme=${dark ? "dark" : "light"}`
+    + (projectCount ? `&projects=${projectCount}` : "");
+
+  // Push theme changes to the frame so the tab flips with the rest of the app
+  // instead of only picking up the theme it was first loaded with.
+  useEffect(() => {
+    try {
+      frame.current?.contentWindow?.postMessage({ pmoTheme: dark ? "dark" : "light" }, "*");
+    } catch (_) {}
+  }, [dark]);
+
   return (
-    <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
+    <div style={{ flex:1, display:"flex", overflow:"hidden", background:T?.page }}>
       <iframe
-        src={PORTAL_LINK + "cashflow-dashboard.html"}
+        ref={frame}
+        src={src}
         title="Project Cashflows & Timelines"
         style={{ flex:1, border:"none", width:"100%", height:"100%" }}
       />
@@ -3274,11 +5525,26 @@ function CashflowPage() {
 }
 
 function PerformancePage({ T, session, onSelectProject }) {
+  const vpD = useViewport();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("all");
   const [hoverId, setHoverId] = useState(null);
+  const evmNear = useNear();
+  const PERF_SORT = useMemo(() => ({
+    project: r => (r.name || "").toLowerCase(),
+    done:    r => +r.pct_complete || 0,
+    bac:     r => +r.bac || 0,
+    ev:      r => +r.ev  || 0,
+    pv:      r => +r.pv  || 0,
+    ac:      r => +r.ac  || 0,
+    cpi:     r => r.cpi == null ? null : +r.cpi,
+    spi:     r => r.spi == null ? null : +r.spi,
+    eac:     r => r.eac == null ? null : +r.eac,
+    cv:      r => r.cost_variance == null ? null : +r.cost_variance,
+    sv:      r => r.schedule_variance == null ? null : +r.schedule_variance,
+  }), []);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -3320,10 +5586,11 @@ function PerformancePage({ T, session, onSelectProject }) {
     { id:"closed",  label:"Closed",       fn: r => r.workflow_stage === "closed" },
   ].map(f => ({ ...f, count: rows.filter(f.fn).length })), [rows]);
 
-  const filtered = useMemo(() => {
+  const preSorted = useMemo(() => {
     const f = FILTERS.find(x => x.id === filter);
     return sortRealCodeFirst(f ? rows.filter(f.fn) : rows);
   }, [rows, filter, FILTERS]);
+  const { sorted: filtered, sort: psort, toggle: ptoggle } = useTableSort(preSorted, PERF_SORT);
 
   // Formatters
   const fmtM  = n => n == null ? "—" : (parseFloat(n) / 1e6).toFixed(1) + "M";
@@ -3336,15 +5603,15 @@ function PerformancePage({ T, session, onSelectProject }) {
   };
 
   // Colour helpers
-  const cpiClr = v => v == null ? T.dim : parseFloat(v) >= 0.95 ? "#2DD4BF" : parseFloat(v) >= 0.85 ? "#F59E0B" : "#F87171";
-  const varClr = v => v == null ? T.dim : parseFloat(v) >= 0 ? "#2DD4BF" : "#F87171";
+  const cpiClr = v => v == null ? T.dim : parseFloat(v) >= 0.95 ? EMERALD : parseFloat(v) >= 0.85 ? AMBER : ROSE;
+  const varClr = v => v == null ? T.dim : parseFloat(v) >= 0 ? EMERALD : ROSE;
 
   const FLAG = {
     not_started: { label:"Not Started", c: T.dim },
-    on_time:     { label:"On Schedule", c:"#2DD4BF" },
-    delayed:     { label:"Delayed",     c:"#F59E0B" },
-    within:      { label:"On Budget",   c:"#2DD4BF" },
-    over:        { label:"Over Budget", c:"#F87171" },
+    on_time:     { label:"On Schedule", c:T.textOf(EMERALD) },
+    delayed:     { label:"Delayed",     c:T.textOf(AMBER) },
+    within:      { label:"On Budget",   c:T.textOf(EMERALD) },
+    over:        { label:"Over Budget", c:T.textOf(ROSE) },
   };
   const FlagBadge = ({ flag }) => {
     const f = FLAG[flag] || { label: flag || "—", c: T.dim };
@@ -3358,12 +5625,18 @@ function PerformancePage({ T, session, onSelectProject }) {
   const tdr = { ...td, textAlign:"right", fontVariantNumeric:"tabular-nums" };
 
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
 
       {/* ── Portfolio EVM strip ── */}
-      <div style={{
-        padding:"14px 24px", borderBottom:`1px solid ${T.border}`,
-        background:T.headerBg, display:"flex", gap:0, flexShrink:0, flexWrap:"wrap",
+      {/* Fixed-width cells with dividers broke below ~1200px; a wrapping grid
+          keeps every figure legible at every width. */}
+      <div ref={evmNear} className="pmo-in pmo-near" style={{
+        position:"relative",
+        "--near-light": `${BRAND.blue}16`,
+        padding:`${SP.md}px ${SP.xl}px`, borderBottom:`1px solid ${T.border}`,
+        background:T.surface, flexShrink:0,
+        display:"grid", gap:SP.md,
+        gridTemplateColumns:"repeat(auto-fit, minmax(118px, 1fr))",
       }}>
         {[
           { label:"CPI",           value: portCPI ? fmtR(portCPI) : "—",  color: portCPI ? cpiClr(portCPI) : T.dim },
@@ -3374,28 +5647,25 @@ function PerformancePage({ T, session, onSelectProject }) {
           { label:"Cost Variance", value: fmtMv(portCV),   color: varClr(portCV) },
           { label:"Sched Variance",value: fmtMv(portSV),   color: varClr(portSV) },
         ].map(({ label, value, color }, i) => (
-          <div key={label} style={{
-            textAlign:"center", padding:"0 20px",
-            borderRight: i < 6 ? `1px solid ${T.border}` : "none",
-          }}>
-            <div style={{ fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1.5, marginBottom:3 }}>{label}</div>
-            <div style={{ fontSize:22, fontWeight:700, color, fontFamily:"DM Serif Display,serif", lineHeight:1 }}>{value}</div>
+          <div key={label}>
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:4 }}>{label}</div>
+            <div style={{ ...TYPE.metricSm, fontSize:19, color, whiteSpace:"nowrap" }}>{value}</div>
           </div>
         ))}
-        <div style={{ marginLeft:"auto", alignSelf:"center", fontSize:11, color:T.dim, paddingLeft:16 }}>
-          {executing.length} projects actively executing
+        <div style={{ alignSelf:"center", ...TYPE.caption, color:T.muted }}>
+          {executing.length} project{executing.length === 1 ? "" : "s"} actively executing
         </div>
       </div>
 
       {/* ── Filter bar ── */}
       <div style={{ padding:"10px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:6, flexShrink:0, alignItems:"center" }}>
         {FILTERS.map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)} style={{
-            padding:"4px 12px", borderRadius:20, border:`1px solid ${filter===f.id ? GOLD : T.border}`,
+          <button className="pmo-focusable pmo-btn" key={f.id} onClick={() => setFilter(f.id)} style={{
+            padding:"4px 12px", borderRadius:R.pill, border:`1px solid ${filter===f.id ? GOLD : T.border}`,
             background: filter===f.id ? "rgba(216,152,64,0.12)" : T.card2,
             color: filter===f.id ? GOLD : T.muted,
             fontSize:11.5, fontWeight:filter===f.id ? 700 : 400,
-            cursor:"pointer", fontFamily:"Inter,sans-serif",
+            cursor:"pointer", fontFamily:TYPE.body.fontFamily,
           }}>
             {f.label} <span style={{ opacity:0.55 }}>({f.count})</span>
           </button>
@@ -3410,30 +5680,53 @@ function PerformancePage({ T, session, onSelectProject }) {
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading EVM data…</div>
       ) : err ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
-          <AlertCircle color="#F87171" />
-          <span style={{ color:"#F87171", fontSize:13 }}>{err}</span>
-          <button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:6, cursor:"pointer", fontSize:12 }}>Retry</button>
+          <AlertCircle color={ROSE} />
+          <span style={{ color:T.textOf(ROSE), fontSize:13 }}>{err}</span>
+          <button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.dim, fontSize:13 }}>
           No projects match this filter.
         </div>
+      ) : vpD.isCompact ? (
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }), display:"flex", flexDirection:"column", gap:SP.sm }}>
+          {filtered.map((r, i) => (
+            <MobileProjectCard key={r.id} T={T} project={r} onSelect={onSelectProject} index={i}
+              badges={<>
+                <FlagBadge flag={r.schedule_flag} />
+                <FlagBadge flag={r.budget_flag} />
+                {r.is_carry_forward && <Badge T={T} color={T.violet} size="sm">Carry forward</Badge>}
+              </>}
+              metrics={[
+                { label:"% Done", value: r.pct_complete > 0 ? fmtP(r.pct_complete) : "—" },
+                { label:"BAC", value: fmtM(r.bac) },
+                { label:"CPI", value: fmtR(r.cpi), color: cpiClr(r.cpi) },
+                { label:"SPI", value: fmtR(r.spi), color: cpiClr(r.spi) },
+              ]} />
+          ))}
+        </div>
       ) : (
-        <div style={{ flex:1, overflow:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }), overflowX: vpD.isCompact ? "auto" : "visible" }}>
+          <table style={{ ...tableStyles(T).tableFixed, minWidth: vpD.isCompact ? 900 : undefined }}>
+            <colgroup>
+              {[220,86,76,76,76,76,66,66,76,86,86,104,104].map((w,i)=>{
+                const tot=1198;
+                return <col key={i} style={{ width:`${(w/tot)*100}%` }} />;
+              })}
+            </colgroup>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <th style={{ ...th, position:"sticky", left:0, zIndex:3, minWidth:220, borderRight:`1px solid ${T.border}` }}>Project</th>
-                <th style={{ ...th, textAlign:"center", minWidth:90 }}>% Done</th>
-                <th style={{ ...thr, minWidth:80 }}>BAC</th>
-                <th style={{ ...thr, minWidth:80 }}>EV</th>
-                <th style={{ ...thr, minWidth:80 }}>PV</th>
-                <th style={{ ...thr, minWidth:80 }}>AC</th>
-                <th style={{ ...thr, minWidth:70 }}>CPI</th>
-                <th style={{ ...thr, minWidth:70 }}>SPI</th>
-                <th style={{ ...thr, minWidth:80 }}>EAC</th>
-                <th style={{ ...thr, minWidth:90 }}>Cost Var.</th>
-                <th style={{ ...thr, minWidth:90 }}>Sched. Var.</th>
+                <SortHeader T={T} label="% Done" sortKey="done" sort={psort} onToggle={ptoggle} align="center" />
+                <SortHeader T={T} label="BAC" sortKey="bac" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="EV" sortKey="ev" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="PV" sortKey="pv" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="AC" sortKey="ac" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="CPI" sortKey="cpi" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="SPI" sortKey="spi" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="EAC" sortKey="eac" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="Cost Var." sortKey="cv" sort={psort} onToggle={ptoggle} align="right" />
+                <SortHeader T={T} label="Sched. Var." sortKey="sv" sort={psort} onToggle={ptoggle} align="right" />
                 <th style={{ ...th,  minWidth:110 }}>Schedule</th>
                 <th style={{ ...th,  minWidth:110 }}>Budget</th>
               </tr>
@@ -3453,14 +5746,14 @@ function PerformancePage({ T, session, onSelectProject }) {
                       transition:"background .1s",
                     }}>
                     {/* sticky project column */}
-                    <td style={{ ...td, position:"sticky", left:0, background:stickyBg, zIndex:1, borderRight:`1px solid ${T.border}`, minWidth:220 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <td style={{ ...td, position:"sticky", left:0, background:stickyBg, zIndex:1, borderRight:`1px solid ${T.border}`, minWidth:220, overflow:"hidden" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
                         {r.is_carry_forward && (
-                          <span style={{ fontSize:9, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"1px 5px", borderRadius:4, flexShrink:0 }}>CF</span>
+                          <span style={{ fontSize:10, fontWeight:700, background:"rgba(216,152,64,0.15)", color:(T.goldText || GOLD), padding:"1px 5px", borderRadius:4, flexShrink:0 }}>CF</span>
                         )}
-                        <div>
+                        <div style={{ minWidth:0, flex:1 }}>
                           <div style={{ fontSize:10.5, color:T.dim, fontFamily:"monospace" }}>{r.code || "-"}</div>
-                          <div style={{ fontSize:12.5, color:T.text, lineHeight:1.3 }}>{r.name}</div>
+                          <div data-peek={r.name} style={{ fontSize:12.5, color:T.text, lineHeight:1.3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
                         </div>
                       </div>
                     </td>
@@ -3471,7 +5764,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                         <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
                           <div style={{ width:56, height:4, background:T.border, borderRadius:2 }}>
                             <div style={{ width:`${Math.min(r.pct_complete, 100)}%`, height:"100%", borderRadius:2,
-                              background: r.pct_complete >= 75 ? "#2DD4BF" : r.pct_complete >= 40 ? GOLD : "#F59E0B" }} />
+                              background: r.pct_complete >= 75 ? EMERALD : r.pct_complete >= 40 ? GOLD : AMBER }} />
                           </div>
                           <span style={{ fontSize:11, color:T.muted }}>{fmtP(r.pct_complete)}</span>
                         </div>
@@ -3520,6 +5813,39 @@ function PerformancePage({ T, session, onSelectProject }) {
 // its own instead, so slashes stay real path separators.
 const encodeStoragePath = (path) => path.split("/").map(encodeURIComponent).join("/");
 
+// Phone cameras produce 3-5MB JPEGs. Site visits happen where signal is poor
+// and the portal shares a 1GB storage cap, so shrinking before upload is worth
+// far more than it costs: faster uploads, fewer failures, and several times as
+// many photos before the cap bites.
+//
+// Only images are touched, and only when shrinking actually helps — if the
+// re-encode comes out larger (already-optimised or very small images), the
+// original is kept. Anything that fails for any reason falls back to the
+// original file rather than blocking the upload.
+const MAX_IMAGE_EDGE = 1920;      // ample for viewing and for a board report
+const IMAGE_QUALITY  = 0.82;
+
+async function compressImage(file) {
+  if (!file.type?.startsWith("image/") || file.type === "image/gif") return file;
+  if (file.size < 300 * 1024) return file;          // already small enough
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", IMAGE_QUALITY));
+    if (!blob || blob.size >= file.size) return file;   // no gain — keep original
+    const name = file.name.replace(/\.(png|webp|heic|heif|bmp|tiff?)$/i, ".jpg");
+    return new File([blob], name, { type: "image/jpeg", lastModified: Date.now() });
+  } catch {
+    return file;   // never let compression stop an upload
+  }
+}
+
 const fmtBytes = (n) => {
   if (n == null) return "—";
   if (n < 1024) return n + " B";
@@ -3527,7 +5853,8 @@ const fmtBytes = (n) => {
   return (n/(1024*1024)).toFixed(1) + " MB";
 };
 
-function ProjectAttachments({ T, session, projectId }) {
+function ProjectAttachments({ T, session, projectId, kind = "document", render }) {
+  const vpA = useViewport();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -3540,7 +5867,7 @@ function ProjectAttachments({ T, session, projectId }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await supa(`/rest/v1/project_attachments?project_id=eq.${projectId}&select=*&order=uploaded_at.desc`, {}, session.access_token);
+      const rows = await supa(`/rest/v1/project_attachments?project_id=eq.${projectId}&kind=eq.${kind}&select=*&order=sort_order.asc,uploaded_at.desc`, {}, session.access_token);
       setItems(rows);
     } catch (e) { setErr(e.message); }
     setLoading(false);
@@ -3559,11 +5886,13 @@ function ProjectAttachments({ T, session, projectId }) {
   useEffect(() => { load(); loadGlobalTotal(); }, [load, loadGlobalTotal]);
 
   const handleFiles = async (fileList) => {
+    let nextOrder = (items.reduce((m, a) => Math.max(m, +a.sort_order || 0), 0) || 0) + 1;
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
     setUploading(true); setErr(null);
     try {
-      for (const file of files) {
+      for (const original of files) {
+        const file = await compressImage(original);
         const path = `${projectId}/${crypto.randomUUID()}-${file.name}`;
         const upRes = await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeStoragePath(path)}`, {
           method: "POST",
@@ -3575,7 +5904,10 @@ function ProjectAttachments({ T, session, projectId }) {
           method: "POST", headers: { Prefer: "return=minimal" },
           body: JSON.stringify({
             project_id: projectId, file_name: file.name, file_path: path,
-            file_size: file.size, mime_type: file.type || null,
+            file_size: file.size, mime_type: file.type || null, kind,
+            // Appended, not inserted: an upload must not silently reshuffle
+            // a sequence the PMO has already arranged.
+            sort_order: nextOrder++,
             uploaded_by: session.user_id, uploaded_by_name: session.full_name || session.username || null,
           }),
         }, session.access_token);
@@ -3586,32 +5918,65 @@ function ProjectAttachments({ T, session, projectId }) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // Ported from the parallel session's work on main (commit 13a489a3a), kept
+  // intact through the redesign: opening a file and saving it are different
+  // intentions and now have different controls.
   const getSignedUrl = async (att, forceDownload) => {
-    const body = forceDownload ? { expiresIn: 60, download: att.file_name } : { expiresIn: 60 };
     const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeStoragePath(att.file_path)}`, {
-      method: "POST", body: JSON.stringify(body),
+      method: "POST", body: JSON.stringify({ expiresIn: 60 }),
     }, session.access_token);
     if (!res.signedURL) throw new Error("Could not generate a link for this file");
-    return SUPA_URL + res.signedURL;
+    // Verified against the live bucket: passing `download` in the POST body has
+    // no effect — the response is byte-identical and the object is served with
+    // no Content-Disposition. The header only appears when `download` is a
+    // QUERY parameter on the signed URL:
+    //   as returned              → disposition: None
+    //   with &download appended  → disposition: attachment; filename=…
+    // So the flag has to be appended here, not sent to the sign endpoint.
+    // Supabase returns signedURL relative to the storage API, as
+    // "/object/sign/<bucket>/<path>?token=…" — it does NOT include the
+    // /storage/v1 prefix. Concatenating it straight onto the project URL
+    // produced …supabase.co/object/sign/…, which the API rejects with
+    // "requested path is invalid". Verified against the live bucket:
+    //   without /storage/v1 → 404
+    //   with    /storage/v1 → 200 application/pdf
+    const url = SUPA_URL + "/storage/v1" + res.signedURL;
+    return forceDownload
+      ? url + (url.includes("?") ? "&" : "?") + "download=" + encodeURIComponent(att.file_name)
+      : url;
   };
 
-  // Clicking the row/filename: open in a new tab for viewing.
+  // Clicking the card: open in a new tab for viewing.
   const handleOpen = async (att) => {
     try { window.open(await getSignedUrl(att, false), "_blank"); }
     catch (e) { setErr(e.message); }
   };
 
-  // Clicking the Download button: guaranteed instant save, not a preview.
-  // Earlier this fetched the file bytes directly in JS to force a save via
-  // a blob: URL — but that's a cross-origin fetch() to Supabase's storage
-  // CDN, which doesn't return CORS headers for that call and throws a raw
-  // "Failed to fetch". Supabase's sign endpoint has a "download" option
-  // that adds a Content-Disposition: attachment header server-side instead
-  // — plain navigation to that URL forces the save with no fetch() and no
-  // CORS exposure at all.
+  // The Download button: a guaranteed save, not a preview.
+  //
+  // This previously fetched the file bytes in JS and forced a save through a
+  // blob: URL. That is a cross-origin fetch() to Supabase's storage CDN, which
+  // does not return CORS headers for that call, so it threw a bare "Failed to
+  // fetch". Supabase's sign endpoint takes a `download` option that adds
+  // Content-Disposition: attachment server-side instead — plain navigation to
+  // that URL forces the save with no fetch() and no CORS exposure at all.
   const handleForceDownload = async (att) => {
     try { window.open(await getSignedUrl(att, true), "_blank"); }
     catch (e) { setErr(e.message); }
+  };
+
+  // Persist a rearranged sequence. One PATCH per row: the list is small, and a
+  // partial failure leaves the rest correctly ordered rather than reverting to
+  // an order nobody chose.
+  const handleReorder = async (orderedIds) => {
+    try {
+      await Promise.all(orderedIds.map((id, i) =>
+        supa(`/rest/v1/project_attachments?id=eq.${id}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ sort_order: i + 1 }),
+        }, session.access_token)));
+      await load();
+    } catch (e) { setErr(e.message); }
   };
 
   const handleDelete = async (att) => {
@@ -3625,17 +5990,64 @@ function ProjectAttachments({ T, session, projectId }) {
     } catch (e) { setErr(e.message); }
   };
 
+  // The storage indicator, shared by both surfaces so the figure and the
+  // thresholds can never disagree between tabs.
+  const storageBar = (canManage && globalBytes !== null) ? (() => {
+    const pct = Math.min(100, (globalBytes / STORAGE_CAP_BYTES) * 100);
+    const barColor = pct >= 90 ? ROSE : pct >= 70 ? AMBER : EMERALD;
+    return (
+      <div style={{ marginBottom:14 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:"2px 8px", fontSize:10.5, color:T.dim, marginBottom:5 }}>
+          <span>Portal storage (all projects)</span>
+          <span>{fmtBytes(globalBytes)} of 1.0 GB used ({pct.toFixed(1)}%)</span>
+        </div>
+        <div style={{ height:5, background:T.border, borderRadius:3, overflow:"hidden" }}>
+          <div style={{ width:pct+"%", height:"100%", background:barColor, borderRadius:3, transition:"width .4s" }}/>
+        </div>
+        {pct >= 80 && (
+          <div style={{ fontSize:10.5, color:T.textOf(AMBER), marginTop:5 }}>
+            Approaching the Free-tier storage limit — consider upgrading to Supabase Pro before this fills up.
+          </div>
+        )}
+      </div>
+    );
+  })() : null;
+
+  // A caller can take over the presentation while keeping all of the data
+  // handling above — which is how the Site Visit tab reuses this wholesale.
+  if (render) {
+    return (
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg,
+        boxShadow:T.shadow, padding:"20px 22px" }}>
+        {render({
+          items, loading, canManage, err, uploading, storageBar,
+          onUpload: handleFiles,
+          onDelete: handleDelete,
+          onReorder: handleReorder,
+          getUrl: (att, forceDownload) => getSignedUrl(att, forceDownload),
+        })}
+      </div>
+    );
+  }
+
   return (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"20px 22px" }}>
+    <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 22px" }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
         <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>
           Attachments {items.length > 0 && <span style={{opacity:.6}}>({items.length})</span>}
         </div>
         {canManage && (
           <>
-            <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)} />
-            <button onClick={()=>fileInputRef.current?.click()} disabled={uploading}
-              style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", background:uploading?T.muted:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:11.5, fontWeight:700, cursor:uploading?"default":"pointer", fontFamily:"Inter,sans-serif" }}>
+            {/* accept="image/*,video/*" makes a phone offer "Take Photo or
+                Video" alongside the photo library. Deliberately not
+                capture="environment", which would force the camera and remove
+                the ability to upload shots already taken earlier on site —
+                the more common case. Desktop browsers just filter the picker. */}
+            <input ref={fileInputRef} type="file" multiple style={{display:"none"}}
+              {...(kind === "site_visit" ? { accept: "image/*,video/*" } : {})}
+              onChange={e=>handleFiles(e.target.files)} />
+            <button className="pmo-focusable pmo-btn" onClick={()=>fileInputRef.current?.click()} disabled={uploading}
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", background:uploading?T.muted:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:11.5, fontWeight:700, cursor:uploading?"default":"pointer", fontFamily:TYPE.body.fontFamily }}>
               <Upload size={12}/> {uploading ? "Uploading…" : "Upload"}
             </button>
           </>
@@ -3644,10 +6056,10 @@ function ProjectAttachments({ T, session, projectId }) {
 
       {canManage && globalBytes !== null && (() => {
         const pct = Math.min(100, (globalBytes / STORAGE_CAP_BYTES) * 100);
-        const barColor = pct >= 90 ? "#F87171" : pct >= 70 ? "#F59E0B" : "#2DD4BF";
+        const barColor = pct >= 90 ? ROSE : pct >= 70 ? AMBER : EMERALD;
         return (
           <div style={{ marginBottom:14 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10.5, color:T.dim, marginBottom:5 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:"2px 8px", fontSize:10.5, color:T.dim, marginBottom:5 }}>
               <span>Portal storage (all projects)</span>
               <span>{fmtBytes(globalBytes)} of 1.0 GB used ({pct.toFixed(1)}%)</span>
             </div>
@@ -3655,7 +6067,7 @@ function ProjectAttachments({ T, session, projectId }) {
               <div style={{ width:pct+"%", height:"100%", background:barColor, borderRadius:3, transition:"width .4s" }}/>
             </div>
             {pct >= 80 && (
-              <div style={{ fontSize:10.5, color:"#F59E0B", marginTop:5 }}>
+              <div style={{ fontSize:10.5, color:T.textOf(AMBER), marginTop:5 }}>
                 Approaching the Free-tier storage limit — consider upgrading to Supabase Pro before this fills up.
               </div>
             )}
@@ -3663,44 +6075,226 @@ function ProjectAttachments({ T, session, projectId }) {
         );
       })()}
 
-      {err && <div style={{ fontSize:11.5, color:"#F87171", marginBottom:10 }}>{err}</div>}
+      {err && <div style={{ fontSize:11.5, color:T.textOf(ROSE), marginBottom:10 }}>{err}</div>}
 
       {loading ? (
         <div style={{ fontSize:12, color:T.dim, padding:"8px 0" }}>Loading…</div>
-      ) : items.length === 0 ? (
-        <div style={{ fontSize:12, color:T.dim, padding:"8px 0" }}>
-          No attachments yet{canManage ? " — click Upload to add one." : "."}
-        </div>
+      ): items.length === 0 ? (
+        <EmptyState T={T} icon={FileText} compact tone={T.info}
+          title="No documents yet"
+          message={canManage
+            ? "PDDs, approvals and correspondence attached to this project appear here. Use Upload to add the first one."
+            : "PDDs, approvals and correspondence attached to this project will appear here once the PMO uploads them."} />
       ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-          {items.map(att => (
-            <div key={att.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 4px", borderRadius:7, cursor:"pointer" }}
-              onMouseEnter={e=>e.currentTarget.style.background=T.card2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+        <div style={{ display:"grid", gap:SP.sm,
+          gridTemplateColumns: vpA.isCompact ? "1fr" : "repeat(auto-fill, minmax(min(280px,100%), 1fr))" }}>
+          {items.map((att, ai) => {
+            // File type drives the icon tint, so a folder of mixed artifacts is
+            // scannable by colour rather than needing every name read.
+            const ext = (att.file_name || "").split(".").pop().toLowerCase();
+            const kind =
+              ["pdf"].includes(ext)                          ? { c:DATA.danger,   t:"PDF" }
+            : ["xlsx","xls","csv"].includes(ext)             ? { c:DATA.positive, t:"Sheet" }
+            : ["doc","docx"].includes(ext)                   ? { c:T.textOf(DATA.info),     t:"Doc" }
+            : ["png","jpg","jpeg","gif","webp"].includes(ext)? { c:DATA.violet,   t:"Image" }
+            : ["ppt","pptx"].includes(ext)                   ? { c:DATA.warning,  t:"Slides" }
+            :                                                  { c:T.textOf(DATA.neutral),  t:ext ? ext.toUpperCase() : "File" };
+            return (
+            <div key={att.id} className="pmo-in pmo-lift" style={{
+                display:"flex", alignItems:"flex-start", gap:SP.md, minWidth:0,
+                padding:`${SP.md}px ${SP.md}px`, borderRadius:R.lg, cursor:"pointer",
+                background:T.surface, border:`1px solid ${T.border}`, boxShadow:T.shadow,
+                animationDelay:`${ai * 45}ms`,
+                transition:`border-color ${MOTION.base}, box-shadow ${MOTION.base}, transform ${MOTION.base}`,
+              }}
+              onMouseEnter={e=>{ e.currentTarget.style.borderColor = kind.c + "66";
+                                 e.currentTarget.style.boxShadow = T.glowSoft(kind.c); }}
+              onMouseLeave={e=>{ e.currentTarget.style.borderColor = T.border;
+                                 e.currentTarget.style.boxShadow = T.shadow; }}
               onClick={()=>handleOpen(att)} title="Open in a new tab">
-              <FileText size={15} color={T.muted} style={{flexShrink:0}}/>
+              <div style={{
+                width:38, height:38, borderRadius:R.md, flexShrink:0,
+                background:`${kind.c}${T.badge}`, border:`1px solid ${kind.c}33`,
+                display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1,
+              }}>
+                <FileText size={15} color={kind.c} strokeWidth={2}/>
+                <span style={{ fontSize:7.5, fontWeight:700, letterSpacing:.4,
+                  color:T.textOf(kind.c) }}>{kind.t}</span>
+              </div>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:12.5, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{att.file_name}</div>
-                <div style={{ fontSize:10.5, color:T.dim }}>
-                  {fmtBytes(att.file_size)} · {att.uploaded_by_name || "Unknown"} · {new Date(att.uploaded_at).toLocaleDateString()}
+                <div style={{ ...TYPE.caption, color:T.muted, marginTop:3, lineHeight:1.5 }}>
+                  {fmtBytes(att.file_size)} · {att.uploaded_by_name || "Unknown"}
+                </div>
+                <div style={{ ...TYPE.caption, color:T.dim, marginTop:1 }}>
+                  {new Date(att.uploaded_at).toLocaleDateString("en-GB",
+                    { day:"numeric", month:"short", year:"numeric" })}
                 </div>
               </div>
-              <button onClick={e=>{e.stopPropagation(); handleForceDownload(att);}}
-                style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:4, flexShrink:0, display:"flex" }}
-                title="Download">
-                <Download size={13}/>
-              </button>
-              {canManage && (
-                <button onClick={e=>{e.stopPropagation(); handleDelete(att);}}
-                  style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:4, flexShrink:0 }}
-                  title="Delete">
-                  <Trash2 size={13}/>
-                </button>
-              )}
+              <div style={{ display:"flex", flexDirection:"column", gap:2, flexShrink:0 }}>
+                <IconButton T={T} icon={Download} size={13} title="Download a copy"
+                  onClick={e=>{e.stopPropagation(); handleForceDownload(att);}} />
+                {canManage && (
+                  <IconButton T={T} icon={Trash2} size={13} tone={T.danger} title="Delete"
+                    onClick={e=>{e.stopPropagation(); handleDelete(att);}} />
+                )}
+              </div>
             </div>
-          ))}
+          ); })}
         </div>
       )}
     </div>
+  );
+}
+
+// ─── PROJECT TIMELINE ────────────────────────────────────────────────────────
+// §15 listed ten milestones through PR, PO, Execution and Completion. The
+// schema records none of those, so this builds the part that is real: the
+// approval journey, derived from the project's current workflow_stage and the
+// dates actually stored (start, budget release, end, actuals). Steps beyond
+// approval are omitted rather than drawn as permanently-pending placeholders,
+// which would make every project look stalled.
+function ProjectTimeline({ T, p, evm, isCompact }) {
+  // "closed" is a real stage but deliberately not part of STAGE_ORDER, which
+  // models the PDD-to-approval workflow only. indexOf therefore returned -1
+  // for a closed project, and -1 is neither > nor === any step index, so every
+  // stage rendered as "Pending" — on a project that had in fact completed the
+  // whole journey. Treat closed as past the final step.
+  const isClosed = p.workflow_stage === "closed";
+  const stageIdx = isClosed ? STAGE_ORDER.length : STAGE_ORDER.indexOf(p.workflow_stage);
+  const fmtDate = (d) => d
+    ? new Date(d).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" })
+    : null;
+
+  const today = new Date();
+  const overdue = p.end_date && new Date(p.end_date) < today && p.workflow_stage !== "closed";
+
+  const steps = STAGE_ORDER.map((key, i) => {
+    const meta = STAGE_META[key];
+    const done    = stageIdx > i;
+    const current = stageIdx === i;
+    // Only two of these stages have a date the schema can vouch for.
+    const date = key === "approved" ? fmtDate(p.budget_release_date) : null;
+    return {
+      key, label:meta.label, color:meta.color, done, current, date,
+      state: done ? "Complete" : current ? "In progress" : "Pending",
+    };
+  });
+
+  // Show the end state explicitly rather than letting the journey stop at
+  // "Approved" on a project that has been completed and handed over.
+  if (isClosed) {
+    steps.push({
+      key: "closed",
+      label: STAGE_META.closed?.label || "Closed",
+      color: STAGE_META.closed?.color || T.neutral,
+      done: true, current: false,
+      date: fmtDate(p.actual_end_date),
+      state: "Complete",
+    });
+  }
+
+  // Execution dates, shown separately because they are project schedule rather
+  // than approval workflow.
+  const schedule = [
+    { label:"Planned start",  value:fmtDate(p.start_date) },
+    { label:"Planned finish", value:fmtDate(p.end_date), warn:overdue },
+    { label:"Actual start",   value:fmtDate(p.actual_start_date) },
+    { label:"Actual finish",  value:fmtDate(p.actual_end_date) },
+  ];
+  const hasSchedule = schedule.some(x => x.value);
+
+  return (
+    <Stack gap={SP.lg}>
+      <Surface T={T} pad={SP.lg}>
+        <SectionTitle T={T} icon={ClipboardList} title="Approval journey"
+          sub="Where this project has reached in the PDD-to-approval workflow" />
+
+        <div style={{ position:"relative", paddingLeft:isCompact ? 0 : 4 }}>
+          {steps.map((st, i) => {
+            const last = i === steps.length - 1;
+            const tone = st.done ? T.positive : st.current ? st.color : T.dim;
+            return (
+              <div key={st.key} style={{ display:"flex", gap:SP.md, position:"relative" }}>
+                {/* Rail */}
+                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0 }}>
+                  <div style={{
+                    width:22, height:22, borderRadius:"50%", flexShrink:0,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    background: st.done ? T.positive + T.badge : st.current ? st.color + T.badge : "transparent",
+                    border:`2px solid ${st.done || st.current ? tone : T.border}`,
+                    boxShadow: st.current ? `0 0 0 4px ${st.color}1F` : "none",
+                  }}>
+                    {st.done
+                      ? <CheckCircle2 size={12} color={T.positive} strokeWidth={2.5} />
+                      : st.current
+                        ? <span className="pmo-awaiting" style={{ width:7, height:7, borderRadius:"50%",
+                            background:st.color, color:st.color }} />
+                        : null}
+                  </div>
+                  {!last && (
+                    <div style={{ width:2, flex:1, minHeight:34,
+                      background: st.done ? T.positive + "66" : T.border }} />
+                  )}
+                </div>
+                {/* Content */}
+                <div style={{ paddingBottom: last ? 0 : SP.lg, minWidth:0, flex:1 }}>
+                  <div style={{ display:"flex", alignItems:"baseline", gap:SP.sm, flexWrap:"wrap" }}>
+                    <span style={{ ...TYPE.h3, color: st.done || st.current ? T.text : T.muted }}>{st.label}</span>
+                    <Badge T={T} size="sm"
+                      color={st.done ? T.positive : st.current ? st.color : T.neutral}>{st.state}</Badge>
+                    {st.date && <span style={{ ...TYPE.caption, color:T.muted }}>{st.date}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display:"flex", alignItems:"flex-start", gap:9, marginTop:SP.md,
+          padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+          background:T.pageAlt, border:`1px solid ${T.border}` }}>
+          <AlertCircle size={13} color={T.muted} style={{ marginTop:1, flexShrink:0 }} />
+          <span style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.55 }}>
+            {isClosed
+              ? "This project has been completed and handed over. Procurement steps (PR, PO) and execution milestones aren't recorded in the portal."
+              : "Procurement steps (PR, PO) and execution milestones aren't recorded in the portal yet, so the journey ends at approval."}
+          </span>
+        </div>
+      </Surface>
+
+      <Surface T={T} pad={SP.lg}>
+        <SectionTitle T={T} icon={Clock} title="Schedule"
+          sub="Planned against actual dates for delivery" />
+        {hasSchedule ? (
+          <div style={{ display:"grid",
+            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(4, 1fr)", gap:SP.md }}>
+            {schedule.map(x => (
+              <div key={x.label}>
+                <div style={{ ...TYPE.label, color:T.muted, marginBottom:4 }}>{x.label}</div>
+                <div style={{ ...TYPE.h3, color: x.value ? (x.warn ? T.danger : T.text) : T.dim }}>
+                  {x.value || "Not set"}
+                </div>
+                {x.warn && <div style={{ ...TYPE.caption, color:T.textOf(T.danger), marginTop:2 }}>Past due</div>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState T={T} icon={Clock} compact
+            title="No schedule recorded"
+            message="Planned start and finish dates haven't been entered for this project yet." />
+        )}
+        {evm && +evm.pct_complete > 0 && (
+          <div style={{ marginTop:SP.lg }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+              <span style={{ ...TYPE.label, color:T.muted }}>Progress</span>
+              <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.text }}>{fmtP(evm.pct_complete)}</span>
+            </div>
+            <Progress T={T} value={+evm.pct_complete} max={100} color={T.info} height={8} />
+          </div>
+        )}
+      </Surface>
+    </Stack>
   );
 }
 
@@ -3715,6 +6309,17 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const [assigningPM,  setAssigningPM]  = useState(false);
   const [selectedPM,   setSelectedPM]   = useState("");
   const [savingPM,     setSavingPM]     = useState(false);
+  const [tab,          setTab]          = useState("overview");
+  const vpD = useViewport();
+
+  // PMO only manages risks now — enforced at the database (risks_write
+  // policy), not just here.
+  const canManageRisks = session?.role === "pmo";
+
+  // PMO only manages lessons too — this feature is PMO and Guest only, PM
+  // excluded entirely. Enforced at the database (lessons_write policy), not
+  // just here.
+  const canManageLessons = session?.role === "pmo";
 
   const loadDetail = async () => {
     setLoading(true); setErr(null);
@@ -3769,7 +6374,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   };
 
   if (loading) return <div style={{flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13}}>Loading project…</div>;
-  if (err)     return <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10}}><AlertCircle color="#F87171"/><span style={{color:"#F87171",fontSize:13}}>{err}</span></div>;
+  if (err)     return <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10}}><AlertCircle color={ROSE}/><span style={{color:T.textOf(ROSE),fontSize:13}}>{err}</span></div>;
   if (!evm || !details) return null;
 
   // Formatters
@@ -3778,17 +6383,17 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const fmtP  = n => n == null ? "—" : parseFloat(n).toFixed(1)+"%";
   const fmtD  = d => d ? new Date(d).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}) : "—";
   const fmtMv = n => { if(n==null)return"—"; const m=(Math.abs(parseFloat(n))/1e6).toFixed(1); return(parseFloat(n)>=0?"+":"−")+m+"M"; };
-  const cpiClr = v => v==null?T.dim:parseFloat(v)>=0.95?"#2DD4BF":parseFloat(v)>=0.85?"#F59E0B":"#F87171";
-  const varClr = v => v==null?T.dim:parseFloat(v)>=0?"#2DD4BF":"#F87171";
+  const cpiClr = v => v==null?T.dim:parseFloat(v)>=0.95?T.textOf(EMERALD):parseFloat(v)>=0.85?T.textOf(AMBER):T.textOf(ROSE);
+  const varClr = v => v==null?T.dim:parseFloat(v)>=0?T.textOf(EMERALD):T.textOf(ROSE);
 
-  const ST = { identified:{c:"#6B9AB8"}, df_review:{c:"#3B82F6"}, ed_review:{c:"#8B5CF6"}, mt_review:{c:"#A855F7"}, approved:{c:"#2DD4BF"}, closed:{c:"#6B7280"} };
+  const ST = { identified:{c:T.textOf(DATA.info)}, df_review:{c:BRAND.blue}, ed_review:{c:T.textOf(VIOLET)}, mt_review:{c:T.textOf(VIOLET)}, approved:{c:T.textOf(EMERALD)}, closed:{c:T.textOf(DATA.neutral)} };
   const stc = (ST[evm.workflow_stage]||{c:T.dim}).c;
   const stLabel = { pdd_not_submitted:"PDD Not Submitted", identified:"PDD Submitted", df_review:"DF Review", ed_review:"ED Review", mt_review:"MT Review", approved:"Approved", closed:"Closed" }[evm.workflow_stage] || evm.workflow_stage;
 
-  const MS = { done:{icon:"✓",c:"#2DD4BF"}, in_progress:{icon:"◉",c:GOLD}, pending:{icon:"○",c:T.dim} };
+  const MS = { done:{icon:"✓",c:T.textOf(EMERALD)}, in_progress:{icon:"◉",c:GOLD}, pending:{icon:"○",c:T.dim} };
 
   const Card = ({title, children}) => (
-    <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"20px 22px"}}>
+    <div style={{background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 22px"}}>
       <div style={{fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${T.border}`}}>
         {title}
       </div>
@@ -3804,60 +6409,140 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   );
 
   const scheduleStatus = evm.schedule_flag === "on_time" ? "On Schedule" : evm.schedule_flag === "delayed" ? "Delayed" : "Not Started";
-  const scheduleColor  = evm.schedule_flag === "on_time" ? "#2DD4BF"    : evm.schedule_flag === "delayed" ? "#F59E0B" : T.dim;
+  const scheduleColor  = evm.schedule_flag === "on_time" ? EMERALD    : evm.schedule_flag === "delayed" ? AMBER : T.dim;
   const budgetStatus   = evm.budget_flag   === "within"  ? "On Budget"  : evm.budget_flag   === "over"    ? "Over Budget" : "Not Started";
-  const budgetColor    = evm.budget_flag   === "within"  ? "#2DD4BF"    : evm.budget_flag   === "over"    ? "#F87171" : T.dim;
+  const budgetColor    = evm.budget_flag   === "within"  ? EMERALD    : evm.budget_flag   === "over"    ? ROSE : T.dim;
 
   return (
-    <div style={{flex:1, overflow:"auto"}}>
+    <div className="pmo-scroll" style={{ flex:1, overflowY:"auto", overflowX:"hidden", background:T.page }}>
 
-      {/* ── Header ── */}
-      <div style={{padding:"14px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg}}>
-        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:5, background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:12, marginBottom:10, padding:0}}>
-          <ChevronRight size={13} style={{transform:"rotate(180deg)"}} />
+      {/* ── COMMAND-CENTRE HEADER ── */}
+      {/* Everything an officer needs to identify and situate the project,
+          without scrolling: who it is, where it sits, and what it's worth. */}
+      <div style={{
+        background:T.hero, borderBottom:`1px solid ${T.heroBorder}`,
+        padding: vpD.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.lg}px ${SP.xxl}px`,
+        position:"relative", overflow:"hidden", flexShrink:0,
+      }}>
+        <div className="pmo-drift" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
+          <div style={{ position:"absolute", top:"-60%", right:"4%", width:320, height:320, borderRadius:"50%",
+            background:`radial-gradient(circle, ${T.heroGlowA} 0%, transparent 68%)` }} />
+        </div>
+
+        <button onClick={onBack} className="pmo-focusable" style={{
+          display:"inline-flex", alignItems:"center", gap:5, background:"none", border:"none",
+          cursor:"pointer", color:T.heroFgSoft, ...TYPE.caption,
+          marginBottom:SP.md, padding:0, position:"relative",
+        }}>
+          <ChevronRight size={13} style={{ transform:"rotate(180deg)" }} />
           Back to {returnLabel || "Projects"}
         </button>
-        <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16}}>
-          <div>
-            <div style={{fontSize:11, color:T.dim, fontFamily:"monospace", marginBottom:3}}>{evm.code}</div>
-            <div style={{fontSize:21, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif", lineHeight:1.2}}>{evm.name}</div>
+
+        <div data-tour="detail-hero" style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
+          gap:SP.lg, flexWrap:"wrap", position:"relative" }}>
+          <div style={{ minWidth:0, flex:"1 1 320px" }}>
+            <div style={{ ...TYPE.mono, color:T.heroFgMuted, marginBottom:5 }}>
+              {evm.code && evm.code !== "-" ? evm.code : "No project ID assigned"}
+            </div>
+            <h2 style={{ ...TYPE.display, fontSize: vpD.isCompact ? 21 : 27, color:T.heroFg,
+              margin:0, lineHeight:1.2 }}>{evm.name}</h2>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:SP.md, flexWrap:"wrap" }}>
+              <Badge T={T} color={STAGE_META[evm.workflow_stage]?.color || T.neutral}>
+                {STAGE_META[evm.workflow_stage]?.label || evm.workflow_stage || "—"}
+              </Badge>
+              {evm.priority && (
+                <Badge T={T} color={PRIORITY_META[evm.priority]?.color || T.neutral} dot>
+                  {PRIORITY_META[evm.priority]?.label || evm.priority}
+                </Badge>
+              )}
+              {evm.is_carry_forward && <Badge T={T} color={T.violet}>Carry forward</Badge>}
+              {details.fiscal_year && (
+                <span style={{ ...TYPE.caption, color:T.heroFgMuted }}>{details.fiscal_year}</span>
+              )}
+              {details.segments?.name && (
+                <span style={{ ...TYPE.caption, color:T.heroFgMuted }}>· {details.segments.name}</span>
+              )}
+            </div>
           </div>
-          <div style={{display:"flex", gap:8, alignItems:"center", flexShrink:0, flexWrap:"wrap", justifyContent:"flex-end"}}>
+
+          <div style={{ display:"flex", gap:SP.xl, alignItems:"flex-start", flexWrap:"wrap" }}>
+            <div>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>DF Recommended</div>
+              <div style={{ ...TYPE.metricSm, color:T.heroFg }}>{fmtFull(details.df_recommended_amount)}</div>
+            </div>
+            <div>
+              <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved budget</div>
+              <div style={{ ...TYPE.metricSm, color: +evm.bac > 0 ? BRAND.gold : T.heroFgDim }}>
+                {fmtFull(evm.bac)}
+              </div>
+            </div>
             {onGoToDiscussion && (
-              <button onClick={()=>onGoToDiscussion(projectId)} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 13px",borderRadius:20,background:commentCount>0?"rgba(248,113,113,0.1)":T.card2,border:`1px solid ${commentCount>0?"rgba(248,113,113,0.4)":T.border}`,color:commentCount>0?"#F87171":T.muted,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"Inter,sans-serif"}}>
-                💬 {commentCount>0?`Discussion (${commentCount})`:"Start Discussion"}
-              </button>
+              <Button T={T} variant={commentCount > 0 ? "accent" : "ghost"}
+                tone={commentCount > 0 ? T.warning : undefined}
+                icon={MessageSquare} onClick={() => onGoToDiscussion(projectId)}
+                style={commentCount > 0 ? undefined : { color:T.heroFgSoft, borderColor:T.heroDivider }}>
+                {commentCount > 0 ? `Discussion (${commentCount})` : "Start discussion"}
+              </Button>
             )}
-            {evm.is_carry_forward && <span style={{fontSize:9, fontWeight:700, background:"rgba(216,152,64,0.15)", color:GOLD, padding:"3px 8px", borderRadius:6}}>CARRY FORWARD</span>}
-            <span style={{fontSize:12, fontWeight:600, color:stc, background:`${stc}20`, padding:"4px 12px", borderRadius:20}}>{stLabel}</span>
-            {evm.priority && <span style={{fontSize:12, color:T.muted}}>{PRIORITY_LABEL[evm.priority]||evm.priority}</span>}
           </div>
         </div>
       </div>
 
-      {/* ── KPI strip ── */}
-      <div style={{padding:"12px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:0, flexWrap:"wrap"}}>
+      {/* ── PERFORMANCE STRIP ── */}
+      <div style={{
+        padding: vpD.isCompact ? `${SP.md}px ${SP.lg}px` : `${SP.md}px ${SP.xxl}px`,
+        borderBottom:`1px solid ${T.border}`, background:T.surface,
+        display:"grid", gap:SP.md,
+        gridTemplateColumns: vpD.isCompact ? "repeat(2, 1fr)" : "repeat(auto-fit, minmax(112px, 1fr))",
+      }}>
         {[
-          {label:"BAC",       value:fmtM(evm.bac),            c:GOLD},
-          {label:"Released",  value:fmtM(evm.amount_released), c:T.text},
-          {label:"Progress",  value:fmtP(evm.pct_complete),   c:T.text},
-          {label:"CPI",       value:fmtR(evm.cpi),            c:cpiClr(evm.cpi)},
-          {label:"SPI",       value:fmtR(evm.spi),            c:cpiClr(evm.spi)},
-          {label:"EAC",       value:fmtM(evm.eac),            c:T.text},
-          {label:"Schedule",  value:scheduleStatus,            c:scheduleColor},
-          {label:"Budget",    value:budgetStatus,              c:budgetColor},
-        ].map(({label,value,c},i) => (
-          <div key={label} style={{textAlign:"center", padding:"0 16px", borderRight:i<7?`1px solid ${T.border}`:"none"}}>
-            <div style={{fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1.5, marginBottom:3}}>{label}</div>
-            <div style={{fontSize:18, fontWeight:700, color:c, fontFamily:"DM Serif Display,serif", lineHeight:1, whiteSpace:"nowrap"}}>{value}</div>
+          { label:"Released",  value:fmtFull(evm.amount_released), c:T.text },
+          { label:"Progress",  value:fmtP(evm.pct_complete),    c:T.text },
+          { label:"CPI",       value:fmtR(evm.cpi),             c:cpiClr(evm.cpi) },
+          { label:"SPI",       value:fmtR(evm.spi),             c:cpiClr(evm.spi) },
+          { label:"EAC",       value:fmtFull(evm.eac),          c:T.text },
+          { label:"Schedule",  value:scheduleStatus,            c:scheduleColor },
+          { label:"Budget",    value:budgetStatus,              c:budgetColor },
+        ].map(({ label, value, c }) => (
+          <div key={label}>
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:4 }}>{label}</div>
+            <div style={{ ...TYPE.metricSm, fontSize:17, color:c, whiteSpace:"nowrap" }}>{value}</div>
           </div>
         ))}
       </div>
 
+      {/* ── SECTION TABS ── */}
+      <div className="pmo-scroll" style={{ padding: vpD.isCompact ? `0 ${SP.lg}px` : `0 ${SP.xxl}px`, background:T.surface,
+        overflowX: vpD.isCompact ? "auto" : "visible", overflowY:"visible" }}>
+        <TabsUI T={T} active={tab} onChange={setTab} isMobile={vpD.isCompact}
+          tabs={[
+            { id:"overview",   label:"Overview",   Icon:FileText },
+            { id:"financials", label:"Financials", Icon:Wallet },
+            { id:"timeline",   label:"Timeline",   Icon:Clock },
+            { id:"documents",  label:"Documents",  Icon:ClipboardList, "data-tour":"detail-tabs" },
+            { id:"sitevisit",  label:"Site Visit", Icon:Camera },
+            { id:"risks",      label:"Risks",      Icon:ShieldAlert },
+            { id:"lessons",    label:"Lessons",     Icon:Lightbulb },
+          ].filter(t => !((t.id === "risks" || t.id === "lessons") && session?.role === "project_manager"))} />
+      </div>
+
+      {tab === "timeline" && (
+        <div data-tour="detail-timeline" style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
+          <ProjectTimeline T={T} p={details} evm={evm} isCompact={vpD.isCompact} />
+        </div>
+      )}
+
       {/* ── Content grid ── */}
-      <div style={{padding:"20px 24px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:16}}>
+      {/* Overview and Financials share the grid; each card opts into a tab so
+          the same markup serves both without duplication. */}
+      <div style={{
+        padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px`,
+        display: tab === "timeline" ? "none" : "grid",
+        gridTemplateColumns: vpD.isCompact ? "1fr" : "1fr 1fr", gap:SP.lg, alignItems:"start",
+      }}>
 
         {/* Overview */}
+        <div style={{ display: tab === "overview" ? "block" : "none" }}>
         <Card title="Project Overview">
           <Row label="Sector"       value={details.sectors?.name    || "—"} />
           <Row label="Region"       value={details.regions?.name    || "—"} />
@@ -3883,49 +6568,57 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             return details.duration_months ? `${details.duration_months} months` : "—";
           })()} />
           {details.notes && (
-            <div style={{marginTop:12, padding:"10px 12px", background:T.card2, borderRadius:8, fontSize:12, color:T.muted, lineHeight:1.6}}>
+            <div style={{marginTop:12, padding:"10px 12px", background:T.card2, borderRadius:R.md, fontSize:12, color:T.muted, lineHeight:1.6}}>
               {details.notes}
             </div>
           )}
         </Card>
+        </div>
 
         {/* Financial */}
+        <div style={{ display: tab === "financials" ? "block" : "none" }}>
         <Card title="Financial Summary (PKR)">
-          <Row label="SU Requested"     value={fmtM(details.su_requested_amount)} />
-          <Row label="DF Recommended"   value={fmtM(details.df_recommended_amount)} />
+          <Row label="SU Requested"     value={fmtFull(details.su_requested_amount)} />
+          <Row label="DF Recommended"   value={fmtFull(details.df_recommended_amount)} />
           {parseFloat(details.su_requested_amount) !== parseFloat(details.df_recommended_amount) && (
-            <Row label="Budget Reduction" value={fmtM(details.su_requested_amount - details.df_recommended_amount)} vc="#F59E0B" />
+            <Row label="Budget Reduction" value={fmtFull(details.su_requested_amount - details.df_recommended_amount)} vc={AMBER} />
           )}
-          <Row label="BAC (Sanctioned)" value={fmtM(details.bac)} vc={GOLD} />
+          <Row label="BAC (Sanctioned)" value={fmtFull(details.bac)} vc={GOLD} />
           <div style={{margin:"10px 0", height:1, background:T.border}} />
-          <Row label="Amount Released"  value={fmtM(details.amount_released)} />
+          <Row label="Amount Released"  value={fmtFull(details.amount_released)} />
           <Row label="Budget Released Date"
             value={details.budget_release_date
               ? new Date(details.budget_release_date).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})
               : "—"}
             vc={details.budget_release_date ? T.text : T.dim} />
-          <Row label="Payments Made"    value={fmtM(details.payments_made)} />
-          <Row label="Budget Remaining" value={fmtM(parseFloat(details.bac||0) - parseFloat(details.amount_released||0))} vc="#2DD4BF" />
+          <Row label="Payments Made"    value={fmtFull(details.payments_made)} />
+          <Row label="Actual Cost"
+            value={parseFloat(details.actual_cost||0) > 0 ? fmtFull(details.actual_cost) : "— not entered yet"}
+            vc={parseFloat(details.actual_cost||0) > 0 ? T.text : T.dim} />
+          <Row label="Yet to Release"   value={fmtFull(parseFloat(details.bac||0) - parseFloat(details.amount_released||0))} vc={EMERALD} />
           <div style={{margin:"10px 0", height:1, background:T.border}} />
-          <Row label="Payments Pending" value={details.payments_pending ? "Yes — awaiting transfer" : "No"} vc={details.payments_pending ? "#F59E0B" : "#2DD4BF"} />
+          <Row label="Payments Pending" value={details.payments_pending ? "Yes — awaiting transfer" : "No"} vc={details.payments_pending ? AMBER : EMERALD} />
           <Row label="Carry Forward"    value={details.is_carry_forward ? "Yes — prior FY obligation" : "No"} vc={details.is_carry_forward ? GOLD : T.muted} />
-          <Row label="Change in Scope"  value={details.scope_change ? "Yes — scope revised" : "No"} vc={details.scope_change ? "#A78BFA" : T.muted} />
+          <Row label="Change in Scope"  value={details.scope_change ? "Yes — scope revised" : "No"} vc={details.scope_change ? VIOLET : T.muted} />
         </Card>
 
+        </div>
+
         {/* EVM Analysis */}
+        <div style={{ display: tab === "financials" ? "block" : "none" }}>
         <Card title="EVM Analysis">
           {parseFloat(evm.pct_complete) > 0 ? (
             <>
               <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:16}}>
                 {[
-                  {label:"Earned Value",  value:fmtM(evm.earned_value),   sub:"EV = BAC × % done"},
-                  {label:"Planned Value", value:fmtM(evm.planned_value),  sub:"PV = BAC × elapsed"},
-                  {label:"Actual Cost",   value:fmtM(evm.amount_released),sub:"AC = Released"},
+                  {label:"Earned Value",  value:fmtFull(evm.earned_value),   sub:"EV = BAC × % done"},
+                  {label:"Planned Value", value:fmtFull(evm.planned_value),  sub:"PV = BAC × elapsed"},
+                  {label:"Actual Cost",   value: parseFloat(evm.actual_cost||0) > 0 ? fmtFull(evm.actual_cost) : "— not entered", sub:"AC = money actually spent"},
                 ].map(({label,value,sub}) => (
-                  <div key={label} style={{background:T.card2, borderRadius:8, padding:"10px", textAlign:"center"}}>
-                    <div style={{fontSize:9, color:T.dim, textTransform:"uppercase", letterSpacing:1, marginBottom:4}}>{label}</div>
-                    <div style={{fontSize:17, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif"}}>{value}</div>
-                    <div style={{fontSize:9, color:T.dim, marginTop:3}}>{sub}</div>
+                  <div key={label} style={{background:T.card2, borderRadius:R.md, padding:"10px", textAlign:"center"}}>
+                    <div style={{fontSize:10, color:T.dim, textTransform:"uppercase", letterSpacing:1, marginBottom:4}}>{label}</div>
+                    <div style={{fontSize:17, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily}}>{value}</div>
+                    <div style={{fontSize:10, color:T.dim, marginTop:3}}>{sub}</div>
                   </div>
                 ))}
               </div>
@@ -3933,8 +6626,8 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
               <Row label="SPI  (EV ÷ PV)"    value={fmtR(evm.spi)}                                     vc={cpiClr(evm.spi)} />
               <Row label="Cost Variance"      value={fmtMv(evm.cost_variance)}                          vc={varClr(evm.cost_variance)} />
               <Row label="Schedule Variance"  value={fmtMv(evm.schedule_variance)}                      vc={varClr(evm.schedule_variance)} />
-              <Row label="EAC  (BAC ÷ CPI)"  value={fmtM(evm.eac)} />
-              <Row label="VAC  (BAC − EAC)"   value={fmtMv(parseFloat(evm.bac) - parseFloat(evm.eac))} vc={varClr(parseFloat(evm.bac) - parseFloat(evm.eac))} />
+              <Row label="EAC  (BAC ÷ CPI)"  value={fmtFull(evm.eac)} />
+              <Row label="VAC  (BAC − EAC)"   value={evm.eac != null ? fmtMv(parseFloat(evm.bac) - parseFloat(evm.eac)) : "—"} vc={evm.eac != null ? varClr(parseFloat(evm.bac) - parseFloat(evm.eac)) : T.dim} />
               <Row label="Time Elapsed"       value={fmtP((parseFloat(evm.time_elapsed_fraction)||0)*100)} />
             </>
           ) : (
@@ -3946,6 +6639,9 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         </Card>
 
         {/* Person Responsible */}
+        </div>
+
+        <div style={{ display: tab === "overview" ? "block" : "none" }}>
         <Card title="Person Responsible">
           {pm ? (
             <>
@@ -3956,11 +6652,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                 <div>
                   <div style={{fontSize:15, fontWeight:700, color:T.text}}>{pm.user_profiles?.full_name || pm.user_profiles?.username || "—"}</div>
                   <div style={{fontSize:12, color:T.muted, marginTop:2}}>@{pm.user_profiles?.username}</div>
-                  <span style={{display:"inline-block", marginTop:5, fontSize:10, fontWeight:700, background:"rgba(59,130,246,0.12)", color:"#3B82F6", padding:"2px 10px", borderRadius:20}}>Project Manager</span>
+                  <span style={{display:"inline-block", marginTop:5, fontSize:10, fontWeight:700, background:"rgba(59,130,246,0.12)", color:BRAND.blue, padding:"2px 10px", borderRadius:R.pill}}>Project Manager</span>
                 </div>
               </div>
               {session?.role==="pmo" && !assigningPM && (
-                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:7, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif"}}>
+                <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Change PM
                 </button>
               )}
@@ -3969,26 +6665,26 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             <>
               <div style={{textAlign:"center", color:T.dim, fontSize:13, padding:"20px 0 14px"}}>No project manager assigned yet.</div>
               {session?.role==="pmo" && !assigningPM && (
-                <button onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:7, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif"}}>
+                <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Assign Project Manager
                 </button>
               )}
             </>
           )}
           {session?.role==="pmo" && assigningPM && (
-            <div style={{marginTop:10, padding:14, background:T.card2, borderRadius:8, border:"1px solid "+T.border}}>
+            <div style={{marginTop:10, padding:14, background:T.card2, borderRadius:R.md, border:"1px solid "+T.border}}>
               <label style={{fontSize:11, color:T.muted, fontWeight:700, letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:7}}>Select Project Manager</label>
-              <select value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:6, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", marginBottom:10, boxSizing:"border-box"}}>
+              <Select T={T} value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:R.sm, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", marginBottom:10, boxSizing:"border-box"}}>
                 <option value="">— Select PM —</option>
                 {allPMs.map(p=>(
                   <option key={p.id} value={p.id}>{p.full_name||p.username} (@{p.username})</option>
                 ))}
-              </select>
+              </Select>
               <div style={{display:"flex", gap:8}}>
-                <button onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:6, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"Inter,sans-serif"}}>
+                <button className="pmo-focusable pmo-btn" onClick={assignPM} disabled={!selectedPM||savingPM} style={{flex:2, padding:"8px", background:(!selectedPM||savingPM)?T.muted:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   {savingPM?"Saving…":"Assign"}
                 </button>
-                <button onClick={()=>{setAssigningPM(false);setSelectedPM("");}} style={{flex:1, padding:"8px", background:"none", border:"1px solid "+T.border, borderRadius:6, color:T.muted, fontSize:12, cursor:"pointer"}}>
+                <button className="pmo-focusable pmo-btn" onClick={()=>{setAssigningPM(false);setSelectedPM("");}} style={{flex:1, padding:"8px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer"}}>
                   Cancel
                 </button>
               </div>
@@ -3996,7 +6692,36 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           )}
         </Card>
 
-        <ProjectAttachments T={T} session={session} projectId={projectId} />
+        </div>
+
+        <div data-tour="detail-documents" style={{ display: tab === "documents" ? "block" : "none", gridColumn:"1 / -1" }}>
+          <ProjectAttachments T={T} session={session} projectId={projectId} kind="document" />
+        </div>
+
+        {/* Site visit media. Same component behind it — upload, delete, signed
+            URLs and the storage total are all shared; only the presentation
+            differs, supplied through `render`. Mounted only when selected, so
+            the slideshow timer does not run in a hidden tab. */}
+        <div data-tour="detail-sitevisit" style={{ display: tab === "sitevisit" ? "block" : "none", gridColumn:"1 / -1" }}>
+          {tab === "sitevisit" && (
+            <ProjectAttachments T={T} session={session} projectId={projectId} kind="site_visit"
+              render={(api) => <SiteVisitGallery T={T} {...api} />} />
+          )}
+        </div>
+
+        {tab === "risks" && session?.role !== "project_manager" && (
+          <div style={{ gridColumn:"1 / -1" }}>
+            <ProjectRisksPanel T={T} session={session} supa={supa} projectId={projectId}
+              canWrite={canManageRisks} />
+          </div>
+        )}
+
+        {tab === "lessons" && session?.role !== "project_manager" && (
+          <div style={{ gridColumn:"1 / -1" }}>
+            <ProjectLessonsPanel T={T} session={session} supa={supa} projectId={projectId}
+              canWrite={canManageLessons} />
+          </div>
+        )}
 
       </div>
     </div>
@@ -4006,13 +6731,14 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
 // ─── USER MANAGEMENT MODALS (module-level = stable refs, no focus loss) ───────
 function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClose, inviteLink }) {
   const [copied, setCopied] = useState(false);
+  const [showPw, setShowPw] = useState(false);
   const copyLink = () => { navigator.clipboard.writeText(inviteLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); }); };
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:480, maxHeight:"90vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif", marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Create New User</div>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:SP.xxl, animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:480, maxHeight:"90vh", overflow:"auto", boxShadow:T.shadowLg }}>
+        <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:20, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Create New User</div>
         <div style={{ marginBottom:14 }}>
           <label style={lbl}>Full Name</label>
           <input value={form.full_name} onChange={e => onChange("full_name", e.target.value)} placeholder="e.g. Ahmed Khan" style={inp} />
@@ -4027,53 +6753,84 @@ function CreateUserModal({ T, form, onChange, status, creating, onSubmit, onClos
         </div>
         <div style={{ marginBottom:20 }}>
           <label style={lbl}>Role *</label>
-          <select value={form.role} onChange={e => onChange("role", e.target.value)} style={{ ...inp, cursor:"pointer" }}>
+          <Select T={T} value={form.role} onChange={e => onChange("role", e.target.value)} style={{ ...inp, cursor:"pointer" }}>
             <option value="project_manager">Project Manager — can view assigned projects and post comments</option>
             <option value="guest">Guest — read-only view of the full portfolio</option>
-          </select>
+          </Select>
         </div>
+
+        <label style={{ display:"flex", alignItems:"flex-start", gap:9, marginBottom: form.send_email ? 20 : 14, cursor:"pointer" }}>
+          <input type="checkbox" checked={form.send_email} onChange={e => onChange("send_email", e.target.checked)}
+            style={{ marginTop:2, width:15, height:15, accentColor:GOLD, cursor:"pointer", flexShrink:0 }} />
+          <span style={{ fontSize:12.5, color:T.textSoft, lineHeight:1.5 }}>
+            Send an automatic invitation email
+            <span style={{ display:"block", fontSize:11, color:T.dim, marginTop:1 }}>
+              {form.send_email
+                ? "They'll get an email with a link to set their own password."
+                : "No email will be sent — set a password below and share it with them yourself."}
+            </span>
+          </span>
+        </label>
+
+        {!form.send_email && (
+          <div style={{ marginBottom:20 }}>
+            <label style={lbl}>Set Password *</label>
+            <div style={{ position:"relative" }}>
+              <input type={showPw ? "text" : "password"} value={form.password}
+                onChange={e => onChange("password", e.target.value)}
+                placeholder="At least 8 characters" style={{ ...inp, paddingRight:38 }} />
+              <button type="button" className="pmo-focusable" onClick={() => setShowPw(s => !s)}
+                title="Show or hide password"
+                style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)",
+                  background:"none", border:"none", color:T.dim, cursor:"pointer", display:"flex", padding:2 }}>
+                {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+        )}
+
         {status && (
-          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:13, display:"flex", alignItems:"flex-start", gap:8, background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, color:status.ok?"#2DD4BF":"#F87171" }}>
-            <span>{status.ok?"✓":"⚠"}</span><span style={{ lineHeight:1.5 }}>{status.msg}</span>
+          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", alignItems:"flex-start", gap:8, background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, color:status.ok?T.textOf(EMERALD):ROSE }}>
+            {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{ lineHeight:1.5 }}>{status.msg}</span>
           </div>
         )}
         {inviteLink && (
-          <div style={{ marginBottom:18, background:T.card2, border:`1px solid ${T.border}`, borderRadius:10, padding:"14px 16px" }}>
+          <div style={{ marginBottom:18, background:T.surfaceRaised, border:`1px solid ${T.border}`, borderRadius:R.md, boxShadow:T.shadow, padding:"14px 16px" }}>
             <div style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>
               📋 Invite Link — share this if email doesn't arrive
             </div>
             <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-              <div style={{ flex:1, fontSize:11, color:T.dim, wordBreak:"break-all", lineHeight:1.5, fontFamily:"monospace", background:T.inputBg, padding:"6px 10px", borderRadius:6, border:`1px solid ${T.inputBorder}` }}>
+              <div style={{ flex:1, fontSize:11, color:T.dim, wordBreak:"break-all", lineHeight:1.5, fontFamily:"monospace", background:T.inputBg, padding:"6px 10px", borderRadius:R.sm, border:`1px solid ${T.inputBorder}` }}>
                 {inviteLink.length > 90 ? inviteLink.slice(0,90)+"…" : inviteLink}
               </div>
-              <button onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:7, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?"#2DD4BF":T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
+              <button className="pmo-focusable pmo-btn" onClick={copyLink} style={{ flexShrink:0, padding:"7px 14px", borderRadius:R.sm, border:`1px solid ${copied?"rgba(45,212,191,0.5)":T.border}`, background:copied?"rgba(45,212,191,0.1)":"none", color:copied?T.textOf(EMERALD):T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:600, whiteSpace:"nowrap", transition:"all .2s" }}>
                 {copied?"✓ Copied":"Copy"}
               </button>
             </div>
             <div style={{ fontSize:11, color:T.dim, marginTop:8, lineHeight:1.5 }}>Link expires in 24 hours. User clicks it → sets password → logs in with their username.</div>
           </div>
         )}
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>{inviteLink?"Close":"Cancel"}</button>
-          {!inviteLink && <button onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>{creating?"Creating user…":"Send Invite"}</button>}
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+          <button className="pmo-focusable pmo-btn" onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{inviteLink?"Close":"Cancel"}</button>
+          {!inviteLink && <button className="pmo-focusable pmo-btn" onClick={onSubmit} disabled={creating} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:creating?T.muted:NAVY, color:"#fff", cursor:creating?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{creating?"Creating user…":form.send_email?"Send Invite":"Create User"}</button>}
         </div>
-        {!inviteLink && <div style={{ marginTop:14, fontSize:11, color:T.dim, lineHeight:1.6 }}>You'll get the invite link regardless of whether the email arrives.</div>}
+        {!inviteLink && form.send_email && <div style={{ marginTop:14, fontSize:11, color:T.dim, lineHeight:1.6 }}>You'll get the invite link regardless of whether the email arrives.</div>}
       </div>
     </div>
   );
 }
 
 function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search, onSearch, saving, onSave, onClose }) {
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const q = search.toLowerCase();
   const filtered = sortRealCodeFirst(q ? projects.filter(p => p.name.toLowerCase().includes(q) || (p.code||"").toLowerCase().includes(q)) : projects);
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:460, maxHeight:"85vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif", marginBottom:4, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Assign Projects — {user.username}</div>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:SP.xxl, animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:460, maxHeight:"85vh", overflow:"auto", boxShadow:T.shadowLg }}>
+        <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:4, paddingBottom:14, borderBottom:`1px solid ${T.border}` }}>Assign Projects — {user.username}</div>
         <div style={{ fontSize:12, color:T.muted, marginBottom:12, paddingTop:10 }}>{selectedIds.size} project{selectedIds.size !== 1 ? "s" : ""} selected</div>
         <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Search by name or code…" style={{ ...inp, marginBottom:12 }} />
-        <div style={{ maxHeight:300, overflow:"auto", border:`1px solid ${T.border}`, borderRadius:8 }}>
+        <div style={{ maxHeight:300, overflow:"auto", border:`1px solid ${T.border}`, borderRadius:R.md }}>
           {filtered.map((p, i) => {
             const checked = selectedIds.has(p.id);
             return (
@@ -4083,7 +6840,7 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:10, color:T.dim, fontFamily:"monospace" }}>{p.code || "-"}</div>
-                  <div style={{ fontSize:12.5, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</div>
+                  <div data-peek={p.name} style={{ fontSize:12.5, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</div>
                 </div>
                 <span style={{ fontSize:10, color:T.dim, flexShrink:0 }}>{(p.workflow_stage||"").replace("_"," ")}</span>
               </div>
@@ -4092,8 +6849,8 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
           {filtered.length === 0 && <div style={{ padding:"20px", textAlign:"center", color:T.dim, fontSize:13 }}>No projects match.</div>}
         </div>
         <div style={{ display:"flex", gap:10, marginTop:18 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>Cancel</button>
-          <button onClick={onSave} disabled={saving} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:saving?T.muted:NAVY, color:"#fff", cursor:saving?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>
+          <button className="pmo-focusable pmo-btn" onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>Cancel</button>
+          <button className="pmo-focusable pmo-btn" onClick={onSave} disabled={saving} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:saving?T.muted:NAVY, color:"#fff", cursor:saving?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>
             {saving ? "Saving…" : `Save ${selectedIds.size} Assignment${selectedIds.size !== 1 ? "s" : ""}`}
           </button>
         </div>
@@ -4106,7 +6863,17 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
 const SUPA_FN_URL = "https://prmxkecomqqngvrmytcj.supabase.co/functions/v1";
 
 function UserManagementPage({ T, session }) {
+  const vpD = useViewport();
   const [users,          setUsers]          = useState([]);
+  // Role sorts by seniority, not alphabetically: Administrator before Guest.
+  const USER_SORT = useMemo(() => ({
+    username: u => (u.username || "").toLowerCase(),
+    fullname: u => (u.full_name || "").toLowerCase(),
+    email:    u => (u.email || "").toLowerCase(),
+    role:     u => ["pmo","project_manager","guest"].indexOf(u.role),
+    status:   u => (u.is_active ? 0 : 1),
+  }), []);
+  const { sorted: sortedUsers, sort: usort, toggle: utoggle } = useTableSort(users, USER_SORT);
   const [allAssignments, setAllAssignments] = useState([]);
   const [allProjects,    setAllProjects]    = useState([]);
   const [loading,        setLoading]        = useState(true);
@@ -4114,7 +6881,7 @@ function UserManagementPage({ T, session }) {
 
   // Create modal
   const [showCreate,    setShowCreate]    = useState(false);
-  const [form,          setForm]          = useState({ username:"", full_name:"", email:"", role:"project_manager" });
+  const [form,          setForm]          = useState({ username:"", full_name:"", email:"", role:"project_manager", send_email:true, password:"" });
   const [creating,      setCreating]      = useState(false);
   const [createStatus,  setCreateStatus]  = useState(null);
   const [inviteLink,    setInviteLink]    = useState(null); // link to share manually
@@ -4126,6 +6893,8 @@ function UserManagementPage({ T, session }) {
   const [savingAssign,     setSavingAssign]     = useState(false);
   const [confirmDelete,    setConfirmDelete]    = useState(null); // user id pending confirmation
   const [deleting,         setDeleting]         = useState(null); // user id being deleted
+  const [resettingId,      setResettingId]      = useState(null); // user id having its password reset
+  const [resettingUser,    setResettingUser]    = useState(null); // user object with the set-password form open
   const [editPhoneId,      setEditPhoneId]      = useState(null);
   const [phoneDraft,       setPhoneDraft]       = useState("");
 
@@ -4164,9 +6933,9 @@ function UserManagementPage({ T, session }) {
   // Helpers
   const getUserAssignments = uid => allAssignments.filter(a => a.user_id === uid);
   const ROLE_CFG = {
-    pmo:             { label:"Administrator",   c:GOLD },
-    project_manager: { label:"Project Manager", c:"#60A5FA" },
-    guest:           { label:"Guest",           c:"#9CA3AF" },
+    pmo:             { label:"Administrator", c:T.textOf(GOLD) },
+    project_manager: { label:"Project Manager", c:T.textOf(DATA.info) },
+    guest:           { label:"Guest",           c:T.textOf(DATA.neutral) },
   };
   const isMe = uid => uid === session.user_id;
   const setField = (k, v) => setForm(f => ({...f, [k]: v}));
@@ -4177,6 +6946,8 @@ function UserManagementPage({ T, session }) {
     if (!form.email.trim())       return setCreateStatus({ok:false, msg:"Email is required."});
     if (!form.username.trim())    return setCreateStatus({ok:false, msg:"Username is required."});
     if (!form.email.includes("@"))return setCreateStatus({ok:false, msg:"Enter a valid email address."});
+    if (!form.send_email && form.password.length < 8)
+      return setCreateStatus({ok:false, msg:"Set a password of at least 8 characters, since no invite email will be sent."});
     setCreating(true);
     try {
       const res = await fetch(`${SUPA_FN_URL}/invite-user`, {
@@ -4189,11 +6960,13 @@ function UserManagementPage({ T, session }) {
       setInviteLink(result.invite_link || null);
       setCreateStatus({
         ok:true,
-        msg: result.email_sent
+        msg: result.no_email_mode
+          ? `Account created for ${form.username}. No email was sent — they can sign in immediately with the password you set.`
+          : result.email_sent
           ? `Invite email sent to ${form.email}.`
           : `User created, but the invite email did not send${result.email_error ? ` (${result.email_error})` : ""}. Use the link below to share the invitation directly.`
       });
-      setForm({ username:"", full_name:"", email:"", role:"project_manager" });
+      setForm({ username:"", full_name:"", email:"", role:"project_manager", send_email:true, password:"" });
       load();
     } catch(e) { setCreateStatus({ok:false, msg:e.message}); }
     setCreating(false);
@@ -4208,6 +6981,25 @@ function UserManagementPage({ T, session }) {
       }, session.access_token);
       load();
     } catch(_) {}
+  };
+
+  // ── Reset password ────────────────────────────────────────────────────────
+  // PMO types the exact password and sets it directly — no generated
+  // password, no email. The endpoint still refuses PMO targets even if this
+  // UI is bypassed entirely.
+  const submitPasswordReset = async (user, newPassword) => {
+    setResettingId(user.id);
+    try {
+      const res = await fetch(`${SUPA_FN_URL}/reset-user-password`, {
+        method:"POST",
+        headers:{ "Authorization":`Bearer ${session.access_token}`, "Content-Type":"application/json", "apikey":SUPA_KEY },
+        body: JSON.stringify({ user_id: user.id, new_password: newPassword }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Reset failed");
+      setResettingUser(null);
+    } catch(e) { alert("Could not set password: " + e.message); }
+    setResettingId(null);
   };
 
   // ── Delete user ───────────────────────────────────────────────────────────
@@ -4257,22 +7049,20 @@ function UserManagementPage({ T, session }) {
   };
 
   // ── Shared table styles ────────────────────────────────────────────────────
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const th  = { fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 16px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" };
   const td  = { padding:"12px 16px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" };
 
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
 
       {/* Header */}
-      <div style={{ padding:"12px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
-        <div style={{ fontSize:13, color:T.muted }}>{users.length} users · PMO creates all accounts</div>
+      <div className="pmo-in" style={{ ...pageBar(T), gap:SP.md }}>
+        <div style={{ ...TYPE.bodySm, color:T.muted }}>
+          {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
+        </div>
         <div style={{ marginLeft:"auto" }}>
-          <button onClick={() => { setShowCreate(true); setCreateStatus(null); }} style={{
-            display:"flex", alignItems:"center", gap:7, padding:"8px 18px", background:NAVY, color:"#fff",
-            border:"none", borderRadius:8, cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif",
-            boxShadow:"0 3px 12px rgba(24,80,120,0.3)",
-          }}>+ Create User</button>
+          <Button T={T} variant="primary" icon={Plus} onClick={() => { setShowCreate(true); setCreateStatus(null); }}>Create user</Button>
         </div>
       </div>
 
@@ -4280,24 +7070,24 @@ function UserManagementPage({ T, session }) {
       {loading ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading users…</div>
       ) : err ? (
-        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#F87171", fontSize:13 }}>{err}</div>
+        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.textOf(ROSE), fontSize:13 }}>{err}</div>
       ) : (
-        <div style={{ flex:1, overflow:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }), overflowX: vpD.isCompact ? "auto" : "visible" }}>
+          <table style={{ ...tableStyles(T).table, minWidth: vpD.isCompact ? 800 : undefined }}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
-                <th style={th}>Username</th>
-                <th style={th}>Full Name</th>
-                <th style={th}>Email</th>
+                <SortHeader T={T} label="Username" sortKey="username" sort={usort} onToggle={utoggle} />
+                <SortHeader T={T} label="Full Name" sortKey="fullname" sort={usort} onToggle={utoggle} />
+                <SortHeader T={T} label="Email" sortKey="email" sort={usort} onToggle={utoggle} />
                 <th style={th}>WhatsApp No.</th>
-                <th style={th}>Role</th>
-                <th style={th}>Status</th>
+                <SortHeader T={T} label="Role" sortKey="role" sort={usort} onToggle={utoggle} />
+                <SortHeader T={T} label="Status" sortKey="status" sort={usort} onToggle={utoggle} />
                 <th style={th}>Assigned Projects</th>
                 <th style={{ ...th, textAlign:"right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u, i) => {
+              {sortedUsers.map((u, i) => {
                 const rc = ROLE_CFG[u.role] || { label:u.role, c:T.dim };
                 const assigns = getUserAssignments(u.id);
                 const me = isMe(u.id);
@@ -4323,7 +7113,7 @@ function UserManagementPage({ T, session }) {
                           onBlur={()=>savePhone(u.id)}
                           onKeyDown={e=>{ if(e.key==="Enter") savePhone(u.id); if(e.key==="Escape") setEditPhoneId(null); }}
                           placeholder="+923001234567"
-                          style={{ width:150, background:T.inputBg, border:"1px solid "+GOLD, borderRadius:5, padding:"4px 7px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif", outline:"none" }}
+                          style={{ width:150, background:T.inputBg, border:"1px solid "+GOLD, borderRadius:R.sm, padding:"4px 7px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none" }}
                         />
                       ) : (
                         <span
@@ -4334,51 +7124,58 @@ function UserManagementPage({ T, session }) {
                       )}
                     </td>
                     <td style={td}>
-                      <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:20 }}>{rc.label}</span>
+                      <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:R.pill }}>{rc.label}</span>
                     </td>
                     <td style={td}>
-                      <span style={{ fontSize:11, fontWeight:700, color:u.is_active?"#2DD4BF":"#F87171", background:u.is_active?"rgba(45,212,191,0.12)":"rgba(248,113,113,0.12)", padding:"3px 10px", borderRadius:20 }}>
+                      <span style={{ fontSize:11, fontWeight:700, color:u.is_active?T.textOf(EMERALD):ROSE, background:u.is_active?"rgba(45,212,191,0.12)":"rgba(248,113,113,0.12)", padding:"3px 10px", borderRadius:R.pill }}>
                         {u.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
                     <td style={{ ...td, fontSize:12, color:T.muted }}>
-                      {u.role === "pmo"   ? <span style={{ color:GOLD, fontSize:11, fontWeight:600 }}>All projects</span> :
-                       u.role === "guest" ? <span style={{ color:T.muted, fontSize:11 }}>All projects (can comment)</span> :
+                      {u.role === "pmo"   ? <span style={{ color:(T.goldText || GOLD), fontSize:11, fontWeight:600 }}>All projects</span> :
+                       u.role === "guest" ? (
+                         assigns.length === 0
+                           ? <span style={{ color:T.muted, fontSize:11 }}>All projects (can comment)</span>
+                           : <span style={{ color:T.text, fontSize:12 }}>All projects (can comment) · PM on {assigns.length}</span>
+                       ) :
                        assigns.length === 0 ? <span style={{ color:T.dim, fontSize:11 }}>None assigned</span> :
                        <span style={{ color:T.text, fontSize:12 }}>{assigns.length} project{assigns.length!==1?"s":""}</span>}
                     </td>
                     <td style={{ ...td, textAlign:"right" }}>
                       {!me && (
                         <div style={{ display:"flex", gap:8, justifyContent:"flex-end", alignItems:"center" }}>
-                          {u.role === "project_manager" && (
-                            <button onClick={() => openAssign(u)} style={{ padding:"5px 12px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
-                              Assign Projects
-                            </button>
+                          {(u.role === "project_manager" || u.role === "guest") && (
+                            <Button T={T} variant="ghost" size="sm" icon={FolderKanban} onClick={() => openAssign(u)}
+                              title={u.role === "guest" ? "Give this Guest PM-level management on specific projects — they keep full portfolio visibility everywhere else" : undefined}>
+                              Assign
+                            </Button>
                           )}
                           {u.role !== "pmo" && (
-                            <button onClick={() => toggleActive(u)} style={{
-                              padding:"5px 12px", borderRadius:7, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif",
-                              border:`1px solid ${u.is_active?"rgba(248,113,113,0.4)":"rgba(45,212,191,0.4)"}`,
-                              background:"none", color:u.is_active?"#F87171":"#2DD4BF",
-                            }}>
+                            <Button T={T} variant="ghost" size="sm" tone={u.is_active ? undefined : T.positive}
+                              onClick={() => toggleActive(u)}
+                              title={u.is_active ? "Suspend this account — reversible" : "Restore access for this account"}>
                               {u.is_active ? "Deactivate" : "Reactivate"}
-                            </button>
+                            </Button>
+                          )}
+                          {u.role !== "pmo" && (
+                            <Button T={T} variant="ghost" size="sm"
+                              onClick={() => setResettingUser(u)}
+                              title="Set a new password for this account directly">
+                              Reset Password
+                            </Button>
                           )}
                           {u.role !== "pmo" && (
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                                <span style={{ fontSize:11, color:T.muted }}>Sure?</span>
-                                <button onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:7, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:"#F87171", fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", fontWeight:700 }}>
+                                <span style={{ ...TYPE.caption, color:T.textOf(T.danger), fontWeight:600 }}>Permanent —</span>
+                                <button className="pmo-focusable pmo-btn" onClick={() => deleteUser(u)} disabled={deleting === u.id} style={{ padding:"5px 12px", borderRadius:R.sm, border:"1px solid #F87171", background:"rgba(248,113,113,0.12)", color:T.textOf(ROSE), fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily, fontWeight:700 }}>
                                   {deleting === u.id ? "Deleting…" : "Yes, Delete"}
                                 </button>
-                                <button onClick={() => setConfirmDelete(null)} style={{ padding:"5px 8px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif" }}>
-                                  Cancel
-                                </button>
+                                <Button T={T} variant="ghost" size="sm" onClick={() => setConfirmDelete(null)}>Cancel</Button>
                               </div>
                             ) : (
-                              <button onClick={() => setConfirmDelete(u.id)} style={{ padding:"5px 12px", borderRadius:7, border:"1px solid rgba(248,113,113,0.3)", background:"none", color:"#F87171", fontSize:12, cursor:"pointer", fontFamily:"Inter,sans-serif", opacity:0.7 }}>
-                                Delete
-                              </button>
+                              <Button T={T} variant="danger" size="sm" icon={Trash2}
+                                onClick={() => setConfirmDelete(u.id)}>Delete</Button>
                             )
                           )}
                         </div>
@@ -4402,7 +7199,7 @@ function UserManagementPage({ T, session }) {
           creating={creating}
           inviteLink={inviteLink}
           onSubmit={createUser}
-          onClose={() => { setShowCreate(false); setCreateStatus(null); setInviteLink(null); setForm({ username:"", full_name:"", email:"", role:"project_manager" }); }}
+          onClose={() => { setShowCreate(false); setCreateStatus(null); setInviteLink(null); setForm({ username:"", full_name:"", email:"", role:"project_manager", send_email:true, password:"" }); }}
         />
       )}
 
@@ -4420,7 +7217,76 @@ function UserManagementPage({ T, session }) {
           onClose={() => setAssigningUser(null)}
         />
       )}
+      {resettingUser && (
+        <SetUserPasswordModal T={T} user={resettingUser} loading={resettingId === resettingUser.id}
+          onClose={() => setResettingUser(null)}
+          onSubmit={(pw) => submitPasswordReset(resettingUser, pw)} />
+      )}
     </div>
+  );
+}
+
+function SetUserPasswordModal({ T, user, loading, onClose, onSubmit }) {
+  const [np, setNp] = useState("");
+  const [cp, setCp] = useState("");
+  const [showNp, setShowNp] = useState(false);
+  const [showCp, setShowCp] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const inp = { width:"100%", boxSizing:"border-box", background:T.inputBg, border:`1px solid ${T.inputBorder}`,
+    borderRadius:R.md, padding:"11px 40px 11px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily,
+    outline:"none" };
+  const eyeBtn = { position:"absolute", right:10, top:"50%", transform:"translateY(-50%)",
+    background:"none", border:"none", color:T.dim, cursor:"pointer", display:"flex", padding:2 };
+
+  const submit = () => {
+    setErr(null);
+    if (!np)          return setErr("Enter a password.");
+    if (np.length<8)  return setErr("Password must be at least 8 characters.");
+    if (np !== cp)    return setErr("Passwords don't match.");
+    onSubmit(np);
+  };
+
+  return (
+    <Modal T={T} title={`Set a password for ${user.username}`} onClose={onClose}>
+      <div style={{ ...TYPE.bodySm, color:T.textSoft, marginBottom:SP.md, lineHeight:1.6 }}>
+        This takes effect immediately — {user.username} will need to sign in with whatever you set here.
+        No email is sent; share it with them directly.
+      </div>
+
+      {err && (
+        <div style={{ display:"flex", alignItems:"flex-start", gap:6, marginBottom:SP.md,
+          padding:"8px 12px", borderRadius:R.sm, background:T.danger+"14", ...TYPE.caption, color:T.textOf(T.danger) }}>
+          <AlertCircle size={13} style={{ flexShrink:0, marginTop:1 }} /> {err}
+        </div>
+      )}
+
+      <div style={{ marginBottom:14 }}>
+        <label style={{ display:"block", ...TYPE.label, color:T.muted, marginBottom:6 }}>New Password</label>
+        <div style={{ position:"relative" }}>
+          <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="At least 8 characters" style={inp} autoFocus />
+          <button className="pmo-focusable" title="Show or hide password" onClick={()=>setShowNp(s=>!s)} style={eyeBtn}>
+            {showNp ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
+      </div>
+      <div style={{ marginBottom:20 }}>
+        <label style={{ display:"block", ...TYPE.label, color:T.muted, marginBottom:6 }}>Confirm Password</label>
+        <div style={{ position:"relative" }}>
+          <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&submit()} style={inp} />
+          <button className="pmo-focusable" title="Show or hide password" onClick={()=>setShowCp(s=>!s)} style={eyeBtn}>
+            {showCp ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", gap:SP.sm }}>
+        <Button T={T} variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+        <Button T={T} variant="primary" full loading={loading} onClick={submit}>Set Password</Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -4448,6 +7314,32 @@ function RestoreSnapshotButton({ T, session, entry }) {
         data:{project_count:current.length,projects:current,captured_at:new Date().toISOString()}
       }),headers:{"Prefer":"return=representation"}},session.access_token);
       const newSnapId = newSnap[0]?.id;
+
+      // 3. Delete all current projects.
+      // Same CASCADE hazard as the Excel import: a snapshot restore detaches
+      // every uploaded file just as thoroughly, and snapshots do not contain
+      // the files, so restoring cannot bring them back either.
+      const atRisk2 = await supa(
+        "/rest/v1/project_attachments?select=id,kind,project_id",
+        {}, session.access_token).catch(() => []);
+      const rows2 = Array.isArray(atRisk2) ? atRisk2 : [];
+      if (rows2.length > 0 && current.length > 0) {
+        const d = rows2.filter(a => a.kind === "document").length;
+        const m = rows2.filter(a => a.kind === "site_visit").length;
+        const affected = new Set(rows2.map(a => a.project_id)).size;
+        const parts = [];
+        if (d) parts.push(d + " document" + (d === 1 ? "" : "s"));
+        if (m) parts.push(m + " site visit file" + (m === 1 ? "" : "s"));
+        const proceed = window.confirm(
+          "Restoring this snapshot replaces every project.\n\n" +
+          parts.join(" and ") + " attached to " + affected + " project" +
+          (affected === 1 ? "" : "s") + " will be detached. Snapshots do not " +
+          "include uploaded files, so restoring will not bring them back.\n\n" +
+          "The files stay in storage and can be re-linked by hand.\n\n" +
+          "Continue with the restore?"
+        );
+        if (!proceed) { setMsg(null); return; }
+      }
 
       // 3. Delete all current projects
       setMsg("Removing current data…");
@@ -4483,21 +7375,21 @@ function RestoreSnapshotButton({ T, session, entry }) {
     } catch(e) { setMsg(e.message); setState("error"); }
   };
 
-  if (state === "done") return <div style={{marginTop:6,fontSize:11,color:"#2DD4BF"}}>✓ Restored — refresh Projects tab to see changes.</div>;
-  if (state === "error") return <div style={{marginTop:6,fontSize:11,color:"#F87171"}}>✗ {msg}</div>;
+  if (state === "done") return <div style={{marginTop:6,fontSize:11,color:T.textOf(EMERALD)}}>✓ Restored — refresh Projects tab to see changes.</div>;
+  if (state === "error") return <div style={{marginTop:6,fontSize:11,color:T.textOf(ROSE)}}>✗ {msg}</div>;
 
   return (
     <div style={{marginTop:6}}>
       {state === "confirming" ? (
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:"#F87171"}}>Replace ALL current projects with this snapshot?</span>
-          <button onClick={restore} style={{padding:"3px 10px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:5,color:"#F87171",fontSize:11,fontWeight:700,cursor:"pointer"}}>Yes, Restore</button>
-          <button onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:5,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
+          <span style={{fontSize:11,color:T.textOf(ROSE)}}>Replace ALL current projects with this snapshot?</span>
+          <button className="pmo-focusable pmo-btn" onClick={restore} style={{padding:"3px 10px",background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.5)",borderRadius:R.sm,color:T.textOf(ROSE),fontSize:11,fontWeight:700,cursor:"pointer"}}>Yes, Restore</button>
+          <button className="pmo-focusable pmo-btn" onClick={()=>setState("idle")} style={{padding:"3px 8px",background:"none",border:"1px solid "+T.border,borderRadius:R.sm,color:T.muted,fontSize:11,cursor:"pointer"}}>Cancel</button>
         </div>
       ) : state === "restoring" ? (
-        <div style={{fontSize:11,color:"#2DD4BF"}}>⏳ {msg}</div>
+        <div style={{...TYPE.caption, color:T.textOf(T.positive), display:"flex", alignItems:"center", gap:5}}><Spinner size={11} color={T.positive} />{msg}</div>
       ) : (
-        <button onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:5,color:GOLD,fontSize:11,cursor:"pointer"}}>
+        <button className="pmo-focusable pmo-btn" onClick={()=>setState("confirming")} style={{marginTop:2,padding:"3px 10px",background:"none",border:"1px solid rgba(216,152,64,0.4)",borderRadius:R.sm,color:(T.goldText || GOLD),fontSize:11,cursor:"pointer"}}>
           📦 Restore this version ({entry.details.imported} projects)
         </button>
       )}
@@ -4508,6 +7400,13 @@ function RestoreSnapshotButton({ T, session, entry }) {
 // ─── ACTIVITY LOG ─────────────────────────────────────────────────────────────
 function ActivityLogPage({ T, session }) {
   const [entries,      setEntries]      = useState([]);
+  const LOG_SORT = useMemo(() => ({
+    when:   e => e.created_at || "",
+    actor:  e => (e.actor_name || "").toLowerCase(),
+    action: e => (e.action || "").toLowerCase(),
+    type:   e => (e.entity_type || "").toLowerCase(),
+  }), []);
+  const { sorted: sortedEntries, sort: lsort, toggle: ltoggle } = useTableSort(entries, LOG_SORT);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [actionFilter, setActionFilter] = useState("");
@@ -4535,23 +7434,27 @@ function ActivityLogPage({ T, session }) {
   const clearFilters = () => { setActionFilter(""); setEntityFilter(""); setDateFrom(""); setDateTo(""); };
 
   // ── Display config ─────────────────────────────────────────────────────────
+  // Fill stays the saturated hue; the label resolves through the AA-safe map,
+  // which is what these hand-rolled badges were missing. `dot` keeps the marker
+  // colour available for the timeline rail.
+  const A = (hue, label) => ({ c: T.textOf(hue), dot: hue, bg: `${hue}${T.badge}`, label });
   const ACTION_CFG = {
-    created:          { c:"#2DD4BF", bg:"rgba(45,212,191,0.12)",  label:"Created" },
-    updated:          { c:"#60A5FA", bg:"rgba(96,165,250,0.12)",  label:"Updated" },
-    deleted:          { c:"#F87171", bg:"rgba(248,113,113,0.12)", label:"Deleted" },
-    stage_changed:    { c:GOLD,      bg:"rgba(216,152,64,0.12)",  label:"Stage Changed" },
-    import:           { c:"#2DD4BF", bg:"rgba(45,212,191,0.12)",  label:"Import" },
-    commented:        { c:"#A78BFA", bg:"rgba(167,139,250,0.12)", label:"Commented" },
-    comment_edited:   { c:"#60A5FA", bg:"rgba(96,165,250,0.12)",  label:"Edited" },
-    comment_deleted:  { c:"#F87171", bg:"rgba(248,113,113,0.12)", label:"Comment Deleted" },
-    assigned:         { c:"#FB923C", bg:"rgba(251,146,60,0.12)",  label:"Assigned" },
-    unassigned:       { c:"#FB923C", bg:"rgba(251,146,60,0.12)",  label:"Unassigned" },
-    assignment_updated:{ c:"#FB923C",bg:"rgba(251,146,60,0.12)",  label:"Reassigned" },
+    created:           A(EMERALD,   "Created"),
+    updated:           A(DATA.info, "Updated"),
+    deleted:           A(ROSE,      "Deleted"),
+    stage_changed:     A(GOLD,      "Stage Changed"),
+    import:            A(EMERALD,   "Import"),
+    commented:         A(VIOLET,    "Commented"),
+    comment_edited:    A(DATA.info, "Edited"),
+    comment_deleted:   A(ROSE,      "Comment Deleted"),
+    assigned:          A(AMBER,     "Assigned"),
+    unassigned:        A(AMBER,     "Unassigned"),
+    assignment_updated:A(AMBER,     "Reassigned"),
   };
   const ROLE_CFG = {
-    pmo:             { label:"Admin",   c:GOLD },
-    project_manager: { label:"PM",      c:"#60A5FA" },
-    guest:           { label:"Guest",   c:"#9CA3AF" },
+    pmo:             { label:"Admin",   c:T.textOf(GOLD) },
+    project_manager: { label:"PM",      c:T.textOf(DATA.info) },
+    guest:           { label:"Guest",   c:T.textOf(DATA.neutral) },
   };
   const ENTITY_LABELS = {
     projects:            "Project",
@@ -4587,8 +7490,8 @@ function ActivityLogPage({ T, session }) {
   };
 
   const sel = {
-    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:7,
-    padding:"7px 10px", fontSize:12, color:T.text, fontFamily:"Inter,sans-serif",
+    background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+    padding:"7px 10px", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", cursor:"pointer",
   };
   const dateInp = {
@@ -4596,18 +7499,18 @@ function ActivityLogPage({ T, session }) {
   };
 
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T.page }}>
 
       {/* ── Filter bar ── */}
-      <div style={{ padding:"12px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:10, flexShrink:0, alignItems:"center", flexWrap:"wrap" }}>
+      <div className="pmo-in" style={pageBar(T)}>
 
-        <select value={actionFilter} onChange={e=>setActionFilter(e.target.value)} style={sel}>
+        <Select T={T} value={actionFilter} onChange={e=>setActionFilter(e.target.value)} style={sel}>
           {ACTION_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </Select>
 
-        <select value={entityFilter} onChange={e=>setEntityFilter(e.target.value)} style={sel}>
+        <Select T={T} value={entityFilter} onChange={e=>setEntityFilter(e.target.value)} style={sel}>
           {ENTITY_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </Select>
 
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
           <span style={{ fontSize:11, color:T.muted }}>From</span>
@@ -4619,14 +7522,14 @@ function ActivityLogPage({ T, session }) {
         </div>
 
         {hasFilters && (
-          <button onClick={clearFilters} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif" }}>
+          <button className="pmo-focusable pmo-btn" onClick={clearFilters} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"6px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>
             Clear filters
           </button>
         )}
 
         <div style={{ marginLeft:"auto", fontSize:11, color:T.dim }}>
           {loading ? "Loading…" : `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`}
-          {entries.length === 500 && <span style={{ color:GOLD }}> · showing latest 500</span>}
+          {entries.length === 500 && <span style={{ color:(T.goldText || GOLD) }}> · showing latest 500</span>}
         </div>
       </div>
 
@@ -4635,9 +7538,9 @@ function ActivityLogPage({ T, session }) {
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading activity log…</div>
       ) : err ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
-          <AlertCircle color="#F87171"/>
-          <span style={{ color:"#F87171", fontSize:13 }}>{err}</span>
-          <button onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:6, cursor:"pointer", fontSize:12 }}>Retry</button>
+          <AlertCircle color={ROSE}/>
+          <span style={{ color:T.textOf(ROSE), fontSize:13 }}>{err}</span>
+          <button className="pmo-focusable pmo-btn" onClick={load} style={{ padding:"6px 16px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12 }}>Retry</button>
         </div>
       ) : entries.length === 0 ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10, color:T.dim }}>
@@ -4651,25 +7554,25 @@ function ActivityLogPage({ T, session }) {
               : "Actions taken in the portal — project updates, user management, comments — will appear here automatically."}
           </div>
           {hasFilters && (
-            <button onClick={clearFilters} style={{ marginTop:4, padding:"7px 18px", background:NAVY, color:"#fff", border:"none", borderRadius:7, cursor:"pointer", fontSize:12, fontFamily:"Inter,sans-serif" }}>
+            <button className="pmo-focusable pmo-btn" onClick={clearFilters} style={{ marginTop:4, padding:"7px 18px", background:NAVY, color:"#fff", border:"none", borderRadius:R.sm, cursor:"pointer", fontSize:12, fontFamily:TYPE.body.fontFamily }}>
               Clear filters
             </button>
           )}
         </div>
       ) : (
-        <div style={{ flex:1, overflow:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
+          <table style={tableStyles(T).table}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
-                <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 20px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap", minWidth:150 }}>Timestamp</th>
-                <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 14px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" }}>Actor</th>
-                <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 14px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" }}>Action</th>
-                <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 14px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2, whiteSpace:"nowrap" }}>Type</th>
+                <SortHeader T={T} label="Timestamp" sortKey="when" sort={lsort} onToggle={ltoggle} />
+                <SortHeader T={T} label="Actor" sortKey="actor" sort={lsort} onToggle={ltoggle} />
+                <SortHeader T={T} label="Action" sortKey="action" sort={lsort} onToggle={ltoggle} />
+                <SortHeader T={T} label="Type" sortKey="type" sort={lsort} onToggle={ltoggle} />
                 <th style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, padding:"9px 14px", textAlign:"left", borderBottom:`1px solid ${T.border}`, background:T.card2 }}>Summary</th>
               </tr>
             </thead>
             <tbody>
-              {entries.map((e, i) => {
+              {sortedEntries.map((e, i) => {
                 const { date, time } = fmtDT(e.created_at);
                 const ac  = ACTION_CFG[e.action] || { c:T.muted, bg:`${T.border}40`, label:e.action };
                 const rc  = ROLE_CFG[e.actor_role] || { label:e.actor_role||"—", c:T.dim };
@@ -4677,10 +7580,30 @@ function ActivityLogPage({ T, session }) {
                 const rowBg = i%2===0 ? "transparent" : T.tableRow;
                 return (
                   <tr key={e.id} style={{ background:rowBg }}>
-                    {/* Timestamp */}
-                    <td style={{ padding:"10px 20px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" }}>
-                      <div style={{ fontSize:12.5, color:T.text, fontVariantNumeric:"tabular-nums" }}>{date}</div>
-                      <div style={{ fontSize:11, color:T.dim, marginTop:2 }}>{time}</div>
+                    {/* Timestamp, on a continuous rail. The connector runs
+                        between rows so the log reads as a sequence of events
+                        rather than a grid of cells (§47). */}
+                    <td style={{ padding:"10px 20px", borderBottom:`1px solid ${T.border}`,
+                      verticalAlign:"middle", position:"relative" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:11 }}>
+                        <div style={{ position:"relative", display:"flex", flexDirection:"column",
+                          alignItems:"center", alignSelf:"stretch", flexShrink:0 }}>
+                          <span style={{
+                            width:9, height:9, borderRadius:"50%", flexShrink:0,
+                            background:ac.dot || ac.c, boxShadow:`0 0 0 3px ${(ac.dot || ac.c)}22`,
+                          }} />
+                          <span aria-hidden="true" style={{
+                            position:"absolute", top:13, bottom:-30, width:2,
+                            borderRadius:2,
+                            background:`linear-gradient(180deg, ${(ac.dot || ac.c)}55, ${T.borderStrong} 55%)`,
+                            display: i === sortedEntries.length - 1 ? "none" : "block",
+                          }} />
+                        </div>
+                        <div>
+                          <div style={{ ...TYPE.bodySm, color:T.text, fontVariantNumeric:"tabular-nums" }}>{date}</div>
+                          <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>{time}</div>
+                        </div>
+                      </div>
                     </td>
                     {/* Actor */}
                     <td style={{ padding:"10px 14px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle", whiteSpace:"nowrap" }}>
@@ -4689,7 +7612,7 @@ function ActivityLogPage({ T, session }) {
                     </td>
                     {/* Action badge */}
                     <td style={{ padding:"10px 14px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle" }}>
-                      <span style={{ display:"inline-block", padding:"3px 9px", borderRadius:20, background:ac.bg, color:ac.c, fontSize:11, fontWeight:700, whiteSpace:"nowrap" }}>
+                      <span style={{ display:"inline-block", padding:"3px 9px", borderRadius:R.pill, background:ac.bg, color:ac.c, fontSize:11, fontWeight:700, whiteSpace:"nowrap" }}>
                         {ac.label}
                       </span>
                     </td>
@@ -4735,29 +7658,29 @@ const buildTree = comments => {
 };
 
 function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
-  const ROLE = { pmo:{ c:GOLD, label:"Admin" }, project_manager:{ c:"#60A5FA", label:"PM" }, guest:{ c:"#9CA3AF", label:"Guest" } };
+  const ROLE = { pmo:{ c:T.textOf(GOLD), label:"Admin" }, project_manager:{ c:T.textOf(DATA.info), label:"PM" }, guest:{ c:T.textOf(DATA.neutral), label:"Guest" } };
   const role = comment.author_role || comment.user_profiles?.role;
-  const rc   = ROLE[role] || { c:"#9CA3AF", label:"?" };
+  const rc   = ROLE[role] || { c:T.textOf(DATA.neutral), label:"?" };
   const name = comment.author_name || comment.user_profiles?.full_name || comment.user_profiles?.username;
   const deleted = !name;
   const init = deleted ? "✕" : name[0].toUpperCase();
   return (
     <div style={{ marginLeft: depth ? 36 : 0, marginBottom:10 }}>
-      <div style={{ background:T.card2, borderRadius:10, padding:"11px 14px", border:`1px solid ${T.border}` }}>
+      <div style={{ background:T.card2, borderRadius:R.md, padding:"11px 14px", border:`1px solid ${T.border}` }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
           <div style={{ width:26, height:26, borderRadius:"50%", background:NAVY, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>{init}</div>
           <span style={{ fontSize:13, fontWeight:600, color:deleted ? T.dim : T.text }}>{deleted ? "Deleted User" : name}</span>
-          <span style={{ fontSize:10, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"2px 8px", borderRadius:20 }}>{rc.label}</span>
+          <span style={{ fontSize:10, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"2px 8px", borderRadius:R.pill }}>{rc.label}</span>
           <span style={{ fontSize:11, color:T.dim, marginLeft:"auto" }}>{timeAgo(comment.created_at)}</span>
           {onDelete && (
-            <button onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:"#F87171", display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
+            <button className="pmo-focusable pmo-btn" onClick={() => onDelete(comment)} title="Delete comment" style={{ background:"none", border:"none", cursor:"pointer", color:T.textOf(ROSE), display:"flex", padding:2, opacity:.6, marginLeft:2 }}>
               <Trash2 size={13} />
             </button>
           )}
         </div>
         <div style={{ fontSize:13.5, color:T.text, lineHeight:1.65, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{comment.body}</div>
         {!depth && onReply && (
-          <button onClick={() => onReply(comment)} style={{ marginTop:7, background:"none", border:"none", cursor:"pointer", fontSize:11, color:T.muted, padding:0, fontFamily:"Inter,sans-serif" }}>
+          <button className="pmo-focusable pmo-btn" onClick={() => onReply(comment)} style={{ marginTop:7, background:"none", border:"none", cursor:"pointer", fontSize:11, color:T.muted, padding:0, fontFamily:TYPE.body.fontFamily }}>
             ↩ Reply
           </button>
         )}
@@ -4778,23 +7701,23 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
   return (
     <div style={{ padding:"14px 20px", borderTop:`1px solid ${T.border}`, flexShrink:0, background:T.headerBg }}>
       {replyingTo && (
-        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", background:T.card2, borderRadius:6, marginBottom:8, fontSize:12, color:T.muted }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", background:T.card2, borderRadius:R.sm, marginBottom:8, fontSize:12, color:T.muted }}>
           <span>↩ Replying to <strong style={{ color:T.text }}>{replyingTo.author_name || replyingTo.user_profiles?.full_name || replyingTo.user_profiles?.username || "Deleted User"}</strong></span>
-          <button onClick={onCancelReply} style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", color:T.dim, fontSize:16, padding:0, lineHeight:1 }}>×</button>
+          <button className="pmo-focusable pmo-btn" onClick={onCancelReply} style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", color:T.dim, fontSize:16, padding:0, lineHeight:1 }}>×</button>
         </div>
       )}
       <textarea value={value} onChange={e => onChange(e.target.value)}
         placeholder="Write a comment… (Ctrl+Enter to post)"
         rows={3}
         onKeyDown={e => { if (e.key==="Enter" && (e.ctrlKey||e.metaKey)) onPost(); }}
-        style={{ width:"100%", background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", resize:"vertical", boxSizing:"border-box" }}
+        style={{ width:"100%", background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", resize:"vertical", boxSizing:"border-box" }}
       />
       <div style={{ display:"flex", justifyContent:"flex-end", marginTop:8 }}>
-        <button onClick={onPost} disabled={posting || !value.trim()} style={{
-          padding:"7px 20px", borderRadius:7, border:"none",
+        <button className="pmo-focusable pmo-btn" onClick={onPost} disabled={posting || !value.trim()} style={{
+          padding:"7px 20px", borderRadius:R.sm, border:"none",
           background: posting||!value.trim() ? T.muted : NAVY,
           color:"#fff", cursor:posting||!value.trim()?"default":"pointer",
-          fontSize:12, fontWeight:700, fontFamily:"Inter,sans-serif",
+          fontSize:12, fontWeight:700, fontFamily:TYPE.body.fontFamily,
           boxShadow: posting||!value.trim() ? "none" : "0 3px 10px rgba(24,80,120,0.3)",
         }}>{posting ? "Posting…" : "Post Comment"}</button>
       </div>
@@ -4803,6 +7726,9 @@ function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelR
 }
 
 function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChange }) {
+  const vpD = useViewport();
+  const listNear = useNear();
+  const convNear = useNear();
   const [projects,       setProjects]       = useState([]);
   const [summary,        setSummary]        = useState([]); // {id, project_id, is_read_by_pmo, created_at, user_profiles:{role}}
   const [userAssignments,setUserAssignments]= useState(new Set());
@@ -4988,7 +7914,9 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
     <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
 
       {/* ── Left sidebar ── */}
-      <div style={{ width:280, flexShrink:0, display:"flex", flexDirection:"column", borderRight:`1px solid ${T.border}`, overflow:"hidden" }}>
+      <div ref={listNear} className="pmo-near pmo-in" style={{ position:"relative", "--near-light":`${BRAND.blue}14`,
+        width: vpD.isCompact ? "100%" : 280, flexShrink:0, display: vpD.isCompact && selId ? "none" : "flex",
+        flexDirection:"column", borderRight:`1px solid ${T.border}`, overflow:"hidden" }}>
         {/* Tabs */}
         <div style={{ display:"flex", borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
           {(session.role === "pmo" ? [
@@ -4997,14 +7925,14 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
           ] : [
             { id:"all", label:"My Projects" },
           ]).map(tab => (
-            <button key={tab.id} onClick={() => setView(tab.id)} style={{
+            <button className="pmo-focusable pmo-btn" key={tab.id} onClick={() => setView(tab.id)} style={{
               flex:1, padding:"11px 0", background:"none", border:"none", borderBottom:`2px solid ${view===tab.id?GOLD:"transparent"}`,
               color:view===tab.id?GOLD:T.muted, fontSize:12.5, fontWeight:view===tab.id?700:400,
-              cursor:"pointer", fontFamily:"Inter,sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+              cursor:"pointer", fontFamily:TYPE.body.fontFamily, display:"flex", alignItems:"center", justifyContent:"center", gap:6,
             }}>
               {tab.label}
               {tab.badge > 0 && (
-                <span style={{ background:"#F87171", color:"#fff", fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:20 }}>
+                <span style={{ background:ROSE, color:"#fff", fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:R.pill }}>
                   {tab.badge}
                 </span>
               )}
@@ -5013,11 +7941,11 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
         </div>
 
         {/* Project list */}
-        <div style={{ flex:1, overflow:"auto" }}>
+        <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }) }}>
           {displayProjects.length === 0 ? (
             <div style={{ padding:"24px 16px", textAlign:"center", color:T.dim, fontSize:12, lineHeight:1.7 }}>
               {view==="inbox"
-                ? "No unread PM updates."
+                ? "No unread updates from project managers."
                 : session.role === "project_manager"
                   ? "No projects assigned to you yet.\nContact the PMO to get access."
                   : "No projects with comments yet."}
@@ -5033,15 +7961,15 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                 transition:"background .1s",
               }}>
                 <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  {cm.unread > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"#F87171", flexShrink:0 }} />}
+                  {cm.unread > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:ROSE, flexShrink:0 }} />}
                   <span style={{ fontSize:10, color:T.dim, fontFamily:"monospace", flexShrink:0 }}>{p.code || "-"}</span>
                   {cm.unread > 0 && (
-                    <span style={{ marginLeft:"auto", fontSize:10, fontWeight:700, color:"#F87171", background:"rgba(248,113,113,0.12)", padding:"1px 6px", borderRadius:20 }}>
+                    <span style={{ marginLeft:"auto", fontSize:10, fontWeight:700, color:T.textOf(ROSE), background:"rgba(248,113,113,0.12)", padding:"1px 6px", borderRadius:R.pill }}>
                       {cm.unread} new
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize:12.5, color:T.text, marginTop:2, lineHeight:1.3 }}>{p.name}</div>
+                <div data-peek={p.name} style={{ fontSize:12.5, color:T.text, marginTop:2, lineHeight:1.3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                 {cm.total > 0 && (
                   <div style={{ fontSize:11, color:T.dim, marginTop:4 }}>
                     {cm.total} comment{cm.total!==1?"s":""} · {timeAgo(cm.lastAt)}
@@ -5054,11 +7982,28 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       </div>
 
       {/* ── Right: thread ── */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
+      <div ref={convNear} className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.gold}10`,
+        flex:1, display: vpD.isCompact && !selId ? "none" : "flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
+        <div key={vpD.isCompact ? (selId || "empty") : "static"}
+          className={vpD.isCompact ? "pmo-slide-r" : ""}
+          style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
+        {vpD.isCompact && selId && (
+          <button onClick={() => { setSelId(null); setSelProject(null); }} className="pmo-focusable" style={{
+            display:"inline-flex", alignItems:"center", gap:5, background:"none", border:"none",
+            cursor:"pointer", color:T.dim, ...TYPE.caption, padding:"12px 16px 0", flexShrink:0,
+          }}>
+            <ChevronRight size={13} style={{ transform:"rotate(180deg)" }} />
+            Back to projects
+          </button>
+        )}
         {!selId ? (
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8, color:T.dim }}>
-            <div style={{ fontSize:28 }}>💬</div>
-            <div style={{ fontSize:14, fontWeight:600, color:T.text }}>Select a project to view updates</div>
+            <div style={{ width:44, height:44, borderRadius:R.lg, background:T.info+T.badge,
+              border:`1px solid ${T.info}26`, display:"flex", alignItems:"center",
+              justifyContent:"center", marginBottom:2 }}>
+              <MessageSquare size={19} color={T.info} strokeWidth={1.75} />
+            </div>
+            <div style={{ ...TYPE.h3, color:T.text }}>Select a project to view updates</div>
             <div style={{ fontSize:12, color:T.dim }}>Comments and progress updates appear here.</div>
           </div>
         ) : (
@@ -5079,7 +8024,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                   <span style={{ fontSize:12 }}>Be the first to post an update below.</span>
                 </div>
               ) : roots.map(c => (
-                <CommentBubble
+                <CommentBubble currentUserId={session.user_id}
                   key={c.id} T={T} comment={c}
                   replies={replies[c.id] || []}
                   onReply={canPost ? setReplyingTo : null}
@@ -5102,7 +8047,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                     <a key={pm.id}
                        href={`https://wa.me/${pm.phone.replace(/[^0-9]/g,"")}?text=${encodeURIComponent(msg)}`}
                        target="_blank" rel="noopener noreferrer"
-                       style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"5px 11px", background:"rgba(37,211,102,0.10)", border:"1px solid rgba(37,211,102,0.45)", borderRadius:20, color:"#25D366", fontSize:11.5, fontWeight:600, textDecoration:"none" }}>
+                       style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"5px 11px", background:"rgba(37,211,102,0.10)", border:"1px solid rgba(37,211,102,0.45)", borderRadius:R.pill, color:"#25D366", fontSize:11.5, fontWeight:600, textDecoration:"none" }}>
                       {pm.full_name || pm.username}
                     </a>
                   ))}
@@ -5118,6 +8063,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
             />
           </>
         )}
+        </div>
       </div>
     </div>
   );
@@ -5160,7 +8106,7 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
   return (
     <div style={{
       position:"absolute", left:L.left, top:L.top, width:L.w,
-      background:T.card, border:`1px solid ${T.border}`, borderRadius:11,
+      background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.md, boxShadow:T.shadow,
       padding:isLg?"16px 14px 12px":"12px 12px 10px", textAlign:"center",
       boxShadow:`0 ${isLg?4:2}px ${isLg?14:8}px rgba(0,0,0,0.12)`,
     }}>
@@ -5175,50 +8121,123 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
           fontSize:isLg?18:13, fontWeight:700, color:"#fff",
         }}>{init}</div>
       )}
-      <div style={{ fontSize:9, fontWeight:700, color:GOLD, textTransform:"uppercase", letterSpacing:1.4, marginBottom:3 }}>{title}</div>
+      <div style={{ fontSize:10, fontWeight:700, color:(T.goldText || GOLD), textTransform:"uppercase", letterSpacing:1.4, marginBottom:3 }}>{title}</div>
       <div style={{ fontSize:isLg?13:11.5, fontWeight:700, color:T.text, lineHeight:1.25, marginBottom:desc?4:0 }}>
         {name || <span style={{ color:T.dim, fontStyle:"italic", fontWeight:400, fontSize:10 }}>{isPMO?"Click ✏ to add":"—"}</span>}
       </div>
-      {desc && <div style={{ fontSize:9.5, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
+      {desc && <div style={{ fontSize:10, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
       {isPMO && (
-        <button onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
+        <button className="pmo-focusable pmo-btn" onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
       )}
     </div>
   );
 }
 
 // OrgCardInner — content-only card (parent wrapper handles absolute positioning)
+// ─── ORG CARD (§45) ──────────────────────────────────────────────────────────
+// The PMO's people, not an employee directory. Each card carries a seniority
+// accent so the hierarchy is legible from colour as well as position in the
+// chart, and the whole card responds to attention like every other surface in
+// the product rather than sitting inert.
+const ORG_ACCENT = {
+  head_pmo:    BRAND.gold,
+  manager_pmo: BRAND.gold,
+  deputy_pmo:  DATA.info,
+  exec_pmo:    DATA.info,
+  po1:         DATA.positive,
+  po2:         DATA.positive,
+};
+
 function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) {
   const [imgErr, setImgErr] = useState(false);
+  const [hot, setHot] = useState(false);
   const name  = data?.name  || "";
   const desc  = data?.desc  || "";
   const photo = data?.photo || "";
-  const init  = name ? name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase() : (initials || title.slice(0,2).toUpperCase());
-  const avatarSz = big ? 56 : 44;
+  const init  = name
+    ? name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()
+    : (initials || title.slice(0, 2).toUpperCase());
+  const avatarSz = big ? 58 : 46;
+  const c = ORG_ACCENT[roleId] || BRAND.blue;
+
   return (
-    <div style={{
-      position:"relative",
-      background:T.card, border:`1px solid ${T.border}`, borderRadius:11,
-      padding: big ? "16px 14px 12px" : "12px 12px 10px", textAlign:"center",
-      boxShadow:`0 ${big?4:2}px ${big?14:8}px rgba(0,0,0,0.12)`,
-    }}>
+    <div
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      style={{
+        position:"relative", overflow:"hidden",
+        background: hot
+          ? `linear-gradient(160deg, ${T.surfaceRaised} 0%, ${T.surface} 60%, ${c}${T.wash} 100%)`
+          : T.surface,
+        border:`1px solid ${hot ? c + "59" : T.border}`,
+        borderRadius:R.lg,
+        padding: big ? "20px 16px 16px" : "18px 14px 16px",
+        textAlign:"center",
+        // Equal height across a tier: without this, one longer job description
+        // makes its card taller and the row reads as misaligned.
+        display:"flex", flexDirection:"column", flex:1, minWidth:0,
+        boxShadow: hot ? T.glowSoft(c) : T.shadow,
+        transform: hot ? "translateY(-3px)" : "none",
+        transition:`transform ${MOTION.base}, box-shadow ${MOTION.base}, border-color ${MOTION.base}, background ${MOTION.base}`,
+      }}>
+      {/* Seniority accent along the top edge */}
+      <span aria-hidden="true" style={{
+        position:"absolute", top:0, left:0, right:0, height:2,
+        background:`linear-gradient(90deg, transparent, ${c}, transparent)`,
+        opacity: hot ? 1 : 0.55, transition:`opacity ${MOTION.base}`,
+      }} />
+
       {photo && !imgErr ? (
-        <img src={photo} alt={name} onError={()=>setImgErr(true)}
-          style={{ width:avatarSz, height:avatarSz, borderRadius:"50%", objectFit:"cover", margin:`0 auto ${big?10:7}px`, display:"block" }} />
+        <img src={photo} alt={name} onError={() => setImgErr(true)}
+          style={{
+            width:avatarSz, height:avatarSz, borderRadius:"50%", objectFit:"cover",
+            margin:`0 auto ${big ? 11 : 8}px`, display:"block",
+            boxShadow:`0 0 0 2px ${T.surface}, 0 0 0 3.5px ${c}${hot ? "AA" : "55"}`,
+            transition:`box-shadow ${MOTION.base}`,
+          }} />
       ) : (
-        <div style={{ width:avatarSz, height:avatarSz, borderRadius:"50%", margin:`0 auto ${big?10:7}px`,
-          background:`linear-gradient(135deg,${NAVY},#1060A0)`,
+        <div style={{
+          width:avatarSz, height:avatarSz, borderRadius:"50%", margin:`0 auto ${big ? 11 : 8}px`,
+          background:`linear-gradient(140deg, ${c}, ${c}88)`,
           display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:big?17:13, fontWeight:700, color:"#fff",
+          fontFamily:TYPE.display.fontFamily,
+          fontSize: big ? 18 : 14, fontWeight:700,
+          color: c === BRAND.gold ? "#20160A" : "#08131F",
+          boxShadow:`0 0 0 2px ${T.surface}, 0 0 0 3.5px ${c}${hot ? "AA" : "44"}`,
+          transition:`box-shadow ${MOTION.base}`,
         }}>{init}</div>
       )}
-      <div style={{ fontSize:9, fontWeight:700, color:GOLD, textTransform:"uppercase", letterSpacing:1.3, marginBottom:3 }}>{title}</div>
-      <div style={{ fontSize:big?13:11.5, fontWeight:700, color:T.text, lineHeight:1.25, marginBottom:desc?4:0 }}>
-        {name || <span style={{ color:T.dim, fontStyle:"italic", fontWeight:400, fontSize:10 }}>{isPMO?"Click ✏ to add":"—"}</span>}
+
+      <div style={{ ...TYPE.label, color:T.textOf(c), marginBottom:4 }}>{title}</div>
+      <div style={{
+        fontFamily:TYPE.display.fontFamily,
+        fontSize: big ? 14 : 12.5, fontWeight:700, color:T.text,
+        lineHeight:1.25, marginBottom: desc ? 5 : 0,
+      }}>
+        {name || (
+          <span style={{ ...TYPE.caption, color:T.dim, fontStyle:"italic", fontWeight:400 }}>
+            {isPMO ? "Click to add" : "Vacant"}
+          </span>
+        )}
       </div>
-      {desc && <div style={{ fontSize:9.5, color:T.muted, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{desc}</div>}
+      {desc && (
+        <div style={{ ...TYPE.caption, color: hot ? T.textSoft : T.muted, lineHeight:1.5,
+          marginTop:"auto", paddingTop:2,
+          transition:`color ${MOTION.base}` }}>{desc}</div>
+      )}
+
       {isPMO && (
-        <button onClick={onEdit} style={{ position:"absolute", top:5, right:5, background:"none", border:`1px solid ${T.border}`, borderRadius:4, width:20, height:20, cursor:"pointer", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted }}>✏</button>
+        <button className="pmo-focusable" onClick={onEdit} title={`Edit ${title}`}
+          style={{
+            position:"absolute", top:6, right:6, zIndex:2,
+            background: hot ? T.surfaceHi : "transparent",
+            border:`1px solid ${hot ? T.border : "transparent"}`,
+            borderRadius:R.sm, cursor:"pointer",
+            color: hot ? T.textSoft : T.dim, padding:3, display:"flex",
+            opacity: hot ? 1 : 0,
+            transition:`opacity ${MOTION.fast}, background ${MOTION.fast}`,
+          }}>
+          <Edit2 size={11} />
+        </button>
       )}
     </div>
   );
@@ -5226,12 +8245,16 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
 
 function MemberEditModal({ T, roleId, data, onSave, onClose }) {
   const [form, setForm] = useState({ name:data?.name||"", desc:data?.desc||"", photo:data?.photo||"" });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
-  const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const lbl = { ...TYPE.label, display:"block", color:T.muted, marginBottom:5 };
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:28, width:420, boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:16, fontWeight:700, color:T.text, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Edit — {MEMBER_TITLES[roleId]}</div>
+    <Modal T={T} onClose={onClose} width={440} icon={Users}
+      title={`Edit — ${MEMBER_TITLES[roleId]}`}
+      footer={<>
+        <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button T={T} variant="primary" onClick={() => onSave(form)}>Save changes</Button>
+      </>}>
+      <div>
         <div style={{ marginBottom:14 }}>
           <label style={lbl}>Full Name</label>
           <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Dr. Muhammad Ali" style={inp} />
@@ -5245,23 +8268,22 @@ function MemberEditModal({ T, roleId, data, onSave, onClose }) {
           <input value={form.photo} onChange={e=>setForm(f=>({...f,photo:e.target.value}))} placeholder="https://..." style={inp} />
           <div style={{ fontSize:10, color:T.dim, marginTop:4 }}>Paste a direct image link. Leave blank to use initials avatar.</div>
         </div>
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>Save</button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 function AboutEditModal({ T, data, onSave, onClose }) {
   const [form, setForm] = useState({ heading:data?.heading||"", body:data?.body||"" });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:28, width:540, maxHeight:"85vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:16, fontWeight:700, color:T.text, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Edit About Section</div>
+    <Modal T={T} onClose={onClose} width={560} icon={FileText} title="Edit About section"
+      footer={<>
+        <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button T={T} variant="primary" onClick={() => onSave(form)}>Save changes</Button>
+      </>}>
+      <div>
         <div style={{ marginBottom:14 }}>
           <label style={lbl}>Section Heading</label>
           <input value={form.heading} onChange={e=>setForm(f=>({...f,heading:e.target.value}))} style={inp} />
@@ -5270,12 +8292,8 @@ function AboutEditModal({ T, data, onSave, onClose }) {
           <label style={lbl}>Body Text</label>
           <textarea value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} rows={9} placeholder="Write your About Us content here..." style={{...inp,resize:"vertical"}} />
         </div>
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>Save</button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -5284,29 +8302,29 @@ function ContactEditModal({ T, data, onSave, onClose }) {
     email:data?.email||"", phone:data?.phone||"", address:data?.address||"",
     office:data?.office||"", hours:data?.hours||"", website:data?.website||"",
   });
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"9px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
   const FIELDS = [["email","Email"],["phone","Phone"],["address","Address"],["office","Office Location"],["hours","Office Hours"],["website","Website"]];
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:28, width:460, maxHeight:"88vh", overflow:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.4)" }}>
-        <div style={{ fontSize:16, fontWeight:700, color:T.text, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Edit Contact Information</div>
+    <Modal T={T} onClose={onClose} width={480} icon={Landmark} title="Edit contact information"
+      footer={<>
+        <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button T={T} variant="primary" onClick={() => onSave(form)}>Save changes</Button>
+      </>}>
+      <div>
         {FIELDS.map(([key,label]) => (
           <div key={key} style={{ marginBottom:14 }}>
             <label style={lbl}>{label}</label>
             <input value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} style={inp} />
           </div>
         ))}
-        <div style={{ display:"flex", gap:10, marginTop:6 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"9px", borderRadius:7, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{ flex:2, padding:"9px", borderRadius:7, border:"none", background:NAVY, color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>Save</button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 function TeamPage({ T, session }) {
+  const vpT = useViewport();
   const [about,   setAbout]   = useState(null);
   const [team,    setTeam]    = useState(null);
   const [contact, setContact] = useState(null);
@@ -5350,19 +8368,21 @@ function TeamPage({ T, session }) {
   if (loading) return <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading…</div>;
 
   return (
-    <div style={{ flex:1, overflow:"auto", padding:"24px 28px" }}>
+    <div className="pmo-scroll" style={{ flex:1, overflowY:"auto", overflowX:"hidden",
+      padding:`${SP.xl}px ${SP.xxl}px`, backgroundImage:T.ambient }}>
       <div style={{ maxWidth:820, margin:"0 auto", display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* ── About Us ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"22px 26px", borderTop:`3px solid ${GOLD}` }}>
+        <div data-tour="team-about" className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.gold}14`, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, padding:`${SP.xl}px ${SP.xxl}px`, boxShadow:T.shadow, borderTop:`2px solid ${BRAND.gold}` }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>About Us</div>
-            {isPMO && <button onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif" }}>✏ Edit</button>}
+            {isPMO && <button className="pmo-focusable pmo-btn" onClick={()=>setEditAbout(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
           </div>
-          <div style={{ display:"flex", gap:24, alignItems:"flex-start" }}>
-            <img src={LOGO} alt="Riphah" style={{ width:90, flexShrink:0, opacity:.8, filter:T===DK?"brightness(0) invert(1)":"none" }} />
+          <div style={{ display:"flex", flexDirection: vpT.isCompact ? "column" : "row",
+            gap: vpT.isCompact ? 14 : 24, alignItems: vpT.isCompact ? "flex-start" : "flex-start" }}>
+            <img src={LOGO} alt="Riphah" style={{ width: vpT.isCompact ? 56 : 90, flexShrink:0, opacity:.8, filter:T===DK?"brightness(0) invert(1)":"none" }} />
             <div>
-              <div style={{ fontFamily:"DM Serif Display,serif", fontSize:21, color:T.text, marginBottom:10, lineHeight:1.25 }}>
+              <div style={{ fontFamily:TYPE.display.fontFamily, fontSize:21, color:T.text, marginBottom:10, lineHeight:1.25 }}>
                 {about?.heading || "About the Project Management Office"}
               </div>
               <div style={{ fontSize:13.5, color:T.muted, lineHeight:1.8, whiteSpace:"pre-wrap" }}>
@@ -5373,75 +8393,125 @@ function TeamPage({ T, session }) {
         </div>
 
         {/* ── Our Team ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"22px 26px" }}>
+        <div className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.blue}16`, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px" }}>
           <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
-            Our Team {isPMO && <span style={{ fontSize:9, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
+            Our Team {isPMO && <span style={{ fontSize:10, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
           </div>
 
-          {/* Org chart: SVG lines + absolutely-positioned cards */}
-          <div style={{ paddingBottom:4 }}>
-            <div style={{ position:"relative", width:700, height:490, margin:"0 auto" }}>
+          {/* Org chart.
+              Was absolutely positioned at hardcoded pixel coordinates matched
+              to hand-drawn SVG lines: Head PMO ended at y=205 and Manager PMO
+              began at y=205, so the two tiers touched with no gap, and any card
+              whose description ran to three lines grew past the container's
+              fixed 490px height and spilled into the section below.
 
-              {/* SVG connecting lines */}
-              <svg width="700" height="490" style={{ position:"absolute", top:0, left:0, pointerEvents:"none" }}>
-                <g stroke={borderColor} strokeWidth="2" fill="none">
-                  {/* Head PMO → Manager PMO (straight down, both centered at x=380) */}
-                  <line x1="350" y1="145" x2="350" y2="205" />
-                  {/* Manager PMO bottom → L3 junction */}
-                  <line x1="350" y1="315" x2="350" y2="345" />
-                  {/* L3 horizontal bar spanning all 4 children: Deputy ↔ PO2 */}
-                  <line x1="90" y1="345" x2="610" y2="345" />
-                  {/* L3 → Deputy PMO */}
-                  <line x1="90" y1="345" x2="90" y2="380" />
-                  {/* L3 → Exec PMO */}
-                  <line x1="263" y1="345" x2="263" y2="380" />
-                  {/* L3 → PO1 */}
-                  <line x1="437" y1="345" x2="437" y2="380" />
-                  {/* L3 → PO2 */}
-                  <line x1="610" y1="345" x2="610" y2="380" />
-                </g>
-              </svg>
+              This is a flex layout with CSS connectors instead. Tiers size
+              themselves to their content, the connectors are drawn relative to
+              the cards rather than to fixed coordinates, and a longer job title
+              simply makes its row taller. */}
+          {vpT.isCompact ? (
+            // Mobile: the hierarchical chart with connector lines needs real
+            // horizontal room to read as a hierarchy — at phone width it just
+            // becomes a wide strip the reader has to scroll blind through,
+            // never seeing more than one card at a time. A vertical stack
+            // with tier labels carries the same "who reports where"
+            // information without depending on spatial layout to show it.
+            <div style={{ display:"flex", flexDirection:"column", gap:SP.md }}>
+              <div style={{ ...TYPE.label, color:T.dim, textAlign:"center" }}>Leadership</div>
+              <OrgCardInner T={T} roleId="head_pmo" data={team?.head_pmo}
+                title={MEMBER_TITLES.head_pmo} initials="MS" isPMO={isPMO}
+                onEdit={()=>setEditMember("head_pmo")} big />
+              <OrgCardInner T={T} roleId="manager_pmo" data={team?.manager_pmo}
+                title={MEMBER_TITLES.manager_pmo} initials="MO" isPMO={isPMO}
+                onEdit={()=>setEditMember("manager_pmo")} big />
+              <div style={{ ...TYPE.label, color:T.dim, textAlign:"center", marginTop:SP.sm }}>Team</div>
+              {[
+                ["deputy_pmo", "MW"],
+                ["exec_pmo",   "EU"],
+                ["po1",        "MA"],
+                ["po2",        "MA"],
+              ].map(([roleId, initials]) => (
+                <OrgCardInner key={roleId} T={T} roleId={roleId} data={team?.[roleId]}
+                  title={MEMBER_TITLES[roleId]} initials={initials}
+                  isPMO={isPMO} onEdit={()=>setEditMember(roleId)} />
+              ))}
+            </div>
+          ) : (
+          <div style={{ paddingBottom:SP.lg, overflowX:"auto" }}>
+            <div style={{
+              minWidth: vpT.width < 900 ? 680 : 760,
+              maxWidth: 880, margin:"0 auto",
+              display:"flex", flexDirection:"column", alignItems:"center",
+            }}>
 
-              {/* Cards — absolutely positioned to match SVG coordinates */}
-              {/* Head PMO: center-x=380, left=380-100=280 */}
-              <div style={{ position:"absolute", left:255, top:55, width:190 }}>
-                <OrgCardInner T={T} roleId="head_pmo" data={team?.head_pmo} title={MEMBER_TITLES.head_pmo} initials="MS" isPMO={isPMO} onEdit={()=>setEditMember("head_pmo")} big />
+              {/* Tier 1 */}
+              <div style={{ width:210 }}>
+                <OrgCardInner T={T} roleId="head_pmo" data={team?.head_pmo}
+                  title={MEMBER_TITLES.head_pmo} initials="MS" isPMO={isPMO}
+                  onEdit={()=>setEditMember("head_pmo")} big />
               </div>
 
-              {/* Manager PMO: center-x=380, left=380-80=300 (alone at level 2) */}
-              <div style={{ position:"absolute", left:270, top:205, width:160 }}>
-                <OrgCardInner T={T} roleId="manager_pmo" data={team?.manager_pmo} title={MEMBER_TITLES.manager_pmo} initials="MP" isPMO={isPMO} onEdit={()=>setEditMember("manager_pmo")} />
+              {/* Connector: tier 1 → tier 2 */}
+              <div aria-hidden="true" style={{
+                width:2, height:34, background:borderColor, flexShrink:0 }} />
+
+              {/* Tier 2 */}
+              <div style={{ width:210 }}>
+                <OrgCardInner T={T} roleId="manager_pmo" data={team?.manager_pmo}
+                  title={MEMBER_TITLES.manager_pmo} initials="MO" isPMO={isPMO}
+                  onEdit={()=>setEditMember("manager_pmo")} big />
               </div>
 
-              {/* ── LEVEL 3 — 4 cards, Deputy PMO leftmost ── */}
-              {/* Deputy PMO: center-x=95, left=95-80=15 */}
-              <div style={{ position:"absolute", left:15, top:380, width:150 }}>
-                <OrgCardInner T={T} roleId="deputy_pmo" data={team?.deputy_pmo} title={MEMBER_TITLES.deputy_pmo} initials="DP" isPMO={isPMO} onEdit={()=>setEditMember("deputy_pmo")} />
-              </div>
-              {/* Exec PMO: center-x=285, left=285-80=205 */}
-              <div style={{ position:"absolute", left:188, top:380, width:150 }}>
-                <OrgCardInner T={T} roleId="exec_pmo" data={team?.exec_pmo} title={MEMBER_TITLES.exec_pmo} initials="EP" isPMO={isPMO} onEdit={()=>setEditMember("exec_pmo")} />
-              </div>
-              {/* PO1: center-x=475, left=475-80=395 */}
-              <div style={{ position:"absolute", left:362, top:380, width:150 }}>
-                <OrgCardInner T={T} roleId="po1" data={team?.po1} title={MEMBER_TITLES.po1} initials="PO" isPMO={isPMO} onEdit={()=>setEditMember("po1")} />
-              </div>
-              {/* PO2: center-x=665, left=665-80=585 */}
-              <div style={{ position:"absolute", left:535, top:380, width:150 }}>
-                <OrgCardInner T={T} roleId="po2" data={team?.po2} title={MEMBER_TITLES.po2} initials="PO" isPMO={isPMO} onEdit={()=>setEditMember("po2")} />
+              {/* Connector: tier 2 → the branch bar */}
+              <div aria-hidden="true" style={{
+                width:2, height:30, background:borderColor, flexShrink:0 }} />
+
+              {/* Tier 3. Each column carries its own stub above the card, so the
+                  bar and drops stay aligned at any width — no coordinates to
+                  keep in sync. */}
+              <div style={{
+                display:"grid", gridTemplateColumns:"repeat(4, minmax(0, 1fr))",
+                gap:SP.lg, width:"100%", alignItems:"stretch",
+              }}>
+                {[
+                  ["deputy_pmo", "MW"],
+                  ["exec_pmo",   "EU"],
+                  ["po1",        "MA"],
+                  ["po2",        "MA"],
+                ].map(([roleId, initials], i, arr) => (
+                  <div key={roleId} style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                    {/* horizontal bar segment + vertical drop */}
+                    <div aria-hidden="true" style={{ position:"relative", width:"100%", height:30 }}>
+                      <span style={{
+                        position:"absolute", top:0, height:2, background:borderColor,
+                        left:  i === 0 ? "50%" : 0,
+                        right: i === arr.length - 1 ? "50%" : 0,
+                      }} />
+                      <span style={{
+                        position:"absolute", top:0, bottom:0, left:"50%",
+                        width:2, marginLeft:-1, background:borderColor }} />
+                    </div>
+                    <div style={{ width:"100%", display:"flex", flex:1 }}>
+                      <OrgCardInner T={T} roleId={roleId} data={team?.[roleId]}
+                        title={MEMBER_TITLES[roleId]} initials={initials}
+                        isPMO={isPMO} onEdit={()=>setEditMember(roleId)} />
+                    </div>
+                  </div>
+                ))}
               </div>
 
             </div>
           </div>
+          )}
         </div>
 
         {/* ── Contact Us ── */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"22px 26px", marginBottom:8 }}>
+        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px", marginBottom:8 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>Contact Us</div>
-            {isPMO && <button onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:"Inter,sans-serif" }}>✏ Edit</button>}
+            {isPMO && <button className="pmo-focusable pmo-btn" onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 32px" }}>
+          <div style={{ display:"grid", gridTemplateColumns: vpT.isCompact ? "1fr" : "1fr 1fr", gap:"4px 32px" }}>
             {Object.entries(CONTACT_LABELS).map(([key, label]) => {
               const val = contact?.[key];
               if (!val) return null;
@@ -5450,7 +8520,7 @@ function TeamPage({ T, session }) {
                   <span style={{ fontSize:18, flexShrink:0, lineHeight:1 }}>{CONTACT_ICONS[key]}</span>
                   <div>
                     <div style={{ fontSize:10, fontWeight:700, color:T.dim, textTransform:"uppercase", letterSpacing:1, marginBottom:2 }}>{label}</div>
-                    <div style={{ fontSize:13.5, color:T.text }}>{val}</div>
+                    <div style={{ fontSize:13.5, color:T.text, overflowWrap:"break-word" }}>{val}</div>
                   </div>
                 </div>
               );
@@ -5518,38 +8588,38 @@ function ChangePasswordModal({ T, session, onClose }) {
     setLoading(false);
   };
 
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"10px 12px", fontSize:13, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"10px 12px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
   const lbl = { display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, textTransform:"uppercase", marginBottom:5 };
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:32, width:400, boxShadow:"0 24px 60px rgba(0,0,0,0.45)" }}>
-        <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:"DM Serif Display,serif", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Change Password</div>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:SP.xxl, animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:400, boxShadow:"0 24px 60px rgba(0,0,0,0.45)" }}>
+        <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:TYPE.display.fontFamily, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>Change Password</div>
         {status && (
-          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:13, display:"flex", gap:8,
+          <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:R.md, fontSize:13, display:"flex", gap:8,
             background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)",
             border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`,
-            color:status.ok?"#2DD4BF":"#F87171" }}>
-            <span>{status.ok?"✓":"⚠"}</span><span style={{lineHeight:1.5}}>{status.msg}</span>
+            color:status.ok?T.textOf(EMERALD):ROSE }}>
+            {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{lineHeight:1.5}}>{status.msg}</span>
           </div>
         )}
         <div style={{ marginBottom:14 }}>
           <label style={lbl}>New Password</label>
           <div style={{ position:"relative" }}>
             <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} placeholder="At least 8 characters" style={inp} />
-            <button onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
+            <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
           </div>
         </div>
         <div style={{ marginBottom:22 }}>
           <label style={lbl}>Confirm Password</label>
           <div style={{ position:"relative" }}>
             <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} style={inp} />
-            <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
+            <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, display:"flex" }}><Eye size={14}/></button>
           </div>
         </div>
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:8, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:"Inter,sans-serif" }}>{status?.ok?"Close":"Cancel"}</button>
-          {!status?.ok && <button onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:"Inter,sans-serif" }}>{loading?"Changing…":"Change Password"}</button>}
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
+          <button className="pmo-focusable pmo-btn" onClick={onClose} style={{ flex:1, padding:"10px", borderRadius:R.md, border:`1px solid ${T.border}`, background:"none", color:T.muted, cursor:"pointer", fontSize:13, fontFamily:TYPE.body.fontFamily }}>{status?.ok?"Close":"Cancel"}</button>
+          {!status?.ok && <button className="pmo-focusable pmo-btn" onClick={handle} disabled={loading} style={{ flex:2, padding:"10px", borderRadius:R.md, border:"none", background:loading?T.muted:NAVY, color:"#fff", cursor:loading?"default":"pointer", fontSize:13, fontWeight:700, fontFamily:TYPE.body.fontFamily }}>{loading?"Changing…":"Change Password"}</button>}
         </div>
       </div>
     </div>
@@ -5559,14 +8629,14 @@ function ChangePasswordModal({ T, session, onClose }) {
 // ─── SESSION EXPIRED MODAL ─────────────────────────────────────────────────────
 function SessionExpiredModal({ T, onSignIn }) {
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:16, padding:"44px 40px", width:380, textAlign:"center", boxShadow:"0 24px 80px rgba(0,0,0,0.6)" }}>
+    <div style={{ position:"fixed", inset:0, background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:16, animation:"pmoFade .18s ease" }}>
+      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, padding:"40px 36px", animation:"pmoScaleIn .2s cubic-bezier(.2,.8,.3,1)", width:380, textAlign:"center", boxShadow:T.shadowLg }}>
         <div style={{ fontSize:36, marginBottom:16 }}>⏱</div>
-        <div style={{ fontSize:22, fontWeight:700, color:T.text, marginBottom:10, fontFamily:"DM Serif Display,serif" }}>Session Expired</div>
+        <div style={{ fontSize:22, fontWeight:700, color:T.text, marginBottom:10, fontFamily:TYPE.display.fontFamily }}>Session Expired</div>
         <div style={{ fontSize:14, color:T.muted, lineHeight:1.8, marginBottom:30 }}>
           Your session expired after 1 hour.<br/>Please sign in again to continue.
         </div>
-        <button onClick={onSignIn} style={{ width:"100%", padding:"13px", background:NAVY, color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:700, fontFamily:"Inter,sans-serif", boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
+        <button className="pmo-focusable pmo-btn" onClick={onSignIn} style={{ width:"100%", padding:"13px", background:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
           Sign In Again
         </button>
       </div>
@@ -5575,6 +8645,35 @@ function SessionExpiredModal({ T, onSignIn }) {
 }
 
 // ─── SET PASSWORD (invite acceptance + password recovery) ─────────────────────
+function InviteErrorScreen({ T, message, onBackToSignIn }) {
+  return (
+    <div style={{ display:"flex", height:"100vh", background:T.mainBg }}>
+      <div style={{ width:420, flexShrink:0, background:NAVY,
+        backgroundImage:"repeating-linear-gradient(45deg,transparent 0,transparent 22px,rgba(216,152,64,.05) 22px,rgba(216,152,64,.05) 23px),repeating-linear-gradient(-45deg,transparent 0,transparent 22px,rgba(216,152,64,.05) 22px,rgba(216,152,64,.05) 23px)",
+        display:"flex", flexDirection:"column", justifyContent:"center", padding:"60px 50px" }}>
+        <img src={LOGO} alt="Riphah" style={{ width:160, filter:"brightness(0) invert(1)", opacity:.88, marginBottom:40 }} />
+        <div style={{ fontSize:10, color:"rgba(255,255,255,0.25)", letterSpacing:3, textTransform:"uppercase", marginBottom:12 }}>Capital Project Monitoring</div>
+        <div style={{ fontFamily:TYPE.display.fontFamily, fontSize:32, color:"#fff", lineHeight:1.3 }}>Link No Longer{"\n"}Valid</div>
+      </div>
+      <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:40 }}>
+        <div style={{ width:"100%", maxWidth:400, textAlign:"center" }}>
+          <div style={{ width:56, height:56, borderRadius:"50%", background:T.danger+"1E",
+            display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px" }}>
+            <AlertCircle size={26} color={T.textOf(T.danger)} />
+          </div>
+          <div style={{ ...TYPE.h2, color:T.text, marginBottom:10 }}>This link is no longer valid</div>
+          <div style={{ ...TYPE.bodySm, color:T.textSoft, lineHeight:1.6, marginBottom:26 }}>{message}</div>
+          <button className="pmo-focusable pmo-btn" onClick={onBackToSignIn}
+            style={{ padding:"10px 22px", background:T.blueBright, border:"none", borderRadius:R.sm,
+              color:"#fff", fontWeight:700, ...TYPE.bodySm, cursor:"pointer" }}>
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SetPasswordPage({ T, dark, token, type, onDone }) {
   const [np,     setNp]     = useState("");
   const [cp,     setCp]     = useState("");
@@ -5620,7 +8719,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
     setLoading(false);
   };
 
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:8, padding:"11px 14px", fontSize:14, color:T.text, fontFamily:"Inter,sans-serif", outline:"none", width:"100%", boxSizing:"border-box" };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.md, padding:"11px 14px", fontSize:14, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
 
   return (
     <div style={{ display:"flex", height:"100vh", background:T.mainBg }}>
@@ -5630,7 +8729,7 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
         display:"flex", flexDirection:"column", justifyContent:"center", padding:"60px 50px" }}>
         <img src={LOGO} alt="Riphah" style={{ width:160, filter:"brightness(0) invert(1)", opacity:.88, marginBottom:40 }} />
         <div style={{ fontSize:10, color:"rgba(255,255,255,0.25)", letterSpacing:3, textTransform:"uppercase", marginBottom:12 }}>Capital Project Monitoring</div>
-        <div style={{ fontFamily:"DM Serif Display,serif", fontSize:32, color:"#fff", lineHeight:1.3, marginBottom:20 }}>
+        <div style={{ fontFamily:TYPE.display.fontFamily, fontSize:32, color:"#fff", lineHeight:1.3, marginBottom:20 }}>
           {type==="invite" ? "Welcome to\nthe Portal" : "Reset\nPassword"}
         </div>
         <div style={{ width:40, height:2, background:GOLD, marginBottom:22 }} />
@@ -5644,9 +8743,9 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
 
       {/* Form */}
       <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <div style={{ width:380, background:T.card, border:`1px solid ${T.border}`, borderRadius:16, padding:"40px 42px",
+        <div style={{ width:380, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.xl, boxShadow:T.shadow, padding:"40px 42px",
           boxShadow:dark?"0 24px 80px rgba(0,0,0,0.45)":"0 8px 40px rgba(24,80,120,0.1)" }}>
-          <div style={{ fontSize:23, fontWeight:700, color:T.text, marginBottom:6, fontFamily:"DM Serif Display,serif" }}>
+          <div style={{ fontSize:23, fontWeight:700, color:T.text, marginBottom:6, fontFamily:TYPE.display.fontFamily }}>
             {type==="invite" ? "Set your password" : "Choose a new password"}
           </div>
           <div style={{ fontSize:13, color:T.muted, marginBottom:24 }}>
@@ -5654,8 +8753,8 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
           </div>
 
           {status && (
-            <div style={{ background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, borderRadius:8, padding:"10px 14px", marginBottom:18, fontSize:13, color:status.ok?"#2DD4BF":"#F87171", display:"flex", alignItems:"center", gap:8 }}>
-              <span>{status.ok?"✓":"⚠"}</span><span style={{ lineHeight:1.5 }}>{status.msg}</span>
+            <div style={{ background:status.ok?"rgba(45,212,191,0.1)":"rgba(248,113,113,0.1)", border:`1px solid ${status.ok?"rgba(45,212,191,0.3)":"rgba(248,113,113,0.3)"}`, borderRadius:R.md, padding:"10px 14px", marginBottom:18, fontSize:13, color:status.ok?T.textOf(EMERALD):ROSE, display:"flex", alignItems:"center", gap:8 }}>
+              {status.ok ? <CheckCircle2 size={14} style={{flexShrink:0,marginTop:1}} /> : <AlertCircle size={14} style={{flexShrink:0,marginTop:1}} />}<span style={{ lineHeight:1.5 }}>{status.msg}</span>
             </div>
           )}
 
@@ -5663,17 +8762,17 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
             <label style={{ display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, marginBottom:7, textTransform:"uppercase" }}>New Password</label>
             <div style={{ position:"relative" }}>
               <input type={showNp?"text":"password"} value={np} onChange={e=>setNp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} placeholder="At least 8 characters" style={inp} />
-              <button onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
+              <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowNp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
           <div style={{ marginBottom:26 }}>
             <label style={{ display:"block", fontSize:11, fontWeight:700, color:T.muted, letterSpacing:1, marginBottom:7, textTransform:"uppercase" }}>Confirm Password</label>
             <div style={{ position:"relative" }}>
               <input type={showCp?"text":"password"} value={cp} onChange={e=>setCp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()} style={inp} />
-              <button onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
+              <button className="pmo-focusable pmo-btn" title="Show or hide password" aria-label="Show or hide password" onClick={()=>setShowCp(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:T.muted, display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
-          <button onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:8, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:"Inter,sans-serif", letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
+          <button className="pmo-focusable pmo-btn" onClick={handle} disabled={loading} style={{ width:"100%", padding:"13px", background:loading?T.muted:NAVY, color:"#fff", border:"none", borderRadius:R.md, cursor:loading?"default":"pointer", fontSize:14, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:.5, boxShadow:"0 4px 18px rgba(24,80,120,0.38)" }}>
             {loading ? "Setting password…" : type==="invite" ? "Set Password & Enter Portal" : "Set New Password"}
           </button>
         </div>
@@ -5683,7 +8782,71 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
+// A single sign-in claim: glass icon tile, hover response, and a small
+// tooltip carrying the fuller sentence (§9, §10).
+function LoginFeature({ Icon, title, sub, tip, first, compact }) {
+  const [hot, setHot] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      style={{
+        position:"relative", display:"flex", flexDirection:"column", alignItems:"center",
+        padding: compact ? "10px 8px" : "14px 26px", gap: compact ? 6 : 7, cursor:"default",
+        flex: compact ? 1 : "none", minWidth:0,
+        borderLeft: first ? "none" : "1px solid rgba(255,255,255,0.12)",
+      }}>
+      <div style={{
+        width: compact ? 40 : 44, height: compact ? 40 : 44, borderRadius:"50%",
+        background: hot ? "rgba(224,169,74,0.14)" : "rgba(4,10,24,0.55)",
+        backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)",
+        border:`1px solid rgba(216,152,64,${hot ? 0.72 : 0.35})`,
+        boxShadow: hot ? "0 0 22px -4px rgba(224,169,74,0.55)" : "none",
+        display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+        transform: hot ? "translateY(-3px)" : "none",
+        transition:"all .3s cubic-bezier(.16,1,.3,1)",
+      }}>
+        <Icon size={compact ? 17 : 18} color={hot ? "#F3D08A" : "rgba(255,255,255,0.82)"} strokeWidth={1.9}
+          style={{ transition:"color .3s ease" }} />
+      </div>
+      <div style={{ fontSize: compact ? 10 : 11.5, fontWeight:700, textAlign:"center",
+        color: hot ? "#fff" : "rgba(255,255,255,0.92)", transition:"color .3s ease" }}>{title}</div>
+      <div style={{ fontSize: compact ? 8.5 : 10, color:"rgba(255,255,255,0.55)", textAlign:"center" }}>{sub}</div>
+
+      {hot && (
+        <div className="pmo-rise" role="tooltip" style={{
+          position:"absolute", bottom:"calc(100% + 10px)", left:"50%",
+          transform:"translateX(-50%)", width:216, zIndex:5,
+          background:"rgba(10,22,40,0.92)",
+          border:"1px solid rgba(224,169,74,0.30)", borderRadius:10,
+          padding:"9px 12px", pointerEvents:"none",
+          backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+          boxShadow:"0 14px 40px -12px rgba(0,0,0,0.8)",
+        }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:1.2,
+            textTransform:"uppercase", color:"#E0A94A", marginBottom:3 }}>{title}</div>
+          <div style={{ fontSize:11.5, color:"rgba(255,255,255,0.86)", lineHeight:1.5 }}>{tip}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Login({ T, dark, onLogin }) {
+  // §5 — pointer parallax across the sign-in layers. Publishes a normalised
+  // offset that each layer scales by its own depth.
+  const reducedMotion = typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const parallax = useLoginParallax(!reducedMotion);
+  const cardLight = useCursorLight(true);          // §14
+  const [cardHot, setCardHot] = useState(false);   // §13
+  const [focusField, setFocusField] = useState(null);
+  const [hoverField, setHoverField] = useState(null);
+  const [btnHot, setBtnHot] = useState(false);
+  const [btnDown, setBtnDown] = useState(false);
+  const [success, setSuccess] = useState(false);   // §25
+  const [authStep, setAuthStep] = useState(null);  // which round-trip is in flight
+  const vpL = useViewport();
+  const anyFocus = focusField !== null;            // §16
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [show, setShow] = useState(false);
@@ -5694,11 +8857,58 @@ function Login({ T, dark, onLogin }) {
   const [resetUser, setResetUser] = useState("");
   const [resetStatus, setResetStatus] = useState(null);
 
+  // Biometric sign-in. Offered only when this device both supports a platform
+  // authenticator AND has previously enrolled — otherwise the button could
+  // only ever fail, which is worse than not showing it.
+  const [bioReady, setBioReady] = useState(false);
+  const [bioBusy, setBioBusy]   = useState(false);
+  const [bioLabel, setBioLabel] = useState("Sign in with Face ID");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const ua = navigator.userAgent || "";
+      setBioLabel(
+        /iPhone|iPad|Macintosh/i.test(ua) ? "Sign in with Face ID / Touch ID"
+        : /Windows/i.test(ua)             ? "Sign in with Windows Hello"
+        :                                   "Sign in with biometrics"
+      );
+      let hinted = false;
+      try { hinted = localStorage.getItem(BIOMETRIC_HINT_KEY) === "1"; } catch { /* ignore */ }
+      if (!hinted) return;
+      const ok = await biometricAvailable();
+      if (alive) setBioReady(ok);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const handleBiometric = async () => {
+    setBioBusy(true); setErr(null);
+    try {
+      const session = await signInWithBiometric();
+      try { localStorage.setItem("pmo_session", JSON.stringify(session)); } catch(_) {}
+      if (reducedMotion) { onLogin(session); return; }
+      setSuccess(true);
+      setTimeout(() => onLogin(session), 460);
+      return;
+    } catch (e) {
+      // Cancelling the Face ID sheet is a deliberate user action, not a failure
+      // to shout about.
+      const cancelled = /NotAllowed|cancel|abort/i.test((e?.name || "") + " " + (e?.message || ""));
+      if (!cancelled) setErr(e.message || "Biometric sign-in failed. Use your password.");
+    }
+    setBioBusy(false);
+  };
+
   const handleLogin = async () => {
     if (!user.trim() || !pass) return;
+    // Three sequential round-trips take roughly 1.9s on this connection, so the
+    // button must acknowledge the click on the first frame. Without this the
+    // user presses Sign In and watches nothing happen for two seconds.
     setLoading(true); setErr(null);
     try {
       let emailResult;
+      setAuthStep("Verifying account…");
       try {
         emailResult = await supa("/rest/v1/rpc/resolve_login_email", {
           method:"POST", body: JSON.stringify({ p_username: user.trim() })
@@ -5707,12 +8917,14 @@ function Login({ T, dark, onLogin }) {
       const email = typeof emailResult === "string" ? emailResult : null;
       if (!email) throw new Error("Username not found. Contact the PMO.");
       let auth;
+      setAuthStep("Authenticating…");
       try {
         auth = await supa("/auth/v1/token?grant_type=password", {
           method:"POST", body: JSON.stringify({ email, password:pass })
         });
       } catch(e) { throw new Error("Incorrect password. Try again."); }
       let profiles;
+      setAuthStep("Loading your portfolio…");
       try {
         profiles = await supa(
           "/rest/v1/user_profiles?select=username,full_name,role&id=eq."+auth.user.id,
@@ -5729,8 +8941,16 @@ function Login({ T, dark, onLogin }) {
         expires_at: auth.expires_at,
       };
       try { if (remember) localStorage.setItem("pmo_session", JSON.stringify(session)); } catch(_) {}
-      onLogin(session);
-    } catch(e) { setErr(e.message || "Sign in failed."); }
+
+      // §25 — authentication has succeeded; play the hand-over before the
+      // dashboard mounts. Under reduced motion this is skipped entirely, and
+      // the timeout is the only thing standing between success and the portal,
+      // so it stays short.
+      if (reducedMotion) { onLogin(session); return; }
+      setSuccess(true);
+      setTimeout(() => onLogin(session), 460);
+      return;
+    } catch(e) { setErr(e.message || "Sign in failed."); setAuthStep(null); }
     setLoading(false);
   };
 
@@ -5757,22 +8977,40 @@ function Login({ T, dark, onLogin }) {
   const fieldStyle = {
     width:"100%", boxSizing:"border-box", padding:"12px 14px 12px 42px",
     background:"rgba(255,255,255,0.06)", border:"1px solid rgba(100,160,255,0.2)",
-    borderRadius:10, color:"#fff", fontSize:14, fontFamily:"Inter,sans-serif", outline:"none",
+    borderRadius:R.md, color:"#fff", fontSize:14, fontFamily:TYPE.body.fontFamily, outline:"none",
   };
+
+  // §17 — resting, hover and focus are three distinct states. Focus moves the
+  // border to Riphah gold with a soft ring; hover only brightens, so the two
+  // are never confused.
+  const fieldFor = (name) => ({
+    ...fieldStyle,
+    background: focusField === name ? "rgba(255,255,255,0.09)"
+              : hoverField === name ? "rgba(255,255,255,0.075)"
+              : "rgba(255,255,255,0.06)",
+    border: `1px solid ${
+      focusField === name ? "rgba(224,169,74,0.85)"
+      : hoverField === name ? "rgba(140,190,255,0.45)"
+      : "rgba(100,160,255,0.2)"}`,
+    boxShadow: focusField === name
+      ? "0 0 0 3px rgba(224,169,74,0.14), 0 0 22px -6px rgba(224,169,74,0.5)"
+      : "none",
+    transition:"background .22s ease, border-color .22s ease, box-shadow .22s ease",
+  });
 
   // ── Reset password screen ──────────────────────────────────────────────────
   if (mode === "reset") return (
-    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:BG, fontFamily:"Inter,sans-serif" }}>
-      <div style={{ background:CARD, border:"1px solid rgba(100,160,255,0.2)", borderRadius:24, padding:"40px 36px", width:400, boxShadow:"0 0 60px rgba(30,100,255,0.15)" }}>
+    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:BG, fontFamily:TYPE.body.fontFamily }}>
+      <div style={{ background:CARD, border:"1px solid rgba(100,160,255,0.2)", borderRadius:R.xl, padding:"40px 36px", width:400, boxShadow:"0 0 60px rgba(30,100,255,0.15)" }}>
         <div style={{ fontSize:20, fontWeight:700, color:"#fff", marginBottom:6 }}>Reset Password</div>
         <div style={{ fontSize:13, color:"rgba(255,255,255,0.4)", marginBottom:24 }}>Enter your username and we'll send a reset link.</div>
         {resetStatus === "sent" ? (
-          <div style={{ padding:"14px", background:"rgba(45,212,191,0.1)", border:"1px solid rgba(45,212,191,0.3)", borderRadius:8, color:"#2DD4BF", fontSize:13, textAlign:"center", marginBottom:20 }}>
+          <div style={{ padding:"14px", background:"rgba(45,212,191,0.1)", border:"1px solid rgba(45,212,191,0.3)", borderRadius:R.md, color:T.textOf(EMERALD), fontSize:13, textAlign:"center", marginBottom:20 }}>
             ✓ Reset link sent — check your email inbox.
           </div>
         ) : resetStatus === "error" ? (
-          <div style={{ padding:"14px", background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:8, color:"#F87171", fontSize:13, textAlign:"center", marginBottom:20 }}>
-            ⚠ Username not found. Contact the PMO.
+          <div style={{ padding:"14px", background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:R.md, color:T.textOf(ROSE), fontSize:13, textAlign:"center", marginBottom:20 }}>
+            Username not found. Contact the PMO.
           </div>
         ) : null}
         {resetStatus !== "sent" && (
@@ -5781,7 +9019,7 @@ function Login({ T, dark, onLogin }) {
               <label style={{ display:"block", fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:8 }}>Username</label>
               <input value={resetUser} onChange={e=>setResetUser(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleReset()} placeholder="Your username" style={{ ...fieldStyle, paddingLeft:14 }} />
             </div>
-            <button onClick={handleReset} disabled={resetStatus==="sending"} style={{ width:"100%", padding:"13px", background:"linear-gradient(135deg,#E8A020,#C87820)", border:"none", borderRadius:10, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:14 }}>
+            <button className="pmo-focusable pmo-btn" onClick={handleReset} disabled={resetStatus==="sending"} style={{ width:"100%", padding:"13px", background:"linear-gradient(135deg,#E8A020,#C87820)", border:"none", borderRadius:R.md, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:14 }}>
               {resetStatus==="sending" ? "Sending…" : "Send Reset Link"}
             </button>
           </>
@@ -5795,15 +9033,50 @@ function Login({ T, dark, onLogin }) {
 
   // ── Main login screen ──────────────────────────────────────────────────────
   return (
-    <div style={{ height:"100vh", display:"flex", position:"relative", overflow:"hidden", fontFamily:"Inter,sans-serif" }}>
+    <div ref={parallax} className={success ? "pmo-signin-out" : ""}
+      style={{ height: vpL.width < 900 ? "auto" : "100vh", minHeight:"100vh",
+        display:"flex", flexDirection: vpL.width < 900 ? "column" : "row",
+        position:"relative", overflow: vpL.width < 900 ? "visible" : "hidden",
+        fontFamily:TYPE.body.fontFamily, transformOrigin:"58% 50%" }}>
 
-      {/* Campus photo background */}
-      <div style={{
-        position:"absolute", inset:0,
-        backgroundImage:"url(" + import.meta.env.BASE_URL + "campus-bg.jpg)",
-        backgroundSize:"cover", backgroundPosition:"center 38%",
+      {/* Campus photograph. A very slow scale drift gives the still image the
+          quality of a held camera shot rather than a wallpaper — it is the only
+          moving thing on the screen before sign-in, and at 40s it registers as
+          atmosphere rather than animation (§49). */}
+      {/* §1 — the image itself is untouched: same file, same crop, same
+          position, same perspective. It only gains the slowest parallax layer
+          so it sits behind everything else rather than moving with it. */}
+      <div className="pmo-kenburns pmo-lp1" style={{
+        position:"absolute", inset:"-14px",
+        backgroundImage:"url(" + import.meta.env.BASE_URL + (vpL.width < 900 ? "campus-bg-mobile.jpg" : "campus-bg.jpg") + ")",
+        backgroundSize:"cover",
+        backgroundPosition: vpL.width < 900 ? "center top" : "center 38%",
+        backgroundRepeat:"no-repeat",
         zIndex:0,
       }} />
+
+      {/* §4 Layer 3 — atmospheric colour around the architecture. Riphah blue
+          from the left, gold from the lower right, both drifting slowly and
+          both moving on parallax so the scene has depth. */}
+      <div aria-hidden="true" className="pmo-lp1" style={{ position:"absolute", inset:0, zIndex:0, overflow:"hidden", pointerEvents:"none" }}>
+        <div className="pmo-drift" style={{
+          position:"absolute", top:"-28%", left:"-10%", width:"58vw", height:"58vw", borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(44,123,196,0.30) 0%, transparent 66%)", filter:"blur(40px)" }} />
+        <div className="pmo-drift" style={{
+          position:"absolute", bottom:"-32%", right:"-6%", width:"52vw", height:"52vw", borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(224,169,74,0.16) 0%, transparent 68%)",
+          filter:"blur(46px)", animationDelay:"-9s" }} />
+        <div className="pmo-drift" style={{
+          position:"absolute", top:"18%", left:"46%", width:"34vw", height:"34vw", borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(140,190,255,0.13) 0%, transparent 64%)",
+          filter:"blur(52px)", animationDelay:"-17s" }} />
+      </div>
+
+      {/* §26 — drifting motes. Two parallax depths above the glow, so they read
+          as being in front of the atmosphere rather than painted on it. */}
+      <div className="pmo-lp3" style={{ position:"absolute", inset:0, zIndex:0, pointerEvents:"none" }}>
+        <LoginAtmosphere reduced={reducedMotion} />
+      </div>
 
       {/* Dark veil for overall readability */}
       <div style={{ position:"absolute", inset:0, background:"rgba(4,10,24,0.42)", zIndex:0 }} />
@@ -5811,100 +9084,177 @@ function Login({ T, dark, onLogin }) {
       <div style={{ position:"absolute", inset:0, background:"linear-gradient(100deg, rgba(4,10,24,0.78) 0%, rgba(4,10,24,0.40) 38%, rgba(4,10,24,0.15) 58%, rgba(4,10,24,0.55) 78%, rgba(4,10,24,0.85) 100%)", zIndex:0 }} />
       {/* Top darken for logo */}
       <div style={{ position:"absolute", top:0, left:0, right:0, height:"160px", background:"linear-gradient(to bottom, rgba(2,6,16,0.7), transparent)", zIndex:0 }} />
+      {/* §4 Layer 4 — cinematic vignette. Radial rather than a flat overlay, so
+          the centre of the building stays the brightest architectural area. */}
+      <div aria-hidden="true" style={{
+        position:"absolute", inset:0, zIndex:0, pointerEvents:"none",
+        background:"radial-gradient(ellipse 76% 68% at 52% 44%, transparent 34%, rgba(2,6,16,0.30) 72%, rgba(2,6,16,0.62) 100%)",
+      }} />
+
       {/* Bottom darken */}
       <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"180px", background:"linear-gradient(to top, rgba(2,6,16,0.75), transparent)", zIndex:0 }} />
 
       {/* ── LEFT PANEL ───────────────────────────────────────────────────── */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", padding:"60px 72px", position:"relative", zIndex:1 }}>
+      <div style={{
+        flex: vpL.width < 900 ? "0 0 auto" : 1,
+        // §34 — below 900px the hero used to step aside entirely so the card
+        // owned the screen. Now it stacks above the card instead of
+        // disappearing — same content, reflowed rather than dropped.
+        display:"flex",
+        flexDirection:"column", justifyContent: vpL.width < 900 ? "flex-start" : "center",
+        padding: vpL.width < 900 ? "28px 24px 190px" : vpL.width < 1200 ? "48px 44px" : "60px 72px",
+        position:"relative", zIndex:1,
+        minWidth:0,
+      }}>
 
         {/* Logo */}
-        <div style={{ position:"absolute", top:44, left:72, display:"flex", alignItems:"center", gap:14 }}>
-          <img src={LOGO} alt="Riphah" style={{ height:46, filter:"brightness(0) invert(1)", opacity:.92 }} />
+        <div className="pmo-li" style={vpL.width < 900
+          ? { display:"flex", alignItems:"center", gap:14, marginBottom:22, animationDelay:"100ms" }
+          : { position:"absolute", top:44, left:72, display:"flex", alignItems:"center", gap:14, animationDelay:"100ms" }}>
+          {/* §6 — the existing mark, undistorted. Only a soft illumination. */}
+          <img src={LOGO} alt="Riphah" style={{ height: vpL.width < 900 ? 34 : 46, filter:"brightness(0) invert(1)", opacity:.94,
+            filter:"brightness(0) invert(1) drop-shadow(0 0 14px rgba(224,169,74,0.30))" }} />
         </div>
 
         {/* Label */}
-        <div style={{ marginBottom:20 }}>
-          <span style={{ fontSize:11, fontWeight:700, letterSpacing:3, textTransform:"uppercase", color:GOLD }}>
+        <div className="pmo-li" style={{ marginBottom:20, animationDelay:"200ms" }}>
+          <span style={{ fontSize:11, fontWeight:700, letterSpacing:3.4, textTransform:"uppercase",
+            color:GOLD, textShadow:"0 0 18px rgba(224,169,74,0.35)" }}>
             Capital Project Monitoring
           </span>
-          <div style={{ width:40, height:2, background:GOLD, marginTop:10 }} />
+          <div style={{ width:44, height:2, marginTop:10, borderRadius:2,
+            background:`linear-gradient(90deg, ${GOLD}, ${GOLD}00)`,
+            boxShadow:`0 0 12px ${GOLD}66` }} />
         </div>
 
         {/* Heading */}
-        <div style={{ fontSize:54, fontWeight:800, lineHeight:1.1, marginBottom:22, color:"#fff", letterSpacing:-1, textShadow:"0 2px 24px rgba(0,0,0,0.5)" }}>
+        <div style={{ fontSize: vpL.width < 900 ? 35 : 54, fontWeight:800, lineHeight:1.15,
+          marginBottom: vpL.width < 900 ? 18 : 22, color:"#fff", letterSpacing:-1, textShadow:"0 2px 24px rgba(0,0,0,0.5)" }}>
           Project<br />Management<br />Office{" "}
-          <span style={{ color:GOLD }}>Portal</span>
+          <span style={{ color:(T.goldText || GOLD) }}>Portal</span>
         </div>
 
         {/* Description */}
-        <p style={{ fontSize:15, color:"rgba(255,255,255,0.62)", lineHeight:1.85, maxWidth:360, marginBottom:56, textShadow:"0 1px 12px rgba(0,0,0,0.5)" }}>
+        <p className="pmo-li" style={{ fontSize: vpL.width < 900 ? 15 : 15, color:"rgba(255,255,255,0.70)",
+          lineHeight: vpL.width < 900 ? 1.9 : 1.75, maxWidth: vpL.width < 900 ? "none" : 380,
+          marginBottom: vpL.width < 900 ? 34 : 56, textShadow:"0 1px 12px rgba(0,0,0,0.5)", animationDelay:"540ms" }}>
           CAPEX portfolio monitoring, control, and execution across Riphah International University campuses / hospitals.
         </p>
 
-        {/* Feature icons */}
-        <div style={{ display:"flex", gap:0 }}>
+        {/* §9 §10 — the same three claims, as small interactive modules with a
+            glass tooltip on hover. Content unchanged. */}
+        <div className="pmo-li" style={{ display:"flex", gap:0, animationDelay:"620ms" }}>
           {[
-            { icon:"🛡️", title:"Secure Access",      sub:"Protected & Encrypted" },
-            { icon:"📊", title:"Real-time Insights", sub:"Data driven decisions" },
-            { icon:"🏛️", title:"Multi-Campus",       sub:"Unified Monitoring"    },
+            { Icon:Shield,     title:"Secure Access",      sub:"Protected & Encrypted",
+              tip:"Protected authentication for authorized PMO users." },
+            { Icon:BarChart3,  title:"Real-time Insights", sub:"Data driven decisions",
+              tip:"Monitor portfolio performance and project activity." },
+            { Icon:Building2,  title:"Multi-Campus",       sub:"Unified Monitoring",
+              tip:"Unified CAPEX monitoring across campuses and hospitals." },
           ].map((f, i) => (
-            <div key={i} style={{
-              display:"flex", flexDirection:"column", alignItems:"center", padding:"14px 26px", gap:7,
-              borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.12)" : "none",
-            }}>
-              <div style={{
-                width:42, height:42, borderRadius:"50%",
-                background:"rgba(4,10,24,0.55)", backdropFilter:"blur(8px)",
-                border:"1px solid rgba(216,152,64,0.35)",
-                display:"flex", alignItems:"center", justifyContent:"center", fontSize:19,
-              }}>{f.icon}</div>
-              <div style={{ fontSize:11.5, fontWeight:700, color:"#fff", textAlign:"center" }}>{f.title}</div>
-              <div style={{ fontSize:9.5, color:"rgba(255,255,255,0.5)", textAlign:"center" }}>{f.sub}</div>
-            </div>
+            <LoginFeature key={f.title} {...f} first={i === 0} compact={vpL.width < 900} />
           ))}
         </div>
 
-        {/* Footer credit */}
+        {/* Footer credit — normal flow below the card on mobile, since the
+            absolute bottom-anchored position only made sense against a
+            full-height side panel. */}
+        {vpL.width >= 900 && (
         <div style={{ position:"absolute", bottom:32, left:72, fontSize:11.5, color:"rgba(255,255,255,0.4)", display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ color:GOLD, fontSize:13 }}>✦</span>
+          <span style={{ color:(T.goldText || GOLD), fontSize:13 }}>✦</span>
           Designed & Developed by the Project Management Office — Riphah International University
         </div>
+        )}
       </div>
 
       {/* ── RIGHT PANEL — Glass card ─────────────────────────────────────── */}
-      <div style={{ width:480, display:"flex", alignItems:"center", justifyContent:"center", padding:36, position:"relative", zIndex:1 }}>
-        <div style={{
-          width:"100%", maxWidth:400,
-          background:"rgba(8,16,36,0.72)", backdropFilter:"blur(30px)", WebkitBackdropFilter:"blur(30px)",
-          border:"1px solid rgba(255,255,255,0.14)", borderRadius:22,
-          padding:"38px 34px",
-          boxShadow:"0 32px 90px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.05)",
-          position:"relative",
-        }}>
+      <div className="pmo-li" style={{
+        width: vpL.width < 900 ? "100%" : 480,
+        flex: vpL.width < 900 ? "1 1 100%" : "0 0 480px",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        padding: vpL.width < 640 ? 18 : 36,
+        position:"relative", zIndex:1, animationDelay:"500ms" }}>
+        <div
+          className={success ? "pmo-card-out" : ""}
+          ref={cardLight.ref}
+          onMouseMove={cardLight.onMouseMove}
+          onMouseEnter={() => setCardHot(true)}
+          onMouseLeave={() => { setCardHot(false); cardLight.onMouseLeave(); }}
+          style={{
+            width:"100%", maxWidth: vpL.width < 900 ? 420 : 400,
+            minWidth: 0,
+            // §12 — layered depth: shadow, outer glow, glass, inner highlight.
+            // Mobile has no hover, so "more solid while interacting" is tied
+            // to field focus instead of cardHot — and sits well below
+            // desktop's opacity at both states, so the photo stays genuinely
+            // visible rather than being a backdrop behind solid glass.
+            background: vpL.width < 900
+              ? (anyFocus ? "rgba(8,16,36,0.44)" : "rgba(8,16,36,0.22)")
+              : (cardHot ? "rgba(9,19,42,0.78)" : "rgba(8,16,36,0.72)"),
+            backdropFilter: vpL.width < 900 ? "blur(2px) saturate(130%)" : "blur(30px) saturate(150%)",
+            WebkitBackdropFilter: vpL.width < 900 ? "blur(2px) saturate(130%)" : "blur(30px) saturate(150%)",
+            border:"1px solid transparent", borderRadius:R.xl,
+            padding:"38px 34px",
+            boxShadow: cardHot
+              ? "0 40px 110px rgba(0,0,0,0.62), 0 0 0 1px rgba(224,169,74,0.20), 0 0 60px -18px rgba(224,169,74,0.32), inset 0 1px 0 rgba(255,255,255,0.10)"
+              : "0 32px 90px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.10), inset 0 1px 0 rgba(255,255,255,0.06)",
+            transform: cardHot ? "translateY(-3px)" : "none",
+            transition:"transform .38s cubic-bezier(.16,1,.3,1), box-shadow .38s ease, background .38s ease",
+            position:"relative", overflow:"hidden",
+          }}>
+
+          {/* §12 — gradient hairline: blue into transparent into gold. */}
+          <span aria-hidden="true" style={{
+            position:"absolute", inset:0, borderRadius:R.xl, padding:1,
+            background:"linear-gradient(140deg, rgba(74,155,224,0.55), rgba(255,255,255,0.04) 46%, rgba(224,169,74,0.50))",
+            WebkitMask:"linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+            WebkitMaskComposite:"xor", maskComposite:"exclude",
+            opacity: cardHot ? 1 : 0.65, transition:"opacity .38s ease", pointerEvents:"none",
+          }} />
+
+          {/* §14 — a barely-visible light following the cursor. */}
+          <span aria-hidden="true" className="pmo-cursor-light" style={{
+            opacity: cardHot ? 1 : 0,
+            background:"radial-gradient(360px circle at var(--mx,50%) var(--my,50%), rgba(150,200,255,0.10), rgba(224,169,74,0.05) 42%, transparent 70%)",
+          }} />
           {/* Top glow line */}
           <div style={{ position:"absolute", top:-1, left:"15%", right:"15%", height:1, background:"linear-gradient(90deg,transparent,rgba(216,152,64,0.8),transparent)" }} />
 
           {/* Logo badge */}
           <div style={{ textAlign:"center", marginBottom:26 }}>
-            <div style={{
-              width:74, height:74, borderRadius:"50%",
-              background:"#193869",
-              border:"2.5px solid " + GOLD,
-              boxShadow:"0 0 24px rgba(216,152,64,0.45), 0 0 60px rgba(216,152,64,0.15)",
-              display:"inline-flex", alignItems:"center", justifyContent:"center",
-              marginBottom:16, overflow:"hidden",
-            }}>
-              <img src={CREST_LOGO} alt="" style={{ width:"84%", height:"84%", objectFit:"contain" }} />
+            {/* §15 — the existing crest, in a premium ring that slowly brightens
+                and dims. It never spins. */}
+            <div style={{ position:"relative", display:"inline-block", marginBottom:16 }}>
+              <span aria-hidden="true" className="pmo-crest-ring" style={{
+                position:"absolute", inset:-7, borderRadius:"50%",
+                border:`1px solid ${GOLD}`,
+                boxShadow:`0 0 26px ${GOLD}55, inset 0 0 18px ${GOLD}22`,
+              }} />
+              <div style={{
+                width:74, height:74, borderRadius:"50%",
+                background:"#193869",
+                border:"2.5px solid " + GOLD,
+                boxShadow:"0 0 24px rgba(216,152,64,0.45), 0 0 60px rgba(216,152,64,0.15)",
+                display:"inline-flex", alignItems:"center", justifyContent:"center",
+                overflow:"hidden", position:"relative",
+              }}>
+                <img src={CREST_LOGO} alt="" style={{ width:"84%", height:"84%", objectFit:"contain" }} />
+              </div>
             </div>
-            <div style={{ fontSize:23, fontWeight:800, color:"#fff", letterSpacing:-0.5, fontFamily:"DM Serif Display,serif" }}>Welcome Back</div>
+            <div style={{ fontSize:23, fontWeight:800, color:"#fff", letterSpacing:-0.5, fontFamily:TYPE.display.fontFamily }}>Welcome Back</div>
             <div style={{ fontSize:12.5, color:"rgba(255,255,255,0.5)", marginTop:5 }}>Sign in to continue to PMO Portal</div>
-            <div style={{ width:40, height:2, background:GOLD, margin:"13px auto 0", borderRadius:1 }} />
+            <div style={{
+              width: anyFocus ? 84 : 40, height:2, margin:"13px auto 0", borderRadius:1,
+              background:`linear-gradient(90deg, ${GOLD}00, ${GOLD}, ${GOLD}00)`,
+              boxShadow: anyFocus ? `0 0 14px ${GOLD}99` : "none",
+              transition:"width .45s cubic-bezier(.16,1,.3,1), box-shadow .45s ease",
+            }} />
           </div>
 
           {/* Error message */}
           {err && (
-            <div style={{ marginBottom:16, padding:"10px 14px", borderRadius:8, background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.35)", color:"#FCA5A5", fontSize:13, display:"flex", alignItems:"center", gap:8 }}>
-              <span>⚠</span><span>{err}</span>
+            <div style={{ marginBottom:16, padding:"10px 14px", borderRadius:R.md, background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.35)", color:"#FCA5A5", fontSize:13, display:"flex", alignItems:"center", gap:8 }}>
+              <AlertCircle size={14} style={{flexShrink:0, marginTop:1}} /><span>{err}</span>
             </div>
           )}
 
@@ -5913,7 +9263,11 @@ function Login({ T, dark, onLogin }) {
             <label style={{ display:"block", fontSize:10.5, fontWeight:700, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:7 }}>Username</label>
             <div style={{ position:"relative" }}>
               <span style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)", color:"rgba(255,255,255,0.32)", fontSize:15, pointerEvents:"none" }}>👤</span>
-              <input value={user} onChange={e=>setUser(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="Enter your username" style={fieldStyle} />
+              <input value={user} onChange={e=>setUser(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+                onFocus={()=>setFocusField("user")} onBlur={()=>setFocusField(null)}
+                onMouseEnter={()=>setHoverField("user")} onMouseLeave={()=>setHoverField(null)}
+                placeholder="Enter your username" style={fieldFor("user")} />
             </div>
           </div>
 
@@ -5921,34 +9275,118 @@ function Login({ T, dark, onLogin }) {
           <div style={{ marginBottom:15 }}>
             <label style={{ display:"block", fontSize:10.5, fontWeight:700, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:7 }}>Password</label>
             <div style={{ position:"relative" }}>
-              <input type={show?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="••••••••" style={{ ...fieldStyle, paddingLeft:14, paddingRight:42 }} />
-              <button onClick={()=>setShow(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.4)", display:"flex", padding:0 }}><Eye size={15}/></button>
+              <input type={show?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+                onFocus={()=>setFocusField("pass")} onBlur={()=>setFocusField(null)}
+                onMouseEnter={()=>setHoverField("pass")} onMouseLeave={()=>setHoverField(null)} placeholder="••••••••" style={{ ...fieldFor("pass"), paddingLeft:14, paddingRight:42 }} />
+              <button className="pmo-focusable pmo-btn" onClick={()=>setShow(s=>!s)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.4)", display:"flex", padding:0 }}><Eye size={15}/></button>
             </div>
           </div>
 
           {/* Remember + Forgot */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24 }}>
             <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:12.5, color:"rgba(255,255,255,0.5)" }}>
-              <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)} style={{ accentColor:GOLD, width:13, height:13 }} />
+              <span onClick={()=>setRemember(r=>!r)} role="checkbox" aria-checked={remember} tabIndex={0}
+                onKeyDown={e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); setRemember(r=>!r); } }}
+                className="pmo-focusable"
+                style={{
+                  width:17, height:17, borderRadius:5, flexShrink:0, cursor:"pointer",
+                  background: remember ? `linear-gradient(140deg, ${GOLD}, #C47818)` : "rgba(255,255,255,0.07)",
+                  border:`1px solid ${remember ? GOLD : "rgba(255,255,255,0.22)"}`,
+                  boxShadow: remember ? `0 0 14px -2px ${GOLD}88` : "none",
+                  display:"inline-flex", alignItems:"center", justifyContent:"center",
+                  transition:"all .22s cubic-bezier(.16,1,.3,1)",
+                }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                  style={{ opacity: remember ? 1 : 0, transform: remember ? "scale(1)" : "scale(.5)",
+                           transition:"opacity .2s ease, transform .24s cubic-bezier(.16,1,.3,1)" }}>
+                  <path d="M20 6 9 17l-5-5" stroke="#1A1206" strokeWidth="3.4"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
               Remember me
             </label>
             <span onClick={()=>{setMode("reset");setErr(null);}} style={{ fontSize:12.5, color:"rgba(216,152,64,0.95)", cursor:"pointer", fontWeight:600 }}>Forgot password?</span>
           </div>
 
-          {/* Sign In button */}
-          <button onClick={handleLogin} disabled={loading} style={{
-            width:"100%", padding:"13px 20px",
-            background: loading ? "rgba(216,152,64,0.4)" : "linear-gradient(135deg,#E8A828,#C47818)",
-            border:"none", borderRadius:10, color:"#fff",
-            fontSize:14.5, fontWeight:700, cursor:loading?"default":"pointer",
-            fontFamily:"Inter,sans-serif",
-            display:"flex", alignItems:"center", justifyContent:"center", gap:11,
-            boxShadow: loading ? "none" : "0 6px 24px rgba(216,152,64,0.45)",
-            transition:"all .2s",
-          }}>
-            {loading ? "Signing in…" : "Sign In"}
-            {!loading && <span style={{ width:27, height:27, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:15 }}>→</span>}
+          {/* §22 §23 §24 — the hero interaction. Gold gradient, a light sweep on
+              hover, a press compression, and an authenticating state that
+              replaces the label rather than showing a browser spinner. */}
+          <button className={`pmo-focusable pmo-sweep${success ? " pmo-confirm" : ""}`}
+            onClick={handleLogin} disabled={loading || success}
+            onMouseEnter={()=>setBtnHot(true)} onMouseLeave={()=>{setBtnHot(false); setBtnDown(false);}}
+            onMouseDown={()=>setBtnDown(true)} onMouseUp={()=>setBtnDown(false)}
+            style={{
+              width:"100%", padding:"13px 20px", position:"relative", overflow:"hidden",
+              background: loading
+                ? "linear-gradient(135deg, rgba(216,152,64,0.55), rgba(196,120,24,0.55))"
+                : btnHot ? "linear-gradient(135deg,#F2B63A,#D08A1E)"
+                         : "linear-gradient(135deg,#E8A828,#C47818)",
+              border:"none", borderRadius:R.md, color:"#1A1206",
+              fontSize:14.5, fontWeight:800, letterSpacing:.2,
+              cursor: loading ? "default" : "pointer",
+              fontFamily:TYPE.body.fontFamily,
+              display:"flex", alignItems:"center", justifyContent:"center", gap:11,
+              boxShadow: loading ? "none"
+                : btnDown ? "0 2px 10px rgba(216,152,64,0.40)"
+                : btnHot  ? "0 12px 34px -6px rgba(232,168,40,0.62), 0 0 0 1px rgba(255,255,255,0.16) inset"
+                          : "0 6px 24px rgba(216,152,64,0.45)",
+              transform: btnDown ? "translateY(1px) scale(.988)"
+                       : btnHot  ? "translateY(-2px)" : "none",
+              transition:"transform .18s cubic-bezier(.16,1,.3,1), box-shadow .26s ease, background .26s ease",
+            }}>
+            {success ? (
+              <>
+                <CheckCircle size={16} strokeWidth={2.6} />
+                Signed in
+              </>
+            ) : loading ? (
+              <>
+                <span aria-hidden="true" style={{
+                  width:15, height:15, borderRadius:"50%",
+                  border:"2px solid rgba(26,18,6,0.28)", borderTopColor:"#1A1206",
+                  animation:"pmoSpin .7s linear infinite", display:"inline-block",
+                }} />
+                {authStep || "Authenticating…"}
+              </>
+            ) : (
+              <>
+                Sign In
+                <span style={{
+                  width:27, height:27, borderRadius:"50%",
+                  background:"rgba(26,18,6,0.16)", display:"flex",
+                  alignItems:"center", justifyContent:"center",
+                  transform: btnHot ? "translateX(3px)" : "none",
+                  transition:"transform .26s cubic-bezier(.16,1,.3,1)",
+                }}>
+                  <ArrowUpRight size={14} strokeWidth={2.6} />
+                </span>
+              </>
+            )}
           </button>
+
+          {/* Biometric sign-in. Only rendered once this device actually has a
+              credential enrolled, so a first-time user isn't offered a button
+              that could only fail. */}
+          {bioReady && (
+            <>
+              <div style={{ display:"flex", alignItems:"center", gap:10, margin:"18px 0 14px" }}>
+                <span style={{ flex:1, height:1, background:"rgba(255,255,255,0.12)" }} />
+                <span style={{ fontSize:10.5, color:"rgba(255,255,255,0.38)", letterSpacing:1 }}>OR</span>
+                <span style={{ flex:1, height:1, background:"rgba(255,255,255,0.12)" }} />
+              </div>
+              <button className="pmo-focusable pmo-btn" onClick={handleBiometric} disabled={bioBusy}
+                style={{
+                  width:"100%", padding:"12px 16px", borderRadius:R.md, cursor: bioBusy ? "default" : "pointer",
+                  background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.20)",
+                  color:"#fff", fontSize:13.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+                  display:"flex", alignItems:"center", justifyContent:"center", gap:9,
+                  opacity: bioBusy ? 0.6 : 1, transition:"all .2s ease",
+                }}>
+                <Fingerprint size={16} />
+                {bioBusy ? "Waiting for confirmation…" : bioLabel}
+              </button>
+            </>
+          )}
 
           {/* Security note */}
           <div style={{ marginTop:20, textAlign:"center" }}>
@@ -5958,6 +9396,15 @@ function Login({ T, dark, onLogin }) {
           </div>
         </div>
       </div>
+
+      {vpL.width < 900 && (
+        <div style={{ textAlign:"center", fontSize:11, color:"rgba(255,255,255,0.4)",
+          display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+          padding:"18px 24px 28px", position:"relative", zIndex:1 }}>
+          <span style={{ color:(T.goldText || GOLD), fontSize:13 }}>✦</span>
+          Designed & Developed by the Project Management Office — Riphah International University
+        </div>
+      )}
 
     </div>
   );
@@ -5972,9 +9419,523 @@ const PAGE_TITLES = {
   cashflow: { title:"Project Cashflows & Timelines", subtitle:"Monthly CAPEX cashflow and scheduling view" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
   team: { title:"Team & About",    subtitle:"PMO team and portal information" },
+  users:{ title:"User Management", subtitle:"Accounts, roles and project assignments" },
   log:  { title:"Activity Log",    subtitle:"Immutable audit trail" },
   set:  { title:"Settings",        subtitle:"Portal configuration" },
 };
+
+// ─── NOTIFICATIONS DRAWER ────────────────────────────────────────────────────
+// §23 asked for PDD-overdue, PO-pending and payment events. The schema records
+// none of those as events — `notifications_log` only stores email send
+// attempts. So this surfaces what the data can actually vouch for:
+//
+//   · projects past their planned finish date        (from projects.end_date)
+//   · comments addressed to you that you haven't read (comments + comment_reads)
+//   · recent portfolio changes                        (activity_log)
+//
+// Each section is fetched independently and simply doesn't render if the role
+// can't see it — a Project Manager and a Guest get a narrower feed than the
+// PMO rather than a wall of permission errors.
+function NotificationsDrawer({ T, session, open, onClose, onSelectProject, onGoToUpdates, isCompact }) {
+  const [loading, setLoading] = useState(false);
+  const [overdue, setOverdue] = useState([]);
+  const [unread, setUnread]   = useState([]);
+  const [activity, setActivity] = useState([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setLoading(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const safe = (pr) => pr.then(r => r).catch(() => []);
+    Promise.all([
+      safe(supa(`/rest/v1/projects?select=id,code,name,end_date,workflow_stage&end_date=lt.${today}&workflow_stage=neq.closed&order=end_date.asc&limit=20`, {}, session.access_token)),
+      safe(supa("/rest/v1/comments?select=id,project_id,author_id,author_name,body,created_at&order=created_at.desc&limit=40", {}, session.access_token)),
+      safe(supa("/rest/v1/comment_reads?select=comment_id", {}, session.access_token)),
+      safe(supa("/rest/v1/activity_log?select=id,action,entity_type,summary,actor_name,created_at&order=created_at.desc&limit=15", {}, session.access_token)),
+    ]).then(([od, cm, rd, act]) => {
+      if (!alive) return;
+      const readSet = new Set((rd || []).map(r => r.comment_id));
+      setOverdue(od || []);
+      setUnread((cm || []).filter(c => c.author_id !== session.user_id && !readSet.has(c.id)).slice(0, 12));
+      setActivity(act || []);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [open, session.access_token, session.user_id]);
+
+  // Escape closes the drawer, matching every modal in the product. Without it
+  // the scrim stayed up and blocked the page underneath.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  const ago = (iso) => {
+    if (!iso) return "";
+    const mins = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+    if (mins < 1)    return "just now";
+    if (mins < 60)   return `${mins}m ago`;
+    const h = Math.round(mins / 60);
+    if (h < 24)      return `${h}h ago`;
+    const d = Math.round(h / 24);
+    return d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-GB", { day:"numeric", month:"short" });
+  };
+
+  const daysLate = (d) => Math.round((Date.now() - new Date(d)) / 86400000);
+  const total = overdue.length + unread.length;
+
+  const Item = ({ tone, icon:Icon, title, meta, note, onClick, live }) => (
+    <div onClick={onClick} className={onClick ? "pmo-focusable" : ""}
+      role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => { if (onClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(); } }}
+      style={{
+        display:"flex", gap:SP.md, padding:`${SP.md}px ${SP.lg}px`,
+        borderBottom:`1px solid ${T.border}`, cursor: onClick ? "pointer" : "default",
+        transition:`background ${MOTION.fast}`,
+      }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = T.rowHover; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+      <div style={{
+        width:28, height:28, borderRadius:R.sm, flexShrink:0, marginTop:1,
+        background:`${tone}${T.badge}`, border:`1px solid ${tone}33`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+      }}>
+        <Icon className={live ? "pmo-awaiting" : ""} size={14} color={tone} strokeWidth={2} />
+      </div>
+      <div style={{ minWidth:0, flex:1 }}>
+        <div style={{ ...TYPE.bodySm, color:T.text, fontWeight:600, lineHeight:1.4 }}>{title}</div>
+        {note && <div style={{ ...TYPE.caption, color:T.textSoft, marginTop:2,
+          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{note}</div>}
+        <div style={{ ...TYPE.caption, color:T.dim, marginTop:3 }}>{meta}</div>
+      </div>
+    </div>
+  );
+
+  const Section = ({ label, count, children }) => (
+    <>
+      <div style={{
+        display:"flex", alignItems:"center", gap:SP.sm,
+        padding:`${SP.md}px ${SP.lg}px ${SP.sm}px`, background:T.pageAlt,
+        borderBottom:`1px solid ${T.border}`, position:"sticky", top:0, zIndex:2,
+      }}>
+        <span style={{ ...TYPE.label, color:T.muted }}>{label}</span>
+        <span style={{ ...TYPE.caption, color:T.dim }}>{count}</span>
+      </div>
+      {children}
+    </>
+  );
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div onClick={onClose} className="pmo-fade" style={{
+        position:"fixed", inset:0, zIndex:1100,
+        background: T.mode === "dark" ? "rgba(3,8,16,0.6)" : "rgba(12,30,51,0.35)",
+        backdropFilter:"blur(4px)", WebkitBackdropFilter:"blur(4px)",
+      }} />
+      <aside className="pmo-slide-r" aria-label="Notifications" style={{
+        position:"fixed", top:0, right:0, bottom:0, zIndex:1101,
+        width: isCompact ? "100%" : 420, maxWidth:"100%",
+        background:T.surface, borderLeft:`1px solid ${T.border}`,
+        boxShadow:T.shadowLg, display:"flex", flexDirection:"column",
+      }}>
+        <div style={{
+          display:"flex", alignItems:"center", gap:SP.md,
+          padding:`${SP.lg}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}`, flexShrink:0,
+        }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ ...TYPE.h2, color:T.text }}>Needs your attention</div>
+            <div style={{ ...TYPE.caption, color:T.muted, marginTop:2 }}>
+              {loading ? "Checking…" : total > 0 ? `${total} item${total === 1 ? "" : "s"}` : "Nothing outstanding"}
+            </div>
+          </div>
+          <IconButton T={T} icon={X} onClick={onClose} title="Close notifications" />
+        </div>
+
+        <div className="pmo-scroll" style={{ flex:1, overflowY:"auto" }}>
+          {loading && (
+            <div style={{ padding:SP.lg, display:"flex", flexDirection:"column", gap:SP.md }}>
+              {[0,1,2,3].map(i => <Skeleton key={i} T={T} h={46} />)}
+            </div>
+          )}
+
+          {!loading && total === 0 && activity.length === 0 && (
+            <EmptyState T={T} icon={CheckCircle2} tone={T.positive}
+              title="You're all caught up"
+              message="No overdue projects and no unread updates. Anything needing attention will appear here." />
+          )}
+
+          {!loading && overdue.length > 0 && (
+            <Section label="Past planned finish" count={overdue.length}>
+              {overdue.map(p => (
+                <Item key={p.id} tone={T.danger} icon={AlertTriangle} live
+                  title={p.name}
+                  note={`${p.code && p.code !== "-" ? p.code + " · " : ""}${STAGE_META[p.workflow_stage]?.label || ""}`}
+                  meta={`${daysLate(p.end_date)} days past planned finish`}
+                  onClick={() => { onSelectProject(p.id); onClose(); }} />
+              ))}
+            </Section>
+          )}
+
+          {!loading && unread.length > 0 && (
+            <Section label="Unread updates" count={unread.length}>
+              {unread.map(c => (
+                <Item key={c.id} tone={T.info} icon={MessageSquare}
+                  title={c.author_name || "Someone"}
+                  note={(c.body || "").slice(0, 80)}
+                  meta={ago(c.created_at)}
+                  onClick={() => { onGoToUpdates(); onClose(); }} />
+              ))}
+            </Section>
+          )}
+
+          {!loading && activity.length > 0 && (
+            <Section label="Recent portfolio activity" count={activity.length}>
+              {activity.map(a => (
+                <Item key={a.id} tone={T.neutral} icon={Activity}
+                  title={a.summary || `${a.action} ${a.entity_type}`}
+                  meta={`${a.actor_name || "System"} · ${ago(a.created_at)}`} />
+              ))}
+            </Section>
+          )}
+        </div>
+
+        <div style={{
+          padding:`${SP.md}px ${SP.lg}px`, borderTop:`1px solid ${T.border}`,
+          background:T.pageAlt, flexShrink:0,
+        }}>
+          <Button T={T} variant="ghost" full icon={MessageSquare}
+            onClick={() => { onGoToUpdates(); onClose(); }}>Open all updates</Button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// ─── GLOBAL SEARCH ───────────────────────────────────────────────────────────
+// §25. A command palette over the whole portfolio: name, project ID,
+// organisation, segment, stage and priority, all matched at once. Opens on
+// ⌘K / Ctrl+K from anywhere, so finding a project never costs a page change.
+//
+// The project list is fetched once on first open and cached for the session —
+// 106 rows is small enough that filtering client-side is instant, and it means
+// no request between keystrokes.
+function GlobalSearch({ T, session, open, onClose, onSelect, onQuick }) {
+  const vp = useViewport();
+  const [q, setQ]         = useState("");
+  const [rows, setRows]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [cursor, setCursor]   = useState(0);
+
+  // §18 — recently opened projects, so returning to something you were just
+  // looking at costs one keystroke rather than retyping its name. Stored
+  // locally: this is navigation history, not portfolio data.
+  const [recent, setRecent] = useState([]);
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const raw = localStorage.getItem("pmo_recent_projects");
+      setRecent(raw ? JSON.parse(raw).slice(0, 4) : []);
+    } catch (_) { setRecent([]); }
+  }, [open]);
+  const inputRef = useRef(null);
+  const listRef  = useRef(null);
+
+  useEffect(() => {
+    if (!open || rows) return;
+    setLoading(true);
+    supa("/rest/v1/projects?select=id,code,name,workflow_stage,priority,bac,df_recommended_amount,fiscal_year,segments(name),sectors(name)&order=code.asc",
+      {}, session.access_token)
+      .then(setRows).catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [open, rows, session.access_token]);
+
+  useEffect(() => {
+    if (open) { setQ(""); setCursor(0); setTimeout(() => inputRef.current?.focus(), 40); }
+  }, [open]);
+
+  const results = useMemo(() => {
+    if (!rows) return [];
+    const term = q.trim().toLowerCase();
+    if (!term) return rows.slice(0, 12);
+    const words = term.split(/\s+/);
+    const scored = [];
+    for (const p of rows) {
+      const stage = STAGE_META[p.workflow_stage]?.label || "";
+      const prio  = PRIORITY_META[p.priority]?.label || "";
+      const hay = [p.code, p.name, p.segments?.name, p.sectors?.name, stage, prio, p.fiscal_year]
+        .filter(Boolean).join(" ").toLowerCase();
+      // Every word must appear somewhere, so "riphah approved" narrows rather
+      // than widening the way a plain OR match would.
+      if (!words.every(w => hay.includes(w))) continue;
+      // Rank exact-ish ID and name-prefix matches above incidental mentions.
+      let score = 0;
+      const code = (p.code || "").toLowerCase();
+      const name = (p.name || "").toLowerCase();
+      if (code === term) score += 100;
+      else if (code.startsWith(term)) score += 60;
+      if (name.startsWith(term)) score += 40;
+      else if (name.includes(term)) score += 20;
+      scored.push({ p, score });
+    }
+    scored.sort((a, b) => b.score - a.score || (a.p.code || "").localeCompare(b.p.code || ""));
+    return scored.slice(0, 40).map(x => x.p);
+  }, [rows, q]);
+
+  // Quick actions are the destinations people reach for most, expressed as
+  // verbs. They filter out as soon as a query narrows to projects.
+  const QUICK_ACTIONS = useMemo(() => ([
+    { id:"qa-approved", label:"View approved projects",  hint:"Projects · Stage: Approved",
+      icon:CheckCircle, go:() => onQuick?.("approved") },
+    { id:"qa-pdd",      label:"View PDD status",          hint:"Dashboard · Approval pipeline",
+      icon:ClipboardList, go:() => onQuick?.("pdd") },
+    { id:"qa-payments", label:"View payment status",      hint:"Dashboard · Financial movement",
+      icon:Wallet, go:() => onQuick?.("payments") },
+    { id:"qa-health",   label:"View project health",      hint:"Dashboard · Delivery performance",
+      icon:Activity, go:() => onQuick?.("health") },
+  ]), [onQuick]);
+
+  const showIdle = !q.trim();
+  const actions  = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return QUICK_ACTIONS;
+    return QUICK_ACTIONS.filter(a => a.label.toLowerCase().includes(term));
+  }, [q, QUICK_ACTIONS]);
+
+  // One flat list so arrow keys move through actions and results seamlessly
+  // rather than the user having to know which section they are in.
+  const flat = useMemo(() => ([
+    ...actions.map(a => ({ kind:"action", ...a })),
+    ...(showIdle ? recent.map(r => ({ kind:"recent", ...r })) : []),
+    ...results.map(p => ({ kind:"project", p })),
+  ]), [actions, recent, results, showIdle]);
+
+  useEffect(() => { setCursor(0); }, [q]);
+
+  const choose = useCallback((p) => { if (p) { remember(p); onSelect(p.id); onClose(); } }, [onSelect, onClose]);
+
+  const pick = (item) => {
+    if (!item) return;
+    if (item.kind === "action")  { item.go?.(); onClose(); return; }
+    if (item.kind === "recent")  { remember(item); onSelect(item.id); onClose(); return; }
+    choose(item.p);
+  };
+
+  // Keep a short navigation history so returning somewhere costs one keystroke.
+  const remember = (p) => {
+    try {
+      const entry = { id:p.id, code:p.code, name:p.name };
+      const prev = JSON.parse(localStorage.getItem("pmo_recent_projects") || "[]")
+        .filter(x => x.id !== entry.id);
+      localStorage.setItem("pmo_recent_projects",
+        JSON.stringify([entry, ...prev].slice(0, 8)));
+    } catch (_) { /* private browsing — history simply does not persist */ }
+  };
+
+  const onKey = (e) => {
+    if (e.key === "ArrowDown")      { e.preventDefault(); setCursor(c => Math.min(flat.length - 1, c + 1)); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
+    else if (e.key === "Enter")     { e.preventDefault(); pick(flat[cursor]); }
+    else if (e.key === "Escape")    { e.preventDefault(); onClose(); }
+  };
+
+  // Keep the highlighted row in view when navigating by keyboard.
+  useEffect(() => {
+    const el = listRef.current?.querySelector(`[data-idx="${cursor}"]`);
+    el?.scrollIntoView({ block:"nearest" });
+  }, [cursor]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position:"fixed", inset:0, zIndex:1200,
+        background: T.mode === "dark" ? "rgba(3,8,16,0.7)" : "rgba(12,30,51,0.4)",
+        backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)",
+        display:"flex", alignItems:"flex-start", justifyContent:"center",
+        padding:"12vh 16px 16px", animation:"pmoFade .16s ease",
+      }}>
+      <div className="pmo-scale" role="dialog" aria-modal="true" aria-label="Search projects"
+        style={{
+          width:"100%", maxWidth:660, background:T.surface,
+          border:`1px solid ${T.borderStrong}`, borderRadius:R.xl,
+          boxShadow:T.shadowLg, overflow:"hidden", display:"flex", flexDirection:"column",
+          maxHeight:"70vh",
+        }}>
+        {/* Query */}
+        <div style={{ display:"flex", alignItems:"center", gap:SP.md,
+          padding:`${SP.md}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}` }}>
+          <Search size={17} color={T.muted} style={{ flexShrink:0 }} />
+          <input
+            ref={inputRef} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
+            placeholder="Search projects by name, ID, organisation, segment, stage…"
+            style={{
+              flex:1, minWidth:0, background:"none", border:"none", outline:"none",
+              fontFamily:TYPE.body.fontFamily, fontSize:15, color:T.text,
+            }} />
+          <kbd style={{
+            ...TYPE.caption, color:T.dim, border:`1px solid ${T.border}`,
+            borderRadius:R.sm, padding:"2px 6px", background:T.pageAlt, flexShrink:0,
+          }}>Esc</kbd>
+        </div>
+
+        {/* Results */}
+        <div ref={listRef} className="pmo-scroll" style={{ overflowY:"auto", flex:1 }}>
+          {loading && (
+            <div style={{ padding:SP.lg, display:"flex", flexDirection:"column", gap:SP.sm }}>
+              {[0,1,2,3,4].map(i => <Skeleton key={i} T={T} h={38} />)}
+            </div>
+          )}
+
+          {/* §18 — Quick Actions. Verbs, not places: the things people open the
+              palette to do. They filter out as soon as a query narrows. */}
+          {!loading && actions.length > 0 && (
+            <>
+              <div style={{ ...TYPE.label, color:T.dim, padding:`${SP.sm}px ${SP.md}px 4px` }}>
+                Quick actions
+              </div>
+              {actions.map((a, i) => {
+                const on = i === cursor;
+                const Ico = a.icon;
+                return (
+                  <div key={a.id} data-idx={i}
+                    onMouseEnter={() => setCursor(i)} onClick={() => pick({ kind:"action", ...a })}
+                    style={{
+                      display:"flex", alignItems:"center", gap:SP.md,
+                      padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm, cursor:"pointer",
+                      background: on ? T.rowHover : "transparent",
+                      boxShadow: on ? `inset 2px 0 0 ${T.blueBright}` : "none",
+                      transition:`background ${MOTION.fast}`,
+                    }}>
+                    <div style={{
+                      width:26, height:26, borderRadius:R.sm, flexShrink:0,
+                      background:`${T.info}${T.badge}`, border:`1px solid ${T.info}33`,
+                      display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <Ico size={13} color={T.info} strokeWidth={2} />
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft,
+                        fontWeight: on ? 600 : 500 }}>{a.label}</div>
+                      <div style={{ ...TYPE.caption, color:T.dim, marginTop:1 }}>{a.hint}</div>
+                    </div>
+                    <ArrowUpRight size={13} color={on ? T.blueBright : T.dim} />
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* §18 — Recent. Only when idle: once a query is typed, results are
+              what matters and history is noise. */}
+          {!loading && showIdle && recent.length > 0 && (
+            <>
+              <div style={{ ...TYPE.label, color:T.dim,
+                padding:`${SP.md}px ${SP.md}px 4px` }}>Recent</div>
+              {recent.map((r, ri) => {
+                const i = actions.length + ri;
+                const on = i === cursor;
+                return (
+                  <div key={r.id} data-idx={i}
+                    onMouseEnter={() => setCursor(i)} onClick={() => pick({ kind:"recent", ...r })}
+                    style={{
+                      display:"flex", alignItems:"center", gap:SP.md,
+                      padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm, cursor:"pointer",
+                      background: on ? T.rowHover : "transparent",
+                      boxShadow: on ? `inset 2px 0 0 ${BRAND.gold}` : "none",
+                      transition:`background ${MOTION.fast}`,
+                    }}>
+                    <Clock size={13} color={on ? BRAND.gold : T.dim} style={{ flexShrink:0 }} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ ...TYPE.bodySm, color: on ? T.text : T.textSoft,
+                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
+                        data-peek={r.name}>{r.name}</div>
+                      {r.code && r.code !== "-" && (
+                        <div style={{ ...TYPE.mono, fontSize:10.5, color:T.dim, marginTop:1 }}>{r.code}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {!loading && results.length > 0 && (
+            <div style={{ ...TYPE.label, color:T.dim,
+              padding:`${SP.md}px ${SP.md}px 4px` }}>
+              {showIdle ? "All projects" : `${results.length} match${results.length === 1 ? "" : "es"}`}
+            </div>
+          )}
+
+          {!loading && results.length === 0 && actions.length === 0 && (
+            <EmptyState T={T} icon={Search} compact
+              title={q.trim() ? "No projects match that" : "No projects to search"}
+              message={q.trim()
+                ? "Try a shorter term, a project ID, or an organisation name."
+                : "The portfolio is empty."} />
+          )}
+
+          {!loading && results.map((p, ri) => {
+            const i = actions.length + (showIdle ? recent.length : 0) + ri;
+            const on = i === cursor;
+            const st = STAGE_META[p.workflow_stage];
+            const pClr = PRIORITY_META[p.priority]?.color;
+            return (
+              <div key={p.id} data-idx={i}
+                onMouseEnter={() => setCursor(i)} onClick={() => choose(p)}
+                style={{
+                  display:"flex", alignItems:"center", gap:SP.md,
+                  padding:`${SP.sm}px ${SP.lg}px`, cursor:"pointer",
+                  background: on ? T.rowActive : "transparent",
+                  borderLeft:`2px solid ${on ? (pClr || T.blue) : "transparent"}`,
+                  transition:`background ${MOTION.fast}`,
+                }}>
+                <div style={{ minWidth:0, flex:1 }}>
+                  <div style={{ ...TYPE.bodySm, color:T.text, fontWeight: on ? 600 : 450,
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
+                    data-peek={p.name}>{p.name}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginTop:2 }}>
+                    {p.code && p.code !== "-"
+                      ? <span style={{ ...TYPE.mono, color:T.muted }}>{p.code}</span>
+                      : <span style={{ ...TYPE.caption, color:T.dim, fontStyle:"italic" }}>No ID yet</span>}
+                    <span style={{ ...TYPE.caption, color:T.dim }}>
+                      {[p.segments?.name, p.sectors?.name].filter(Boolean).join(" · ") || "—"}
+                    </span>
+                  </div>
+                </div>
+                {st && <Badge T={T} color={st.color} size="sm">{st.label}</Badge>}
+                <span style={{ ...TYPE.bodySm, fontWeight:700, minWidth:66, textAlign:"right",
+                  color: +p.bac > 0 ? (T.goldText || BRAND.gold) : T.dim, fontVariantNumeric:"tabular-nums" }}>
+                  {fmtM(p.bac || p.df_recommended_amount)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer hints */}
+        <div style={{ display:"flex", alignItems:"center", gap:SP.lg,
+          padding:`${SP.sm}px ${SP.lg}px`, borderTop:`1px solid ${T.border}`,
+          background:T.pageAlt, ...TYPE.caption, color:T.muted }}>
+          {vp.isCompact ? (
+            <span>Tap a result to open it</span>
+          ) : (
+            <>
+              <span>↑ ↓ to navigate</span>
+              <span>↵ to open</span>
+            </>
+          )}
+          {rows && <span style={{ marginLeft:"auto" }}>{results.length} of {rows.length}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [dark, setDark] = useState(true);
@@ -5982,13 +9943,78 @@ export default function App() {
   const [page, setPage] = useState("cmd");
   const [restoring, setRestoring] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+
+  // Projects and Campus/Sites filter state, lifted here from inside each
+  // page: both pages unmount entirely whenever a project is opened (they're
+  // swapped for ProjectDetailPage, not kept mounted behind it), so anything
+  // kept as local state inside them was silently reset every time someone
+  // opened a project and clicked back — reported directly, reproduced, and
+  // this is the fix.
+  const [projSearch, setProjSearch] = useState("");
+  const [projFFY,    setProjFFY]    = useState("");
+  const [projFOrg,   setProjFOrg]   = useState("");
+  const [projFCode,  setProjFCode]  = useState("");
+  const [projFName,  setProjFName]  = useState("");
+  const [projFSeg,   setProjFSeg]   = useState("");
+  const [projFPri,   setProjFPri]   = useState("");
+  const [projFStrat, setProjFStrat] = useState("");
+  const [projFStage, setProjFStage] = useState("");
+  const [projFCC,    setProjFCC]    = useState("");
+  const [campSel,    setCampSel]    = useState("");
+  const [campQ,      setCampQ]      = useState("");
+  const [campFCode,  setCampFCode]  = useState("");
+  const [campFName,  setCampFName]  = useState("");
+  const [campFSite,  setCampFSite]  = useState("");
+  const [campFPri,   setCampFPri]   = useState("");
+  const [campFStage, setCampFStage] = useState("");
+  const [campFCC,    setCampFCC]    = useState("");
   const [returnPage, setReturnPage] = useState("proj");
   const [inviteState, setInviteState] = useState(null);
+  const [inviteError, setInviteError] = useState(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [discussionProjectId, setDiscussionProjectId] = useState(null); // {token, type}
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadTick, setUnreadTick] = useState(0); // bump to force an immediate refresh
+
+  // ─── ONBOARDING TOUR (Guest, Project Manager only — never PMO) ──────────
+  // tutorial_offered_at gates the invite card, not the tour itself: "Take the
+  // tour" in the sidebar always works, regardless of whether the card was
+  // ever shown. A user PMO deletes and re-adds gets a fresh auth.users row,
+  // so tutorial_offered_at is NULL again with no extra logic — the offer
+  // reappears on its own.
+  const [showTourInvite, setShowTourInvite] = useState(false);
+  const vpTourGuard = useViewport();
+  // DeadlineAlertPopups and the newer PDD-reminder popups both fire ~5s
+  // after login as full-screen modals — without coordination, both can be
+  // in the DOM at once, and the higher z-index one silently buries the
+  // other with no way to reach it. This flag lets whichever claims it first
+  // hold the floor; the other waits until it's released before showing.
+  const [blockingAlertActive, setBlockingAlertActive] = useState(false);
+  useEffect(() => {
+    if (!session?.access_token || session.role !== "guest") return;
+    if (session.tutorial_offered_at) return;
+    // Desktop-only: skip entirely on mobile, including the write below —
+    // if we marked it offered here, a guest whose first login happens to
+    // be on a phone would never see the invite later on desktop either,
+    // since the one-time offer would already be spent.
+    if (vpTourGuard.isCompact) return;
+    const t = setTimeout(() => {
+      setShowTourInvite(true);
+      supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ tutorial_offered_at: new Date().toISOString() }),
+      }, session.access_token).catch(() => {});
+    }, 1400); // after the page's own entrance stagger settles
+    return () => clearTimeout(t);
+  }, [session]);
+
+  // openSampleProject and tourNav were declared here, before openProject and
+  // setDashTab exist as const bindings later in this same function. Both are
+  // referenced only inside callbacks (never called at declare-time), so
+  // esbuild's static checks passed — the TDZ only fires when a step actually
+  // runs. Deleted from here; the real declarations are below, once
+  // openProject and setDashTab genuinely exist.
 
   // Global unread-comment count (for sidebar badge) — polls every 45s.
   // "Unread for me" = a comment I can see, that I didn't write, and haven't opened yet.
@@ -6043,29 +10069,79 @@ export default function App() {
 
   // Session restore + invite/recovery token detection
   useEffect(() => {
-    // 1. Check for Supabase auth token in URL hash (invite or password recovery)
-    const hash = window.location.hash;
-    if (hash) {
-      const params = new URLSearchParams(hash.substring(1));
-      const type  = params.get("type");
-      const token = params.get("access_token");
-      if ((type === "invite" || type === "recovery") && token) {
-        setInviteState({ token, type });
-        // Remove token from URL immediately for security
+    (async () => {
+      // 1a. New format: a link to our own app, carrying only a hashed_token.
+      // A plain HTTP fetch (an email security scanner checking the link for
+      // malware, for instance) never executes this code, since it never runs
+      // JavaScript at all — only a real browser gets this far, which is what
+      // makes this immune to the prefetch-burns-the-token failure the old
+      // format had. See invite-user edge function for the full story.
+      const search = new URLSearchParams(window.location.search);
+      const tokenHash = search.get("invite_token");
+      const searchType = search.get("type");
+      if (tokenHash && (searchType === "invite" || searchType === "recovery")) {
         window.history.replaceState({}, "", window.location.pathname);
+        try {
+          const res = await fetch(`${SUPA_URL}/auth/v1/verify`, {
+            method: "POST",
+            headers: { apikey: SUPA_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ type: searchType, token_hash: tokenHash }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.access_token) {
+            throw new Error(data.error_description || data.msg || "This link is no longer valid.");
+          }
+          setInviteState({ token: data.access_token, type: searchType });
+        } catch (e) {
+          setInviteError(
+            "This invitation link has already been used or has expired. " +
+            "Ask the PMO to send you a new one."
+          );
+        }
         setRestoring(false);
         return;
       }
-    }
-    // 2. Restore saved session
-    try {
-      const raw = localStorage.getItem("pmo_session");
-      if (raw) {
-        const s = JSON.parse(raw);
-        if (s.expires_at && Date.now() < (s.expires_at - 60) * 1000) setSession(s);
+
+      // 1b. Old format still in flight in anyone's inbox from before this fix:
+      // a direct link to Supabase's own verify endpoint, redirecting back with
+      // either a live session or an #error=... in the hash. The error case
+      // was previously unhandled entirely — it fell straight through to an
+      // ordinary sign-in screen with no explanation, which is the exact
+      // symptom reported.
+      const hash = window.location.hash;
+      if (hash) {
+        const params = new URLSearchParams(hash.substring(1));
+        const type  = params.get("type");
+        const token = params.get("access_token");
+        const hashError = params.get("error_code") || params.get("error");
+        if ((type === "invite" || type === "recovery") && token) {
+          setInviteState({ token, type });
+          window.history.replaceState({}, "", window.location.pathname);
+          setRestoring(false);
+          return;
+        }
+        if (hashError) {
+          window.history.replaceState({}, "", window.location.pathname);
+          setInviteError(
+            hashError === "otp_expired"
+              ? "This invitation link has already been used or has expired. Ask the PMO to send you a new one."
+              : "This link couldn't be verified. Ask the PMO to send you a new one."
+          );
+          setRestoring(false);
+          return;
+        }
       }
-    } catch(_) {}
-    setRestoring(false);
+
+      // 2. Restore saved session
+      try {
+        const raw = localStorage.getItem("pmo_session");
+        if (raw) {
+          const s = JSON.parse(raw);
+          if (s.expires_at && Date.now() < (s.expires_at - 60) * 1000) setSession(s);
+        }
+      } catch(_) {}
+      setRestoring(false);
+    })();
   }, []);
 
   const handleLogout = async () => {
@@ -6075,6 +10151,175 @@ export default function App() {
   };
 
   const T = dark ? DK : LT;
+  const vp = useViewport();
+  // The awareness layer. One pointer listener for the whole application,
+  // publishing position, velocity, idle and dwell as CSS custom properties.
+  usePresence();
+  useProximityField();
+  useScrollParallax();   // §12
+  useProjectPeek();      // full project names on hover, anywhere in the portal
+  // §9 — the atmosphere carries how the portfolio is actually doing: a warm
+  // cast when something needs attention, cool when healthy. The environment
+  // becomes about the data rather than decoration over it.
+  const [ambientMood, setAmbientMood] = useState("neutral");
+  const { lastVisit, changedSince } = useSessionMemory();   // §15
+
+  // §17 — one lightweight read, shared by every navigation preview.
+  const [navStats, setNavStats] = useState(null);
+  const [dashTab, setDashTab] = useState(null);   // §18 — set by quick actions
+
+  // Placed here deliberately: this is the first point in App() where both
+  // openProject and setDashTab exist as real bindings. The previous location
+  // — earlier in this function, alongside the other tour state — referenced
+  // both before they were declared. esbuild's static checks don't catch a
+  // temporal-dead-zone read inside a callback body, since the callback isn't
+  // invoked at parse time; it only threw once a tour step actually ran,
+  // which is how this reached production before being caught.
+  const openSampleProject = useCallback(async () => {
+    if (selectedProjectId) return;
+    // A specific project — Renovation & Upgratdation of QIE Campus — chosen
+    // because it genuinely has both documents and a video in Site Visit, so
+    // the tour's Documents and Site Visit steps show real content instead of
+    // landing on whatever happened to be edited most recently.
+    //
+    // Looked up by `code`, not a stored id: this portal's re-import path
+    // deletes and recreates every project row (confirmed cascading through
+    // project_attachments earlier this session), which changes ids but not
+    // codes. Falls back to most-recently-updated if the project is ever
+    // renamed, removed, or its code changes, so the tour can never fail to
+    // open something.
+    const TOUR_SAMPLE_CODE = "IT.261297-04";
+    try {
+      const byCode = await supa(
+        `/rest/v1/projects?code=eq.${TOUR_SAMPLE_CODE}&select=id&limit=1`,
+        {}, session.access_token);
+      let id = Array.isArray(byCode) && byCode[0]?.id;
+      if (!id) {
+        const rows = await supa(
+          "/rest/v1/projects?select=id&order=updated_at.desc&limit=1",
+          {}, session.access_token);
+        id = Array.isArray(rows) && rows[0]?.id;
+      }
+      if (id) openProject(id);
+    } catch (_) { /* the step still shows; the demo simply has nothing to open */ }
+  }, [session, selectedProjectId, openProject]);
+
+  const markTourComplete = useCallback(async () => {
+    if (!session?.access_token) return;
+    await supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
+      method: "PATCH", headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ tutorial_completed_at: new Date().toISOString() }),
+    }, session.access_token).catch(() => {});
+  }, [session]);
+
+  const tourNav = {
+    setPage,
+    setTab: (pg, tab) => { if (pg === "cmd") setDashTab(tab); },
+    openSampleProject,
+    onFinish: markTourComplete,
+  };
+
+  // Data freshness, read from the newest activity-log entry rather than the
+  // page-load time — it answers "how current is this?", not "when did I open it?".
+  const [freshness, setFreshness] = useState(null);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/activity_log?select=created_at&order=created_at.desc&limit=1", {}, session.access_token)
+      .then(rows => {
+        const iso = Array.isArray(rows) && rows[0]?.created_at;
+        if (!alive || !iso) return;
+        const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+        setFreshness(
+          mins < 1    ? "just now"
+          : mins < 60 ? `${mins}m ago`
+          : mins < 1440 ? `${Math.round(mins / 60)}h ago`
+          : `${Math.round(mins / 1440)}d ago`
+        );
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token)
+      .then(rows => {
+        const d = Array.isArray(rows) ? rows[0] : rows;
+        if (!alive || !d) return;
+        const M = v => `PKR ${((+v || 0) / 1e6).toFixed(1)}M`;
+        setNavStats({
+          cmd:  `${d.total_projects} projects · ${M(d.total_capex)}`,
+          proj: `${d.total_projects} tracked · ${d.approved_count} approved`,
+          camp: `${d.total_projects} projects across all campuses`,
+          perf: d.approved_count ? `${d.approved_count} executing · CPI and SPI pending` : "No approved projects yet",
+          cashflow: "Monthly cashflow snapshot",
+          upd:  "Project comments and communications",
+        });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
+  const sinceLabel = useMemo(() => {
+    if (!lastVisit) return null;
+    const mins = Math.round((Date.now() - lastVisit.getTime()) / 60000);
+    if (mins < 2)     return null;                       // same session — not news
+    if (mins < 60)    return `Last here ${mins}m ago`;
+    const h = Math.round(mins / 60);
+    if (h < 24)       return `Last here ${h}h ago`;
+    const days = Math.round(h / 24);
+    return `Last here ${days}d ago`;
+  }, [lastVisit]);
+  // Native date pickers read their chrome from color-scheme; set it per theme
+  // so the calendar popup matches the rest of the product.
+  useEffect(() => {
+    const r = document.documentElement.style;
+    r.setProperty("--pmo-scheme", dark ? "dark" : "light");
+    r.setProperty("--pmo-date-filter", dark ? "invert(1)" : "none");
+  }, [dark]);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [navMobileOpen, setNavMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [notifOpen, setNotifOpen]   = useState(false);
+  // The PMO can rename the dashboard and set the fiscal year in Settings, but
+  // the header, hero and sidebar were all hardcoded — so those fields had no
+  // visible effect anywhere. Load them once and let them drive the chrome.
+  const [portal, setPortal] = useState({ title:"Capex Dashboard", fy:"FY 2026-27" });
+  useEffect(() => {
+    if (!session?.access_token) return;
+    let alive = true;
+    supa("/rest/v1/settings?select=key,value&key=in.(dashboard_title,fiscal_year)", {}, session.access_token)
+      .then(rows => {
+        if (!alive || !Array.isArray(rows)) return;
+        const m = {};
+        rows.forEach(r => { m[r.key] = unquote(r.value); });
+        setPortal({
+          title: m.dashboard_title || "Capex Dashboard",
+          fy:    m.fiscal_year     || "FY 2026-27",
+        });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [session?.access_token]);
+  // ⌘K / Ctrl+K from anywhere. Bound at the document so it works regardless of
+  // which page or control currently holds focus.
+  // §14 — rack focus: the application behind an overlay pulls back and softens.
+  useEffect(() => {
+    const anyOverlay = searchOpen || notifOpen || showChangePassword || sessionExpired;
+    document.documentElement.dataset.overlay = anyOverlay ? "1" : "0";
+  }, [searchOpen, notifOpen, showChangePassword, sessionExpired]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault(); setSearchOpen(o => !o);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+  // Close the mobile drawer whenever the viewport grows back to desktop.
+  useEffect(() => { if (!vp.isCompact) setNavMobileOpen(false); }, [vp.isCompact]);
 
   // PMs cannot see Capex Dashboard — redirect to Projects
   const effectivePage =
@@ -6082,19 +10327,127 @@ export default function App() {
     (page === "cashflow" && session?.role !== "pmo") ? "proj" :
     page;
 
-  if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:"Inter,sans-serif" }}>Loading…</div>;
+  if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:TYPE.body.fontFamily }}>Loading…</div>;
+  if (inviteError) return <InviteErrorScreen T={T} message={inviteError} onBackToSignIn={() => setInviteError(null)} />;
   if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
-  if (!session) return <Login T={T} dark={dark} onLogin={setSession} />;
+  if (!session) return <><Login T={T} dark={dark} onLogin={setSession} /><InstallPrompt T={T} /></>;
 
-  const pageInfo = PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" };
+  // Contextual quick actions for the header. Deliberately small: two per page
+  // at most, and only actions the current role can actually perform (§24).
+  const quickActions = (() => {
+    if (selectedProjectId) return null;
+    const isPMO = session?.role === "pmo";
+    const acts = [];
+    if (effectivePage === "cmd") {
+      acts.push({ label:"View projects", icon:FolderKanban, onClick:() => navigateToPage("proj") });
+      acts.push({ label:"Performance",   icon:TrendingUp,   onClick:() => navigateToPage("perf") });
+    } else if (effectivePage === "proj" || effectivePage === "camp") {
+      acts.push({ label:"Pending approvals", icon:ClipboardList, onClick:() => navigateToPage("cmd") });
+    } else if (effectivePage === "upd") {
+      acts.push({ label:"View projects", icon:FolderKanban, onClick:() => navigateToPage("proj") });
+    } else if (effectivePage === "users" && isPMO) {
+      acts.push({ label:"Activity log", icon:Activity, onClick:() => navigateToPage("log") });
+    }
+    return acts.length ? acts : null;
+  })();
+
+  const pageInfo = selectedProjectId
+    ? { title:"Project detail", subtitle:`From ${returnPage === "perf" ? "Performance" : "Projects"}` }
+    : effectivePage === "cmd"
+      ? { title: portal.title, subtitle: `Portfolio ${portal.fy}` }
+      : (PAGE_TITLES[effectivePage] || { title:"PMO Portal", subtitle:"" });
 
   return (
-    <>
-      <DeadlineAlertPopups T={T} session={session} />
-    <div style={{ display:"flex", height:"100vh", fontFamily:"Inter,sans-serif", background:T.mainBg }}>
-      <Sidebar page={effectivePage} setPage={navigateToPage} session={session} unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)} />
-      <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
-        <TopBar T={T} title={pageInfo.title} subtitle={pageInfo.subtitle} dark={dark} setDark={setDark} onLogout={handleLogout} />
+    <FocusProvider>
+    <TourProvider T={T} nav={tourNav}>
+      <TourInviteCard T={T} show={showTourInvite}
+        role={session?.role} name={session?.full_name}
+        onDismiss={() => setShowTourInvite(false)} />
+      <DeadlineAlertPopups T={T} session={session}
+        blockingAlertActive={blockingAlertActive} setBlockingAlertActive={setBlockingAlertActive} />
+      <PddAlertPMO T={T} session={session} supa={supa}
+        blockingAlertActive={blockingAlertActive} setBlockingAlertActive={setBlockingAlertActive} />
+      <PddAlertPM T={T} session={session} supa={supa}
+        blockingAlertActive={blockingAlertActive} setBlockingAlertActive={setBlockingAlertActive} />
+      {/* Quick actions are computed per page and per role, then handed to the
+          header — see QUICK_ACTIONS below. */}
+      <NotificationsDrawer
+        T={T} session={session} open={notifOpen} isCompact={vp.isCompact}
+        onClose={() => setNotifOpen(false)}
+        onSelectProject={(id) => openProject(id)}
+        onGoToUpdates={() => navigateToPage("upd")}
+      />
+      <GlobalSearch
+        onQuick={(what) => {
+          // Quick actions land the user where the action actually happens,
+          // with the relevant view already selected.
+          const TAB = { approved:"budgeting", pdd:"pipeline",
+                        payments:"financials", health:"execution" }[what];
+          if (!TAB) return;
+          setSelectedProjectId(null);
+          setPage("cmd");
+          // Force a change even if the same tab is requested twice, so the
+          // dashboard re-seeds rather than silently ignoring it.
+          setDashTab(null);
+          requestAnimationFrame(() => setDashTab(TAB));
+        }}
+        T={T} session={session} open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelect={(id) => openProject(id)}
+      />
+    <div style={{ display:"flex", height:"100vh", fontFamily:TYPE.body.fontFamily,
+      background:T.page, color:T.text, position:"relative" }}>
+      {/* Continuous ambient light behind everything, fixed so it persists as
+          you move between pages rather than restarting each time. */}
+      <Aurora T={T} mood={ambientMood} />
+      {/* §14 — technical grid at 2–3%. Registers subconsciously; invisible
+          if you look at it directly. */}
+      <div className="pmo-grid" aria-hidden="true" style={{
+        "--grid-c": T.mode === "dark" ? "rgba(140,180,230,0.030)" : "rgba(30,70,120,0.028)",
+      }} />
+      {/* §3 — a global light source that is the cursor itself. */}
+      {/* Peek panel colours, set on the root so the delegated tooltip — which
+          lives outside React's tree — follows the theme. */}
+      <style>{`:root{
+        --peek-bg:${T.surfaceOver};
+        --peek-border:${T.borderStrong};
+        --peek-fg:${T.text};
+        --peek-muted:${T.muted};
+      }`}</style>
+      <div className="pmo-worldlight" aria-hidden="true" style={{
+        "--world-light": T.mode === "dark"
+          ? "rgba(120,175,240,0.075)" : "rgba(44,123,196,0.055)",
+      }} />
+      <Sidebar
+        T={T} page={effectivePage} setPage={navigateToPage} session={session}
+        unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)}
+        collapsed={navCollapsed} setCollapsed={setNavCollapsed}
+        mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}
+        isCompact={vp.isCompact} fyLabel={portal.fy} navStats={navStats}
+      />
+      {vp.isCompact && (
+        <BottomTabBar T={T} page={effectivePage} setPage={navigateToPage} session={session}
+          unreadCount={unreadCount} onMore={() => setNavMobileOpen(true)} />
+      )}
+      {/* §14 — this column is the "world" that pulls back behind an overlay. */}
+      <div className="pmo-world" style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden",
+        paddingBottom: vp.isCompact ? "calc(58px + env(safe-area-inset-bottom, 0px))" : 0 }}>
+        <TopBar
+          T={T} title={pageInfo.title} subtitle={pageInfo.subtitle}
+          dark={dark} setDark={setDark} onLogout={handleLogout}
+          isCompact={vp.isCompact} onMenu={() => setNavMobileOpen(true)}
+          unreadCount={unreadCount} onBellClick={() => setNotifOpen(true)}
+          onSearch={() => setSearchOpen(true)}
+          quickActions={quickActions}
+          sinceLabel={sinceLabel}
+          freshness={freshness}
+        />
+        {/* §67 — keyed on the destination so React remounts the region and the
+            entrance animation plays. 240ms and a few pixels: the application
+            should feel fast, never like it is playing a transition at you. */}
+        <div key={selectedProjectId ? `p:${selectedProjectId}` : effectivePage}
+          className="pmo-page"
+          style={{ flex:1, minHeight:0, display:"flex", flexDirection:"column" }}>
         {selectedProjectId ? (
           <ProjectDetailPage
             T={T} session={session}
@@ -6105,18 +10458,31 @@ export default function App() {
           />
         ) : (
           <>
-            {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "perf" && <PerformancePage T={T} session={session} onSelectProject={openProject} />}
-            {effectivePage === "cashflow" && <CashflowPage />}
-            {effectivePage === "upd"  && <UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} />}
+            {effectivePage === "cmd"  && <CommandCenter T={T} session={session} onSelectProject={openProject} fyLabel={portal.fy} initialTab={dashTab} />}
+            {effectivePage === "proj" && <ProjectsPage T={T} session={session} onSelectProject={openProject}
+              search={projSearch} setSearch={setProjSearch}
+              fFY={projFFY} setFFY={setProjFFY} fOrg={projFOrg} setFOrg={setProjFOrg}
+              fCode={projFCode} setFCode={setProjFCode} fName={projFName} setFName={setProjFName}
+              fSeg={projFSeg} setFSeg={setProjFSeg} fPri={projFPri} setFPri={setProjFPri}
+              fStrat={projFStrat} setFStrat={setProjFStrat} fStage={projFStage} setFStage={setProjFStage}
+              fCC={projFCC} setFCC={setProjFCC} />}
+            {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject}
+              sel={campSel} setSel={setCampSel} q={campQ} setQ={setCampQ}
+              fCode={campFCode} setFCode={setCampFCode} fName={campFName} setFName={setCampFName}
+              fSite={campFSite} setFSite={setCampFSite} fPri={campFPri} setFPri={setCampFPri}
+              fStage={campFStage} setFStage={setCampFStage} fCC={campFCC} setFCC={setCampFCC} />}
+            {effectivePage === "photowall" && <PhotoWallPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
+            {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
+            {effectivePage === "risks" && <RiskRegisterPage T={T} session={session} supa={supa} />}
+            {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} />}
+            {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} />}
             {effectivePage === "users" && <UserManagementPage T={T} session={session} />}
             {effectivePage === "set"  && <SettingsPage T={T} session={session} />}
           </>
         )}
+        </div>
       </div>
       {showChangePassword && session && (
         <ChangePasswordModal T={T} session={session} onClose={() => setShowChangePassword(false)} />
@@ -6128,6 +10494,7 @@ export default function App() {
         }} />
       )}
     </div>
-    </>
+    </TourProvider>
+    </FocusProvider>
   );
 }
