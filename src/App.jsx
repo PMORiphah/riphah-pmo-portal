@@ -3413,8 +3413,8 @@ const EXCEL_COLS = {
   "Carry Forward":            "is_carry_forward",
   "Change in Scope":          "scope_change",
   "Payments Pending":         "payments_pending",
-  "Start Date":               "start_date",
-  "End Date":                 "end_date",
+  "Planned Start Date":       "start_date",
+  "Planned End Date":         "end_date",
   "Actual Start Date":        "actual_start_date",
   "Actual End Date":          "actual_end_date",
   "Duration (months)":        "duration_months",
@@ -3487,6 +3487,10 @@ const EXCEL_COL_LOOKUP = (() => {
     "actual start":            "actual_start_date",
     "actual end date":         "actual_end_date",
     "actual end":              "actual_end_date",
+    "pcd receiving date":      "actual_end_date",
+    "pcd received date":       "actual_end_date",
+    "pcd date":                "actual_end_date",
+    "pcd":                     "actual_end_date",
     "duration (months)":       "duration_months",
     "duration":                "duration_months",
     "% complete":              "pct_complete",
@@ -6594,8 +6598,13 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <Row label="Segment"      value={details.segments?.name   || "—"} />
           <Row label="Cost Centre"  value={details.cost_centers ? (details.cost_centers.code ? `${details.cost_centers.code} · ${details.cost_centers.name}` : details.cost_centers.name) : "—"} />
           <Row label="Project Type" value={details.project_type     || "—"} />
-          <Row label="Start Date"   value={fmtD(details.start_date)} />
-          <Row label="End Date"     value={fmtD(details.end_date)} />
+          <Row label="Planned Start Date" value={fmtD(details.start_date)} />
+          <Row label="Planned End Date"   value={fmtD(details.end_date)} />
+          {/* PCD = Project Closing Document. Received when the project is
+              handed over, so this doubles as the closing date. Shown even when
+              empty: "—" is the useful signal that no PCD is on record yet. */}
+          <Row label="PCD Receiving Date" value={fmtD(details.actual_end_date)}
+               vc={details.actual_end_date ? T.textOf(EMERALD) : undefined} />
           <Row label="Campus / Site" value={details.campus || "—"} />
           <Row label="Duration"     value={duration.long} />
           {details.notes && (

@@ -136,7 +136,7 @@ export function PddAlertPMO({ T, session, supa, blockingAlertActive, setBlocking
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ ...TYPE.label, color: "#E5484D" }}>{rows.length === 1 ? "PDD" : "PDDs"} Pending Submission</div>
-            <div style={{ ...TYPE.caption, color: T.muted, marginTop: 1 }}>Start date under 20 days away</div>
+            <div style={{ ...TYPE.caption, color: T.muted, marginTop: 1 }}>Planned start date under 20 days away</div>
           </div>
           {expanded && (
             <button className="pmo-focusable" onClick={() => setDismissed(true)}
@@ -153,7 +153,7 @@ export function PddAlertPMO({ T, session, supa, blockingAlertActive, setBlocking
               <CountUp value={rows.length} />
             </div>
             <div style={{ ...TYPE.bodySm, color: T.textSoft, marginBottom: 28 }}>
-              project{rows.length === 1 ? "" : "s"} with a start date coming up in under 20 days {rows.length === 1 ? "is" : "are"} still missing {rows.length === 1 ? "a PDD" : "PDDs"}.
+              project{rows.length === 1 ? "" : "s"} with a planned start date coming up in under 20 days {rows.length === 1 ? "is" : "are"} still missing {rows.length === 1 ? "a PDD" : "PDDs"}.
             </div>
             <div style={{ display: "flex", gap: SP.sm, justifyContent: "center" }}>
               <button className="pmo-focusable pmo-btn" onClick={() => setDismissed(true)}
@@ -250,7 +250,7 @@ export function PddAlertPM({ T, session, supa, blockingAlertActive, setBlockingA
         </div>
 
         <div style={{ padding: `${SP.md}px ${SP.xl}px 0`, ...TYPE.bodySm, color: T.textSoft, lineHeight: 1.55 }}>
-          Please submit the {rows.length === 1 ? "PDD" : "PDDs"} for the project{rows.length === 1 ? "" : "s"} below as soon as possible, so the start date isn't put at risk.
+          Please submit the {rows.length === 1 ? "PDD" : "PDDs"} for the project{rows.length === 1 ? "" : "s"} below as soon as possible, so the planned start date isn't put at risk.
         </div>
 
         <div style={{ padding: `${SP.md}px ${SP.xl}px`, overflow: "auto", flex: 1 }} className="pmo-scroll">
