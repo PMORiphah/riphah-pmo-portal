@@ -6097,6 +6097,37 @@ function PerformancePage({ T, session, onSelectProject }) {
 // its own instead, so slashes stay real path separators.
 const encodeStoragePath = (path) => path.split("/").map(encodeURIComponent).join("/");
 
+// Supabase Storage validates the decoded object key against a restricted
+// character set and rejects anything else with a bare "Invalid key", which
+// tells the person uploading nothing at all. Confirmed rejected: curly
+// apostrophes (which Word, Windows and scanner apps produce automatically in
+// place of '), accented letters, #, % and square brackets. Plain text, spaces
+// and a straight ASCII apostrophe are fine.
+//
+// Only the storage key is sanitised. The original filename is still written to
+// project_attachments.file_name, so the list and the download keep the name the
+// person actually chose.
+const storageSafeName = (name) => {
+  const src = name || "file";
+  // Split the extension off first. A name in a non-Latin script sanitises down
+  // to nothing, and without this the key would lose its extension with it.
+  const dot = src.lastIndexOf(".");
+  const hasExt = dot > 0 && /^\.[A-Za-z0-9]{1,8}$/.test(src.slice(dot));
+  const stem = hasExt ? src.slice(0, dot) : src;
+  const ext  = hasExt ? src.slice(dot) : "";
+  const flat = stem
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")   // curly single quotes
+    .replace(/[\u201C\u201D\u201E]/g, "")          // curly double quotes
+    .replace(/[\u2010-\u2015\u2212]/g, "-")        // en/em dashes, minus
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");  // é -> e
+  const safe = flat
+    .replace(/[^A-Za-z0-9._\-()' ]+/g, "_")
+    .replace(/_{2,}/g, "_")
+    .trim()
+    .replace(/^[._\s]+/, "");
+  return (safe || "file") + ext;
+};
+
 // Phone cameras produce 3-5MB JPEGs. Site visits happen where signal is poor
 // and the portal shares a 1GB storage cap, so shrinking before upload is worth
 // far more than it costs: faster uploads, fewer failures, and several times as
@@ -6177,13 +6208,19 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
     try {
       for (const original of files) {
         const file = await compressImage(original);
-        const path = `${projectId}/${crypto.randomUUID()}-${file.name}`;
+        const path = `${projectId}/${crypto.randomUUID()}-${storageSafeName(file.name)}`;
         const upRes = await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeStoragePath(path)}`, {
           method: "POST",
           headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token, "Content-Type": file.type || "application/octet-stream" },
           body: file,
         });
-        if (!upRes.ok) { const e = await upRes.json().catch(()=>({})); throw new Error(e.message || `Upload failed for ${file.name}`); }
+        if (!upRes.ok) {
+          const e = await upRes.json().catch(()=>({}));
+          const raw = e.message || "";
+          throw new Error(/invalid key/i.test(raw)
+            ? `Could not upload "${file.name}" — the file name contains a character storage will not accept. Renaming the file usually fixes it.`
+            : (raw || `Upload failed for ${file.name}`));
+        }
         await supa("/rest/v1/project_attachments", {
           method: "POST", headers: { Prefer: "return=minimal" },
           body: JSON.stringify({
