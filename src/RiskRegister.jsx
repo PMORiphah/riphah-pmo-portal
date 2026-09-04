@@ -226,7 +226,8 @@ function RiskFormModal({ T, session, supa, risk, projectId, projects, onClose, o
       const payload = { project_id: form.project_id, title: form.title, description: form.description || null,
         category: form.category, probability: form.probability, impact: form.impact, status: form.status,
         owner: form.owner || null, mitigation_plan: form.mitigation_plan || null,
-        date_identified: form.date_identified, date_last_reviewed: new Date().toISOString().slice(0, 10),
+        date_identified: form.date_identified || new Date().toISOString().slice(0, 10),
+        date_last_reviewed: new Date().toISOString().slice(0, 10),
         created_by_name: session.username || session.full_name };
       if (risk?.id) {
         await supa(`/rest/v1/project_risks?id=eq.${risk.id}`, { method: "PATCH", body: JSON.stringify(payload) }, session.access_token);
@@ -293,9 +294,21 @@ function RiskFormModal({ T, session, supa, risk, projectId, projects, onClose, o
           </div>
         </div>
         <SeverityPreview T={T} probability={form.probability} impact={form.impact} />
-        <div style={{ marginBottom: 14 }}>
-          <label style={lbl}>Owner</label>
-          <input value={form.owner || ""} onChange={e => set("owner", e.target.value)} placeholder="Who's watching this risk" style={inp} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: SP.sm, marginBottom: 14 }}>
+          <div>
+            <label style={lbl}>Owner</label>
+            <input value={form.owner || ""} onChange={e => set("owner", e.target.value)} placeholder="Who's watching this risk" style={inp} />
+          </div>
+          <div>
+            {/* The field was always saved, and carried through an edit intact,
+                but no input was ever rendered — so it could only ever be the
+                date the risk was first typed in. Risks are routinely logged
+                after the fact, so it has to be settable. */}
+            <label style={lbl}>Date Identified</label>
+            <input type="date" value={form.date_identified || ""}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={e => set("date_identified", e.target.value)} style={inp} />
+          </div>
         </div>
         <div style={{ marginBottom: 20 }}>
           <label style={lbl}>Mitigation Plan</label>
