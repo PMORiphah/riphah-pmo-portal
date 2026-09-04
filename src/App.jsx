@@ -6758,10 +6758,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
     </div>
   );
 
-  // Planned duration, used by both the overview row and the closed summary tile.
-  // Kept as one computation so the two can never disagree.
-  const duration = (() => {
-    const s = details.start_date, e = details.end_date;
+  // Duration between two dates, as a long form for the overview row and a
+  // short form for the closed summary tile. One computation so the planned and
+  // actual readings can never disagree in how they count.
+  const durationBetween = (s, e) => {
     if (s && e) {
       const sd = new Date(s), ed = new Date(e);
       let months = (ed.getFullYear() - sd.getFullYear()) * 12 + (ed.getMonth() - sd.getMonth());
@@ -6771,11 +6771,16 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       const long = [], short = [];
       if (months > 0) { long.push(`${months} Month${months !== 1 ? "s" : ""}`); short.push(`${months}M`); }
       if (days   > 0) { long.push(`${days} Day${days !== 1 ? "s" : ""}`);       short.push(`${days}D`); }
-      return { long: long.length ? long.join(" ") : "0 Days", short: short.length ? short.join(" ") : "0D" };
+      return { long: long.length ? long.join(" ") : "0 Days", short: short.length ? short.join(" ") : "0D", real:true };
     }
-    const m = details.duration_months;
-    return m ? { long:`${m} months`, short:`${m}M` } : { long:"—", short:"—" };
-  })();
+    return null;
+  };
+
+  const plannedDuration = durationBetween(details.start_date, details.end_date)
+    || (details.duration_months
+        ? { long:`${details.duration_months} months`, short:`${details.duration_months}M`, real:true }
+        : { long:"—", short:"—", real:false });
+  const actualDuration = durationBetween(details.actual_start_date, details.actual_end_date);
 
   // ── Closed projects ────────────────────────────────────────────────────────
   // A closed project is a finished story, not a stalled one. The live EVM flags
@@ -6945,13 +6950,15 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <Row label="Project Type" value={details.project_type     || "—"} />
           <Row label="Planned Start Date" value={fmtD(details.start_date)} />
           <Row label="Planned End Date"   value={fmtD(details.end_date)} />
+          <Row label="Actual Start Date"  value={fmtD(details.actual_start_date)} />
+          <Row label="Actual End Date"    value={fmtD(details.actual_end_date)} />
           {/* PCD = Project Closing Document. Received when the project is
               handed over, so this doubles as the closing date. Shown even when
               empty: "—" is the useful signal that no PCD is on record yet. */}
           <Row label="PCD Receiving Date" value={fmtD(details.actual_end_date)}
                vc={details.actual_end_date ? T.textOf(EMERALD) : undefined} />
           <Row label="Campus / Site" value={details.campus || "—"} />
-          <Row label="Duration"     value={duration.long} />
+          <Row label="Duration"     value={plannedDuration.long} />
           {details.notes && (
             <div style={{marginTop:12, padding:"10px 12px", background:T.card2, borderRadius:R.md, fontSize:12, color:T.muted, lineHeight:1.6}}>
               {details.notes}
@@ -7114,8 +7121,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                   sub:   closedVarPct != null ? `${Math.abs(closedVarPct).toFixed(2)}% ${underBudget ? "under" : "over"}` : null,
                   subC:  underBudget ? T.textOf(EMERALD) : T.textOf(ROSE) },
                 { Icon:Target, label:"Completion", value: fmtP(evm.pct_complete) },
-                { Icon:CalendarCheck, label:"Duration", value: duration.short,
-                  sub:"Completed", subC:T.textOf(EMERALD) },
+                { Icon:CalendarCheck, label:"Duration",
+                  value: (actualDuration || plannedDuration).short,
+                  sub:   actualDuration ? "Actual" : "Planned — no actual dates",
+                  subC:  actualDuration ? T.textOf(EMERALD) : T.muted },
               ].map(({ Icon, label, value, sub, subC }) => (
                 <div key={label} style={{
                   background:T.card2, border:`1px solid ${T.border}`, borderRadius:R.md,
