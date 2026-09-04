@@ -4817,6 +4817,258 @@ function ProjectsPage({ T, session, onSelectProject,
 }
 
 // ─── CAMPUS / SITES ───────────────────────────────────────────────────────────
+// ─── BULK ASSIGN PM ──────────────────────────────────────────────────────────
+// Assigning a PM one project at a time is fine for a correction, but 79 of the
+// 111 projects have no PM at all and they cluster by campus — G-7 alone has 30.
+// This does a whole campus in one pass.
+//
+// It is deliberately more careful than the single-project assign next to it.
+// That one deletes before inserting and swallows every error; doing the same
+// across 30 rows could silently wipe an existing PM's entire campus (Al-Mizan
+// is already fully assigned across two people) and report success. So: nothing
+// is written until the preview has been read, and failures are surfaced.
+function BulkAssignPMModal({ T, session, campus, campusRows, filteredRows, onClose, onDone, isMobile }) {
+  const [pms,      setPms]      = useState([]);
+  const [pmId,     setPmId]     = useState("");
+  const [assigned, setAssigned] = useState({});      // project_id -> { user_id, name }
+  const [scope,    setScope]    = useState("campus"); // campus | filtered
+  const [onExist,  setOnExist]  = useState("skip");   // skip | replace
+  const [onClosed, setOnClosed] = useState("skip");   // skip | include
+  const [loading,  setLoading]  = useState(true);
+  const [saving,   setSaving]   = useState(false);
+  const [err,      setErr]      = useState(null);
+  const [result,   setResult]   = useState(null);
+
+  const filtersActive = filteredRows.length !== campusRows.length;
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true); setErr(null);
+      try {
+        const ids = campusRows.map(r => r.id);
+        const [pmList, assigns] = await Promise.all([
+          supa("/rest/v1/user_profiles?role=eq.project_manager&is_active=eq.true&select=id,username,full_name&order=full_name.asc", {}, session.access_token),
+          ids.length
+            ? supa(`/rest/v1/project_assignments?project_id=in.(${ids.join(",")})&select=project_id,user_id`, {}, session.access_token)
+            : Promise.resolve([]),
+        ]);
+        // Resolve the names of whoever already holds these projects, so the
+        // preview can say "removes Ali from 14" rather than a bare count.
+        const holders = [...new Set((assigns || []).map(a => a.user_id))];
+        let names = {};
+        if (holders.length) {
+          const profs = await supa(`/rest/v1/user_profiles?id=in.(${holders.join(",")})&select=id,username,full_name`, {}, session.access_token);
+          names = Object.fromEntries((profs || []).map(p => [p.id, p.full_name || p.username]));
+        }
+        if (!alive) return;
+        setPms(pmList || []);
+        setAssigned(Object.fromEntries((assigns || []).map(a =>
+          [a.project_id, { user_id: a.user_id, name: names[a.user_id] || "Unknown" }])));
+      } catch (e) { if (alive) setErr(e.message); }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [campus, session.access_token]);
+
+  const plan = useMemo(() => {
+    const base       = scope === "filtered" ? filteredRows : campusRows;
+    const closedRows = base.filter(r => r.workflow_stage === "closed");
+    const eligible   = onClosed === "include" ? base : base.filter(r => r.workflow_stage !== "closed");
+    const held       = eligible.filter(r => assigned[r.id]);
+    const targets    = onExist === "replace"
+      ? eligible.filter(r => assigned[r.id]?.user_id !== pmId)   // already on this PM = no-op
+      : eligible.filter(r => !assigned[r.id]);
+    // Who loses work if this runs
+    const displaced = {};
+    if (onExist === "replace") {
+      targets.forEach(r => {
+        const a = assigned[r.id];
+        if (a) displaced[a.name] = (displaced[a.name] || 0) + 1;
+      });
+    }
+    return {
+      targets,
+      closedSkipped: onClosed === "include" ? 0 : closedRows.length,
+      heldSkipped:   onExist === "skip" ? held.length : 0,
+      alreadyOnPM:   eligible.filter(r => assigned[r.id]?.user_id === pmId).length,
+      displaced,
+    };
+  }, [scope, onExist, onClosed, pmId, assigned, campusRows, filteredRows]);
+
+  // The parent reload drops CampusPage into its loading branch, which unmounts
+  // this dialog and takes the success screen with it. So the refresh is deferred
+  // until the reader has actually dismissed the result.
+  const close = () => { if (result) onDone?.(); onClose?.(); };
+
+  const run = async () => {
+    if (!pmId || !plan.targets.length) return;
+    setSaving(true); setErr(null);
+    try {
+      const ids = plan.targets.map(t => t.id);
+      // Chunked so a large campus can't produce an over-long URL.
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += 40) chunks.push(ids.slice(i, i + 40));
+
+      if (onExist === "replace") {
+        for (const c of chunks) {
+          await supa(`/rest/v1/project_assignments?project_id=in.(${c.join(",")})`,
+            { method:"DELETE", headers:{ Prefer:"return=minimal" } }, session.access_token);
+        }
+      }
+      for (const c of chunks) {
+        // Every row carries an identical key set. A mixed shape fails the whole
+        // batch with PGRST102, which has bitten this project before.
+        await supa("/rest/v1/project_assignments", {
+          method:"POST",
+          body: JSON.stringify(c.map(id => ({ project_id:id, user_id:pmId, assigned_by:session.user_id }))),
+          headers:{ Prefer:"return=minimal" },
+        }, session.access_token);
+      }
+      const pm = pms.find(p => p.id === pmId);
+      setResult({ count: ids.length, name: pm?.full_name || pm?.username || "the project manager" });
+    } catch (e) {
+      setErr(e.message || "The assignment could not be saved.");
+    }
+    setSaving(false);
+  };
+
+  const Choice = ({ label, value, onChange, options, hint }) => (
+    <div style={{ marginBottom: SP.md }}>
+      <div style={{ ...TYPE.label, color:T.muted, marginBottom:6 }}>{label}</div>
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+        {options.map(o => {
+          const on = value === o.v;
+          return (
+            <button key={o.v} type="button" className="pmo-focusable pmo-btn"
+              onClick={() => onChange(o.v)}
+              style={{
+                padding:"6px 12px", borderRadius:R.pill, cursor:"pointer",
+                fontFamily:TYPE.body.fontFamily, fontSize:12, fontWeight:on ? 700 : 500,
+                background: on ? `${T.blue}22` : "transparent",
+                border:`1px solid ${on ? `${T.blue}66` : T.border}`,
+                color: on ? T.textOf(T.blue) : T.muted,
+              }}>{o.l}</button>
+          );
+        })}
+      </div>
+      {hint && <div style={{ fontSize:11, color:T.dim, marginTop:5 }}>{hint}</div>}
+    </div>
+  );
+
+  const displacedNames = Object.entries(plan.displaced);
+
+  return (
+    <Modal T={T} isMobile={isMobile} width={560} icon={Users}
+      title="Assign a project manager"
+      sub={`${campus} · ${campusRows.length} project${campusRows.length === 1 ? "" : "s"}`}
+      onClose={close}
+      footer={result ? (
+        <Button T={T} variant="accent" onClick={close}>Done</Button>
+      ) : (
+        <>
+          <Button T={T} variant="ghost" onClick={close} disabled={saving}>Cancel</Button>
+          <Button T={T} variant="accent" onClick={run} loading={saving}
+            disabled={!pmId || !plan.targets.length || loading}>
+            {plan.targets.length
+              ? `Assign to ${plan.targets.length} project${plan.targets.length === 1 ? "" : "s"}`
+              : "Nothing to assign"}
+          </Button>
+        </>
+      )}>
+
+      {loading ? (
+        <div style={{ padding:"28px 0", textAlign:"center", color:T.muted, fontSize:13 }}>Loading campus…</div>
+      ) : result ? (
+        <div style={{ padding:"14px 0" }}>
+          <div style={{ display:"flex", gap:14, alignItems:"center" }}>
+            <div style={{ width:46, height:46, borderRadius:"50%", flexShrink:0,
+              background:`${EMERALD}1F`, border:`1px solid ${EMERALD}3D`,
+              display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <CheckCircle2 size={22} strokeWidth={2.2} color={T.textOf(EMERALD)} />
+            </div>
+            <div>
+              <div style={{ fontSize:15, fontWeight:700, color:T.textOf(EMERALD) }}>
+                {result.count} project{result.count === 1 ? "" : "s"} assigned
+              </div>
+              <div style={{ fontSize:12.5, color:T.muted, marginTop:3 }}>
+                {result.name} is now the project manager on {campus}.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: SP.md }}>
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:6 }}>Project manager</div>
+            <Select T={T} value={pmId} onChange={e => setPmId(e.target.value)} style={{ width:"100%" }}>
+              <option value="">— Select a project manager —</option>
+              {pms.map(p => (
+                <option key={p.id} value={p.id}>{p.full_name || p.username} (@{p.username})</option>
+              ))}
+            </Select>
+          </div>
+
+          <Choice label="Apply to" value={scope} onChange={setScope}
+            hint={filtersActive
+              ? `Filters are active: ${filteredRows.length} of ${campusRows.length} projects are currently shown.`
+              : "No filters are active, so both options are the same right now."}
+            options={[
+              { v:"campus",   l:`Every project in ${campus} (${campusRows.length})` },
+              { v:"filtered", l:`Only what the filters show (${filteredRows.length})` },
+            ]} />
+
+          <Choice label="Projects that already have a PM" value={onExist} onChange={setOnExist}
+            options={[
+              { v:"skip",    l:"Leave them alone" },
+              { v:"replace", l:"Replace with the new PM" },
+            ]} />
+
+          <Choice label="Closed projects" value={onClosed} onChange={setOnClosed}
+            options={[
+              { v:"skip",    l:"Skip" },
+              { v:"include", l:"Include" },
+            ]} />
+
+          {/* Preview. Recomputes as the options change, so the count on the
+              confirm button is always the count that will actually be written. */}
+          <div style={{ marginTop:SP.md, padding:"12px 14px", borderRadius:R.md,
+            background:T.card2, border:`1px solid ${T.border}` }}>
+            <div style={{ ...TYPE.label, color:T.muted, marginBottom:8 }}>What will happen</div>
+            <div style={{ fontSize:13, fontWeight:700, color:plan.targets.length ? T.text : T.dim }}>
+              {plan.targets.length} project{plan.targets.length === 1 ? "" : "s"} will be assigned
+            </div>
+            <div style={{ fontSize:12, color:T.muted, marginTop:5, lineHeight:1.7 }}>
+              {plan.heldSkipped > 0   && <div>{plan.heldSkipped} left alone — already has a PM</div>}
+              {plan.closedSkipped > 0 && <div>{plan.closedSkipped} skipped — closed</div>}
+              {plan.alreadyOnPM > 0   && <div>{plan.alreadyOnPM} already assigned to this person</div>}
+              {!plan.heldSkipped && !plan.closedSkipped && !plan.alreadyOnPM && <div>Nothing is being skipped.</div>}
+            </div>
+            {displacedNames.length > 0 && (
+              <div style={{ marginTop:10, padding:"9px 11px", borderRadius:R.sm,
+                background:`${AMBER}14`, border:`1px solid ${AMBER}3D` }}>
+                <div style={{ fontSize:11.5, fontWeight:700, color:T.textOf(AMBER), marginBottom:3 }}>
+                  This removes an existing project manager
+                </div>
+                <div style={{ fontSize:11.5, color:T.muted, lineHeight:1.6 }}>
+                  {displacedNames.map(([n, c]) => `${n} loses ${c} project${c === 1 ? "" : "s"}`).join(" · ")}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {err && (
+        <div style={{ marginTop:SP.md, padding:"9px 11px", borderRadius:R.sm,
+          background:`${ROSE}14`, border:`1px solid ${ROSE}3D`, fontSize:12, color:T.textOf(ROSE) }}>
+          {err}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function CampusPage({ T, session, onSelectProject,
   sel, setSel, q, setQ, fCode, setFCode, fName, setFName, fSite, setFSite,
   fPri, setFPri, fStage, setFStage, fCC, setFCC }) {
@@ -4903,6 +5155,14 @@ function CampusPage({ T, session, onSelectProject,
 
   const colFilterCount = [fCode, fName, fSite, fPri, fStage, fCC].filter(Boolean).length;
   const clearColFilters = () => { setFCode(""); setFName(""); setFSite(""); setFPri(""); setFStage(""); setFCC(""); };
+
+  // Every project on the selected campus, ignoring search and column filters.
+  // Bulk assign offers this as one of its two scopes, so it has to be the
+  // unfiltered set rather than whatever the table happens to be showing.
+  const campusRows = useMemo(
+    () => sel ? rows.filter(r => (r.campus || UNASSIGNED) === sel) : [],
+    [rows, sel]);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const k = useMemo(() => {
     const active = st => filtered.filter(r => r.workflow_stage===st && !r.is_carry_forward).length;
@@ -5006,6 +5266,14 @@ function CampusPage({ T, session, onSelectProject,
           <Input T={T} icon={Search} value={q} onChange={e=>setQ(e.target.value)}
             onClear={()=>setQ("")} placeholder="Search projects…"
             style={{flex:"0 1 340px", minWidth:180}} />
+          {isPMOUser && (
+            <Button T={T} variant="ghost" icon={Users} disabled={!sel}
+              onClick={() => setBulkOpen(true)}
+              title={sel ? `Assign a project manager across ${sel}`
+                         : "Select a campus first, then assign a PM across it"}>
+              Assign PM
+            </Button>
+          )}
           <div style={{flex:1, display:"flex", gap:SP.xl, alignItems:"baseline",
             justifyContent:"flex-end", flexWrap:"wrap", minWidth:0}}>
             {[
@@ -5217,6 +5485,15 @@ function CampusPage({ T, session, onSelectProject,
         )}
       </div>
       </div>
+
+      {bulkOpen && sel && (
+        <BulkAssignPMModal
+          T={T} session={session} campus={sel}
+          campusRows={campusRows} filteredRows={filtered}
+          isMobile={vpC.isCompact}
+          onClose={() => setBulkOpen(false)}
+          onDone={load} />
+      )}
     </div>
   );
 }
