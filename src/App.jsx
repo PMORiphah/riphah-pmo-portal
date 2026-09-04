@@ -19,7 +19,8 @@ import {
   Shield, BarChart3, Building2, Lock, Fingerprint,
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
-  Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal
+  Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
+  Award, Target, CalendarCheck
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -6408,10 +6409,49 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
     </div>
   );
 
-  const scheduleStatus = evm.schedule_flag === "on_time" ? "On Schedule" : evm.schedule_flag === "delayed" ? "Delayed" : "Not Started";
-  const scheduleColor  = evm.schedule_flag === "on_time" ? EMERALD    : evm.schedule_flag === "delayed" ? AMBER : T.dim;
-  const budgetStatus   = evm.budget_flag   === "within"  ? "On Budget"  : evm.budget_flag   === "over"    ? "Over Budget" : "Not Started";
-  const budgetColor    = evm.budget_flag   === "within"  ? EMERALD    : evm.budget_flag   === "over"    ? ROSE : T.dim;
+  // Planned duration, used by both the overview row and the closed summary tile.
+  // Kept as one computation so the two can never disagree.
+  const duration = (() => {
+    const s = details.start_date, e = details.end_date;
+    if (s && e) {
+      const sd = new Date(s), ed = new Date(e);
+      let months = (ed.getFullYear() - sd.getFullYear()) * 12 + (ed.getMonth() - sd.getMonth());
+      let tmp = new Date(sd); tmp.setMonth(tmp.getMonth() + months);
+      let days = Math.round((ed - tmp) / 86400000);
+      if (days < 0) { months--; tmp = new Date(sd); tmp.setMonth(tmp.getMonth() + months); days = Math.round((ed - tmp) / 86400000); }
+      const long = [], short = [];
+      if (months > 0) { long.push(`${months} Month${months !== 1 ? "s" : ""}`); short.push(`${months}M`); }
+      if (days   > 0) { long.push(`${days} Day${days !== 1 ? "s" : ""}`);       short.push(`${days}D`); }
+      return { long: long.length ? long.join(" ") : "0 Days", short: short.length ? short.join(" ") : "0D" };
+    }
+    const m = details.duration_months;
+    return m ? { long:`${m} months`, short:`${m}M` } : { long:"—", short:"—" };
+  })();
+
+  // ── Closed projects ────────────────────────────────────────────────────────
+  // A closed project is a finished story, not a stalled one. The live EVM flags
+  // go quiet once work stops, so schedule and budget fall through to
+  // "Not Started" — actively misleading on a project that completed. When the
+  // stage is `closed` the strip, the badge and the overview switch to a
+  // settled, retrospective reading.
+  //
+  // STAGE_META is deliberately NOT recoloured here. `approved` already owns
+  // green there, and that palette drives the pipeline bar, the donut and the
+  // legend; turning `closed` green too would make the two indistinguishable,
+  // which is the mirror image of the bug the comment in theme.js describes.
+  const isClosed     = evm.workflow_stage === "closed";
+  const closedOn     = details.actual_end_date || details.end_date || null;
+  const closedCost   = details.actual_cost != null ? parseFloat(details.actual_cost)
+                     : evm.eac != null ? parseFloat(evm.eac) : null;
+  const closedBac    = evm.bac != null ? parseFloat(evm.bac) : null;
+  const closedVar    = (closedBac != null && closedCost != null) ? closedBac - closedCost : null;
+  const closedVarPct = (closedVar != null && closedBac) ? (closedVar / closedBac) * 100 : null;
+  const underBudget  = closedVar == null || closedVar >= 0;
+
+  const scheduleStatus = isClosed ? "Completed" : evm.schedule_flag === "on_time" ? "On Schedule" : evm.schedule_flag === "delayed" ? "Delayed" : "Not Started";
+  const scheduleColor  = isClosed ? EMERALD     : evm.schedule_flag === "on_time" ? EMERALD      : evm.schedule_flag === "delayed" ? AMBER : T.dim;
+  const budgetStatus   = isClosed ? "Settled"   : evm.budget_flag   === "within"  ? "On Budget"  : evm.budget_flag   === "over"    ? "Over Budget" : "Not Started";
+  const budgetColor    = isClosed ? EMERALD     : evm.budget_flag   === "within"  ? EMERALD      : evm.budget_flag   === "over"    ? ROSE : T.dim;
 
   return (
     <div className="pmo-scroll" style={{ flex:1, overflowY:"auto", overflowX:"hidden", background:T.page }}>
@@ -6447,7 +6487,8 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             <h2 style={{ ...TYPE.display, fontSize: vpD.isCompact ? 21 : 27, color:T.heroFg,
               margin:0, lineHeight:1.2 }}>{evm.name}</h2>
             <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:SP.md, flexWrap:"wrap" }}>
-              <Badge T={T} color={STAGE_META[evm.workflow_stage]?.color || T.neutral}>
+              <Badge T={T} color={isClosed ? EMERALD : (STAGE_META[evm.workflow_stage]?.color || T.neutral)}>
+                {isClosed && <CheckCircle2 size={12} strokeWidth={2.5} />}
                 {STAGE_META[evm.workflow_stage]?.label || evm.workflow_stage || "—"}
               </Badge>
               {evm.priority && (
@@ -6501,12 +6542,16 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           { label:"CPI",       value:fmtR(evm.cpi),             c:cpiClr(evm.cpi) },
           { label:"SPI",       value:fmtR(evm.spi),             c:cpiClr(evm.spi) },
           { label:"EAC",       value:fmtFull(evm.eac),          c:T.text },
-          { label:"Schedule",  value:scheduleStatus,            c:scheduleColor },
-          { label:"Budget",    value:budgetStatus,              c:budgetColor },
-        ].map(({ label, value, c }) => (
+          { label:"Schedule",  value:scheduleStatus,            c:scheduleColor, Icon: isClosed ? CheckCircle2 : null },
+          { label:"Budget",    value:budgetStatus,              c:budgetColor,   Icon: isClosed ? CheckCircle2 : null },
+        ].map(({ label, value, c, Icon }) => (
           <div key={label}>
             <div style={{ ...TYPE.label, color:T.muted, marginBottom:4 }}>{label}</div>
-            <div style={{ ...TYPE.metricSm, fontSize:17, color:c, whiteSpace:"nowrap" }}>{value}</div>
+            <div style={{ ...TYPE.metricSm, fontSize:17, color:c, whiteSpace:"nowrap",
+              display:"flex", alignItems:"center", gap:6 }}>
+              {Icon && <Icon size={15} strokeWidth={2.5} style={{ flexShrink:0 }} />}
+              {value}
+            </div>
           </div>
         ))}
       </div>
@@ -6552,27 +6597,40 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <Row label="Start Date"   value={fmtD(details.start_date)} />
           <Row label="End Date"     value={fmtD(details.end_date)} />
           <Row label="Campus / Site" value={details.campus || "—"} />
-          <Row label="Duration"     value={(() => {
-            const s = details.start_date, e = details.end_date;
-            if (s && e) {
-              const sd = new Date(s), ed = new Date(e);
-              let months = (ed.getFullYear() - sd.getFullYear()) * 12 + (ed.getMonth() - sd.getMonth());
-              let tmp = new Date(sd); tmp.setMonth(tmp.getMonth() + months);
-              let days = Math.round((ed - tmp) / 86400000);
-              if (days < 0) { months--; tmp = new Date(sd); tmp.setMonth(tmp.getMonth() + months); days = Math.round((ed - tmp) / 86400000); }
-              const parts = [];
-              if (months > 0) parts.push(`${months} Month${months !== 1 ? "s" : ""}`);
-              if (days > 0)   parts.push(`${days} Day${days !== 1 ? "s" : ""}`);
-              return parts.length ? parts.join(" ") : "0 Days";
-            }
-            return details.duration_months ? `${details.duration_months} months` : "—";
-          })()} />
+          <Row label="Duration"     value={duration.long} />
           {details.notes && (
             <div style={{marginTop:12, padding:"10px 12px", background:T.card2, borderRadius:R.md, fontSize:12, color:T.muted, lineHeight:1.6}}>
               {details.notes}
             </div>
           )}
         </Card>
+
+        {isClosed && (
+          <div style={{
+            marginTop:SP.lg, padding:"16px 18px", borderRadius:R.lg,
+            background:`linear-gradient(135deg, ${EMERALD}14, ${EMERALD}05)`,
+            border:`1px solid ${EMERALD}2E`,
+            display:"flex", gap:14, alignItems:"flex-start",
+          }}>
+            <div style={{
+              width:44, height:44, borderRadius:"50%", flexShrink:0,
+              background:`${EMERALD}1F`, border:`1px solid ${EMERALD}3D`,
+              display:"flex", alignItems:"center", justifyContent:"center",
+            }}>
+              <CheckCircle2 size={22} strokeWidth={2.2} color={T.textOf(EMERALD)} />
+            </div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:12.5, fontWeight:800, letterSpacing:1.2, textTransform:"uppercase",
+                color:T.textOf(EMERALD), marginBottom:6 }}>
+                Project Closed
+              </div>
+              <div style={{ fontSize:12.5, color:T.muted, lineHeight:1.65 }}>
+                This project has been successfully completed and officially closed.
+                All deliverables have been achieved.
+              </div>
+            </div>
+          </div>
+        )}
         </div>
 
         {/* Financial */}
@@ -6642,6 +6700,84 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         </div>
 
         <div style={{ display: tab === "overview" ? "block" : "none" }}>
+
+        {isClosed && (
+          <div style={{
+            position:"relative", overflow:"hidden", marginBottom:SP.lg,
+            background:`linear-gradient(135deg, ${EMERALD}16, ${EMERALD}06)`,
+            border:`1px solid ${EMERALD}33`, borderRadius:R.lg, boxShadow:T.shadow,
+            padding:"20px 22px",
+          }}>
+            {/* Corner ribbon. Fixed width rather than padding: the band has to
+                cross the corner at 45° predictably, and content-derived width
+                shifts the diagonal as soon as the label or font changes. */}
+            <div aria-hidden="true" style={{
+              position:"absolute", top:13, right:-42, width:150, transform:"rotate(45deg)",
+              background:EMERALD, color:"#06231A", pointerEvents:"none", textAlign:"center",
+              fontSize:9, fontWeight:800, letterSpacing:1.4, textTransform:"uppercase",
+              padding:"4px 0", lineHeight:1.4,
+            }}>Closed</div>
+
+            <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase",
+              letterSpacing:1.5, marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${EMERALD}22` }}>
+              Project Status
+            </div>
+
+            <div style={{ display:"flex", gap:16, alignItems:"center", marginBottom:18,
+              paddingRight: vpD.isCompact ? 0 : 56 }}>
+              <div style={{
+                width:64, height:64, borderRadius:"50%", flexShrink:0,
+                background:`${EMERALD}1A`, border:`1px solid ${EMERALD}3D`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+              }}>
+                <Award size={30} strokeWidth={1.8} color={T.textOf(EMERALD)} />
+              </div>
+              <div style={{ minWidth:0 }}>
+                <div style={{ ...TYPE.display, fontSize:19, color:T.textOf(EMERALD), lineHeight:1.25 }}>
+                  Closed Successfully
+                </div>
+                {closedOn && (
+                  <div style={{ fontSize:12.5, color:T.text, marginTop:5 }}>
+                    Completed on {fmtD(closedOn)}
+                  </div>
+                )}
+                <div style={{ fontSize:12, color:T.muted, marginTop:3, lineHeight:1.55 }}>
+                  Project has been closed and all objectives achieved.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display:"grid", gap:SP.sm,
+              gridTemplateColumns: vpD.isCompact ? "repeat(2, 1fr)" : "repeat(4, 1fr)" }}>
+              {[
+                { Icon:Wallet, label:"Actual Cost",
+                  value: closedCost != null ? fmtFull(closedCost) : "—" },
+                { Icon:TrendingUp, label:"Variance",
+                  value: closedVar != null ? fmtFull(Math.abs(closedVar)) : "—",
+                  sub:   closedVarPct != null ? `${Math.abs(closedVarPct).toFixed(2)}% ${underBudget ? "under" : "over"}` : null,
+                  subC:  underBudget ? T.textOf(EMERALD) : T.textOf(ROSE) },
+                { Icon:Target, label:"Completion", value: fmtP(evm.pct_complete) },
+                { Icon:CalendarCheck, label:"Duration", value: duration.short,
+                  sub:"Completed", subC:T.textOf(EMERALD) },
+              ].map(({ Icon, label, value, sub, subC }) => (
+                <div key={label} style={{
+                  background:T.card2, border:`1px solid ${T.border}`, borderRadius:R.md,
+                  padding:"11px 12px", minWidth:0,
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
+                    <Icon size={14} strokeWidth={2} color={T.muted} style={{ flexShrink:0 }} />
+                    <span style={{ fontSize:10.5, color:T.muted, whiteSpace:"nowrap",
+                      overflow:"hidden", textOverflow:"ellipsis" }}>{label}</span>
+                  </div>
+                  <div style={{ ...TYPE.metricSm, fontSize:16, color:T.text,
+                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{value}</div>
+                  {sub && <div style={{ fontSize:10.5, color:subC || T.muted, marginTop:2 }}>{sub}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <Card title="Person Responsible">
           {pm ? (
             <>
@@ -6663,7 +6799,12 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             </>
           ) : (
             <>
-              <div style={{textAlign:"center", color:T.dim, fontSize:13, padding:"20px 0 14px"}}>No project manager assigned yet.</div>
+              <div style={{textAlign:"center", color:T.dim, fontSize:13, padding:"20px 0 14px"}}>
+                {isClosed ? "No project manager was assigned." : "No project manager assigned yet."}
+                {isClosed && (
+                  <div style={{ fontSize:12, color:T.muted, marginTop:4 }}>This project has been completed.</div>
+                )}
+              </div>
               {session?.role==="pmo" && !assigningPM && (
                 <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Assign Project Manager
