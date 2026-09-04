@@ -22,7 +22,7 @@ import {
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
-  Award, Target, CalendarCheck
+  Award, Target, CalendarCheck, Mail, Phone, MessageCircle
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -6605,6 +6605,35 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   // just here.
   const canManageLessons = session?.role === "pmo";
 
+  // PMO can set the PM's contact number straight from this card. It writes to
+  // user_profiles, the same field the User Management page edits, so a number
+  // added here also drives the WhatsApp nudge on Updates. Normalisation matches
+  // that page exactly: strip spaces, dashes and brackets so wa.me gets digits.
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneDraft,   setPhoneDraft]   = useState("");
+  const [savingPhone,  setSavingPhone]  = useState(false);
+  const [phoneErr,     setPhoneErr]     = useState(null);
+
+  const savePmPhone = async () => {
+    if (!pm?.user_profiles?.id) return;
+    const raw = phoneDraft.trim();
+    const cleaned = raw ? raw.replace(/[\s\-()]/g, "") : null;
+    if (cleaned && !/^\+?\d{7,15}$/.test(cleaned)) {
+      setPhoneErr("Enter a valid number, digits only, optionally starting with +.");
+      return;
+    }
+    setSavingPhone(true); setPhoneErr(null);
+    try {
+      await supa(`/rest/v1/user_profiles?id=eq.${pm.user_profiles.id}`, {
+        method:"PATCH", body: JSON.stringify({ phone: cleaned }),
+        headers:{ "Prefer":"return=minimal" },
+      }, session.access_token);
+      setPm(p => ({ ...p, user_profiles: { ...p.user_profiles, phone: cleaned } }));
+      setEditingPhone(false);
+    } catch (e) { setPhoneErr(e.message || "Could not save the number."); }
+    setSavingPhone(false);
+  };
+
   const loadDetail = async () => {
     setLoading(true); setErr(null);
     try {
@@ -6617,7 +6646,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       setEvm(evmData[0]); setDetails(detData[0]);
       setCommentCount(commentData.length);
       if (assignData[0]?.user_id) {
-        const profileData = await supa(`/rest/v1/user_profiles?id=eq.${assignData[0].user_id}&select=id,username,full_name,role`, {}, session.access_token);
+        const profileData = await supa(`/rest/v1/user_profiles?id=eq.${assignData[0].user_id}&select=id,username,full_name,role,email,phone,whatsapp_opt_in`, {}, session.access_token);
         setPm(profileData[0] ? { user_id: assignData[0].user_id, user_profiles: profileData[0] } : null);
       } else { setPm(null); }
 
@@ -6649,7 +6678,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       // Refresh PM
       const assignAfter = await supa(`/rest/v1/project_assignments?project_id=eq.${projectId}&select=user_id&limit=1`, {}, session.access_token);
       if (assignAfter[0]?.user_id) {
-        const profileAfter = await supa(`/rest/v1/user_profiles?id=eq.${assignAfter[0].user_id}&select=id,username,full_name,role`, {}, session.access_token);
+        const profileAfter = await supa(`/rest/v1/user_profiles?id=eq.${assignAfter[0].user_id}&select=id,username,full_name,role,email,phone,whatsapp_opt_in`, {}, session.access_token);
         setPm(profileAfter[0] ? { user_id: assignAfter[0].user_id, user_profiles: profileAfter[0] } : null);
       } else { setPm(null); }
       setAssigningPM(false); setSelectedPM("");
@@ -6676,8 +6705,8 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
 
   const MS = { done:{icon:"✓",c:T.textOf(EMERALD)}, in_progress:{icon:"◉",c:GOLD}, pending:{icon:"○",c:T.dim} };
 
-  const Card = ({title, children}) => (
-    <div style={{background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 22px"}}>
+  const Card = ({title, children, style}) => (
+    <div style={{background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"20px 22px", ...style}}>
       <div style={{fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${T.border}`}}>
         {title}
       </div>
@@ -6987,7 +7016,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
         {/* Person Responsible */}
         </div>
 
-        <div style={{ display: tab === "overview" ? "block" : "none" }}>
+        {/* Stretched to the row height so Person Responsible fills the space
+            beside Project Overview instead of leaving a gap under itself. */}
+        <div style={{ display: tab === "overview" ? "flex" : "none",
+          flexDirection:"column", alignSelf:"stretch" }}>
 
         {isClosed && (
           <div style={{
@@ -7066,7 +7098,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           </div>
         )}
 
-        <Card title="Person Responsible">
+        <Card title="Person Responsible" style={{ flex:1, display:"flex", flexDirection:"column" }}>
           {pm ? (
             <>
               <div style={{display:"flex", alignItems:"center", gap:14, padding:"8px 0 14px"}}>
@@ -7079,8 +7111,90 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                   <span style={{display:"inline-block", marginTop:5, fontSize:10, fontWeight:700, background:"rgba(59,130,246,0.12)", color:BRAND.blue, padding:"2px 10px", borderRadius:R.pill}}>Project Manager</span>
                 </div>
               </div>
+
+              {/* Contact block. Email is always known; the number often isn't,
+                  and it is the thing that makes the WhatsApp nudge usable. */}
+              <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:14, marginBottom:4 }}>
+                <div style={{ ...TYPE.label, color:T.muted, marginBottom:5 }}>Email</div>
+                {pm.user_profiles?.email ? (
+                  <a href={`mailto:${pm.user_profiles.email}`}
+                    style={{ display:"inline-flex", alignItems:"center", gap:7, fontSize:13,
+                      color:T.text, textDecoration:"none", wordBreak:"break-all" }}>
+                    <Mail size={13} color={T.muted} style={{ flexShrink:0 }} />
+                    {pm.user_profiles.email}
+                  </a>
+                ) : (
+                  <div style={{ fontSize:13, color:T.dim }}>Not on record</div>
+                )}
+
+                <div style={{ ...TYPE.label, color:T.muted, margin:"16px 0 5px" }}>Contact number</div>
+                {editingPhone ? (
+                  <div>
+                    <div style={{ display:"flex", gap:8 }}>
+                      <input autoFocus value={phoneDraft} inputMode="tel"
+                        onChange={e => setPhoneDraft(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") savePmPhone();
+                                          if (e.key === "Escape") { setEditingPhone(false); setPhoneErr(null); } }}
+                        placeholder="+92 300 1234567"
+                        style={{ flex:1, minWidth:0, background:T.inputBg, border:`1px solid ${T.inputBorder}`,
+                          borderRadius:R.sm, padding:"7px 10px", fontSize:13, color:T.text,
+                          fontFamily:TYPE.body.fontFamily, outline:"none", boxSizing:"border-box" }} />
+                      <button className="pmo-focusable pmo-btn" onClick={savePmPhone} disabled={savingPhone}
+                        style={{ padding:"7px 14px", borderRadius:R.sm, border:"none", background:NAVY,
+                          color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer",
+                          fontFamily:TYPE.body.fontFamily }}>
+                        {savingPhone ? "Saving…" : "Save"}
+                      </button>
+                      <button className="pmo-focusable pmo-btn"
+                        onClick={() => { setEditingPhone(false); setPhoneErr(null); }}
+                        style={{ padding:"7px 10px", borderRadius:R.sm, border:`1px solid ${T.border}`,
+                          background:"none", color:T.muted, fontSize:12, cursor:"pointer",
+                          fontFamily:TYPE.body.fontFamily }}>Cancel</button>
+                    </div>
+                    {phoneErr && <div style={{ fontSize:11.5, color:T.textOf(ROSE), marginTop:6 }}>{phoneErr}</div>}
+                  </div>
+                ) : pm.user_profiles?.phone ? (
+                  <div style={{ display:"flex", alignItems:"center", gap:9, flexWrap:"wrap" }}>
+                    <a href={`tel:${pm.user_profiles.phone}`}
+                      style={{ display:"inline-flex", alignItems:"center", gap:7, fontSize:13,
+                        color:T.text, textDecoration:"none" }}>
+                      <Phone size={13} color={T.muted} style={{ flexShrink:0 }} />
+                      {pm.user_profiles.phone}
+                    </a>
+                    <a href={`https://wa.me/${pm.user_profiles.phone.replace(/[^0-9]/g,"")}`}
+                      target="_blank" rel="noopener noreferrer"
+                      title={`Message ${pm.user_profiles.full_name || pm.user_profiles.username} on WhatsApp`}
+                      style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"4px 11px",
+                        background:"rgba(37,211,102,0.10)", border:"1px solid rgba(37,211,102,0.45)",
+                        borderRadius:R.pill, color:"#25D366", fontSize:11.5, fontWeight:600,
+                        textDecoration:"none" }}>
+                      <MessageCircle size={12} /> WhatsApp
+                    </a>
+                    {session?.role === "pmo" && (
+                      <button className="pmo-focusable pmo-btn"
+                        onClick={() => { setPhoneDraft(pm.user_profiles.phone || ""); setEditingPhone(true); }}
+                        aria-label="Edit contact number"
+                        style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:2 }}>
+                        <Edit2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                ) : session?.role === "pmo" ? (
+                  <button className="pmo-focusable pmo-btn"
+                    onClick={() => { setPhoneDraft(""); setEditingPhone(true); }}
+                    style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"5px 12px",
+                      background:"none", border:`1px dashed ${T.borderStrong}`, borderRadius:R.pill,
+                      color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+                    <Plus size={12} /> Add contact number
+                  </button>
+                ) : (
+                  <div style={{ fontSize:13, color:T.dim }}>Not on record</div>
+                )}
+              </div>
+
+              <div style={{ flex:1 }} />
               {session?.role==="pmo" && !assigningPM && (
-                <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
+                <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", marginTop:14, padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Change PM
                 </button>
               )}
