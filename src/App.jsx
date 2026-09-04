@@ -4,6 +4,7 @@ import { PhotoWallPage } from "./PhotoWall.jsx";
 import { RiskRegisterPage, ProjectRisksPanel } from "./RiskRegister.jsx";
 import { ProjectLessonsPanel } from "./LessonsLearned.jsx";
 import { ProjectBenefitsPanel } from "./BenefitsRealized.jsx";
+import { ProjectRaciCard } from "./RaciCard.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -7120,6 +7121,15 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           )}
         </Card>
 
+        </div>
+
+        {/* RACI sits in the space below Person Responsible. It spans the grid
+            rather than living inside that column: four readable columns need
+            more than half the width, and the left column ends higher up, so
+            full width lands it in genuinely empty space. */}
+        <div style={{ display: tab === "overview" ? "block" : "none", gridColumn:"1 / -1" }}>
+          <ProjectRaciCard T={T} session={session} supa={supa} projectId={projectId}
+            canWrite={session?.role === "pmo"} isCompact={vpD.isCompact} />
         </div>
 
         <div data-tour="detail-documents" style={{ display: tab === "documents" ? "block" : "none", gridColumn:"1 / -1" }}>
