@@ -302,8 +302,10 @@ export function ProjectLessonsPanel({ T, session, supa, projectId, canWrite }) {
   };
 
   return (
-    <div style={{ padding: SP.lg, maxWidth: 760 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SP.md }}>
+    // Padding and width are the parent's job now: this panel sits in one half
+    // of the Lessons/Benefits grid, so a maxWidth here would strand it.
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: SP.sm, marginBottom: SP.md, flexWrap: "wrap" }}>
         <div style={{ ...TYPE.label, color: T.muted }}>{lessons?.length ?? 0} lesson{lessons?.length === 1 ? "" : "s"} logged</div>
         {canWrite && (
           <button className="pmo-focusable pmo-btn" onClick={() => setModal({})}

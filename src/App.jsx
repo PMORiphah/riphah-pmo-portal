@@ -3,6 +3,7 @@ import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
 import { PhotoWallPage } from "./PhotoWall.jsx";
 import { RiskRegisterPage, ProjectRisksPanel } from "./RiskRegister.jsx";
 import { ProjectLessonsPanel } from "./LessonsLearned.jsx";
+import { ProjectBenefitsPanel } from "./BenefitsRealized.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -6848,7 +6849,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             { id:"documents",  label:"Documents",  Icon:ClipboardList, "data-tour":"detail-tabs" },
             { id:"sitevisit",  label:"Site Visit", Icon:Camera },
             { id:"risks",      label:"Risks",      Icon:ShieldAlert },
-            { id:"lessons",    label:"Lessons",     Icon:Lightbulb },
+            { id:"lessons",    label:"Lessons/Benefits", Icon:Lightbulb },
           ].filter(t => !((t.id === "risks" || t.id === "lessons") && session?.role === "project_manager"))} />
       </div>
 
@@ -7145,8 +7146,34 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
 
         {tab === "lessons" && session?.role !== "project_manager" && (
           <div style={{ gridColumn:"1 / -1" }}>
-            <ProjectLessonsPanel T={T} session={session} supa={supa} projectId={projectId}
-              canWrite={canManageLessons} />
+            {/* Lessons on the left, Benefits on the right. Two columns only
+                where there is room for them; below the tablet breakpoint they
+                stack, so neither ends up as a squeezed half-width list. */}
+            <div style={{
+              display:"grid", gap: vpD.isCompact ? SP.xl : SP.lg,
+              gridTemplateColumns: vpD.isCompact ? "1fr" : "1fr 1fr",
+              alignItems:"start", padding: SP.lg,
+            }}>
+              <section aria-label="Lessons learned">
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:SP.md,
+                  paddingBottom:10, borderBottom:`1px solid ${T.border}` }}>
+                  <Lightbulb size={15} color={GOLD} />
+                  <h3 style={{ ...TYPE.label, color:T.text, margin:0, fontSize:11.5 }}>Lessons Learned</h3>
+                </div>
+                <ProjectLessonsPanel T={T} session={session} supa={supa} projectId={projectId}
+                  canWrite={canManageLessons} />
+              </section>
+
+              <section aria-label="Benefits realized">
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:SP.md,
+                  paddingBottom:10, borderBottom:`1px solid ${T.border}` }}>
+                  <TrendingUp size={15} color={T.textOf(EMERALD)} />
+                  <h3 style={{ ...TYPE.label, color:T.text, margin:0, fontSize:11.5 }}>Benefits Realized</h3>
+                </div>
+                <ProjectBenefitsPanel T={T} session={session} supa={supa} projectId={projectId}
+                  canWrite={canManageLessons} />
+              </section>
+            </div>
           </div>
         )}
 
