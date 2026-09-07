@@ -795,6 +795,190 @@ const ArchMotifLegacy = ({ color, size = 72, T }) => {
   );
 };
 
+// ─── DEADLINE EMAIL TO THE PROJECT MANAGER ──────────────────────────────────
+// Nothing is sent from here without being read first. PMO edits the subject,
+// the message and the copy lists, then sends. The PM is not on the 9am cron —
+// they only ever hear about a deadline because someone decided to tell them.
+//
+// The body is written as prose, not HTML. The edge function wraps it in the
+// same branded shell the automated mail uses, so a hand-sent note does not
+// look like a lesser thing, and PMO never has to think about markup.
+function DeadlineEmailModal({ T, session, project, pm, onClose }) {
+  const daysText = project.days_remaining < 0
+    ? `${Math.abs(project.days_remaining)} day${Math.abs(project.days_remaining) === 1 ? "" : "s"} overdue`
+    : project.days_remaining === 0 ? "due today"
+    : `${project.days_remaining} day${project.days_remaining === 1 ? "" : "s"} from its planned end date`;
+  const title = project.code && project.code !== "-"
+    ? `${project.code} — ${project.name}` : project.name;
+
+  const [subject, setSubject] = useState(
+    `Deadline approaching: ${project.name}`.slice(0, 160));
+  const [body, setBody] = useState(
+    `Dear ${(pm.full_name || pm.username || "").split(" ")[0] || "colleague"},\n\n` +
+    `This is a reminder that ${title} is ${daysText} (${project.end_date}).\n\n` +
+    `Could you please confirm the current position on site and let us know whether the planned end date still holds. ` +
+    `If the date needs revising, or if anything is blocking progress, tell us what you need and we will take it forward.\n\n` +
+    `You can review the project in the PMO Portal using the link below.\n\n` +
+    `Many thanks,`);
+  const [cc, setCc]   = useState(["owais.javed@riphah.edu.pk","abdullah.azhar@riphah.edu.pk",
+                                  "usman.ahmad@riphah.edu.pk","atisham.haq@riphah.edu.pk"]);
+  const [bcc, setBcc] = useState([]);
+  const [ccDraft, setCcDraft]   = useState("");
+  const [bccDraft, setBccDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [err, setErr]   = useState(null);
+  const [sent, setSent] = useState(null);
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const addTo = (draft, setDraft, list, setList) => {
+    const parts = draft.split(/[,;\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    const bad = parts.filter(x => !EMAIL_RE.test(x));
+    if (bad.length) { setErr(`Not a valid address: ${bad[0]}`); return; }
+    setErr(null);
+    setList([...new Set([...list, ...parts])]);
+    setDraft("");
+  };
+
+  const send = async () => {
+    setErr(null); setSending(true);
+    try {
+      const res = await fetch(`${SUPA_URL}/functions/v1/send-deadline-email`, {
+        method: "POST",
+        headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token,
+                   "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: project.id, to: pm.email, subject, body, cc, bcc }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || out.detail || `Send failed (${res.status})`);
+      setSent(out);
+    } catch (e) { setErr(e.message); }
+    setSending(false);
+  };
+
+  const chip = (addr, onRemove) => (
+    <span key={addr} style={{ display:"inline-flex", alignItems:"center", gap:5,
+      padding:"3px 6px 3px 10px", borderRadius:R.pill, background:T.card2,
+      border:`1px solid ${T.border}`, fontSize:11.5, color:T.text }}>
+      {addr}
+      <button className="pmo-focusable pmo-btn" onClick={onRemove} aria-label={`Remove ${addr}`}
+        style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:2, lineHeight:0 }}>
+        <X size={11} />
+      </button>
+    </span>
+  );
+  const lbl = { ...TYPE.label, color:T.muted, marginBottom:5 };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+    padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
+    outline:"none", width:"100%", boxSizing:"border-box" };
+
+  return (
+    <div onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }}
+      style={{ position:"fixed", inset:0, zIndex:1400, background:"rgba(3,8,16,0.74)",
+        backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", display:"flex",
+        alignItems:"center", justifyContent:"center", padding:SP.lg, animation:"pmoFade .18s ease" }}>
+      <div className="pmo-scale pmo-scroll" role="dialog" aria-modal="true" aria-label="Email the project manager"
+        style={{ width:620, maxWidth:"100%", maxHeight:"90vh", overflow:"auto", background:T.surface,
+          border:`1px solid ${T.border}`, borderRadius:R.xl, boxShadow:T.shadowLg, padding:SP.xxl }}>
+
+        {sent ? (
+          <div>
+            <div style={{ display:"flex", gap:14, alignItems:"center", marginBottom:SP.lg }}>
+              <div style={{ width:44, height:44, borderRadius:"50%", flexShrink:0,
+                background:`${EMERALD}1F`, border:`1px solid ${EMERALD}3D`,
+                display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <CheckCircle2 size={22} strokeWidth={2.2} color={T.textOf(EMERALD)} />
+              </div>
+              <div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.textOf(EMERALD) }}>Email sent</div>
+                <div style={{ fontSize:12.5, color:T.muted, marginTop:3 }}>
+                  {/* The server reports counts; a dry run reports the lists.
+                      Normalise so the sentence reads the same either way. */}
+                  {(() => {
+                    const n = v => Array.isArray(v) ? v.length : (Number(v) || 0);
+                    const c = n(sent.cc), bx = n(sent.bcc);
+                    return `Sent to ${sent.to}` +
+                      (c ? `, copied to ${c} other${c === 1 ? "" : "s"}` : "") +
+                      (bx ? `, blind copied to ${bx}` : "") + ".";
+                  })()}
+                </div>
+              </div>
+            </div>
+            <div style={{ display:"flex", justifyContent:"flex-end" }}>
+              <Button T={T} variant="primary" onClick={onClose}>Done</Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ marginBottom:SP.lg, paddingBottom:SP.md, borderBottom:`1px solid ${T.border}` }}>
+              <div style={{ ...TYPE.display, fontSize:17, color:T.text }}>Email the project manager</div>
+              <div style={{ fontSize:12, color:T.muted, marginTop:3 }}>
+                Read it over and change anything you like before sending.
+              </div>
+            </div>
+
+            <div style={{ marginBottom:SP.md }}>
+              <div style={lbl}>To</div>
+              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px",
+                background:T.card2, border:`1px solid ${T.border}`, borderRadius:R.sm }}>
+                <Mail size={13} color={T.muted} />
+                <span style={{ fontSize:13, color:T.text }}>
+                  {pm.full_name || pm.username} &lt;{pm.email}&gt;
+                </span>
+              </div>
+            </div>
+
+            {[["Cc", cc, setCc, ccDraft, setCcDraft], ["Bcc", bcc, setBcc, bccDraft, setBccDraft]]
+              .map(([name, list, setList, draft, setDraft]) => (
+              <div key={name} style={{ marginBottom:SP.md }}>
+                <div style={lbl}>{name}</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:6 }}>
+                  {list.map(a => chip(a, () => setList(list.filter(x => x !== a))))}
+                  {list.length === 0 && <span style={{ fontSize:12, color:T.dim }}>Nobody.</span>}
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <input value={draft} onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTo(draft, setDraft, list, setList); } }}
+                    placeholder={`Add an address and press Enter`} style={inp} />
+                  <Button T={T} variant="ghost" onClick={() => addTo(draft, setDraft, list, setList)}>Add</Button>
+                </div>
+              </div>
+            ))}
+
+            <div style={{ marginBottom:SP.md }}>
+              <div style={lbl}>Subject</div>
+              <input value={subject} onChange={e => setSubject(e.target.value)} style={inp} />
+            </div>
+
+            <div style={{ marginBottom:SP.md }}>
+              <div style={lbl}>Message</div>
+              <textarea value={body} onChange={e => setBody(e.target.value)} rows={11}
+                style={{ ...inp, resize:"vertical", lineHeight:1.65 }} />
+              <div style={{ fontSize:11, color:T.dim, marginTop:5, lineHeight:1.55 }}>
+                The project's campus, end date, status and a link to the portal are added
+                automatically underneath, so there's no need to repeat them here.
+              </div>
+            </div>
+
+            {err && (
+              <div style={{ marginBottom:SP.md, padding:"9px 12px", borderRadius:R.sm,
+                background:`${ROSE}14`, border:`1px solid ${ROSE}3D`, fontSize:12.5,
+                color:T.textOf(ROSE) }}>{err}</div>
+            )}
+
+            <div style={{ display:"flex", justifyContent:"flex-end", gap:SP.sm }}>
+              <Button T={T} variant="ghost" onClick={onClose} disabled={sending}>Cancel</Button>
+              <Button T={T} variant="primary" onClick={send} loading={sending}
+                disabled={!subject.trim() || !body.trim()}>
+                Send email
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── DEADLINE ALERT POPUPS ──────────────────────────────────────────────────
 // Fires once per PMO session establishment (fresh login or a restored
 // session on page load — both count as "logging in" from the user's
@@ -804,6 +988,7 @@ const ArchMotifLegacy = ({ color, size = 72, T }) => {
 function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlertActive }) {
   const [queue, setQueue] = useState(null); // null = not yet loaded; [] = loaded, none at risk
   const [idx, setIdx] = useState(0);
+  const [emailing, setEmailing] = useState(null);
   const firedFor = useRef(null);
   const holdingLock = useRef(false);
 
@@ -819,7 +1004,30 @@ function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlert
     const timer = setTimeout(async () => {
       try {
         const rows = await supa("/rest/v1/at_risk_projects?select=*", {}, session.access_token);
-        if (!cancelled) setQueue(Array.isArray(rows) ? rows : []);
+        const list = Array.isArray(rows) ? rows : [];
+        // Who to offer the email to. at_risk_projects has no PM, so the
+        // assignments are read separately and attached. A failure here must not
+        // cost the alert itself — worst case the button simply is not offered.
+        if (list.length) {
+          try {
+            const ids = list.map(r => r.id).join(",");
+            const asg = await supa(
+              `/rest/v1/project_assignments?project_id=in.(${ids})&select=project_id,user_id`,
+              {}, session.access_token);
+            const uids = [...new Set((asg || []).map(a => a.user_id))];
+            let byUser = {};
+            if (uids.length) {
+              const profs = await supa(
+                `/rest/v1/user_profiles?id=in.(${uids.join(",")})&select=id,username,full_name,email`,
+                {}, session.access_token);
+              byUser = Object.fromEntries((profs || []).map(u => [u.id, u]));
+            }
+            const byProject = Object.fromEntries(
+              (asg || []).map(a => [a.project_id, byUser[a.user_id]]).filter(([, u]) => u));
+            list.forEach(r => { r.__pm = byProject[r.id] || null; });
+          } catch { /* alert still shows, just without the email action */ }
+        }
+        if (!cancelled) setQueue(list);
       } catch { if (!cancelled) setQueue([]); }
     }, 5000);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -909,11 +1117,25 @@ function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlert
           padding:`${SP.md}px ${SP.xl}px`, borderTop:`1px solid ${T.border}`,
           background:T.pageAlt,
         }}>
+          {p.__pm?.email ? (
+            <Button T={T} variant="ghost" icon={Mail} onClick={() => setEmailing(p)}>
+              Email {(p.__pm.full_name || p.__pm.username || "the PM").split(" ")[0]}
+            </Button>
+          ) : (
+            <span style={{ ...TYPE.caption, color:T.dim, alignSelf:"center", marginRight:"auto" }}>
+              {p.__pm ? "This project manager has no email on record." : "No project manager assigned."}
+            </span>
+          )}
           <Button T={T} variant="primary" onClick={() => setIdx(i => i + 1)}>
             {idx + 1 < queue.length ? "Next" : "Dismiss"}
           </Button>
         </div>
       </div>
+
+      {emailing && emailing.__pm?.email && (
+        <DeadlineEmailModal T={T} session={session} project={emailing} pm={emailing.__pm}
+          onClose={() => setEmailing(null)} />
+      )}
     </div>
   );
 }
