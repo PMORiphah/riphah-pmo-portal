@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { TrendingUp, Plus, ArrowRightLeft, Search, X, Check } from "lucide-react";
+import { TrendingUp, Plus, ArrowRightLeft, Search, X, Check, Pencil } from "lucide-react";
 import { TYPE, SP, R, MOTION } from "./theme.js";
 import { EmptyState, Skeleton, Button, Input, Select, Badge, Modal, useViewport } from "./ui.jsx";
 
@@ -18,6 +18,7 @@ import { EmptyState, Skeleton, Button, Input, Select, Badge, Modal, useViewport 
 export function InvestmentsTab({
   T, session, supa, canManage, onSelectProject, fmtFull, fmtM,
   STAGE_META, PRIORITY_META, sortByActivity, onPortfolioChange, MobileProjectCard,
+  ProjectFormModal,
 }) {
   const vpI = useViewport();
   const [rows, setRows]       = useState([]);
@@ -25,6 +26,35 @@ export function InvestmentsTab({
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState(null);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [editProject, setEditProject]   = useState(null);
+  const [lookups,     setLookups]       = useState(null);
+  const [opening,     setOpening]       = useState(null);
+
+  // Editing an investment project used to mean moving it to CAPEX, editing it
+  // there and moving it back. The form is the same one the register uses; it
+  // just needs two things this tab does not already hold.
+  //
+  // The rows here come from the project_metrics view, which omits the id
+  // columns the form binds to (sector, region, segment, cost centre, campus),
+  // so the full row is fetched before opening. The lookups are fetched once,
+  // on first edit, rather than on every dashboard load.
+  const openEdit = async (row) => {
+    setOpening(row.id);
+    try {
+      const [[full], sectors, regions, segments, cost_centers, campuses] = await Promise.all([
+        supa(`/rest/v1/projects?id=eq.${row.id}&select=*`, {}, session.access_token),
+        lookups ? Promise.resolve(lookups.sectors)      : supa("/rest/v1/sectors?select=id,name&order=name.asc", {}, session.access_token),
+        lookups ? Promise.resolve(lookups.regions)      : supa("/rest/v1/regions?select=id,name&order=name.asc", {}, session.access_token),
+        lookups ? Promise.resolve(lookups.segments)     : supa("/rest/v1/segments?select=id,name&order=name.asc", {}, session.access_token),
+        lookups ? Promise.resolve(lookups.cost_centers) : supa("/rest/v1/cost_centers?select=id,name&order=name.asc", {}, session.access_token),
+        lookups ? Promise.resolve(lookups.campuses)     : supa("/rest/v1/campuses?select=id,name&order=name.asc", {}, session.access_token),
+      ]);
+      setLookups({ sectors, regions, segments, cost_centers, campuses });
+      setEditProject(full || null);
+      if (!full) setErr("That project could not be loaded for editing.");
+    } catch (e) { setErr(e.message); }
+    setOpening(null);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -159,20 +189,33 @@ export function InvestmentsTab({
                   { label:"Approved", value:fmtFull(p.bac), color:T.textOf(T.positive) },
                 ]}
                 rightSlot={canManage ? (
-                  <button className="pmo-focusable pmo-btn"
-                    title="Move back to the CAPEX portfolio"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (window.confirm(
-                        `Move "${p.name}" back to the CAPEX portfolio?\n\n` +
-                        `Its value will be included in the CAPEX totals again.`))
-                        move(p.id, "capex");
-                    }}
-                    style={{ marginLeft:"auto", background:"transparent", border:`1px solid ${T.border}`,
-                      borderRadius:R.sm, color:T.muted, cursor:"pointer",
-                      padding:"5px 9px", ...TYPE.caption, whiteSpace:"nowrap" }}>
-                    Move to CAPEX
-                  </button>
+                  // Both actions share one slot. A second rightSlot on the same
+                  // element is silently discarded — JSX keeps the last prop —
+                  // so the first one renders nothing and looks like a no-op.
+                  <div style={{ display:"flex", gap:6, marginLeft:"auto", alignItems:"center" }}>
+                    <button className="pmo-focusable pmo-btn" aria-label="Edit this project"
+                      disabled={opening === p.id}
+                      onClick={(e) => { e.stopPropagation(); openEdit(p); }}
+                      style={{ background:"transparent", border:`1px solid ${T.border}`,
+                        borderRadius:R.sm, color:T.muted, padding:"5px 9px",
+                        cursor: opening === p.id ? "default" : "pointer" }}>
+                      <Pencil size={13} />
+                    </button>
+                    <button className="pmo-focusable pmo-btn"
+                      title="Move back to the CAPEX portfolio"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(
+                          `Move "${p.name}" back to the CAPEX portfolio?\n\n` +
+                          `Its value will be included in the CAPEX totals again.`))
+                          move(p.id, "capex");
+                      }}
+                      style={{ background:"transparent", border:`1px solid ${T.border}`,
+                        borderRadius:R.sm, color:T.muted, cursor:"pointer",
+                        padding:"5px 9px", ...TYPE.caption, whiteSpace:"nowrap" }}>
+                      Move to CAPEX
+                    </button>
+                  </div>
                 ) : undefined} />
             ))}
           </div>
@@ -218,7 +261,19 @@ export function InvestmentsTab({
                     <td style={{ ...cell(T), textAlign:"right" }}>{fmtFull(p.df_recommended_amount)}</td>
                     <td style={{ ...cell(T), textAlign:"right", color:T.textOf(T.positive) }}>{fmtFull(p.bac)}</td>
                     <td style={{ ...cell(T), textAlign:"right" }}>{fmtFull(p.amount_released)}</td>
-                    <td style={{ ...cell(T), textAlign:"right" }}>
+                    <td style={{ ...cell(T), textAlign:"right", whiteSpace:"nowrap" }}>
+                      {canManage && (
+                        <button className="pmo-focusable pmo-btn"
+                          title="Edit this project"
+                          disabled={opening === p.id}
+                          onClick={(e) => { e.stopPropagation(); openEdit(p); }}
+                          style={{ background:"transparent", border:`1px solid ${T.border}`,
+                            borderRadius:R.sm, padding:"4px 7px", marginRight:6,
+                            color:T.muted, cursor: opening === p.id ? "default" : "pointer",
+                            verticalAlign:"middle" }}>
+                          <Pencil size={12} />
+                        </button>
+                      )}
                       {canManage && (
                         <button className="pmo-focusable pmo-btn"
                           title="Move back to the CAPEX portfolio"
@@ -243,6 +298,18 @@ export function InvestmentsTab({
           </div>
         )}
       </div>
+
+      {editProject && ProjectFormModal && (
+        <ProjectFormModal T={T} session={session} project={editProject} lookups={lookups}
+          onClose={() => setEditProject(null)}
+          onSaved={async () => {
+            setEditProject(null);
+            await load();
+            // Budget fields may have changed, and investment totals feed the
+            // dashboard's split of the portfolio, so let it re-read too.
+            await onPortfolioChange?.();
+          }} />
+      )}
 
       {transferOpen && (
         <TransferModal T={T} session={session} supa={supa}

@@ -3053,7 +3053,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           fmtFull={fmtFull} fmtM={fmtM}
           STAGE_META={STAGE_META} PRIORITY_META={PRIORITY_META}
           sortByActivity={sortByActivity}
-          MobileProjectCard={MobileProjectCard}
+          MobileProjectCard={MobileProjectCard} ProjectFormModal={ProjectFormModal}
           // Moving a project between portfolios changes every headline figure,
           // so the dashboard re-reads rather than waiting for a page reload.
           onPortfolioChange={load} />
