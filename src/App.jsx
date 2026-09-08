@@ -6,6 +6,7 @@ import { ProjectLessonsPanel } from "./LessonsLearned.jsx";
 import { ProjectBenefitsPanel } from "./BenefitsRealized.jsx";
 import { ProjectRaciCard } from "./RaciCard.jsx";
 import { PortfolioTimeline } from "./Timeline.jsx";
+import { ProjectTasks } from "./Tasks.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -6897,6 +6898,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   // excluded entirely. Enforced at the database (lessons_write policy), not
   // just here.
   const canManageLessons = session?.role === "pmo";
+  // Whether the person reading this page is the project manager assigned to it.
+  // Only decides what the interface offers — the database enforces the same
+  // rule again on every write, so a wrong answer here cannot grant access.
+  const isAssignedPM = !!pm?.user_profiles?.id && pm.user_profiles.id === session?.user_id;
 
   // PMO can set the PM's contact number straight from this card. It writes to
   // user_profiles, the same field the User Management page edits, so a number
@@ -7184,6 +7189,14 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       {tab === "timeline" && (
         <div data-tour="detail-timeline" style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
           <ProjectTimeline T={T} p={details} evm={evm} isCompact={vpD.isCompact} />
+          {/* The approval journey above says where the paperwork has got to.
+              The breakdown below says where the work has. A project manager
+              assigned here can edit it; everyone else reads it. */}
+          <div style={{ marginTop:SP.xxl, paddingTop:SP.xl, borderTop:`1px solid ${T.border}` }}>
+            <ProjectTasks T={T} session={session} supa={supa} projectId={projectId}
+              canWrite={session?.role === "pmo" || isAssignedPM}
+              isPMO={session?.role === "pmo"} isCompact={vpD.isCompact} />
+          </div>
         </div>
       )}
 
