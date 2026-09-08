@@ -24,7 +24,7 @@ import {
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
-  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree
+  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -7198,13 +7198,38 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           this is open to the assigned project manager — they maintain it, so
           they need it on the projects they own. Editing is gated on assignment
           and re-checked by RLS on every write. */}
-      {tab === "wbs" && (
-        <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
-          <ProjectTasks T={T} session={session} supa={supa} projectId={projectId}
-            canWrite={session?.role === "pmo" || isAssignedPM}
-            isPMO={session?.role === "pmo"} isCompact={vpD.isCompact} />
-        </div>
-      )}
+      {tab === "wbs" && (() => {
+        // A breakdown is normally built once a project is approved and the money
+        // has been released — that is when the work is real. Saying so is more
+        // useful than hiding the tab: planning during review is legitimate, and
+        // a tab that appears and disappears as the stage changes is confusing.
+        const funded    = parseFloat(details.amount_released || 0) > 0;
+        const inExecution = details.workflow_stage === "approved" && funded;
+        const why = details.workflow_stage === "closed"
+          ? "This project is closed."
+          : details.workflow_stage !== "approved"
+            ? "This project hasn't been approved yet."
+            : "This project is approved but no budget has been released yet.";
+        return (
+          <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
+            {!inExecution && (
+              <div style={{ display:"flex", gap:10, alignItems:"flex-start", marginBottom:SP.lg,
+                padding:"11px 14px", borderRadius:R.md, background:T.card2,
+                border:`1px solid ${T.border}` }}>
+                <Info size={14} color={T.dim} style={{ flexShrink:0, marginTop:2 }} />
+                <div style={{ fontSize:12.5, color:T.muted, lineHeight:1.6 }}>
+                  {why} Work breakdowns are normally built once a project is approved and
+                  funded and is genuinely in execution. You can still plan one here if it
+                  helps — nothing is blocked.
+                </div>
+              </div>
+            )}
+            <ProjectTasks T={T} session={session} supa={supa} projectId={projectId}
+              canWrite={session?.role === "pmo" || isAssignedPM}
+              isPMO={session?.role === "pmo"} isCompact={vpD.isCompact} />
+          </div>
+        );
+      })()}
 
       {/* ── Content grid ── */}
       {/* Overview and Financials share the grid; each card opts into a tab so
