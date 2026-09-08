@@ -24,7 +24,7 @@ import {
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
-  Award, Target, CalendarCheck, Mail, Phone, MessageCircle
+  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -7179,6 +7179,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             { id:"overview",   label:"Overview",   Icon:FileText },
             { id:"financials", label:"Financials", Icon:Wallet },
             { id:"timeline",   label:"Timeline",   Icon:Clock },
+            { id:"wbs",        label:"WBS",        Icon:ListTree },
             { id:"documents",  label:"Documents",  Icon:ClipboardList, "data-tour":"detail-tabs" },
             { id:"sitevisit",  label:"Site Visit", Icon:Camera },
             { id:"risks",      label:"Risks",      Icon:ShieldAlert },
@@ -7189,14 +7190,19 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       {tab === "timeline" && (
         <div data-tour="detail-timeline" style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
           <ProjectTimeline T={T} p={details} evm={evm} isCompact={vpD.isCompact} />
-          {/* The approval journey above says where the paperwork has got to.
-              The breakdown below says where the work has. A project manager
-              assigned here can edit it; everyone else reads it. */}
-          <div style={{ marginTop:SP.xxl, paddingTop:SP.xl, borderTop:`1px solid ${T.border}` }}>
-            <ProjectTasks T={T} session={session} supa={supa} projectId={projectId}
-              canWrite={session?.role === "pmo" || isAssignedPM}
-              isPMO={session?.role === "pmo"} isCompact={vpD.isCompact} />
-          </div>
+        </div>
+      )}
+
+      {/* The Timeline tab says where the paperwork has reached; this one says
+          where the work has. Unlike Cashflows, which is PMO-only at nav level,
+          this is open to the assigned project manager — they maintain it, so
+          they need it on the projects they own. Editing is gated on assignment
+          and re-checked by RLS on every write. */}
+      {tab === "wbs" && (
+        <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
+          <ProjectTasks T={T} session={session} supa={supa} projectId={projectId}
+            canWrite={session?.role === "pmo" || isAssignedPM}
+            isPMO={session?.role === "pmo"} isCompact={vpD.isCompact} />
         </div>
       )}
 
@@ -7205,7 +7211,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           the same markup serves both without duplication. */}
       <div style={{
         padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px`,
-        display: tab === "timeline" ? "none" : "grid",
+        display: (tab === "timeline" || tab === "wbs") ? "none" : "grid",
         gridTemplateColumns: vpD.isCompact ? "1fr" : "1fr 1fr", gap:SP.lg, alignItems:"start",
       }}>
 
