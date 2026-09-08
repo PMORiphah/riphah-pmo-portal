@@ -38,11 +38,19 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
 
   useEffect(() => {
     let alive = true;
-    supa("/rest/v1/projects?portfolio=eq.capex&select=id,code,name,campus,workflow_stage,"
-       + "start_date,end_date,actual_start_date,actual_end_date,pct_complete,bac,amount_released"
-       + "&order=campus.asc,start_date.asc", {}, session.access_token)
-      .then(r => { if (alive) setRows(Array.isArray(r) ? r : []); })
-      .catch(e => { if (alive) { setErr(e.message); setRows([]); } });
+    Promise.all([
+      supa("/rest/v1/projects?portfolio=eq.capex&select=id,code,name,campus,workflow_stage,"
+         + "start_date,end_date,actual_start_date,actual_end_date,pct_complete,bac,amount_released"
+         + "&order=campus.asc,start_date.asc", {}, session.access_token),
+      // Where a project has been broken down, its bar should show where the
+      // work actually sits rather than the single date pair someone typed at
+      // approval. A failure here must not cost the chart.
+      supa("/rest/v1/project_task_rollup?select=*", {}, session.access_token).catch(() => []),
+    ]).then(([ps, roll]) => {
+      if (!alive) return;
+      const byProject = Object.fromEntries((roll || []).map(r => [r.project_id, r]));
+      setRows((Array.isArray(ps) ? ps : []).map(p => ({ ...p, _roll: byProject[p.id] || null })));
+    }).catch(e => { if (alive) { setErr(e.message); setRows([]); } });
     return () => { alive = false; };
   }, [session.access_token]);
 
@@ -56,8 +64,15 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
       && (!needle || `${r.code||""} ${r.name||""}`.toLowerCase().includes(needle));
     const s = [], u = [];
     (rows||[]).filter(keep).forEach(r => {
-      const a = d0(r.start_date), b = d0(r.end_date);
-      (a && b && b >= a) ? s.push({ ...r, _s:a, _e:b }) : u.push(r);
+      const pa = d0(r.start_date), pb = d0(r.end_date);
+      const ta = d0(r._roll?.tasks_start), tb = d0(r._roll?.tasks_end);
+      const hasTasks = !!(ta && tb && tb >= ta);
+      // Tasks win where they exist; the committed dates are still carried so
+      // the two can be shown against each other.
+      const a = hasTasks ? ta : pa, b = hasTasks ? tb : pb;
+      (a && b && b >= a)
+        ? s.push({ ...r, _s:a, _e:b, _pa:pa, _pb:pb, _tasks:hasTasks })
+        : u.push(r);
     });
     return { scheduled:s, unscheduled:u };
   }, [rows, q, campus, stage]);
@@ -67,7 +82,9 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
   const axis = useMemo(() => {
     if (!scheduled.length) return null;
     let lo = scheduled[0]._s, hi = scheduled[0]._e;
-    scheduled.forEach(r => { if (r._s < lo) lo = r._s; if (r._e > hi) hi = r._e; });
+    scheduled.forEach(r => {
+      [r._s, r._e, r._pa, r._pb].forEach(d => { if (d) { if (d < lo) lo = d; if (d > hi) hi = d; } });
+    });
     const today = new Date();
     if (today < lo) lo = today;
     if (today > hi) hi = today;
@@ -99,6 +116,7 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
   const NAMEW = isCompact ? 132 : 250;
   const ROWH  = isCompact ? 30 : 34;
   const todayX = axis ? xOf(new Date()) : 0;
+  const totalRows = scheduled.length;
 
   if (rows === null) return <div style={{ padding:SP.xxl, color:T.muted, fontSize:13 }}>Loading timeline…</div>;
 
@@ -117,9 +135,23 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
           <option value="">All stages</option>
           {Object.entries(STAGE_META).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
         </Select>
-        <div style={{ marginLeft:"auto", ...TYPE.caption, color:T.muted }}>
-          {scheduled.length} scheduled
-          {unscheduled.length > 0 && <> · <span style={{ color:T.textOf(DATA.warning) }}>{unscheduled.length} without dates</span></>}
+        <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+          {scheduled.some(r => r._tasks) && (
+            <div style={{ display:"flex", alignItems:"center", gap:10, ...TYPE.caption, color:T.dim }}>
+              <span style={{ display:"inline-flex", alignItems:"center", gap:5 }}>
+                <span style={{ width:16, height:9, borderRadius:2, background:`${BRAND.blueBright}66`,
+                  border:`1px solid ${BRAND.blueBright}` }} /> from tasks
+              </span>
+              <span style={{ display:"inline-flex", alignItems:"center", gap:5 }}>
+                <span style={{ width:16, height:9, borderRadius:2,
+                  border:`1px dashed ${T.borderStrong}` }} /> committed plan
+              </span>
+            </div>
+          )}
+          <div style={{ ...TYPE.caption, color:T.muted }}>
+            {scheduled.length} scheduled
+            {unscheduled.length > 0 && <> · <span style={{ color:T.textOf(DATA.warning) }}>{unscheduled.length} without dates</span></>}
+          </div>
         </div>
       </div>
 
@@ -166,7 +198,7 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
                     pointerEvents:"none" }} />
                 )}
 
-                {groups.map(([name, list]) => {
+                {(() => { let drawn = 0; return groups.map(([name, list]) => {
                   const shut = collapsed[name];
                   return (
                     <div key={name}>
@@ -188,28 +220,49 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
                         </div>
                       </div>
 
-                      {!shut && list.map(r => {
+                      {!shut && list.map(r => { const rowNo = drawn++;
                         const meta = STAGE_META[r.workflow_stage] || {};
                         const x = xOf(r._s), w = Math.max(4, xOf(r._e) - xOf(r._s));
                         const late = r._e < new Date() && r.workflow_stage !== "closed";
                         const clr = late ? DATA.danger : (meta.color || BRAND.blue);
-                        const pct = Math.max(0, Math.min(100, parseFloat(r.pct_complete) || 0));
+                        const pct = Math.max(0, Math.min(100,
+                          parseFloat(r._tasks ? (r._roll.weighted_pct ?? 0) : r.pct_complete) || 0));
+                        // Days beyond what was committed, from the tasks.
+                        const slip = r._tasks && r._pb ? Math.round((r._e - r._pb)/DAY) : 0;
+                        const stale = r._roll?.last_updated
+                          ? Math.floor((Date.now() - new Date(r._roll.last_updated))/DAY) : null;
+                        // The card is positioned against the viewport, not the
+                        // row: overflow-y computes to auto once overflow-x is
+                        // auto, so anything drawn inside the scroller is clipped
+                        // at whichever edge it reaches first.
                         const on = CAN_HOVER ? {
-                          onMouseEnter:() => setHover(r.id), onMouseLeave:() => setHover(null) } : {};
+                          onMouseEnter:(e) => setHover({ id:r.id, x:e.clientX, y:e.clientY }),
+                          onMouseMove:(e) => setHover(h => h && h.id === r.id ? { ...h, x:e.clientX, y:e.clientY } : h),
+                          onMouseLeave:() => setHover(null) } : {};
                         return (
                           <div key={r.id} {...on} onClick={() => onSelectProject?.(r.id)}
                             style={{ display:"flex", cursor:"pointer", position:"relative",
-                              background: hover === r.id ? T.surfaceRaised : "transparent",
+                              background: hover?.id === r.id ? T.surfaceRaised : "transparent",
                               transition:`background ${MOTION.fast}` }}>
                             <div style={{ width:NAMEW, flexShrink:0, position:"sticky", left:0, zIndex:1,
-                              background: hover === r.id ? T.surfaceRaised : T.surface,
+                              background: hover?.id === r.id ? T.surfaceRaised : T.surface,
                               borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}`,
                               padding:"4px 12px", height:ROWH, boxSizing:"border-box", overflow:"hidden" }}>
                               <div style={{ fontSize:9.5, color:T.dim, fontFamily:"monospace", lineHeight:1.1 }}>
                                 {r.code && r.code !== "-" ? r.code : "\u00A0"}
                               </div>
                               <div style={{ fontSize:11.5, color:T.text, lineHeight:1.25,
-                                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
+                                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                {r._tasks && (
+                                  <span title={`${r._roll.task_count} tasks`}
+                                    style={{ color:BRAND.blueBright, marginRight:4 }}>▤</span>
+                                )}
+                                {slip > 0 && (
+                                  <span title={`${slip} days beyond the committed end date`}
+                                    style={{ color:T.textOf(DATA.danger), fontWeight:700, marginRight:4 }}>+{slip}d</span>
+                                )}
+                                {r.name}
+                              </div>
                             </div>
 
                             <div style={{ position:"relative", width:chartW, height:ROWH,
@@ -218,6 +271,17 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
                                 <div key={i} style={{ position:"absolute", left:i*COLW, top:0, bottom:0, width:1,
                                   background: m.getMonth() === 0 ? T.borderStrong : T.border, opacity:.55 }} />
                               ))}
+                              {/* The committed dates, behind. Only drawn when the
+                                  project has tasks and the two actually differ —
+                                  otherwise it is a shadow of itself. */}
+                              {r._tasks && r._pa && r._pb &&
+                               (r._pa.getTime() !== r._s.getTime() || r._pb.getTime() !== r._e.getTime()) && (
+                                <div title="Committed plan"
+                                  style={{ position:"absolute", left:xOf(r._pa), top:(ROWH-19)/2,
+                                    width:Math.max(3, xOf(r._pb) - xOf(r._pa)), height:19,
+                                    borderRadius:4, border:`1px dashed ${T.borderStrong}`,
+                                    background:"transparent", pointerEvents:"none" }} />
+                              )}
                               <div style={{ position:"absolute", left:x, top:(ROWH-15)/2, width:w, height:15,
                                 borderRadius:4, background:`${clr}2E`, border:`1px solid ${clr}99`,
                                 overflow:"hidden" }}>
@@ -226,14 +290,24 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
                                     width:`${pct}%`, background:`${clr}D9` }} />
                                 )}
                               </div>
-                              {hover === r.id && (
-                                <div className="pmo-scale" style={{ position:"absolute", zIndex:6,
-                                  left: Math.min(x, chartW-260), top:ROWH-2, width:250,
+                              {hover?.id === r.id && (
+                                <div className="pmo-scale" style={{ position:"fixed", zIndex:60,
+                                  left: Math.min(hover.x + 16, window.innerWidth - 268),
+                                  top:  Math.min(hover.y + 14, window.innerHeight - 190),
+                                  width:250,
                                   background:T.surfaceFloat, border:`1px solid ${T.borderStrong}`,
                                   borderRadius:R.md, boxShadow:T.shadowLg, padding:"9px 11px",
                                   pointerEvents:"none" }}>
                                   <div style={{ fontSize:12, fontWeight:700, color:T.text, marginBottom:5 }}>{r.name}</div>
-                                  {[["Planned", `${fmtD(r._s)} → ${fmtD(r._e)}`],
+                                  {[...(r._tasks
+                                      ? [["From tasks", `${fmtD(r._s)} → ${fmtD(r._e)}`],
+                                         ["Committed", `${fmtD(r._pa)} → ${fmtD(r._pb)}`],
+                                         ["Slippage", slip > 0 ? `${slip} days late` : slip < 0 ? `${-slip} days early` : "on plan"],
+                                         ["Tasks", `${r._roll.task_count}`
+                                                 + (r._roll.milestone_count ? `, ${r._roll.milestone_count} milestone${r._roll.milestone_count===1?"":"s"}` : "")],
+                                         ["Schedule updated", stale === null ? "—" : stale === 0 ? "today" : `${stale} day${stale===1?"":"s"} ago`]]
+                                      : [["Planned", `${fmtD(r._s)} → ${fmtD(r._e)}`],
+                                         ["Breakdown", "not started"]]),
                                     ["Stage", meta.label || r.workflow_stage],
                                     ["Progress", `${pct.toFixed(0)}%`],
                                     ["Approved", fmtM(r.bac)],
@@ -252,7 +326,7 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
                       })}
                     </div>
                   );
-                })}
+                }); })()}
               </div>
             </div>
           </div>
