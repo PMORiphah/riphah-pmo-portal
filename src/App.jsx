@@ -5,6 +5,7 @@ import { RiskRegisterPage, ProjectRisksPanel } from "./RiskRegister.jsx";
 import { ProjectLessonsPanel } from "./LessonsLearned.jsx";
 import { ProjectBenefitsPanel } from "./BenefitsRealized.jsx";
 import { ProjectRaciCard } from "./RaciCard.jsx";
+import { PortfolioTimeline } from "./Timeline.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -5985,7 +5986,13 @@ function SettingsPage({ T, session }) {
 // portal's light/dark toggle through the theme bridge below. NOTE: that file
 // exists twice (repo root for production, public/ for the build). Edit both —
 // deploy-preview.py aborts if they drift.
-function CashflowPage({ T, dark, session }) {
+function CashflowPage({ T, dark, session, onSelectProject }) {
+  // Two views under one nav item. The cashflow half is an embedded static
+  // dashboard built from an August snapshot; the timeline is live. Keeping
+  // them as tabs avoids adding a nav entry for what is one idea — when is
+  // the money going out, and when is the work happening.
+  const [view, setView] = useState("timeline");
+  const vpCF = useViewport();
   // The embedded dashboard runs on a snapshot saved in August, so its own
   // project count disagrees with the live portfolio. Read the authoritative
   // count here and pass it in, so the tab reports the same number as every
@@ -6018,14 +6025,41 @@ function CashflowPage({ T, dark, session }) {
     } catch (_) {}
   }, [dark]);
 
+  const tab = (id, label) => {
+    const on = view === id;
+    return (
+      <button key={id} className="pmo-focusable pmo-btn" onClick={() => setView(id)}
+        style={{ padding:"8px 16px", background:"transparent", border:"none", cursor:"pointer",
+          fontFamily:TYPE.body.fontFamily, fontSize:13, fontWeight: on ? 700 : 500,
+          color: on ? T.text : T.muted,
+          borderBottom:`2px solid ${on ? GOLD : "transparent"}`,
+          transition:`color ${MOTION.fast}, border-color ${MOTION.fast}` }}>
+        {label}
+      </button>
+    );
+  };
+
   return (
-    <div style={{ flex:1, display:"flex", overflow:"hidden", background:T?.page }}>
-      <iframe
-        ref={frame}
-        src={src}
-        title="Project Cashflows & Timelines"
-        style={{ flex:1, border:"none", width:"100%", height:"100%" }}
-      />
+    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:T?.page }}>
+      <div style={{ display:"flex", gap:2, padding:"0 8px", borderBottom:`1px solid ${T.border}`,
+        background:T.surface, flexShrink:0 }}>
+        {tab("timeline", "Timeline")}
+        {tab("cashflow", "Cashflow")}
+      </div>
+
+      {view === "timeline" ? (
+        <div className="pmo-scroll" style={{ flex:1, overflow:"auto" }}>
+          <PortfolioTimeline T={T} session={session} supa={supa}
+            onSelectProject={onSelectProject} isCompact={vpCF.isCompact} />
+        </div>
+      ) : (
+        <iframe
+          ref={frame}
+          src={src}
+          title="Project Cashflows"
+          style={{ flex:1, border:"none", width:"100%", height:"100%" }}
+        />
+      )}
     </div>
   );
 }
@@ -11320,7 +11354,7 @@ export default function App() {
             {effectivePage === "photowall" && <PhotoWallPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
             {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
             {effectivePage === "risks" && <RiskRegisterPage T={T} session={session} supa={supa} />}
-            {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} />}
+            {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} onSelectProject={openProject} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} />}
