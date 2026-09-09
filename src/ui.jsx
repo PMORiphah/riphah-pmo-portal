@@ -438,8 +438,21 @@ export const injectGlobals = () => {
        display:flex row has no overflow handling and its children have no
        flex-shrink:0, both defaults that fight against a fixed number of
        fixed-content cards on a phone-width screen. */
-    .pmo-card-row { overflow-x: auto; }
+    /* overflow-x:auto silently computes overflow-y to auto as well — CSS will
+       not honour one scrolling axis and one visible axis. A KCard grows when
+       hovered, that growth then overflowed the row vertically, a scrollbar
+       appeared and the browser scrolled the cards up so their tops were cut
+       off with the insight half out of view.
+
+       overflow-x:clip is the one pairing the spec does allow alongside
+       overflow-y:visible, so cards can expand outward. Clip cannot scroll, so
+       narrow screens — the only place the row is actually too wide — keep the
+       scrolling behaviour and gain bottom padding for the hover growth. */
+    .pmo-card-row { overflow-x: clip; overflow-y: visible; }
     .pmo-card-row > * { flex-shrink: 0; }
+    @media (max-width: 900px) {
+      .pmo-card-row { overflow-x: auto; overflow-y: auto; padding-bottom: 96px; margin-bottom: -96px; }
+    }
     .pmo-scroll::-webkit-scrollbar-track { background:transparent; }
     .pmo-scroll::-webkit-scrollbar-thumb { background:rgba(124,149,175,.28); border-radius:99px; border:2px solid transparent; background-clip:content-box; }
     .pmo-scroll::-webkit-scrollbar-thumb:hover { background:rgba(124,149,175,.5); border:2px solid transparent; background-clip:content-box; }
