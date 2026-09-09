@@ -17,6 +17,12 @@ export default defineConfig({
           // into the eagerly-loaded graph and silently undoes the dynamic
           // import — the bundle looked split but first load was unchanged.
           if (id.includes('xlsx')) return;
+          // Same for exceljs, and for the same reason: it is imported only
+          // when someone downloads a task template, and naming it here would
+          // drag it and its dependencies into first load. It is far bigger
+          // than xlsx, so this matters more, not less.
+          if (id.includes('exceljs') || id.includes('archiver')
+              || id.includes('unzipper') || id.includes('jszip')) return;
           if (id.includes('recharts') || id.includes('d3-') || id.includes('victory'))
             return 'charts';
           if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler'))

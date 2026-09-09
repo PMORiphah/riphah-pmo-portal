@@ -344,8 +344,21 @@ function ImportModal({ T, session, supa, projectId, existingCount, onClose, onDo
       const XLSX = await loadXLSX();
       const ab = await file.arrayBuffer();
       const wb = XLSX.read(ab, { type:"array", cellDates:true });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:false, dateNF:"yyyy-mm-dd" });
+      // Not sheet zero. The template opens on its instructions sheet, so index
+      // zero is the guide — reading it found no tasks and silently disabled the
+      // import. Prefer a sheet called Tasks, then the first one that actually
+      // has a Task Name column, and only then fall back to the first sheet.
+      const read = (name) => XLSX.utils.sheet_to_json(wb.Sheets[name],
+        { header:1, raw:false, dateNF:"yyyy-mm-dd" });
+      const hasHeader = (aoa) => (aoa[0] || []).some(h =>
+        String(h ?? "").trim().toLowerCase() === "task name");
+      let aoa = null;
+      const named = wb.SheetNames.find(n => n.trim().toLowerCase() === "tasks");
+      if (named) aoa = read(named);
+      if (!aoa || !hasHeader(aoa)) {
+        const found = wb.SheetNames.map(read).find(hasHeader);
+        aoa = found || read(wb.SheetNames[0]);
+      }
       const out = parseSheet(aoa);
       setParsed({ ...out, fileName:file.name });
     } catch (e) { setErr(e.message || "That file could not be read."); }
@@ -553,22 +566,171 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
   // Export what is already here so a round-trip is lossless, or a worked
   // example when the project is empty — a blank grid teaches nobody the
   // Level convention.
+  // Written with exceljs rather than the bundled SheetJS: the community build
+  // of SheetJS writes column widths but silently drops fills, fonts, freeze
+  // panes and data validation, so a "styled" template came out plain. Lazily
+  // imported, so only someone who clicks Template ever downloads it.
   const downloadTemplate = async () => {
-    const XLSX = await loadXLSX();
-    const body = list.length
-      ? list.map(r => [r._depth + 1, r.name, r.owner || "", r.start_date || "", r.end_date || "",
-                       r.pct_complete ?? 0, (STATUS[r.status] || STATUS.not_started).label,
-                       r.is_milestone ? "Yes" : ""])
-      : [[1,"Design & approvals","Waleed Jamshed","2027-01-01","2027-01-31",100,"Done",""],
-         [2,"Drawings signed off","Waleed Jamshed","2027-01-20","2027-01-31",100,"Done",""],
-         [1,"Procurement","Procurement","2027-02-01","2027-02-28",60,"In progress",""],
-         [1,"Site works","Site Team","2027-03-01","2027-03-25",0,"Not started",""],
-         [1,"Handover & PCD","PMO","2027-03-30","",0,"Not started","Yes"]];
-    const ws = XLSX.utils.aoa_to_sheet([XL_COLS, ...body]);
-    ws["!cols"] = [{wch:7},{wch:44},{wch:20},{wch:13},{wch:13},{wch:11},{wch:14},{wch:11}];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Tasks");
-    XLSX.writeFile(wb, "PMO_Task_Template.xlsx");
+    const ExcelJS = (await import("exceljs")).default ?? (await import("exceljs"));
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Riphah PMO Portal";
+    wb.created = new Date();
+
+    const NAVY = "FF13294B", GOLD = "FFB8842E", RULE = "FFC7D0DC";
+    const head = (cell) => {
+      cell.font = { name:"Arial", size:10, bold:true, color:{ argb:"FFFFFFFF" } };
+      cell.fill = { type:"pattern", pattern:"solid", fgColor:{ argb:NAVY } };
+      cell.alignment = { vertical:"middle", horizontal:"center", wrapText:true };
+      cell.border = { top:{style:"thin",color:{argb:RULE}}, left:{style:"thin",color:{argb:RULE}},
+                      bottom:{style:"thin",color:{argb:RULE}}, right:{style:"thin",color:{argb:RULE}} };
+    };
+
+    /* ── 1. Instructions, first so the workbook opens on it ───────────────── */
+    const g = wb.addWorksheet("How to fill this in", {
+      views:[{ showGridLines:false }],
+      pageSetup:{ orientation:"landscape", fitToPage:true, fitToWidth:1, fitToHeight:0,
+                  margins:{ left:0.4, right:0.4, top:0.5, bottom:0.5, header:0.2, footer:0.2 } },
+    });
+    g.columns = [{ width:4 }, { width:26 }, { width:78 }];
+    const title = (row, text, size = 15) => {
+      const c = g.getCell(`B${row}`);
+      c.value = text;
+      c.font = { name:"Arial", size, bold:true, color:{ argb:"FF0D1929" } };
+    };
+    const para = (row, text, colour = "FF3A5068") => {
+      g.mergeCells(`B${row}:C${row}`);
+      const c = g.getCell(`B${row}`);
+      c.value = text;
+      c.font = { name:"Arial", size:10.5, color:{ argb:colour } };
+      c.alignment = { wrapText:true, vertical:"top" };
+      g.getRow(row).height = Math.max(15, 13 * Math.ceil(text.length / 118));
+    };
+
+    title(2, "Work Breakdown — how to fill this in", 16);
+    para(3, "Fill in the Tasks sheet, then bring the file back to the portal and use Import. "
+          + "Nothing is written until you have seen a preview of what it found.");
+
+    title(5, "The Level column is the important one", 13);
+    para(6, "Level says how the work nests. 1 is a top-level task. 2 is a piece of the level 1 task "
+          + "above it. 3 is a piece of that. Indenting cells does nothing — only the number counts.");
+
+    const ex = [
+      ["Level", "Task Name", "reads as"],
+      [1, "Lab construction", "a top-level task"],
+      [2, "Demolition & strip-out", "part of Lab construction"],
+      [2, "MEP first fix", "part of Lab construction"],
+      [3, "Electrical rough-in", "part of MEP first fix"],
+      [3, "Ducting", "part of MEP first fix"],
+      [2, "Finishes", "back out to part of Lab construction"],
+      [1, "Commissioning", "a new top-level task"],
+    ];
+    ex.forEach((r, i) => {
+      const row = 8 + i;
+      ["A","B","C"].forEach((col, j) => {
+        const c = g.getCell(`${col}${row}`);
+        c.value = r[j];
+        if (i === 0) { head(c); }
+        else {
+          c.font = { name:"Arial", size:10, color: j === 2 ? { argb:"FF7A98AE" } : { argb:"FF1F2937" },
+                     italic: j === 2 };
+          c.alignment = { horizontal: j === 0 ? "center" : "left", indent: j === 1 ? (r[0]-1)*2 : 0 };
+          c.border = { bottom:{ style:"hair", color:{ argb:RULE } } };
+        }
+      });
+    });
+
+    title(18, "What goes in each column", 13);
+    const guide = [
+      ["Level",       "1, 2, 3 and so on, as above. A level may only step down one at a time."],
+      ["Task Name",   "Required. Everything else is optional."],
+      ["Owner",       "Who is doing it. A person or a team — free text."],
+      ["Start Date",  "YYYY-MM-DD, or a real Excel date. For a milestone, put the date here and leave End blank."],
+      ["End Date",    "YYYY-MM-DD. Must not be before the start date."],
+      ["Progress %",  "0 to 100. Leave blank for 0."],
+      ["Status",      "Not started, In progress, Done, Blocked or Cancelled. Pick from the dropdown."],
+      ["Milestone",   "Yes for a gate or handover with no duration. Otherwise leave blank."],
+    ];
+    guide.forEach(([k, v], i) => {
+      const row = 20 + i;
+      const a = g.getCell(`B${row}`), b = g.getCell(`C${row}`);
+      a.value = k; b.value = v;
+      a.font = { name:"Arial", size:10, bold:true, color:{ argb:"FF13294B" } };
+      b.font = { name:"Arial", size:10, color:{ argb:"FF3A5068" } };
+      b.alignment = { wrapText:true, vertical:"top" };
+      [a,b].forEach(c => c.border = { bottom:{ style:"hair", color:{ argb:RULE } } });
+      g.getRow(row).height = 20;
+    });
+
+    title(30, "A few things worth knowing", 13);
+    [ "Parent rows work themselves out. A task with children takes its dates and progress from "
+      + "them, so you do not need to fill those in on a level 1 row that has level 2 rows beneath it.",
+      "Leave the rows you do not need blank. Empty rows are ignored.",
+      "If a row has a problem — no name, a date that cannot be read, an end before a start — the "
+      + "preview will tell you the row number before anything is imported.",
+    ].forEach((t, i) => para(31 + i * 2, "\u2022  " + t));
+
+    /* ── 2. The sheet they actually fill in ───────────────────────────────── */
+    const ws = wb.addWorksheet("Tasks", {
+      views: [{ state:"frozen", ySplit:1, showGridLines:false }],
+      pageSetup:{ orientation:"landscape", fitToPage:true, fitToWidth:1, fitToHeight:0,
+                  printTitlesRow:"1:1",
+                  margins:{ left:0.4, right:0.4, top:0.5, bottom:0.5, header:0.2, footer:0.2 } },
+    });
+    ws.columns = [
+      { header:"Level",      key:"lvl",  width:9.5 },
+      { header:"Task Name",  key:"name", width:46 },
+      { header:"Owner",      key:"own",  width:22 },
+      { header:"Start Date", key:"sd",   width:14 },
+      { header:"End Date",   key:"ed",   width:14 },
+      { header:"Progress %", key:"pct",  width:12 },
+      { header:"Status",     key:"st",   width:16 },
+      { header:"Milestone",  key:"ms",   width:12 },
+    ];
+    ws.getRow(1).height = 26;
+    ws.getRow(1).eachCell(head);
+
+    // Existing tasks come back out so a round trip loses nothing. An empty
+    // project gets empty rows — the worked example lives on the other sheet,
+    // where it cannot be mistaken for real work and imported by accident.
+    list.forEach(r => ws.addRow({
+      lvl: r._depth + 1, name: r.name, own: r.owner || "",
+      sd: r.start_date || "", ed: r.end_date || "",
+      pct: r.pct_complete ?? 0,
+      st: (STATUS[r.status] || STATUS.not_started).label,
+      ms: r.is_milestone ? "Yes" : "",
+    }));
+
+    const ROWS = Math.max(list.length + 30, 40);
+    for (let i = 2; i <= ROWS + 1; i++) {
+      const row = ws.getRow(i);
+      row.height = 18;
+      for (let c = 1; c <= 8; c++) {
+        const cell = row.getCell(c);
+        cell.font = { name:"Arial", size:10, color:{ argb:"FF1F2937" } };
+        cell.border = { bottom:{ style:"hair", color:{ argb:RULE } },
+                        right: { style:"hair", color:{ argb:RULE } } };
+        if (i % 2 === 0) cell.fill = { type:"pattern", pattern:"solid", fgColor:{ argb:"FFF6F9FC" } };
+        if (c === 1 || c === 6 || c === 8) cell.alignment = { horizontal:"center" };
+        if (c === 4 || c === 5) cell.numFmt = "yyyy-mm-dd";
+      }
+      // Dropdowns keep the two columns that must match a known value clean.
+      row.getCell(1).dataValidation = { type:"list", allowBlank:true, formulae:['"1,2,3,4,5,6"'] };
+      row.getCell(7).dataValidation = { type:"list", allowBlank:true,
+        formulae:['"Not started,In progress,Done,Blocked,Cancelled"'] };
+      row.getCell(8).dataValidation = { type:"list", allowBlank:true, formulae:['"Yes"'] };
+      row.getCell(6).dataValidation = { type:"whole", operator:"between", allowBlank:true,
+        formulae:[0, 100], showErrorMessage:true,
+        error:"Progress is a whole number between 0 and 100.", errorTitle:"Out of range" };
+    }
+    ws.autoFilter = { from:"A1", to:"H1" };
+
+    const buf = await wb.xlsx.writeBuffer();
+    const url = URL.createObjectURL(new Blob([buf],
+      { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = "PMO_Task_Template.xlsx";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
   };
 
   const patch = async (id, body) => {
