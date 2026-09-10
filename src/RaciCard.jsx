@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Plus, X, Pencil, ArrowRight, Trash2, GripVertical } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, CAN_HOVER } from "./ui.jsx";
@@ -59,7 +60,13 @@ function useRaciStyles() {
   0%   { transform:translate3d(-6%, -4%, 0) scale(1); }
   50%  { transform:translate3d( 6%,  3%, 0) scale(1.06); }
   100% { transform:translate3d(-6%, -4%, 0) scale(1); } }
-.raci-card { animation: raciIn .45s cubic-bezier(.22,.8,.3,1) both; }
+.raci-card { animation: raciIn .45s cubic-bezier(.22,.8,.3,1) backwards; }
+/* backwards, not both. 'both' retains the final keyframe, and that keyframe's
+   transform:none computes to an identity matrix while filter:blur(0) is still a
+   filter — neither has any visual effect, but either one makes this card a
+   containing block for position:fixed descendants. Any modal rendered inside it
+   was then positioned against the card instead of the viewport, and the
+   lingering blur() forced permanent GPU compositing, which is what flickered. */
 .raci-tip  { animation: raciTipIn .18s ease-out both; }
 .raci-amb  { animation: raciAmbient 34s ease-in-out infinite; will-change: transform; }
 @media (prefers-reduced-motion: reduce) {
@@ -562,14 +569,21 @@ export function ProjectRaciCard({ T, session, supa, projectId, canWrite, isCompa
         </div>
       </div>
 
-      {details && (
-        <RaciDetailsModal T={T} byRole={byRole} isMobile={isCompact} onClose={() => setDetails(false)} />
+      {/* Rendered into document.body rather than inside the card. A modal is
+          position:fixed, and any ancestor with a transform or filter — even an
+          identity one left behind by an entrance animation — becomes its
+          containing block and drags it out of place. Portalling makes that
+          impossible regardless of what styling the card grows later. */}
+      {details && createPortal(
+        <RaciDetailsModal T={T} byRole={byRole} isMobile={isCompact} onClose={() => setDetails(false)} />,
+        document.body
       )}
-      {editing && (
+      {editing && createPortal(
         <RaciEditModal T={T} session={session} supa={supa} projectId={projectId}
           entries={entries || []} users={users} isMobile={isCompact}
           onClose={() => setEditing(false)}
-          onSaved={() => { setEditing(false); load(); }} />
+          onSaved={() => { setEditing(false); load(); }} />,
+        document.body
       )}
     </div>
   );

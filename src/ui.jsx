@@ -8,6 +8,7 @@
 //  why light and dark both come out right without per-component branching.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { TYPE, SP, R, MOTION, AURORA } from "./theme.js";
 
 // ─── FONTS + GLOBAL MOTION ───────────────────────────────────────────────────
@@ -1009,7 +1010,12 @@ export function Select({ T, value, onChange, children, size = "md", full, active
         <Chevron size={11} open={open} color={ring ? T.inputFocus : T.muted} />
       </button>
 
-      {open && rect && (
+      {/* Into document.body. The popup is position:fixed against viewport
+          coordinates from getBoundingClientRect, so any ancestor with a
+          transform or filter would silently become its containing block and
+          throw it hundreds of pixels off — which is what happened to every
+          dropdown inside the RACI card. */}
+      {open && rect && createPortal(
         <div ref={list} role="listbox" className="pmo-scale pmo-scroll"
           style={{
             position:"fixed", left:rect.left, top:rect.top, width:rect.width,
@@ -1047,7 +1053,8 @@ export function Select({ T, value, onChange, children, size = "md", full, active
               </div>
             );
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
