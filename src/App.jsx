@@ -806,22 +806,32 @@ const ArchMotifLegacy = ({ color, size = 72, T }) => {
 // The body is written as prose, not HTML. The edge function wraps it in the
 // same branded shell the automated mail uses, so a hand-sent note does not
 // look like a lesser thing, and PMO never has to think about markup.
-function DeadlineEmailModal({ T, session, project, pm, onClose }) {
-  const daysText = project.days_remaining < 0
-    ? `${Math.abs(project.days_remaining)} day${Math.abs(project.days_remaining) === 1 ? "" : "s"} overdue`
-    : project.days_remaining === 0 ? "due today"
-    : `${project.days_remaining} day${project.days_remaining === 1 ? "" : "s"} from its planned end date`;
-  const title = project.code && project.code !== "-"
-    ? `${project.code} — ${project.name}` : project.name;
+function DeadlineEmailModal({ T, session, pm, projects, onClose }) {
+  // One email covering every one of this manager's at-risk projects. Sending
+  // them separately is what made the old alerts unreadable in the first place.
+  const list = [...projects].sort((a, b) => a.days_remaining - b.days_remaining);
+  const dayWords = (d) => d < 0
+    ? `${Math.abs(d)} day${Math.abs(d) === 1 ? "" : "s"} overdue`
+    : d === 0 ? "due today"
+    : `${d} day${d === 1 ? "" : "s"} from its planned end date`;
+  const titleOf = (p) => (p.code && p.code !== "-") ? `${p.code} — ${p.name}` : p.name;
+  const first = (pm.full_name || pm.username || "").split(" ")[0] || "colleague";
 
   const [subject, setSubject] = useState(
-    `Deadline approaching: ${project.name}`.slice(0, 160));
+    list.length === 1
+      ? `Deadline approaching: ${list[0].name}`.slice(0, 160)
+      : `Deadline reminder: ${list.length} of your projects`);
   const [body, setBody] = useState(
-    `Dear ${(pm.full_name || pm.username || "").split(" ")[0] || "colleague"},\n\n` +
-    `This is a reminder that ${title} is ${daysText} (${project.end_date}).\n\n` +
-    `Could you please confirm the current position on site and let us know whether the planned end date still holds. ` +
-    `If the date needs revising, or if anything is blocking progress, tell us what you need and we will take it forward.\n\n` +
-    `You can review the project in the PMO Portal using the link below.\n\n` +
+    `Dear ${first},\n\n` +
+    (list.length === 1
+      ? `This is a reminder that ${titleOf(list[0])} is ${dayWords(list[0].days_remaining)} (${list[0].end_date}).\n\n`
+      : `The following ${list.length} projects you are managing are at or near their planned end dates:\n\n` +
+        list.map(p => `  • ${titleOf(p)}\n      ${dayWords(p.days_remaining)} — planned end ${p.end_date}`).join("\n") +
+        `\n\n`) +
+    `Could you please confirm the current position on site for ${list.length === 1 ? "this" : "each"}, and let us know ` +
+    `whether the planned ${list.length === 1 ? "date holds" : "dates hold"}. If any date needs revising, or if anything is ` +
+    `blocking progress, tell us what you need and we will take it forward.\n\n` +
+    `You can review ${list.length === 1 ? "the project" : "these projects"} in the PMO Portal using the link below.\n\n` +
     `Many thanks,`);
   const [cc, setCc]   = useState(["owais.javed@riphah.edu.pk","abdullah.azhar@riphah.edu.pk",
                                   "usman.ahmad@riphah.edu.pk","atisham.haq@riphah.edu.pk"]);
@@ -849,7 +859,8 @@ function DeadlineEmailModal({ T, session, project, pm, onClose }) {
         method: "POST",
         headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token,
                    "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: project.id, to: pm.email, subject, body, cc, bcc }),
+        body: JSON.stringify({ project_ids: list.map(p => p.id), to: pm.email,
+                               subject, body, cc, bcc }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || out.detail || `Send failed (${res.status})`);
@@ -919,6 +930,12 @@ function DeadlineEmailModal({ T, session, project, pm, onClose }) {
               </div>
             </div>
 
+            <div style={{ marginBottom:SP.md, padding:"9px 12px", borderRadius:R.sm,
+              background:T.card2, border:`1px solid ${T.border}`, fontSize:12, color:T.muted }}>
+              Covering {list.length} project{list.length === 1 ? "" : "s"}: {list.map(p => p.name).join(", ").slice(0, 190)}
+              {list.map(p => p.name).join(", ").length > 190 ? "…" : ""}
+            </div>
+
             <div style={{ marginBottom:SP.md }}>
               <div style={lbl}>To</div>
               <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px",
@@ -957,8 +974,8 @@ function DeadlineEmailModal({ T, session, project, pm, onClose }) {
               <textarea value={body} onChange={e => setBody(e.target.value)} rows={11}
                 style={{ ...inp, resize:"vertical", lineHeight:1.65 }} />
               <div style={{ fontSize:11, color:T.dim, marginTop:5, lineHeight:1.55 }}>
-                The project's campus, end date, status and a link to the portal are added
-                automatically underneath, so there's no need to repeat them here.
+                Each project's campus, end date and status, and a link to the portal, are
+                added automatically underneath — no need to repeat them here.
               </div>
             </div>
 
@@ -987,10 +1004,11 @@ function DeadlineEmailModal({ T, session, project, pm, onClose }) {
 // session on page load — both count as "logging in" from the user's
 // perspective) — not time-gated, exactly as requested. Reads the same
 // at_risk_projects view the daily email uses, so the two can never disagree
-// about which projects qualify. Shows one project per popup, in sequence.
+// about which projects qualify. One popup listing everything, grouped by
+// project manager — a carousel meant eighteen clicks through Next.
 function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlertActive }) {
   const [queue, setQueue] = useState(null); // null = not yet loaded; [] = loaded, none at risk
-  const [idx, setIdx] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
   const [emailing, setEmailing] = useState(null);
   const firedFor = useRef(null);
   const holdingLock = useRef(false);
@@ -1040,103 +1058,128 @@ function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlert
   // first claim on the shared lock — the newer PDD-reminder popups wait for
   // it to release before showing themselves, rather than both stacking.
   useEffect(() => {
-    const showing = !!queue && queue.length > 0 && idx < queue.length;
+    const showing = !!queue && queue.length > 0 && !dismissed;
     if (showing && !holdingLock.current) { holdingLock.current = true; setBlockingAlertActive?.(true); }
     else if (!showing && holdingLock.current) { holdingLock.current = false; setBlockingAlertActive?.(false); }
-  }, [queue, idx]);
+  }, [queue, dismissed]);
 
-  if (!queue || queue.length === 0 || idx >= queue.length) return null;
-  const p = queue[idx];
-  const overdue = p.days_remaining < 0;
-  const urgent = !overdue && p.days_remaining <= 7;
-  const badgeColor = overdue ? T.danger : urgent ? T.warning : T.info;
-  const daysLabel = overdue ? `${Math.abs(p.days_remaining)} day${Math.abs(p.days_remaining)===1?"":"s"} OVERDUE`
-    : p.days_remaining === 0 ? "Due today"
-    : `${p.days_remaining} day${p.days_remaining===1?"":"s"} remaining`;
+  if (!queue || queue.length === 0 || dismissed) return null;
+
+  const dayLabel = (d) => d < 0
+    ? `${Math.abs(d)} day${Math.abs(d) === 1 ? "" : "s"} overdue`
+    : d === 0 ? "Due today" : `${d} day${d === 1 ? "" : "s"} left`;
+  const colourFor = (d) => d < 0 ? T.danger : d <= 7 ? T.warning : T.info;
+
+  // Grouped by project manager, because that is who gets chased. Eighteen
+  // projects across six managers is six conversations, not eighteen — and one
+  // email to a manager can cover every one of their projects at once.
+  const groups = [];
+  const seen = new Map();
+  queue.forEach(p => {
+    const key = p.__pm?.id || (p.__pm ? p.__pm.username : "__none__");
+    if (!seen.has(key)) { seen.set(key, { pm: p.__pm || null, items: [] }); groups.push(seen.get(key)); }
+    seen.get(key).items.push(p);
+  });
+  groups.sort((a, b) =>
+    Math.min(...a.items.map(x => x.days_remaining)) - Math.min(...b.items.map(x => x.days_remaining)));
+
+  const overdue = queue.filter(p => p.days_remaining < 0).length;
+  const headColour = overdue ? T.danger : T.warning;
 
   return (
     <div style={{
       position:"fixed", inset:0, zIndex:1300,
       background: T.mode === "dark" ? "rgba(3,8,16,0.72)" : "rgba(12,30,51,0.42)",
       backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)",
-      display:"flex", alignItems:"center", justifyContent:"center", padding:SP.xl,
+      display:"flex", alignItems:"center", justifyContent:"center", padding:SP.lg,
       animation:"pmoFade .18s ease",
     }}>
-      <div className="pmo-scale" role="dialog" aria-modal="true" style={{
-        width:460, maxWidth:"100%", background:T.surface,
-        border:`1px solid ${T.border}`, borderRadius:R.xl,
-        boxShadow:T.shadowLg, overflow:"hidden",
+      <div className="pmo-scale pmo-scroll" role="dialog" aria-modal="true" aria-label="Deadline alert" style={{
+        width:720, maxWidth:"100%", maxHeight:"88vh", overflow:"auto", background:T.surface,
+        border:`1px solid ${T.border}`, borderRadius:R.xl, boxShadow:T.shadowLg,
       }}>
-        {/* Severity band rather than a solid red bar: the alert should read as
-            urgent, not alarming, and it sits inside an executive dashboard. */}
         <div style={{
-          display:"flex", alignItems:"center", gap:SP.md,
-          padding:`${SP.md}px ${SP.xl}px`,
-          background:`linear-gradient(90deg, ${badgeColor}${T.washStrong}, transparent)`,
-          borderBottom:`1px solid ${badgeColor}44`,
+          display:"flex", alignItems:"center", gap:SP.md, padding:`${SP.md}px ${SP.xl}px`,
+          background:`linear-gradient(90deg, ${headColour}${T.washStrong}, transparent)`,
+          borderBottom:`1px solid ${headColour}44`, position:"sticky", top:0, zIndex:2,
+          backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)",
         }}>
           <div style={{
             width:30, height:30, borderRadius:R.sm, flexShrink:0,
-            background:`${badgeColor}${T.badge}`, border:`1px solid ${badgeColor}44`,
+            background:`${headColour}${T.badge}`, border:`1px solid ${headColour}44`,
             display:"flex", alignItems:"center", justifyContent:"center",
           }}>
-            <AlertTriangle size={15} color={badgeColor} strokeWidth={2} />
+            <AlertTriangle size={15} color={headColour} strokeWidth={2} />
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ ...TYPE.label, color:T.textOf(badgeColor) }}>Deadline alert</div>
+            <div style={{ ...TYPE.label, color:T.textOf(headColour) }}>Deadline alert</div>
             <div style={{ ...TYPE.caption, color:T.muted, marginTop:1 }}>
-              {idx + 1} of {queue.length}
+              {queue.length} project{queue.length === 1 ? "" : "s"} at or near the planned end date
+              {overdue > 0 && <> · <span style={{ color:T.textOf(T.danger) }}>{overdue} overdue</span></>}
             </div>
           </div>
+          <Button T={T} variant="primary" onClick={() => setDismissed(true)}>Dismiss</Button>
         </div>
 
         <div style={{ padding:`${SP.lg}px ${SP.xl}px` }}>
-          <Badge T={T} color={badgeColor} style={{ marginBottom:SP.md }}>{daysLabel}</Badge>
-          {p.code && p.code !== "-" && (
-            <div style={{ ...TYPE.mono, color:T.muted, marginBottom:4 }}>{p.code}</div>
-          )}
-          <div style={{ ...TYPE.h2, color:T.text, lineHeight:1.35, marginBottom:SP.md }}>
-            {p.name}
-          </div>
-          <div style={{ display:"grid", gridTemplateColumns:"auto 1fr", gap:`6px ${SP.md}px` }}>
-            {[
-              // The at_risk_projects view exposes this as `campus`, not
-              // `campus_name` — so this read undefined and every alert showed
-              // an em dash regardless of the project actually having a campus.
-              ["Campus", p.campus || "—"],
-              ["Stage", STAGE_META[p.workflow_stage]?.label || p.workflow_stage || "—"],
-              ["Planned end", p.end_date || "—"],
-            ].map(([k, v]) => (
-              <div key={k} style={{ display:"contents" }}>
-                <span style={{ ...TYPE.caption, color:T.muted }}>{k}</span>
-                <span style={{ ...TYPE.bodySm, color:T.text }}>{v}</span>
+          {groups.map((g, gi) => (
+            <div key={gi} style={{ marginBottom:SP.lg }}>
+              <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:SP.sm, flexWrap:"wrap" }}>
+                <span style={{ ...TYPE.label, color:T.text }}>
+                  {g.pm ? (g.pm.full_name || g.pm.username) : "No project manager assigned"}
+                </span>
+                <span style={{ ...TYPE.caption, color:T.dim }}>
+                  {g.items.length} project{g.items.length === 1 ? "" : "s"}
+                </span>
+                {g.pm?.email ? (
+                  <Button T={T} variant="ghost" icon={Mail} style={{ marginLeft:"auto" }}
+                    onClick={() => setEmailing({ pm:g.pm, projects:g.items })}>
+                    Email {(g.pm.full_name || g.pm.username).split(" ")[0]}
+                  </Button>
+                ) : (
+                  <span style={{ ...TYPE.caption, color:T.dim, marginLeft:"auto" }}>
+                    {g.pm ? "No email on record" : "Nobody to notify"}
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
-        </div>
 
-        <div style={{
-          display:"flex", justifyContent:"flex-end", gap:SP.sm,
-          padding:`${SP.md}px ${SP.xl}px`, borderTop:`1px solid ${T.border}`,
-          background:T.pageAlt,
-        }}>
-          {p.__pm?.email ? (
-            <Button T={T} variant="ghost" icon={Mail} onClick={() => setEmailing(p)}>
-              Email {(p.__pm.full_name || p.__pm.username || "the PM").split(" ")[0]}
-            </Button>
-          ) : (
-            <span style={{ ...TYPE.caption, color:T.dim, alignSelf:"center", marginRight:"auto" }}>
-              {p.__pm ? "This project manager has no email on record." : "No project manager assigned."}
-            </span>
-          )}
-          <Button T={T} variant="primary" onClick={() => setIdx(i => i + 1)}>
-            {idx + 1 < queue.length ? "Next" : "Dismiss"}
-          </Button>
+              <div style={{ border:`1px solid ${T.border}`, borderRadius:R.md, overflow:"hidden" }}>
+                {g.items.map((p, i) => {
+                  const c = colourFor(p.days_remaining);
+                  return (
+                    <div key={p.id} style={{
+                      display:"flex", alignItems:"center", gap:SP.md, padding:"10px 12px",
+                      borderTop: i ? `1px solid ${T.border}` : "none",
+                      background: i % 2 ? T.card2 : "transparent",
+                    }}>
+                      <span style={{ width:3, alignSelf:"stretch", borderRadius:2,
+                        background:c, flexShrink:0, minHeight:30 }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        {p.code && p.code !== "-" && (
+                          <div style={{ ...TYPE.mono, fontSize:9.5, color:T.dim }}>{p.code}</div>
+                        )}
+                        <div style={{ fontSize:13, color:T.text, lineHeight:1.35 }}>{p.name}</div>
+                        <div style={{ ...TYPE.caption, color:T.muted, marginTop:2 }}>
+                          {p.campus || "No campus"} · {STAGE_META[p.workflow_stage]?.label || p.workflow_stage}
+                        </div>
+                      </div>
+                      <div style={{ textAlign:"right", flexShrink:0 }}>
+                        <div style={{ fontSize:12, fontWeight:700, color:T.textOf(c) }}>
+                          {dayLabel(p.days_remaining)}
+                        </div>
+                        <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>{p.end_date}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {emailing && emailing.__pm?.email && (
-        <DeadlineEmailModal T={T} session={session} project={emailing} pm={emailing.__pm}
+      {emailing?.pm?.email && (
+        <DeadlineEmailModal T={T} session={session} pm={emailing.pm} projects={emailing.projects}
           onClose={() => setEmailing(null)} />
       )}
     </div>
