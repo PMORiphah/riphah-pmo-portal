@@ -7,6 +7,7 @@ import { ProjectBenefitsPanel } from "./BenefitsRealized.jsx";
 import { ProjectRaciCard } from "./RaciCard.jsx";
 import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
+import { PastProjectsPage } from "./PastProjects.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -24,7 +25,7 @@ import {
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
-  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange
+  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -272,6 +273,7 @@ const NAV = [
   { id:"risks", Icon:ShieldAlert,    label:"Risk Register" },
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows", pmoOnly:true },
   { id:"schedule", Icon:CalendarRange, label:"Timeline & Schedule" },
+  { id:"past",     Icon:History,       label:"Past Projects" },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
   { id:"photowall", Icon:Camera,     label:"Gallery" },
   { id:"team", Icon:Users,           label:"Team & About" },
@@ -11427,6 +11429,7 @@ export default function App() {
             {effectivePage === "risks" && <RiskRegisterPage T={T} session={session} supa={supa} />}
             {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} />}
         {effectivePage === "schedule" && <SchedulePage T={T} session={session} onSelectProject={openProject} />}
+        {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} />}
