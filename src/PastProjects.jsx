@@ -1,9 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { History, Search, X, Send, Mail, Pencil, ChevronDown, ChevronRight,
-         Clock, AlertTriangle, CheckCircle2, MessageSquare, Plus } from "lucide-react";
+         Clock, AlertTriangle, CheckCircle2, MessageSquare, Plus,
+         Upload, Download } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, CAN_HOVER } from "./ui.jsx";
+
+let _xlsx;
+const loadXLSX = () => (_xlsx ||= import("xlsx"));
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PAST PROJECTS — follow-up on prior fiscal years
@@ -66,6 +70,76 @@ function usePastStyles() {
 }`;
     document.head.appendChild(el);
   }, []);
+}
+
+
+/* ── Excel round-trip ────────────────────────────────────────────────────────
+   The template is written with exceljs because the bundled SheetJS community
+   build silently drops fills, fonts, freeze panes and data validation. Reading
+   uses SheetJS, which is enough for that direction. Both are lazy imports, so
+   neither reaches first load.
+   ─────────────────────────────────────────────────────────────────────────── */
+const XL_COLS = ["Project ID","Project Name","Campus","Fiscal Year","Approved Amount",
+                 "Released Amount","Project Manager","Status","Why Still Open","Notes",
+                 "Last Followed Up"];
+const STATUS_IN = { "open":"open", "closing":"closing", "closed":"closed" };
+
+const xlNum = (v) => {
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/[, ]/g, "").replace(/^PKR/i, "").trim());
+  return isFinite(n) ? n : undefined;                 // undefined = unreadable
+};
+const xlDate = (v) => {
+  if (v == null || v === "") return null;
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec(s);
+  if (m) return `${m[3]}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
+  const d = new Date(s);
+  return isNaN(d) ? undefined : d.toISOString().slice(0,10);
+};
+
+function parseSheet(aoa, pmByName) {
+  const errors = [], rows = [];
+  const head = (aoa[0] || []).map(h => String(h ?? "").trim().toLowerCase());
+  const col = (n) => head.indexOf(n.toLowerCase());
+  const iName = col("Project Name");
+  if (iName < 0) return { errors:["The sheet needs a 'Project Name' column."], rows:[] };
+  const iId=col("Project ID"), iCam=col("Campus"), iFy=col("Fiscal Year"),
+        iApp=col("Approved Amount"), iRel=col("Released Amount"), iPm=col("Project Manager"),
+        iSt=col("Status"), iWhy=col("Why Still Open"), iNo=col("Notes"), iFu=col("Last Followed Up");
+
+  aoa.slice(1).forEach((row, n) => {
+    const line = n + 2;
+    if (!row || row.every(c => c == null || String(c).trim() === "")) return;
+    const name = String(row[iName] ?? "").trim();
+    if (!name) { errors.push(`Row ${line}: no project name.`); return; }
+    const fy = String(row[iFy] ?? "").trim();
+    if (!fy) { errors.push(`Row ${line}: "${name.slice(0,34)}" has no fiscal year.`); return; }
+
+    const app = xlNum(row[iApp]), rel = xlNum(row[iRel]), fu = xlDate(row[iFu]);
+    if (app === undefined) { errors.push(`Row ${line}: approved amount "${row[iApp]}" not understood.`); return; }
+    if (rel === undefined) { errors.push(`Row ${line}: released amount "${row[iRel]}" not understood.`); return; }
+    if (fu  === undefined) { errors.push(`Row ${line}: last followed up "${row[iFu]}" not understood.`); return; }
+
+    const rawPm = String(row[iPm] ?? "").trim();
+    let pm_user_id = null;
+    if (rawPm) {
+      pm_user_id = pmByName[rawPm.toLowerCase()] || null;
+      if (!pm_user_id) errors.push(`Row ${line}: no portal account for "${rawPm}" — imported with no manager.`);
+    }
+    const rawSt = String(row[iSt] ?? "").trim().toLowerCase();
+    const status = STATUS_IN[rawSt] || "open";
+    if (rawSt && !STATUS_IN[rawSt]) errors.push(`Row ${line}: status "${row[iSt]}" not recognised, using Open.`);
+
+    rows.push({ line, code: String(row[iId] ?? "").trim() || null, name,
+      campus: String(row[iCam] ?? "").trim() || null, fiscal_year: fy,
+      approved_amount: app ?? 0, released_amount: rel ?? 0, pm_user_id, pm_label: rawPm,
+      status, reason_open: String(row[iWhy] ?? "").trim() || null,
+      notes: String(row[iNo] ?? "").trim() || null, last_followed_up: fu });
+  });
+  return { errors, rows };
 }
 
 /* ── The thread ──────────────────────────────────────────────────────────── */
@@ -264,6 +338,206 @@ function ThreadModal({ T, session, supa, row, isPMO, isCompact, onClose, onChang
   );
 }
 
+
+/* ── Import ─────────────────────────────────────────────────────────────── */
+function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose, onDone }) {
+  const [parsed, setParsed] = useState(null);
+  const [mode, setMode]     = useState("append");
+  const [busy, setBusy]     = useState(false);
+  const [err, setErr]       = useState(null);
+  const [done, setDone]     = useState(null);
+
+  const pmByName = useMemo(() => {
+    const m = {};
+    (pms || []).forEach(p => {
+      if (p.full_name) m[p.full_name.toLowerCase()] = p.id;
+      if (p.username)  m[p.username.toLowerCase()]  = p.id;
+    });
+    return m;
+  }, [pms]);
+
+  const pick = async (file) => {
+    if (!file) return;
+    setErr(null); setParsed(null);
+    try {
+      const XLSX = await loadXLSX();
+      const wb = XLSX.read(await file.arrayBuffer(), { type:"array", cellDates:true });
+      // Not sheet zero: the template opens on its guide sheet. Prefer the named
+      // sheet, then the first one that actually has a Project Name column.
+      const read = (n) => XLSX.utils.sheet_to_json(wb.Sheets[n],
+        { header:1, raw:false, dateNF:"yyyy-mm-dd" });
+      const ok = (aoa) => (aoa[0] || []).some(h =>
+        String(h ?? "").trim().toLowerCase() === "project name");
+      const named = wb.SheetNames.find(n => n.trim().toLowerCase() === "past projects");
+      let aoa = named ? read(named) : null;
+      if (!aoa || !ok(aoa)) aoa = wb.SheetNames.map(read).find(ok) || read(wb.SheetNames[0]);
+      setParsed({ ...parseSheet(aoa, pmByName), fileName:file.name });
+    } catch (e) { setErr(e.message || "That file could not be read."); }
+  };
+
+  const commit = async () => {
+    if (!parsed?.rows.length) return;
+    setBusy(true); setErr(null);
+    try {
+      if (mode === "replace") {
+        await supa("/rest/v1/past_projects?id=not.is.null",
+          { method:"DELETE", headers:{ Prefer:"return=minimal" } }, session.access_token);
+      }
+      // One shape for every object: PostgREST rejects a bulk insert whose rows
+      // have differing key sets (PGRST102).
+      const body = parsed.rows.map(r => ({
+        code:r.code, name:r.name, campus:r.campus, fiscal_year:r.fiscal_year,
+        approved_amount:r.approved_amount, released_amount:r.released_amount,
+        pm_user_id:r.pm_user_id, status:r.status, reason_open:r.reason_open,
+        notes:r.notes, last_followed_up:r.last_followed_up, created_by:session.user_id,
+      }));
+      for (let i = 0; i < body.length; i += 50) {
+        await supa("/rest/v1/past_projects",
+          { method:"POST", body:JSON.stringify(body.slice(i, i+50)),
+            headers:{ Prefer:"return=minimal" } }, session.access_token);
+      }
+      setDone({ count: body.length });
+      onDone();
+    } catch (e) { setErr(e.message || "The import could not be saved."); }
+    setBusy(false);
+  };
+
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+    padding:"8px 10px", fontSize:13, color:T.text, width:"100%", boxSizing:"border-box" };
+  const noPm = parsed?.rows.filter(r => !r.pm_user_id).length || 0;
+
+  return createPortal(
+    <div onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position:"fixed", inset:0, zIndex:1350, background:"rgba(3,8,16,0.74)",
+        backdropFilter:"blur(6px)", display:"flex", alignItems: isCompact ? "flex-end" : "center",
+        justifyContent:"center", padding: isCompact ? 0 : SP.xl, animation:"pmoFade .18s ease" }}>
+      <div className="pmo-scale pmo-scroll" role="dialog" aria-modal="true" aria-label="Import past projects"
+        style={{ width:620, maxWidth:"100%", maxHeight:"90vh", overflow:"auto", background:T.surface,
+          border:`1px solid ${T.border}`, borderRadius: isCompact ? `${R.xl}px ${R.xl}px 0 0` : R.xl,
+          boxShadow:T.shadowLg, padding:SP.xxl }}>
+
+        {done ? (
+          <div>
+            <div style={{ display:"flex", gap:14, alignItems:"center", marginBottom:SP.lg }}>
+              <CheckCircle2 size={26} color={T.textOf(DATA.positive)} />
+              <div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.textOf(DATA.positive) }}>
+                  {done.count} past project{done.count === 1 ? "" : "s"} imported
+                </div>
+                <div style={{ fontSize:12.5, color:T.muted, marginTop:3 }}>Ready to follow up.</div>
+              </div>
+            </div>
+            <div style={{ display:"flex", justifyContent:"flex-end" }}>
+              <Button T={T} variant="primary" onClick={onClose}>Done</Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ ...TYPE.display, fontSize:17, color:T.text, marginBottom:4 }}>
+              Import past projects
+            </div>
+            <div style={{ fontSize:12.5, color:T.muted, marginBottom:SP.lg, lineHeight:1.6 }}>
+              Download the template, fill it in, then bring it back. Nothing is written until you
+              have seen what it found.
+            </div>
+
+            <div style={{ marginBottom:SP.md }}>
+              <div style={{ ...TYPE.label, color:T.muted, marginBottom:6 }}>Spreadsheet</div>
+              <input type="file" accept=".xlsx,.xls,.csv"
+                onChange={e => pick(e.target.files?.[0])} style={inp} />
+            </div>
+
+            {parsed && (
+              <>
+                <div style={{ padding:SP.md, borderRadius:R.md, background:T.card2,
+                  border:`1px solid ${T.border}`, marginBottom:SP.md }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:T.text, marginBottom:6 }}>
+                    {parsed.rows.length} project{parsed.rows.length === 1 ? "" : "s"} found in {parsed.fileName}
+                  </div>
+                  {noPm > 0 && (
+                    <div style={{ fontSize:11.5, color:T.textOf(DATA.warning), marginBottom:6 }}>
+                      {noPm} with no project manager — those cannot be chased.
+                    </div>
+                  )}
+                  <div className="pmo-scroll" style={{ maxHeight:180, overflow:"auto" }}>
+                    {parsed.rows.slice(0, 60).map(r => (
+                      <div key={r.line} style={{ fontSize:11.5, color:T.textSoft, lineHeight:1.75 }}>
+                        <span style={{ color:T.dim }}>{r.fiscal_year}</span> · {r.name}
+                        <span style={{ color:T.dim }}>
+                          {r.pm_label ? ` · ${r.pm_label}` : " · no manager"} · {STATUS[r.status].label}
+                        </span>
+                      </div>
+                    ))}
+                    {parsed.rows.length > 60 && (
+                      <div style={{ fontSize:11, color:T.dim, marginTop:4 }}>
+                        …and {parsed.rows.length - 60} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {parsed.errors.length > 0 && (
+                  <div style={{ padding:SP.md, borderRadius:R.md, marginBottom:SP.md,
+                    background:`${DATA.warning}14`, border:`1px solid ${DATA.warning}3D` }}>
+                    <div style={{ fontSize:12.5, fontWeight:700, color:T.textOf(DATA.warning),
+                      marginBottom:5 }}>
+                      {parsed.errors.length} row{parsed.errors.length === 1 ? "" : "s"} need attention
+                    </div>
+                    <div className="pmo-scroll" style={{ maxHeight:110, overflow:"auto" }}>
+                      {parsed.errors.map((e,i) => (
+                        <div key={i} style={{ fontSize:11.5, color:T.muted, lineHeight:1.65 }}>{e}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {existingCount > 0 && (
+                  <div style={{ marginBottom:SP.md }}>
+                    <div style={{ ...TYPE.label, color:T.muted, marginBottom:6 }}>
+                      There are already {existingCount} past project{existingCount === 1 ? "" : "s"}
+                    </div>
+                    <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                      {[["append","Add to what's there"],["replace","Replace them all"]].map(([v,l]) => (
+                        <button key={v} className="pmo-focusable pmo-btn" onClick={() => setMode(v)}
+                          style={{ padding:"6px 12px", borderRadius:R.pill, fontSize:12, cursor:"pointer",
+                            background: mode === v ? `${BRAND.blue}22` : "transparent",
+                            border:`1px solid ${mode === v ? `${BRAND.blue}66` : T.border}`,
+                            color: mode === v ? T.textOf(BRAND.blue) : T.muted,
+                            fontWeight: mode === v ? 700 : 500 }}>{l}</button>
+                      ))}
+                    </div>
+                    {mode === "replace" && (
+                      <div style={{ fontSize:11.5, color:T.textOf(DATA.danger), marginTop:6 }}>
+                        All {existingCount} existing past projects and their follow-up threads will be
+                        deleted first.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {err && (
+              <div style={{ marginBottom:SP.md, padding:"9px 12px", borderRadius:R.sm,
+                background:`${DATA.danger}14`, border:`1px solid ${DATA.danger}3D`,
+                fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>
+            )}
+
+            <div style={{ display:"flex", justifyContent:"flex-end", gap:SP.sm }}>
+              <Button T={T} variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+              <Button T={T} variant="primary" onClick={commit} loading={busy}
+                disabled={!parsed?.rows.length}>
+                {parsed?.rows.length ? `Import ${parsed.rows.length}` : "Import"}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 /* ── The page ────────────────────────────────────────────────────────────── */
 export function PastProjectsPage({ T, session, supa, isCompact }) {
   usePastStyles();
@@ -276,6 +550,9 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
   const [open, setOpen]   = useState(null);
   const [collapsed, setCollapsed] = useState({});
   const [hover, setHover] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [pmAccounts, setPmAccounts] = useState([]);   // every active account — used to match a name on import
+  const [pmSuggest,  setPmSuggest]  = useState([]);   // managers and anyone running a project — the template dropdown
 
   const isPMO = session?.role === "pmo";
 
@@ -287,6 +564,29 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
     } catch (e) { setErr(e.message); setRows([]); }
   }, [supa, session]);
   useEffect(() => { load(); }, [load]);
+
+  // Needed for the template's dropdown and to match a name back to an account
+  // on import. PMO only — a project manager never sees these controls.
+  useEffect(() => {
+    if (!isPMO) return;
+    // Every active account, not just role=project_manager. Waleed Jamshed
+    // manages four current projects on a guest account, so filtering by role
+    // would have silently refused to match a real project manager by name.
+    Promise.all([
+      supa("/rest/v1/user_profiles?is_active=eq.true&select=id,username,full_name,role"
+         + "&order=full_name.asc", {}, session.access_token),
+      supa("/rest/v1/project_assignments?select=user_id", {}, session.access_token).catch(() => []),
+    ]).then(([users, asg]) => {
+      const assigned = new Set((asg || []).map(a => a.user_id));
+      const all = Array.isArray(users) ? users : [];
+      setPmAccounts(all.filter(u => !/audit test/i.test(u.full_name || "")));
+      // The dropdown offers managers and anyone already running a project;
+      // matching on import accepts any active account.
+      setPmSuggest(all.filter(u =>
+        (u.role === "project_manager" || assigned.has(u.id)) &&
+        !/audit test/i.test(u.full_name || "")));
+    }).catch(() => {});
+  }, [isPMO, supa, session]);
 
   const years = useMemo(() => [...new Set((rows||[]).map(r => r.fiscal_year))].sort().reverse(), [rows]);
   const pms   = useMemo(() => [...new Set((rows||[]).map(r => r.pm_name).filter(Boolean))].sort(), [rows]);
@@ -318,6 +618,115 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
       unasked: src.filter(r => !r.update_count).length,
     };
   }, [rows]);
+
+  // exceljs rather than the bundled SheetJS: the community build writes column
+  // widths and then silently drops fills, fonts, freeze panes and validation.
+  // Lazily imported, so only someone who clicks Template downloads it.
+  const downloadTemplate = async () => {
+    const ExcelJS = (await import("exceljs")).default ?? (await import("exceljs"));
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Riphah PMO Portal"; wb.created = new Date();
+    const NAVY = "FF13294B", RULE = "FFC7D0DC";
+    const head = (c) => {
+      c.font = { name:"Arial", size:10, bold:true, color:{ argb:"FFFFFFFF" } };
+      c.fill = { type:"pattern", pattern:"solid", fgColor:{ argb:NAVY } };
+      c.alignment = { vertical:"middle", horizontal:"center", wrapText:true };
+      c.border = { top:{style:"thin",color:{argb:RULE}}, left:{style:"thin",color:{argb:RULE}},
+                   bottom:{style:"thin",color:{argb:RULE}}, right:{style:"thin",color:{argb:RULE}} };
+    };
+
+    const g = wb.addWorksheet("How to fill this in", {
+      views:[{ showGridLines:false }],
+      pageSetup:{ orientation:"landscape", fitToPage:true, fitToWidth:1, fitToHeight:0 },
+    });
+    g.columns = [{ width:3 }, { width:24 }, { width:76 }];
+    const title = (r,t,sz=15) => {
+      const c=g.getCell(`B${r}`); c.value=t;
+      c.font={ name:"Arial", size:sz, bold:true, color:{argb:"FF0D1929"} };
+    };
+    const para = (r,t) => {
+      g.mergeCells(`B${r}:C${r}`);
+      const c=g.getCell(`B${r}`); c.value=t;
+      c.font={ name:"Arial", size:10.5, color:{argb:"FF3A5068"} };
+      c.alignment={ wrapText:true, vertical:"top" };
+      g.getRow(r).height = Math.max(15, 13*Math.ceil(t.length/112));
+    };
+    title(2,"Past Projects — how to fill this in",16);
+    para(3,"Fill in the 'Past Projects' sheet and bring it back to the portal. One row per project. "
+          + "Only Project Name and Fiscal Year are required; everything else can be added later.");
+    title(5,"What goes in each column",13);
+    const guide=[
+      ["Project ID","Your reference or SAP code. Optional."],
+      ["Project Name","Required."],
+      ["Campus","Al-Mizan, G-7, I-14, Lahore, Malakand, PRH, RIH, MHH. Free text."],
+      ["Fiscal Year","Required. Pick from the dropdown, or type it as FY 24-25."],
+      ["Approved Amount","Rupees, as a number. No commas or 'PKR'."],
+      ["Released Amount","Rupees, as a number."],
+      ["Project Manager","Pick from the dropdown. A name with no portal account imports with no "
+                       + "manager, and nobody can be chased about it."],
+      ["Status","Open, Closing or Closed. Defaults to Open."],
+      ["Why Still Open","Free text. The reason it has not closed — this is what the page exists "
+                      + "to show, so it is worth writing properly."],
+      ["Notes","Anything else worth keeping. Optional."],
+      ["Last Followed Up","YYYY-MM-DD, if known. Optional."],
+    ];
+    guide.forEach(([k,v],i) => {
+      const r=7+i, a=g.getCell(`B${r}`), b=g.getCell(`C${r}`);
+      a.value=k; b.value=v;
+      a.font={ name:"Arial", size:10, bold:true, color:{argb:"FF13294B"} };
+      b.font={ name:"Arial", size:10, color:{argb:"FF3A5068"} };
+      b.alignment={ wrapText:true, vertical:"top" };
+      [a,b].forEach(c => c.border={ bottom:{ style:"hair", color:{argb:RULE} } });
+      g.getRow(r).height=21;
+    });
+    title(20,"Things worth knowing",13);
+    [ "These are kept completely separate from FY 26-27. They appear in no current-year total, "
+      + "chart, deadline alert or the risk matrix.",
+      "A project manager sees only their own past projects and can reply in the portal. They "
+      + "cannot change the reason or close a project — those stay with PMO.",
+      "Leave unused rows blank. Empty rows are ignored.",
+    ].forEach((t,i) => para(22 + i*2, "\u2022  " + t));
+
+    const ws = wb.addWorksheet("Past Projects", {
+      views:[{ state:"frozen", xSplit:2, ySplit:1, showGridLines:false }],
+      pageSetup:{ orientation:"landscape", fitToPage:true, fitToWidth:1, fitToHeight:0,
+                  printTitlesRow:"1:1" },
+    });
+    ws.columns = XL_COLS.map((h,i) => ({ header:h,
+      width:[16,46,14,13,18,18,26,12,58,32,17][i] }));
+    ws.getRow(1).height=28; ws.getRow(1).eachCell(head);
+
+    const names = (pmSuggest||[]).map(p => (p.full_name || p.username))
+                           .filter(n => n && !/audit test/i.test(n));
+    const ROWS = 200;
+    for (let i = 2; i <= ROWS + 1; i++) {
+      const row = ws.getRow(i); row.height = 17;
+      for (let c = 1; c <= XL_COLS.length; c++) {
+        const cell = row.getCell(c);
+        cell.font={ name:"Arial", size:10, color:{argb:"FF1F2937"} };
+        cell.border={ bottom:{style:"hair",color:{argb:RULE}}, right:{style:"hair",color:{argb:RULE}} };
+        if (i % 2 === 0) cell.fill={ type:"pattern", pattern:"solid", fgColor:{argb:"FFF6F9FC"} };
+        if (c === 5 || c === 6) cell.numFmt = "#,##0";
+        if (c === 11) cell.numFmt = "yyyy-mm-dd";
+        if (c === 3 || c === 4 || c === 8) cell.alignment={ horizontal:"center" };
+      }
+      row.getCell(4).dataValidation = { type:"list", allowBlank:true,
+        formulae:['"FY 21-22,FY 22-23,FY 23-24,FY 24-25,FY 25-26"'] };
+      row.getCell(8).dataValidation = { type:"list", allowBlank:true,
+        formulae:['"Open,Closing,Closed"'] };
+      if (names.length) row.getCell(7).dataValidation = { type:"list", allowBlank:true,
+        formulae:[`"${names.join(",")}"`] };
+    }
+    ws.autoFilter = { from:"A1", to:"K1" };
+
+    const buf = await wb.xlsx.writeBuffer();
+    const url = URL.createObjectURL(new Blob([buf],
+      { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = "Past_Projects_Template.xlsx";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
 
   if (rows === null) return <div style={{ padding:SP.xxl, color:T.muted, fontSize:13 }}>Loading past projects…</div>;
 
@@ -387,9 +796,20 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
               <option value="">All project managers</option>
               {pms.map(n => <option key={n} value={n}>{n}</option>)}
             </Select>
-            <span style={{ marginLeft:"auto", ...TYPE.caption, color:T.muted }}>
-              {list.length} shown
-            </span>
+            <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:SP.sm,
+              flexWrap:"wrap" }}>
+              <span style={{ ...TYPE.caption, color:T.muted }}>{list.length} shown</span>
+              {isPMO && (
+                <>
+                  <Button T={T} variant="ghost" icon={Download} onClick={downloadTemplate}>
+                    Template
+                  </Button>
+                  <Button T={T} variant="primary" icon={Upload} onClick={() => setImporting(true)}>
+                    Import
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
 
           {err && <div style={{ fontSize:12.5, color:T.textOf(DATA.danger), marginBottom:SP.md }}>{err}</div>}
@@ -488,6 +908,12 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
           })}
         </div>
       </div>
+
+      {importing && (
+        <ImportModal T={T} session={session} supa={supa} pms={pmAccounts}
+          existingCount={rows.length} isCompact={isCompact}
+          onClose={() => setImporting(false)} onDone={load} />
+      )}
 
       {open && (
         <ThreadModal T={T} session={session} supa={supa} row={open} isPMO={isPMO}
