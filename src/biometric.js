@@ -96,7 +96,30 @@ export async function enrolBiometric(accessToken) {
     })),
   };
 
-  const cred = await navigator.credentials.create({ publicKey });
+  // The ceremony is aborted explicitly rather than trusting the browser to
+  // honour the 60s timeout in the options. Safari does not settle the promise
+  // at all when excludeCredentials matches a passkey the device already holds
+  // via iCloud sync — which is exactly what a new phone signed into the same
+  // Apple ID looks like. Without this the button spins for ever and the user is
+  // told nothing.
+  const ctrl = new AbortController();
+  const giveUp = setTimeout(() => ctrl.abort(), 65000);
+  let cred;
+  try {
+    cred = await navigator.credentials.create({ publicKey, signal: ctrl.signal });
+  } catch (e) {
+    if (ctrl.signal.aborted) {
+      const err = new Error(
+        "Your device didn't respond. If you already use Face ID or Touch ID for " +
+        "the portal on another device signed in to the same account, this device " +
+        "is ready already — sign out and use the biometric button instead.");
+      err.name = "TimeoutError";
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(giveUp);
+  }
   if (!cred) throw new Error("Setup was cancelled.");
 
   await callFn("register-verify", {

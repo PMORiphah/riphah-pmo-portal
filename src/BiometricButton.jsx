@@ -64,15 +64,19 @@ export function BiometricButton({ T, session, mini }) {
       // A cancelled prompt is a normal user action, not an error worth alarming
       // anyone about.
       const text = e?.name + " " + e?.message;
-      const cancelled = /NotAllowed|cancel|abort/i.test(text);
+      // An explicit give-up carries its own guidance, so it must be checked
+      // before the cancel test — "abort" appears in both.
+      const timedOut = /TimeoutError/i.test(text);
+      const cancelled = !timedOut && /NotAllowed|cancel|abort/i.test(text);
       // InvalidStateError means the authenticator already holds a credential
       // for this account — i.e. this device is set up, but the browser lost
       // its local record of which credential is its own.
       const already = /InvalidState/i.test(text);
       setMsg({
-        kind: cancelled ? "info" : already ? "info" : "err",
+        kind: cancelled || already ? "info" : timedOut ? "warn" : "err",
         text: cancelled ? "Setup cancelled."
-            : already  ? "This device is already set up. Sign out and use the biometric button to reconnect it."
+            : already  ? "Your passkey already works on this device. Sign out and use the biometric button instead of setting it up again."
+            : timedOut ? e.message
             : (e.message || "Couldn't set that up."),
       });
     }
@@ -140,10 +144,12 @@ export function BiometricButton({ T, session, mini }) {
         <div style={{
           marginTop: 6, fontSize: 10.5, lineHeight: 1.5, padding: "6px 9px",
           borderRadius: R.sm, display: "flex", alignItems: "flex-start", gap: 6,
-          color: msg.kind === "err" ? "#FCA5A5"
-               : msg.kind === "ok"  ? "#5EEAD4" : T.sidebarFg,
-          background: msg.kind === "err" ? "rgba(248,113,113,0.10)"
-                    : msg.kind === "ok"  ? "rgba(45,212,191,0.08)"
+          color: msg.kind === "err"  ? "#FCA5A5"
+               : msg.kind === "ok"   ? "#5EEAD4"
+               : msg.kind === "warn" ? "#FCD34D" : T.sidebarFg,
+          background: msg.kind === "err"  ? "rgba(248,113,113,0.10)"
+                    : msg.kind === "ok"   ? "rgba(45,212,191,0.08)"
+                    : msg.kind === "warn" ? "rgba(251,191,36,0.10)"
                     : "rgba(255,255,255,0.05)",
         }}>
           <span style={{ flex: 1 }}>{msg.text}</span>
