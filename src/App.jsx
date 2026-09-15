@@ -8,6 +8,7 @@ import { ProjectRaciCard } from "./RaciCard.jsx";
 import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
 import { PastProjectsPage } from "./PastProjects.jsx";
+import { CashflowsPage } from "./Cashflows.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -6033,51 +6034,6 @@ function SettingsPage({ T, session }) {
 // portal's light/dark toggle through the theme bridge below. NOTE: that file
 // exists twice (repo root for production, public/ for the build). Edit both —
 // deploy-preview.py aborts if they drift.
-function CashflowPage({ T, dark, session }) {
-  // The embedded dashboard runs on a snapshot saved in August, so its own
-  // project count disagrees with the live portfolio. Read the authoritative
-  // count here and pass it in, so the tab reports the same number as every
-  // other page rather than a figure frozen at export time.
-  const [projectCount, setProjectCount] = useState(null);
-  useEffect(() => {
-    if (!session?.access_token) return;
-    let alive = true;
-    supa("/rest/v1/portfolio_dashboard?select=total_projects", {}, session.access_token)
-      .then(rows => {
-        const n = Array.isArray(rows) ? rows[0]?.total_projects : null;
-        if (alive && n) setProjectCount(n);
-      })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [session?.access_token]);
-
-  const frame = useRef(null);
-  // The src was hardcoded to the production URL, so the preview build loaded
-  // production's copy of this file. A relative path keeps each deployment
-  // self-contained.
-  const src = `cashflow-dashboard.html?theme=${dark ? "dark" : "light"}`
-    + (projectCount ? `&projects=${projectCount}` : "");
-
-  // Push theme changes to the frame so the tab flips with the rest of the app
-  // instead of only picking up the theme it was first loaded with.
-  useEffect(() => {
-    try {
-      frame.current?.contentWindow?.postMessage({ pmoTheme: dark ? "dark" : "light" }, "*");
-    } catch (_) {}
-  }, [dark]);
-
-  return (
-    <div style={{ flex:1, display:"flex", overflow:"hidden", background:T?.page }}>
-      <iframe
-        ref={frame}
-        src={src}
-        title="Project Cashflows"
-        style={{ flex:1, border:"none", width:"100%", height:"100%" }}
-      />
-    </div>
-  );
-}
-
 // ─── TIMELINE & SCHEDULE ──────────────────────────────────────────────────────
 // The portfolio timeline on its own page. It shared the Cashflows tab, which is
 // PMO-only; guests need to read this, so it had to come out from behind that
@@ -10369,7 +10325,7 @@ const PAGE_TITLES = {
   proj: { title:"Projects",        subtitle:"All capital projects across the portfolio" },
   camp: { title:"Campus / Sites",  subtitle:"Projects and approvals by campus" },
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
-  cashflow: { title:"Project Cashflows & Timelines", subtitle:"Monthly CAPEX cashflow and scheduling view" },
+  cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
   team: { title:"Team & About",    subtitle:"PMO team and portal information" },
   users:{ title:"User Management", subtitle:"Accounts, roles and project assignments" },
@@ -11427,7 +11383,7 @@ export default function App() {
             {effectivePage === "photowall" && <PhotoWallPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
             {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
             {effectivePage === "risks" && <RiskRegisterPage T={T} session={session} supa={supa} />}
-            {effectivePage === "cashflow" && <CashflowPage T={T} dark={dark} session={session} />}
+            {effectivePage === "cashflow" && <CashflowsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
         {effectivePage === "schedule" && <SchedulePage T={T} session={session} onSelectProject={openProject} />}
         {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
