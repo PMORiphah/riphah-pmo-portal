@@ -9,6 +9,7 @@ import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
 import { PastProjectsPage } from "./PastProjects.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
+import { AskPanel } from "./AskPanel.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -167,7 +168,9 @@ const _supaFetch = async (path, opts = {}, token = null) => {
     },
   });
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body.message || body.error_description || "HTTP " + r.status);
+  // Edge functions return {error: "..."}; PostgREST returns {message}. Without
+  // `error` here a friendly message becomes a bare "HTTP 503".
+  if (!r.ok) throw new Error(body.error || body.message || body.error_description || "HTTP " + r.status);
   return body;
 };
 
@@ -11395,6 +11398,9 @@ export default function App() {
         )}
         </div>
       </div>
+      {session && (
+        <AskPanel T={T} session={session} supa={supa} isCompact={vp.isCompact} />
+      )}
       {showChangePassword && session && (
         <ChangePasswordModal T={T} session={session} onClose={() => setShowChangePassword(false)} />
       )}
