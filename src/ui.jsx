@@ -1474,6 +1474,20 @@ export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", 
   // has to stand out from that rather than sink into it.
   const touring = typeof document !== "undefined"
     && document.body.classList.contains("pmo-touring");
+
+  // The KPI cards lift on hover with a transform, and .pmo-lift carries a
+  // z-index — each creates a stacking context, so a tooltip inside that subtree
+  // cannot rise above the tour overlay no matter what z-index it is given. It
+  // paints with the card, underneath the dim. The same containing-block trap
+  // that broke the RACI dropdown. While touring the tip is portalled to body,
+  // measured from a zero-size marker left where it would have rendered.
+  const mark = useRef(null);
+  const [anchor, setAnchor] = useState(null);
+  useEffect(() => {
+    if (!touring || !show) { setAnchor(null); return; }
+    const host = mark.current?.parentElement;
+    if (host) setAnchor(host.getBoundingClientRect());
+  }, [touring, show, side, align]);
   // §83 — flip and shift away from the viewport edge rather than clipping.
   // Measured after mount, so the panel is positioned against where it actually
   // landed rather than where it was expected to.
@@ -1554,6 +1568,48 @@ export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", 
     right:  { left:"calc(100% + 10px)", top:"50%", transform:"translateY(-50%)" },
   }[effSide];
 
+  const inner = (
+    <>
+      {title && <div style={{ ...TYPE.label, color:c, marginBottom:3 }}>{title}</div>}
+      <div style={{ ...TYPE.caption, color:T.textSoft, lineHeight:1.5 }}>{line}</div>
+    </>
+  );
+
+  if (touring && anchor) {
+    const GAP = 9;
+    const centred = align === "center";
+    const left = centred ? anchor.left + anchor.width / 2 : anchor.left;
+    const place = effSide === "top"
+      ? { bottom: Math.max(8, window.innerHeight - anchor.top + GAP) }
+      : effSide === "right"
+        ? { left: anchor.right + 10, top: anchor.top + anchor.height / 2,
+            transform: "translateY(-50%)" }
+        : { top: anchor.bottom + GAP };
+    return (
+      <>
+        <span ref={mark} aria-hidden="true" style={{ position:"absolute", width:0, height:0 }} />
+        {createPortal(
+          <div className="pmo-rise" role="tooltip" style={{
+            position:"fixed", zIndex:1850, width, maxWidth:"78vw",
+            ...(effSide === "right" ? {} : {
+              left: Math.min(Math.max(8, left), window.innerWidth - width - 8),
+              transform: centred ? "translateX(-50%)" : undefined }),
+            ...place,
+            background:T.surfaceOver,
+            border:`1px solid ${T.blueBright}`,
+            borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
+            boxShadow:`0 0 0 1px ${T.blueBright}55, 0 10px 34px -8px rgba(0,0,0,.7),`
+                    + ` 0 0 26px -6px ${T.blueBright}66`,
+            pointerEvents:"none",
+          }}>
+            <div style={{ position:"absolute", left:0, top:8, bottom:8, width:2,
+              borderRadius:2, background:c, opacity:.85 }} />
+            {inner}
+          </div>, document.body)}
+      </>
+    );
+  }
+
   return (
     <div ref={box} className="pmo-rise" role="tooltip" style={{
       position:"absolute", ...pos, zIndex:200, width, maxWidth:"78vw",
@@ -1574,6 +1630,7 @@ export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", 
                            WebkitBackdropFilter:"blur(14px) saturate(140%)" }),
       marginLeft: adj?.shiftX ? `${adj.shiftX}px` : undefined,
     }}>
+      <span ref={mark} aria-hidden="true" style={{ position:"absolute", width:0, height:0 }} />
       {/* Accent edge ties the tip to whatever it is describing */}
       <div style={{ position:"absolute", left:0, top:8, bottom:8, width:2,
         borderRadius:2, background:c, opacity:.85 }} />
