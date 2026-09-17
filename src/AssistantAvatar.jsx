@@ -346,7 +346,10 @@ export function AssistantLauncher({ T, onOpen, isCompact, state = "idle" }) {
   const [hover, setHover] = useState(false);
   const [ripple, setRipple] = useState(0);
   const [pressed, setPressed] = useState(false);
-  const size = isCompact ? 56 : 70;
+  // 122 on desktop rather than the 70 the spec suggested: judged in place on a
+  // real screen, 70 read as small against the dashboard. Mobile stays at 56,
+  // where it was already right.
+  const size = isCompact ? 56 : 122;
 
   const open = useCallback(() => {
     // §7: react, compress, pulse, then hand over — the entity opening a channel
