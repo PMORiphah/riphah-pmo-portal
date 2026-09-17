@@ -1470,6 +1470,10 @@ export function Metric({ T, value, size = "metric", color, prefix, animate = tru
 // The component enforces the second constraint by simply not having room for
 // more — there is no scroll and no expansion.
 export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", align = "left", width = 250, anchorRect = null }) {
+  // The tour dims the page; a tooltip it explicitly asked the reader to open
+  // has to stand out from that rather than sink into it.
+  const touring = typeof document !== "undefined"
+    && document.body.classList.contains("pmo-touring");
   // §83 — flip and shift away from the viewport edge rather than clipping.
   // Measured after mount, so the panel is positioned against where it actually
   // landed rather than where it was expected to.
@@ -1515,11 +1519,21 @@ export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", 
     return (
       <div ref={box} className="pmo-rise" role="tooltip" style={{
         position:"fixed", ...fixedStyle, zIndex:1450, width, maxWidth:"78vw",
-        background:T.surfaceFloat,
-        border:`1px solid ${T.borderStrong}`,
+        // During a tour the page behind is dimmed by the spotlight. This panel
+        // is 0.92 alpha over a backdrop blur, so it sampled that dimming twice
+        // and read as dark grey even sitting above the overlay. While touring
+        // it goes near-opaque, drops the blur, and takes the spotlight's own
+        // ring — so a hover the caption invited looks as lit as the card it
+        // came from.
+        background: touring ? T.surfaceOver : T.surfaceFloat,
+        border:`1px solid ${touring ? T.blueBright : T.borderStrong}`,
         borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
-        boxShadow:T.shadowLg, pointerEvents:"none",
-        backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+        boxShadow: touring
+          ? `0 0 0 1px ${T.blueBright}55, 0 10px 34px -8px rgba(0,0,0,.7), 0 0 26px -6px ${T.blueBright}66`
+          : T.shadowLg,
+        pointerEvents:"none",
+        ...(touring ? {} : { backdropFilter:"blur(14px) saturate(140%)",
+                             WebkitBackdropFilter:"blur(14px) saturate(140%)" }),
       }}>
         {title && (
           <div style={{ ...TYPE.label, color: tone ? (T.textOf ? T.textOf(tone) : tone) : T.muted,
@@ -1544,11 +1558,20 @@ export function InsightTip({ T, show, title, line, stat, tone, side = "bottom", 
     <div ref={box} className="pmo-rise" role="tooltip" style={{
       position:"absolute", ...pos, zIndex:200, width, maxWidth:"78vw",
       // L4 in the depth system (§04): a floating layer, distinct from cards.
-      background: T.surfaceFloat,
-      border:`1px solid ${T.borderStrong}`,
+      // While a tour is running the page behind is dimmed by the spotlight, and
+      // this panel sits outside the lit rectangle. At 0.92 alpha over a
+      // backdrop blur it sampled that dimming twice and read as flat grey, so
+      // a hover the caption had just invited looked broken. Near-opaque, no
+      // blur, and the spotlight's own ring while touring.
+      background: touring ? T.surfaceOver : T.surfaceFloat,
+      border:`1px solid ${touring ? T.blueBright : T.borderStrong}`,
       borderRadius:R.md, padding:`${SP.sm}px ${SP.md}px`,
-      boxShadow:T.shadowLg, pointerEvents:"none",
-      backdropFilter:"blur(14px) saturate(140%)", WebkitBackdropFilter:"blur(14px) saturate(140%)",
+      boxShadow: touring
+        ? `0 0 0 1px ${T.blueBright}55, 0 10px 34px -8px rgba(0,0,0,.7), 0 0 26px -6px ${T.blueBright}66`
+        : T.shadowLg,
+      pointerEvents:"none",
+      ...(touring ? {} : { backdropFilter:"blur(14px) saturate(140%)",
+                           WebkitBackdropFilter:"blur(14px) saturate(140%)" }),
       marginLeft: adj?.shiftX ? `${adj.shiftX}px` : undefined,
     }}>
       {/* Accent edge ties the tip to whatever it is describing */}
