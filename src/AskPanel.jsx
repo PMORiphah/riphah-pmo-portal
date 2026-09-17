@@ -35,14 +35,34 @@ function useAskStyles() {
     // or filter in place, which makes the element a containing block for
     // position:fixed children and silently drags this panel out of position.
     el.textContent = `
-@keyframes askIn   { from { opacity:0; transform:translateY(8px);  } to { opacity:1; transform:none; } }
-@keyframes askSlide{ from { opacity:0; transform:translateX(26px); } to { opacity:1; transform:none; } }
-@keyframes askPulse{ 0%,100% { opacity:.55; } 50% { opacity:1; } }
-.ask-in    { animation: askIn .28s cubic-bezier(.22,.8,.3,1) backwards; }
-.ask-panel { animation: askSlide .3s cubic-bezier(.22,.8,.3,1) backwards; }
-.ask-dot   { animation: askPulse 1.3s ease-in-out infinite; }
+@keyframes askIn    { from { opacity:0; transform:translateY(8px);  } to { opacity:1; transform:none; } }
+@keyframes askPulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
+
+/* The panel grows out of the launcher and collapses back into it, so opening
+   reads as the character expanding rather than a modal appearing beside it.
+   Origin is bottom-right because that is where the character sits. */
+@keyframes askGrow  { from { opacity:0; transform:translateY(26px) scale(.82); }
+                      60%  { opacity:1; }
+                      to   { opacity:1; transform:none; } }
+@keyframes askShrink{ from { opacity:1; transform:none; }
+                      to   { opacity:0; transform:translateY(26px) scale(.82); } }
+@keyframes askVeil  { from { opacity:0 } to { opacity:1 } }
+@keyframes askVeilOut{ from { opacity:1 } to { opacity:0 } }
+@keyframes askSheet { from { opacity:0; transform:translateY(100%); } to { opacity:1; transform:none; } }
+@keyframes askSheetOut { from { opacity:1; transform:none; } to { opacity:0; transform:translateY(100%); } }
+
+.ask-in     { animation: askIn .28s cubic-bezier(.22,.8,.3,1) backwards; }
+.ask-dot    { animation: askPulse 1.3s ease-in-out infinite; }
+.ask-grow   { animation: askGrow .42s cubic-bezier(.16,1,.3,1) backwards; transform-origin: 100% 100%; }
+.ask-shrink { animation: askShrink .34s cubic-bezier(.5,0,.75,0) forwards; transform-origin: 100% 100%; }
+.ask-sheet  { animation: askSheet .36s cubic-bezier(.16,1,.3,1) backwards; }
+.ask-sheetout{ animation: askSheetOut .3s cubic-bezier(.5,0,.75,0) forwards; }
+.ask-veil   { animation: askVeil .3s ease backwards; }
+.ask-veilout{ animation: askVeilOut .3s ease forwards; }
+
 @media (prefers-reduced-motion: reduce) {
-  .ask-in, .ask-panel, .ask-dot { animation: none !important; }
+  .ask-in, .ask-dot, .ask-grow, .ask-shrink, .ask-sheet, .ask-sheetout,
+  .ask-veil, .ask-veilout { animation: none !important; }
 }`;
     document.head.appendChild(el);
   }, []);
@@ -159,6 +179,7 @@ function Bubble({ T, msg }) {
 export function AskPanel({ T, session, supa, isCompact }) {
   useAskStyles();
   const [open, setOpen]   = useState(false);
+  const [closing, setClosing] = useState(false);
   const [msgs, setMsgs]   = useState([]);
   const [q, setQ]         = useState("");
   const [busy, setBusy]   = useState(false);
@@ -168,11 +189,18 @@ export function AskPanel({ T, session, supa, isCompact }) {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 240); }, [open]);
+  // §30: contract, then unmount. 340ms matches the shrink animation.
+  const close = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    setTimeout(() => { setClosing(false); setOpen(false); }, 340);
+  }, [closing]);
+
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape" && open && !busy) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape" && open && !busy) close(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, busy]);
+  }, [open, busy, close]);
 
   const send = useCallback(async (text) => {
     const question = (text ?? q).trim();
@@ -208,22 +236,36 @@ export function AskPanel({ T, session, supa, isCompact }) {
 
       {open && createPortal(
         <div
-          onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setOpen(false); }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) close(); }}
+          className={closing ? "ask-veilout" : "ask-veil"}
           style={{
             position: "fixed", inset: 0, zIndex: 1300,
-            background: isCompact ? T.page : "rgba(3,8,16,0.5)",
-            backdropFilter: isCompact ? undefined : "blur(3px)",
-            display: "flex", justifyContent: "flex-end",
+            // §20: the dashboard stays visible behind, so the assistant reads as
+            // part of the portal rather than another application on top of it.
+            background: isCompact ? "rgba(3,8,16,.55)" : "rgba(3,8,16,.28)",
+            backdropFilter: "blur(2px) saturate(.9)",
+            display: "flex",
+            alignItems: isCompact ? "stretch" : "flex-end",
+            justifyContent: isCompact ? "stretch" : "flex-end",
+            padding: isCompact ? 0 : "0 22px 20px 0",
           }}>
-          <div className="ask-panel pmo-scroll" role="dialog" aria-modal="true"
-            aria-label="Portal assistant"
+          <div className={isCompact
+                ? (closing ? "ask-sheetout" : "ask-sheet")
+                : (closing ? "ask-shrink" : "ask-grow")}
+            role="dialog" aria-modal="true" aria-label="Portal assistant"
             style={{
-              width: panelW, maxWidth: "100%", height: "100%", display: "flex",
-              flexDirection: "column", background: T.surface,
-              borderLeft: isCompact ? "none" : `1px solid ${T.border}`,
-              boxShadow: T.shadowLg,
+              width: isCompact ? "100%" : 440,
+              height: isCompact ? "100%" : "min(680px, calc(100vh - 40px))",
+              display: "flex", flexDirection: "column",
+              background: isCompact ? T.surface : `${T.surface}F2`,
+              backdropFilter: isCompact ? undefined : "blur(22px) saturate(1.15)",
+              border: isCompact ? "none" : `1px solid ${T.borderStrong}`,
+              borderRadius: isCompact ? 0 : R.xl,
+              boxShadow: isCompact ? "none"
+                : `0 24px 70px -12px rgba(0,0,0,.66), 0 0 0 1px ${BRAND.gold}1F,
+                   0 0 60px -20px ${BRAND.blue}80`,
+              overflow: "hidden",
             }}>
-
             {/* header */}
             <div style={{ display: "flex", alignItems: "center", gap: SP.sm,
               padding: `${SP.sm}px ${SP.lg}px ${SP.sm}px ${SP.md}px`,
@@ -251,7 +293,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
                   <RotateCcw size={14} />
                 </button>
               )}
-              <button onClick={() => setOpen(false)} className="pmo-focusable" aria-label="Close"
+              <button onClick={close} className="pmo-focusable" aria-label="Close"
                 style={{ background: "none", border: "none", cursor: "pointer", padding: 5, color: T.muted }}>
                 <X size={16} />
               </button>
