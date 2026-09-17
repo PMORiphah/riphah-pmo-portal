@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Sparkles, X, Send, Loader2, AlertTriangle, RotateCcw, Database,
-         Wallet, Layers, TrendingUp, CalendarRange } from "lucide-react";
+         Wallet, Layers, TrendingUp, CalendarRange, Volume2, Square } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, CAN_HOVER, useCountUp, useCursorLight } from "./ui.jsx";
 import { useNear } from "./presence.jsx";
+import { useSpeech } from "./speech.js";
 import { AssistantAvatar, AssistantLauncher } from "./AssistantAvatar.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -218,8 +219,9 @@ function HeadlineCard({ T, headline }) {
   );
 }
 
-function Bubble({ T, msg }) {
+function Bubble({ T, msg, speech, id }) {
   const mine = msg.role === "user";
+  const talking = speech?.speakingId === id;
   return (
     <div className="ask-in" style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
       <div style={{
@@ -237,18 +239,35 @@ function Bubble({ T, msg }) {
             <Rendered T={T} text={msg.content} />
           </>
         )}
-        {!mine && msg.used && (
+        {!mine && (msg.used || speech?.supported) && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: SP.sm,
             paddingTop: SP.sm, borderTop: `1px solid ${T.border}` }}>
+            {speech?.supported && (
+              <button onClick={() => speech.speak(id, msg.content)}
+                className="pmo-focusable pmo-btn"
+                aria-label={talking ? "Stop reading" : "Read this answer aloud"}
+                title={talking ? "Stop" : "Listen"}
+                style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
+                  background: talking ? `${BRAND.blue}26` : "transparent",
+                  border: `1px solid ${talking ? BRAND.blue + "66" : T.border}`,
+                  borderRadius: R.pill, padding: "3px 9px", marginRight: 2,
+                  color: talking ? T.textOf(BRAND.blue) : T.muted,
+                  transition: `all ${MOTION.fast}` }}>
+                {talking ? <Square size={9} fill="currentColor" /> : <Volume2 size={11} />}
+                <span style={{ ...TYPE.caption, color: "inherit" }}>
+                  {talking ? "Stop" : "Listen"}
+                </span>
+              </button>
+            )}
             <Database size={10.5} color={T.dim} />
             <span style={{ ...TYPE.caption, color: T.dim }}>
-              {[
+              {msg.used ? [
                 msg.used.trimmed_from
                   ? `${msg.used.projects} of ${msg.used.trimmed_from} projects`
                   : msg.used.projects ? `${msg.used.projects} project${msg.used.projects === 1 ? "" : "s"}` : null,
                 msg.used.risks ? `${msg.used.risks} risks` : null,
                 msg.used.cashflow_months ? `${msg.used.cashflow_months} months of cashflow` : null,
-              ].filter(Boolean).join(" · ") || "portfolio totals"}
+              ].filter(Boolean).join(" · ") || "portfolio totals" : ""}
             </span>
           </div>
         )}
@@ -265,6 +284,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
   const [q, setQ]         = useState("");
   const [busy, setBusy]   = useState(false);
   const [err, setErr]     = useState(null);
+  const speech  = useSpeech();
   const endRef  = useRef(null);
   const inputRef = useRef(null);
 
@@ -273,9 +293,10 @@ export function AskPanel({ T, session, supa, isCompact }) {
   // §30: contract, then unmount. 340ms matches the shrink animation.
   const close = useCallback(() => {
     if (closing) return;
+    speech.stop();               // never keep talking after the panel goes
     setClosing(true);
     setTimeout(() => { setClosing(false); setOpen(false); }, 340);
-  }, [closing]);
+  }, [closing, speech]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape" && open && !busy) close(); };
@@ -355,7 +376,8 @@ export function AskPanel({ T, session, supa, isCompact }) {
               background: `linear-gradient(140deg, ${T.surfaceRaised}, ${BRAND.blue}0F)` }}>
               <div style={{ marginLeft: -8, marginRight: -2, flexShrink: 0 }}>
                 <AssistantAvatar size={102} boxScale={1.16} track={false}
-                  state={busy ? "thinking" : err ? "error" : "idle"} />
+                  state={busy ? "thinking" : speech.speakingId !== null ? "speaking"
+                         : err ? "error" : "idle"} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ ...TYPE.h3, fontSize: 15, color: T.text }}>Portal assistant</div>
@@ -411,7 +433,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
                 </div>
               )}
 
-              {msgs.map((m, i) => <Bubble key={i} T={T} msg={m} />)}
+              {msgs.map((m, i) => <Bubble key={i} T={T} msg={m} speech={speech} id={i} />)}
 
               {busy && (
                 <div style={{ display: "flex", alignItems: "center", gap: 2, color: T.muted }}>
