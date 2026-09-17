@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Sparkles, X, Send, Loader2, AlertTriangle, RotateCcw, Database } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, CAN_HOVER } from "./ui.jsx";
+import { AssistantAvatar, AssistantLauncher } from "./AssistantAvatar.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    ASK — the portal assistant
@@ -202,23 +203,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
     <>
       {/* launcher */}
       {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          className="pmo-focusable"
-          aria-label="Ask the portal assistant"
-          style={{
-            position: "fixed", zIndex: 1200,
-            right: isCompact ? 16 : 22, bottom: isCompact ? 78 : 22,
-            width: 50, height: 50, borderRadius: "50%", cursor: "pointer",
-            border: `1px solid ${BRAND.blue}66`,
-            background: `linear-gradient(140deg, ${T.surfaceHi}, ${BRAND.blue}33)`,
-            boxShadow: T.shadowLg, display: "flex", alignItems: "center", justifyContent: "center",
-            transition: `transform ${MOTION.base}, box-shadow ${MOTION.base}`,
-          }}
-          onMouseEnter={(e) => { if (CAN_HOVER) e.currentTarget.style.transform = "translateY(-2px)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; }}>
-          <Sparkles size={19} color={T.textOf(BRAND.blue)} />
-        </button>
+        <AssistantLauncher T={T} isCompact={isCompact} onOpen={() => setOpen(true)} />
       )}
 
       {open && createPortal(
@@ -243,11 +228,18 @@ export function AskPanel({ T, session, supa, isCompact }) {
             <div style={{ display: "flex", alignItems: "center", gap: SP.sm,
               padding: `${SP.md}px ${SP.lg}px`, borderBottom: `1px solid ${T.border}`,
               background: `linear-gradient(140deg, ${T.surfaceRaised}, ${BRAND.blue}0F)` }}>
-              <Sparkles size={15} color={T.textOf(BRAND.blue)} />
+              <div style={{ marginLeft: -10, marginRight: -6, flexShrink: 0 }}>
+                <AssistantAvatar size={34} track={false}
+                  state={busy ? "thinking" : err ? "error" : "idle"} />
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ ...TYPE.label, color: T.text }}>Portal assistant</div>
-                <div style={{ ...TYPE.caption, color: T.dim }}>
-                  Answers from your portfolio · read-only
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%",
+                    background: DATA.positive, boxShadow: `0 0 6px ${DATA.positive}` }} />
+                  <span style={{ ...TYPE.caption, color: T.dim }}>
+                    Live portfolio intelligence
+                  </span>
                 </div>
               </div>
               {msgs.length > 0 && (
@@ -297,9 +289,11 @@ export function AskPanel({ T, session, supa, isCompact }) {
               {msgs.map((m, i) => <Bubble key={i} T={T} msg={m} />)}
 
               {busy && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.muted }}>
-                  <Loader2 size={13} className="pmo-spin" />
-                  <span className="ask-dot" style={{ ...TYPE.caption }}>Reading the portfolio…</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, color: T.muted }}>
+                  <AssistantAvatar size={26} track={false} state="thinking" />
+                  <span className="ask-dot" style={{ ...TYPE.caption, marginLeft: -6 }}>
+                    Reading the portfolio…
+                  </span>
                 </div>
               )}
 
