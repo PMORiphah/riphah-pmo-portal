@@ -10,6 +10,7 @@ import { ProjectTasks } from "./Tasks.jsx";
 import { PastProjectsPage } from "./PastProjects.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
 import { AskPanel } from "./AskPanel.jsx";
+import { AssistantAvatar } from "./AssistantAvatar.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -301,7 +302,6 @@ function TourInviteCard({ T, show, role, name, onDismiss }) {
   const [startHover, setStartHover] = useState(false);
   const [dismissHover, setDismissHover] = useState(false);
   if (!show || role !== "guest" || vpTC.isCompact) return null;
-  const initial = (name || "G").trim()[0]?.toUpperCase() || "G";
   return (
     <div ref={near} className="pmo-near pmo-invite-card" style={{
       "--near-light": `${BRAND.gold}20`,
@@ -314,12 +314,10 @@ function TourInviteCard({ T, show, role, name, onDismiss }) {
       borderLeft: `3px solid ${BRAND.gold}`,
     }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
-        <div style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
-          background: `linear-gradient(135deg, ${BRAND.gold}, #8A5810)`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 16, fontWeight: 700, color: "#fff",
-          boxShadow: `0 0 0 3px ${T.surfaceOver}, 0 0 16px ${BRAND.gold}55` }}>
-          {initial}
+        {/* The assistant introduces itself rather than showing the guest their
+            own initial — it is the thing that hosts the tour. */}
+        <div style={{ marginLeft: -12, marginTop: -14, marginBottom: -14, flexShrink: 0 }}>
+          <AssistantAvatar size={72} boxScale={1.12} track={false} state="idle" />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* name.split(" ")[0] took only the first space-separated token, which
@@ -327,13 +325,13 @@ function TourInviteCard({ T, show, role, name, onDismiss }) {
               honorific, not the name. Using the whole string fixes it for every
               account, not just ones without a title prefix. */}
           <div style={{ ...TYPE.h3, fontSize: 20, color: T.text, display: "flex", alignItems: "center", gap: 7 }}>
-            Welcome{name ? `, ${name}` : ""}
+            Hello{name ? `, ${name}` : ""}
             <Sparkles size={15} color={BRAND.gold} className="pmo-live-dot" />
           </div>
         </div>
       </div>
       <div style={{ ...TYPE.bodySm, fontSize: 17, color: T.textSoft, lineHeight: 1.55, marginBottom: 18 }}>
-        You're set up as a Guest. Want a 2-minute tour of what you can do here?
+        I'm the portal assistant. You're set up as a Guest — shall I show you around? It takes about two minutes.
       </div>
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
         <button className="pmo-focusable pmo-btn" onClick={onDismiss}
@@ -762,7 +760,7 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
       ))}
       <IconButton T={T} icon={Bell} onClick={onBellClick} badge={unreadCount}
         title={unreadCount > 0 ? `${unreadCount} unread update${unreadCount === 1 ? "" : "s"}` : "Updates"} />
-      <IconButton T={T} icon={dark ? Sun : Moon} onClick={() => setDark(d => !d)}
+      <IconButton T={T} data-tour="theme-toggle" icon={dark ? Sun : Moon} onClick={() => setDark(d => !d)}
         title={dark ? "Switch to light mode" : "Switch to dark mode"} />
       {isCompact
         ? <IconButton T={T} icon={LogOut} onClick={onLogout} title="Sign out" />
@@ -11385,9 +11383,9 @@ export default function App() {
               fStage={campFStage} setFStage={setCampFStage} fCC={campFCC} setFCC={setCampFCC} />}
             {effectivePage === "photowall" && <PhotoWallPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
             {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
-            {effectivePage === "risks" && <RiskRegisterPage T={T} session={session} supa={supa} />}
+            {effectivePage === "risks" && <div data-tour="risk-register" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><RiskRegisterPage T={T} session={session} supa={supa} /></div>}
             {effectivePage === "cashflow" && <CashflowsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
-        {effectivePage === "schedule" && <SchedulePage T={T} session={session} onSelectProject={openProject} />}
+        {effectivePage === "schedule" && <div data-tour="schedule-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><SchedulePage T={T} session={session} onSelectProject={openProject} /></div>}
         {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { ChevronLeft, ChevronRight, X, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { AssistantAvatar } from "./AssistantAvatar.jsx";
+import { toSpeech } from "./speech.js";
 import { TYPE, SP, R, MOTION } from "./theme.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -192,18 +194,49 @@ export function TourProvider({ T, children, nav }) {
     setIdx((i) => i - 1);
   }, [steps, idx]);
 
+  // Narration is off until asked for, per the same rule the assistant follows:
+  // nothing speaks on its own. Once on, it stays on for the rest of the tour.
+  const [narrate, setNarrate] = useState(false);
+  const speakStep = useCallback((st) => {
+    const synth = window.speechSynthesis;
+    if (!synth || !st) return;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(toSpeech(`${st.title}. ${st.body}`));
+    u.rate = 0.95;
+    try { synth.speak(u); } catch { /* nothing to do if it refuses */ }
+  }, []);
+
+  useEffect(() => {
+    if (!narrate || !steps) return;
+    speakStep(steps[idx]);
+  }, [narrate, steps, idx, speakStep]);
+
+  // Ending the tour must not leave it talking to an empty screen.
+  useEffect(() => {
+    if (!steps) { try { window.speechSynthesis?.cancel(); } catch { /* ignore */ } }
+  }, [steps]);
+
+  const speech = {
+    on: narrate,
+    toggle: () => setNarrate((v) => {
+      if (v) { try { window.speechSynthesis?.cancel(); } catch { /* ignore */ } }
+      return !v;
+    }),
+  };
+
   return (
     <TourCtx.Provider value={{ start, stop, running: !!steps }}>
       {children}
       {steps && (
         <TourOverlay T={T} step={steps[idx]} index={idx} total={steps.length}
-          rect={rect} phase={phase} onNext={next} onBack={back} onSkip={stop} />
+          rect={rect} phase={phase} speech={speech}
+          onNext={next} onBack={back} onSkip={stop} />
       )}
     </TourCtx.Provider>
   );
 }
 
-function TourOverlay({ T, step, index, total, rect, phase, onNext, onBack, onSkip }) {
+function TourOverlay({ T, step, index, total, rect, phase, speech, onNext, onBack, onSkip }) {
   const dim = T.mode === "dark" ? "rgba(3,7,15,0.80)" : "rgba(18,36,60,0.42)";
   const ring = T.blueBright;
 
@@ -212,8 +245,13 @@ function TourOverlay({ T, step, index, total, rect, phase, onNext, onBack, onSki
       {/* The whole page dims through one CSS trick: a huge box-shadow spread
           from a rectangle exactly the size of the target. No mask elements,
           no four-div cutout — one node, four animatable numbers. */}
+      {/* The spotlight normally swallows clicks so nothing is triggered by
+          accident mid-tour. A step marked `interactive` lets them through to
+          the real control underneath — the theme step needs the guest to
+          actually press the toggle, as many times as they like. */}
       <div aria-hidden="true" style={{
-        position: "fixed", zIndex: 1800, pointerEvents: rect ? "auto" : "none",
+        position: "fixed", zIndex: 1800,
+        pointerEvents: !rect || step?.interactive ? "none" : "auto",
         top: rect ? rect.top - 8 : "46%", left: rect ? rect.left - 8 : "50%",
         width: rect ? rect.width + 16 : 0, height: rect ? rect.height + 16 : 0,
         borderRadius: 12,
@@ -230,12 +268,13 @@ function TourOverlay({ T, step, index, total, rect, phase, onNext, onBack, onSki
 
       <TourCaption T={T} step={step} index={index} total={total} rect={rect}
         loading={phase === "moving" || phase === "demo"}
+        speech={speech}
         onNext={onNext} onBack={onBack} onSkip={onSkip} />
     </>
   );
 }
 
-function TourCaption({ T, step, index, total, rect, loading, onNext, onBack, onSkip }) {
+function TourCaption({ T, step, index, total, rect, loading, speech, onNext, onBack, onSkip }) {
   const boxRef = useRef(null);
   const [pos, setPos] = useState(null);
 
@@ -262,6 +301,9 @@ function TourCaption({ T, step, index, total, rect, loading, onNext, onBack, onS
 
   const pct = ((index + (loading ? 0.4 : 1)) / total) * 100;
   const isLast = index === total - 1;
+  // On an interactive step the guest may have been pressing something; "Done"
+  // reads as finishing with it rather than skipping ahead.
+  const nextLabel = isLast ? "Finish" : step.interactive ? "Done" : "Next";
 
   return (
     <div ref={boxRef} role="dialog" aria-label="Portal tour" style={{
@@ -285,19 +327,37 @@ function TourCaption({ T, step, index, total, rect, loading, onNext, onBack, onS
         <span style={{ ...TYPE.label, color: T.muted }}>
           {step.section} · {index + 1} of {total}
         </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+        {speech && (
+          <button className="pmo-focusable" onClick={speech.toggle}
+            title={speech.on ? "Turn off narration" : "Have me read this aloud"}
+            aria-label={speech.on ? "Turn off narration" : "Turn on narration"}
+            style={{ background: "none", border: "none", cursor: "pointer",
+              color: speech.on ? T.textOf(T.blueBright) : T.dim, display: "flex", padding: 2 }}>
+            {speech.on ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          </button>
+        )}
         <button className="pmo-focusable" onClick={onSkip} title="Skip tour" aria-label="Skip tour"
           style={{ background: "none", border: "none", color: T.dim, cursor: "pointer",
             display: "flex", padding: 2 }}>
           <X size={14} />
         </button>
+        </div>
       </div>
 
-      <div style={{ ...TYPE.h3, color: T.text, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-        {loading && <Sparkles size={13} color={T.gold} className="pmo-awaiting" />}
-        {step.title}
-      </div>
-      <div style={{ ...TYPE.bodySm, color: T.textSoft, lineHeight: 1.6, marginBottom: SP.md }}>
-        {step.body}
+      {/* The character is the host, so it sits beside what it is saying and
+          moves with the caption rather than being a badge on a tooltip. */}
+      <div style={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
+        <div style={{ marginLeft: -14, marginTop: -8, flexShrink: 0 }}>
+          <AssistantAvatar size={58} boxScale={1.14} track={false}
+            state={loading ? "thinking" : speech?.on ? "speaking" : "idle"} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ ...TYPE.h3, color: T.text, marginBottom: 5 }}>{step.title}</div>
+          <div style={{ ...TYPE.bodySm, color: T.textSoft, lineHeight: 1.6, marginBottom: SP.md }}>
+            {step.body}
+          </div>
+        </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -311,7 +371,7 @@ function TourCaption({ T, step, index, total, rect, loading, onNext, onBack, onS
           style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px",
             background: `linear-gradient(135deg, ${T.gold}, #C47818)`, border: "none",
             borderRadius: R.sm, color: "#1A1206", fontWeight: 700, ...TYPE.bodySm, cursor: "pointer" }}>
-          {isLast ? "Finish" : "Next"} {!isLast && <ChevronRight size={13} />}
+          {nextLabel} {!isLast && <ChevronRight size={13} />}
         </button>
       </div>
     </div>

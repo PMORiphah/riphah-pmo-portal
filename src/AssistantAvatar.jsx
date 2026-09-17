@@ -386,6 +386,7 @@ export function AssistantLauncher({ T, onOpen, isCompact, state = "idle" }) {
         onFocus={() => setHover(true)}
         onBlur={() => setHover(false)}
         className="pmo-focusable"
+        data-tour="assistant-launcher"
         aria-label="Open the portal assistant"
         style={{
           background: "none", border: "none", padding: 0, cursor: "pointer",
