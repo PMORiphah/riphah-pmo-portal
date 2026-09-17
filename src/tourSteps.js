@@ -59,6 +59,7 @@ export function guestSteps() {
       // [data-tab] matched a single button, so only CAPEX Overview lit up while
       // the caption talked about four views. The strip wrapper spans them all.
       selector: '[data-tour="tab-strip"]',
+      dim: '[data-tab="investments"]',
       title: "Four ways to look at it",
       body: "The same portfolio, cut four ways — overview, approval status, delivery health, and payments. Let me show you.",
       // Deliberately no clean-back to Budgeting. The next step is about the

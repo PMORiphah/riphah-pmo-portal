@@ -91,6 +91,11 @@ export function TourProvider({ T, children, nav }) {
     let scrollHandler = null;
     const settleTimers = [];
     const step = steps[idx];
+    // Some steps spotlight a container but talk about only part of it. The tab
+    // strip holds five tabs while the caption describes four ways of looking at
+    // CAPEX — Investments is a separate portfolio, not one of them — so it is
+    // faded rather than the spotlight being made to skip a middle element.
+    let dimmed = [];
 
     const measure = (selector) => {
       const el = document.querySelector(selector);
@@ -126,6 +131,11 @@ export function TourProvider({ T, children, nav }) {
       // state with no prop the tour can reach, so the only way in is a real
       // click on the real tab button.
       if (step.reveal) { try { await step.reveal(); } catch (_) {} }
+
+      if (step.dim) {
+        dimmed = [...document.querySelectorAll(step.dim)];
+        dimmed.forEach((n) => n.classList.add("pmo-tour-dim"));
+      }
 
       const el = await waitForTarget(step.selector);
       if (cancelled) return;
@@ -174,6 +184,7 @@ export function TourProvider({ T, children, nav }) {
     })();
 
     return () => {
+      dimmed.forEach((n) => n.classList.remove("pmo-tour-dim"));
       cancelled = true;
       if (ro) ro.disconnect();
       if (scrollHandler) window.removeEventListener("scroll", scrollHandler, true);
@@ -214,6 +225,14 @@ export function TourProvider({ T, children, nav }) {
   // Ending the tour must not leave it talking to an empty screen.
   useEffect(() => {
     if (!steps) { try { window.speechSynthesis?.cancel(); } catch { /* ignore */ } }
+  }, [steps]);
+
+  // The spotlight sits at z-index 1800; tooltips at 1450, so a hover invited by
+  // a caption rendered *underneath* the dim and was barely readable. Marking
+  // the body lets one CSS rule lift them for the duration of the tour only.
+  useEffect(() => {
+    document.body.classList.toggle("pmo-touring", !!steps);
+    return () => document.body.classList.remove("pmo-touring");
   }, [steps]);
 
   const speech = {

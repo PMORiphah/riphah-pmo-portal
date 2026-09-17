@@ -460,6 +460,19 @@ export const injectGlobals = () => {
 
     /* Legacy class aliases — un-migrated pages still reference these. This
        block disappears as each page is moved onto the new names. */
+    /* Tour: a caption that invites a hover must not have the hover render
+       underneath the spotlight's dim. Scoped to while a tour is running so
+       nothing else changes stacking order. 1850 clears the overlay at 1800
+       but stays below the caption at 1801 — the caption must never be
+       covered by a tooltip it just asked for. */
+    body.pmo-touring [role="tooltip"] { z-index: 1850 !important; }
+
+    /* Faded inside a spotlight: part of the highlighted area the current step
+       is explicitly not talking about. */
+    .pmo-tour-dim { opacity:.22 !important; filter:grayscale(.7);
+      transition:opacity .3s ease, filter .3s ease; }
+    @media (prefers-reduced-motion: reduce){ .pmo-tour-dim { transition:none; } }
+
     .pmo-card-in { animation: pmoIn .34s ${MOTION.ease} backwards; }
     .pmo-fade-in { animation: pmoFade .28s ease backwards; }
     .pmo-pulse-dot { animation: pmoPulse 2.4s ease-in-out infinite; }
