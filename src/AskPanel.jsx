@@ -290,9 +290,12 @@ export function AskPanel({ T, session, supa, isCompact }) {
               {msgs.map((m, i) => <Bubble key={i} T={T} msg={m} />)}
 
               {busy && (
-                <div style={{ display: "flex", alignItems: "center", gap: 4, color: T.muted }}>
-                  <AssistantAvatar size={26} track={false} state="thinking" />
-                  <span className="ask-dot" style={{ ...TYPE.caption, marginLeft: -6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 2, color: T.muted }}>
+                  {/* 26px was too small to show the thinking state at all — the gold
+                      sweep, scanline and data streams were sub-pixel. At 78 the
+                      animation actually reads, which is the whole point of it. */}
+                  <AssistantAvatar size={78} boxScale={1.2} track={false} state="thinking" />
+                  <span className="ask-dot" style={{ ...TYPE.caption, marginLeft: -4 }}>
                     Reading the portfolio…
                   </span>
                 </div>
