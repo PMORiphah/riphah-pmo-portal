@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { Sparkles, X, Send, Loader2, AlertTriangle, RotateCcw, Database,
          Wallet, Layers, TrendingUp, CalendarRange } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
-import { Button, CAN_HOVER } from "./ui.jsx";
+import { Button, CAN_HOVER, useCountUp, useCursorLight } from "./ui.jsx";
+import { useNear } from "./presence.jsx";
 import { AssistantAvatar, AssistantLauncher } from "./AssistantAvatar.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -161,23 +162,57 @@ const KIND = {
 function HeadlineCard({ T, headline }) {
   const k = KIND[headline.kind] || KIND.count;
   const { Icon, tone } = k;
+  const [hover, setHover] = useState(false);
+  const cl = useCursorLight(true);
+  const nearRef = useNear();
+
+  // useCountUp anchors on a digit at the start of the string, so "PKR 226,099,073"
+  // would not animate at all. Split the prefix off and count the number itself.
+  // The animation always lands on the exact target, so the resting value is the
+  // verbatim figure the edge function verified — never a rounded stand-in.
+  const raw = String(headline.value ?? "");
+  const prefix = (raw.match(/^[^\d-]*/) || [""])[0];
+  const counted = useCountUp(raw.slice(prefix.length));
+
   return (
-    <div className="ask-head" style={{
-      position: "relative", overflow: "hidden",
-      borderRadius: R.lg, padding: `${SP.md}px ${SP.lg}px`,
-      background: `linear-gradient(140deg, ${T.surfaceRaised} 0%, ${tone}${T.wash} 100%)`,
-      border: `1px solid ${tone}44`, marginBottom: SP.sm,
-    }}>
-      <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0,
-        height: 2, background: `linear-gradient(90deg, ${tone}, ${tone}33 70%, transparent)` }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
-        <Icon size={12} color={tone} strokeWidth={2.2} />
+    <div
+      ref={(n) => { cl.ref.current = n; nearRef.current = n; }}
+      onMouseMove={cl.onMouseMove}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => { setHover(false); cl.onMouseLeave(); }}
+      className={`ask-head pmo-near ${hover ? "pmo-hot" : ""}`}
+      style={{
+        position: "relative", overflow: "hidden",
+        "--near-light": `${tone}26`,
+        borderRadius: R.lg, padding: `${SP.md}px ${SP.lg}px`,
+        background: hover
+          ? `linear-gradient(140deg, ${T.surfaceHi} 0%, ${tone}${T.washStrong} 100%)`
+          : `linear-gradient(140deg, ${T.surfaceRaised} 0%, ${tone}${T.wash} 100%)`,
+        border: `1px solid ${hover ? tone + "8A" : tone + "44"}`,
+        boxShadow: hover ? T.glowSoft(tone) : "none",
+        marginBottom: SP.sm,
+        transition: `background ${MOTION.base}, border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
+      }}>
+      <span className="pmo-sheen" />
+      <span className="pmo-cursor-light" style={{
+        background: `radial-gradient(240px circle at var(--mx,50%) var(--my,50%), ${T.cursorLight}, transparent 70%)`,
+      }} />
+      <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2,
+        background: `linear-gradient(90deg, ${tone}, ${tone}33 70%, transparent)`,
+        opacity: hover ? 1 : .7, transition: `opacity ${MOTION.base}` }} />
+
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+        <Icon className={hover ? "pmo-ico-up" : ""} size={12} color={tone} strokeWidth={2.2} />
         <span style={{ ...TYPE.label, color: T.muted }}>{headline.label || "Result"}</span>
       </div>
-      <div style={{ ...TYPE.metricSm, fontSize: 30, lineHeight: 1.05, color: T.text,
-        letterSpacing: "-.01em" }}>{headline.value}</div>
+      <div style={{ position: "relative", ...TYPE.metricSm, fontSize: 30, lineHeight: 1.05,
+        color: T.text, letterSpacing: "-.01em", fontVariantNumeric: "tabular-nums" }}>
+        {prefix}{counted}
+      </div>
       {headline.scope && (
-        <div style={{ ...TYPE.caption, color: T.dim, marginTop: 4 }}>{headline.scope}</div>
+        <div style={{ position: "relative", ...TYPE.caption,
+          color: hover ? T.textSoft : T.dim, marginTop: 4,
+          transition: `color ${MOTION.base}` }}>{headline.scope}</div>
       )}
     </div>
   );
