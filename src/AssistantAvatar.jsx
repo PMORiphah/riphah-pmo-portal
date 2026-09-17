@@ -98,7 +98,7 @@ function useAvatarStyles() {
  * @param track  follow the cursor across the whole page
  */
 export function AssistantAvatar({ state = "idle", size = 70, track = true,
-                                  interactive = false, ripple = 0 }) {
+                                  interactive = false, ripple = 0, boxScale = 1.55 }) {
   useAvatarStyles();
   const rootRef   = useRef(null);
   const headRef   = useRef(null);
@@ -168,7 +168,7 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
     return () => { window.removeEventListener("pointermove", onMove); cancelAnimationFrame(raf); };
   }, [track]);
 
-  const S = size, box = S * 1.55;      // room for aura and orbit
+  const S = size, box = S * boxScale;   // room for aura and orbit
   const gold = BRAND.gold, cyan = "#4FD8E8";
 
   return (

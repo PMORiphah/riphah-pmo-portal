@@ -226,15 +226,16 @@ export function AskPanel({ T, session, supa, isCompact }) {
 
             {/* header */}
             <div style={{ display: "flex", alignItems: "center", gap: SP.sm,
-              padding: `${SP.md}px ${SP.lg}px`, borderBottom: `1px solid ${T.border}`,
+              padding: `${SP.sm}px ${SP.lg}px ${SP.sm}px ${SP.md}px`,
+              borderBottom: `1px solid ${T.border}`,
               background: `linear-gradient(140deg, ${T.surfaceRaised}, ${BRAND.blue}0F)` }}>
-              <div style={{ marginLeft: -10, marginRight: -6, flexShrink: 0 }}>
-                <AssistantAvatar size={34} track={false}
+              <div style={{ marginLeft: -8, marginRight: -2, flexShrink: 0 }}>
+                <AssistantAvatar size={102} boxScale={1.16} track={false}
                   state={busy ? "thinking" : err ? "error" : "idle"} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ ...TYPE.label, color: T.text }}>Portal assistant</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                <div style={{ ...TYPE.h3, fontSize: 15, color: T.text }}>Portal assistant</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
                   <span style={{ width: 5, height: 5, borderRadius: "50%",
                     background: DATA.positive, boxShadow: `0 0 6px ${DATA.positive}` }} />
                   <span style={{ ...TYPE.caption, color: T.dim }}>
