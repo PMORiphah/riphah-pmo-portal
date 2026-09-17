@@ -303,7 +303,7 @@ function TourCaption({ T, step, index, total, rect, loading, speech, onNext, onB
   const isLast = index === total - 1;
   // On an interactive step the guest may have been pressing something; "Done"
   // reads as finishing with it rather than skipping ahead.
-  const nextLabel = isLast ? "Finish" : step.interactive ? "Done" : "Next";
+  const nextLabel = isLast ? "Finish" : step.doneLabel ? "Done" : "Next";
 
   return (
     <div ref={boxRef} role="dialog" aria-label="Portal tour" style={{

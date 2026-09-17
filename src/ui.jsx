@@ -1354,7 +1354,7 @@ export function Tabs({ T, tabs, active, onChange, isMobile, onDirection }) {
   }, [measure]);
 
   return (
-    <div ref={wrap} className="pmo-scroll" style={{
+    <div ref={wrap} className="pmo-scroll" data-tour="tab-strip" style={{
       display:"flex", gap:2, position:"relative",
       borderBottom:`1px solid ${T.border}`,
       // visible so tab previews aren't clipped; horizontal scroll is handled by

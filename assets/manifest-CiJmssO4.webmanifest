@@ -1,0 +1,32 @@
+{
+  "name": "Riphah PMO Portal",
+  "short_name": "PMO Portal",
+  "description": "CAPEX portfolio monitoring, control and execution for Riphah International University.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#040A18",
+  "theme_color": "#0A1A2E",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

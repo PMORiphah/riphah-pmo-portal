@@ -43,6 +43,10 @@ export function guestSteps() {
 
     { section: "Dashboard", page: "cmd", tab: "budgeting",
       selector: '[data-tour="kpi-strip"]',
+      // The caption invites a hover, so the spotlight must not swallow it.
+      // Without this the guest hovers a card and nothing happens, which makes
+      // the assistant look like it is describing a feature that is not there.
+      interactive: true,
       title: "The seven figures I watch",
       body: "Requested, recommended, approved, released. Hover any of them and I'll tell you what it means and where it came from.",
       demo: async () => {
@@ -52,7 +56,9 @@ export function guestSteps() {
       } },
 
     { section: "Dashboard", page: "cmd", tab: "budgeting",
-      selector: '[data-tab]',
+      // [data-tab] matched a single button, so only CAPEX Overview lit up while
+      // the caption talked about four views. The strip wrapper spans them all.
+      selector: '[data-tour="tab-strip"]',
       title: "Four ways to look at it",
       body: "The same portfolio, cut four ways — overview, approval status, delivery health, and payments. Let me show you.",
       // Deliberately no clean-back to Budgeting. The next step is about the
@@ -176,6 +182,7 @@ export function guestSteps() {
     { section: "Make it yours", page: "cmd", tab: "budgeting",
       selector: '[data-tour="theme-toggle"]',
       interactive: true,
+      doneLabel: true,
       title: "Light or dark, your choice",
       body: "Go on, press it. Switch as many times as you like — I'll wait. When you've settled on one, press Done." },
 
