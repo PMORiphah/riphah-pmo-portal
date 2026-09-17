@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Sparkles, X, Send, Loader2, AlertTriangle, RotateCcw, Database } from "lucide-react";
+import { Sparkles, X, Send, Loader2, AlertTriangle, RotateCcw, Database,
+         Wallet, Layers, TrendingUp, CalendarRange } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, CAN_HOVER } from "./ui.jsx";
 import { AssistantAvatar, AssistantLauncher } from "./AssistantAvatar.jsx";
@@ -52,6 +53,7 @@ function useAskStyles() {
 @keyframes askSheetOut { from { opacity:1; transform:none; } to { opacity:0; transform:translateY(100%); } }
 
 .ask-in     { animation: askIn .28s cubic-bezier(.22,.8,.3,1) backwards; }
+.ask-head   { animation: askIn .34s cubic-bezier(.22,.8,.3,1) backwards; }
 .ask-dot    { animation: askPulse 1.3s ease-in-out infinite; }
 .ask-grow   { animation: askGrow .42s cubic-bezier(.16,1,.3,1) backwards; transform-origin: 100% 100%; }
 .ask-shrink { animation: askShrink .34s cubic-bezier(.5,0,.75,0) forwards; transform-origin: 100% 100%; }
@@ -142,6 +144,45 @@ function Rendered({ T, text }) {
   );
 }
 
+
+/* §12/§14: when an answer has one dominant figure, lead with it. The value
+   arrives as a field from the edge function and is checked there against the
+   context that was actually sent — it is never parsed back out of the prose,
+   because a number extracted by regex and rendered at 30px is exactly the kind
+   of confident wrongness this assistant must not produce. */
+const KIND = {
+  money:    { Icon: Wallet,      tone: BRAND.gold },
+  count:    { Icon: Layers,      tone: BRAND.blue },
+  percent:  { Icon: TrendingUp,  tone: DATA.positive },
+  risk:     { Icon: AlertTriangle, tone: DATA.warning },
+  schedule: { Icon: CalendarRange, tone: DATA.info },
+};
+
+function HeadlineCard({ T, headline }) {
+  const k = KIND[headline.kind] || KIND.count;
+  const { Icon, tone } = k;
+  return (
+    <div className="ask-head" style={{
+      position: "relative", overflow: "hidden",
+      borderRadius: R.lg, padding: `${SP.md}px ${SP.lg}px`,
+      background: `linear-gradient(140deg, ${T.surfaceRaised} 0%, ${tone}${T.wash} 100%)`,
+      border: `1px solid ${tone}44`, marginBottom: SP.sm,
+    }}>
+      <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0,
+        height: 2, background: `linear-gradient(90deg, ${tone}, ${tone}33 70%, transparent)` }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+        <Icon size={12} color={tone} strokeWidth={2.2} />
+        <span style={{ ...TYPE.label, color: T.muted }}>{headline.label || "Result"}</span>
+      </div>
+      <div style={{ ...TYPE.metricSm, fontSize: 30, lineHeight: 1.05, color: T.text,
+        letterSpacing: "-.01em" }}>{headline.value}</div>
+      {headline.scope && (
+        <div style={{ ...TYPE.caption, color: T.dim, marginTop: 4 }}>{headline.scope}</div>
+      )}
+    </div>
+  );
+}
+
 function Bubble({ T, msg }) {
   const mine = msg.role === "user";
   return (
@@ -153,9 +194,14 @@ function Bubble({ T, msg }) {
         borderRadius: R.lg, padding: mine ? "9px 13px" : `${SP.md}px ${SP.md}px ${SP.sm}px`,
         color: T.text, width: mine ? undefined : "100%",
       }}>
-        {mine
-          ? <span style={{ fontSize: 13.5, lineHeight: 1.55 }}>{msg.content}</span>
-          : <Rendered T={T} text={msg.content} />}
+        {mine ? (
+          <span style={{ fontSize: 13.5, lineHeight: 1.55 }}>{msg.content}</span>
+        ) : (
+          <>
+            {msg.headline && <HeadlineCard T={T} headline={msg.headline} />}
+            <Rendered T={T} text={msg.content} />
+          </>
+        )}
         {!mine && msg.used && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: SP.sm,
             paddingTop: SP.sm, borderTop: `1px solid ${T.border}` }}>
@@ -218,7 +264,8 @@ export function AskPanel({ T, session, supa, isCompact }) {
         }),
       }, session.access_token);
       if (r?.error) { setErr(r.error); setMsgs(next); }
-      else setMsgs([...next, { role: "assistant", content: r.answer, used: r.used }]);
+      else setMsgs([...next, { role: "assistant", content: r.answer,
+                               headline: r.headline, used: r.used }]);
     } catch (e) {
       setErr(e?.message || "The assistant could not be reached.");
     }
