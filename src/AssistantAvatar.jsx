@@ -45,6 +45,11 @@ function useAvatarStyles() {
                       to  {transform:rotate(360deg) translateX(var(--orb,34px)) rotate(-360deg)} }
 @keyframes avRipple { from{transform:scale(.55);opacity:.55} to{transform:scale(2.1);opacity:0} }
 @keyframes avTipIn  { from{opacity:0;transform:translateX(6px) scale(.96)} to{opacity:1;transform:none} }
+/* Speaking: the mouth bar behaves like a level meter rather than a simple loop,
+   so the character reads as producing the sound rather than miming to it. */
+@keyframes avSpeak { 0%{transform:scaleX(1)} 22%{transform:scaleX(.42)} 44%{transform:scaleX(.88)}
+                     66%{transform:scaleX(.3)} 84%{transform:scaleX(.72)} 100%{transform:scaleX(1)} }
+@keyframes avSpeakGlow { 0%,100%{opacity:.18} 50%{opacity:.5} }
 
 .av-float { animation: avFloat 5.2s cubic-bezier(.45,0,.55,1) infinite; transform-origin:50% 60%; }
 .av-aura  { animation: avAura 5.2s ease-in-out infinite; }
@@ -78,6 +83,15 @@ function useAvatarStyles() {
 /* answering — energy settling */
 .is-answering .av-float { animation-duration:2.6s }
 
+/* speaking — the one state that was declared and never styled, so an answer
+   being read aloud left the character sitting perfectly still */
+.av-mouth { transform-origin: 120px 172px; }
+.is-speaking .av-mouth  { animation: avSpeak .52s ease-in-out infinite; }
+.is-speaking .av-mglow  { animation: avSpeakGlow .52s ease-in-out infinite; }
+.is-speaking .av-float  { animation-duration: 3.2s }
+.is-speaking .av-aura,
+.is-speaking .av-aura2  { animation-duration: 2.1s }
+
 /* error — muted, paused */
 .is-error .av-float, .is-error .av-ring1, .is-error .av-ring2 { animation-play-state:paused }
 .is-error .av-aura, .is-error .av-aura2 { animation-play-state:paused; opacity:.22 }
@@ -86,7 +100,8 @@ function useAvatarStyles() {
 
 @media (prefers-reduced-motion: reduce){
   .av-float,.av-aura,.av-aura2,.av-ring1,.av-ring2,.av-bud,.av-dot,
-  .av-sweep,.av-scan,.av-strm,.av-ripple,.av-tip { animation:none !important }
+  .av-sweep,.av-scan,.av-strm,.av-ripple,.av-tip,
+  .av-mouth,.av-mglow { animation:none !important }
 }`;
     document.head.appendChild(el);
   }, []);
@@ -281,7 +296,10 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
             <path d="M94 152 Q120 145 146 152 L150 185 Q120 196 90 185 Z" fill="url(#avLo)" />
             <path d="M94 152 Q120 145 146 152" fill="none" stroke={`${gold}80`} strokeWidth="1.2" />
             <rect x="106" y="166" width="28" height="12" rx="6" fill="#05101F" opacity=".85" />
-            <rect x="111" y="170.5" width="18" height="3" rx="1.5" fill={cyan} opacity=".85" />
+            <rect className="av-mglow" x="106" y="166" width="28" height="12" rx="6"
+              fill={cyan} opacity=".0" filter="url(#avGlow)" />
+            <rect className="av-mouth" x="111" y="170.5" width="18" height="3" rx="1.5"
+              fill={cyan} opacity=".85" />
           </g>
 
           <g ref={headRef}>
