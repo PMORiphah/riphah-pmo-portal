@@ -184,7 +184,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
       const k = r.month;
       (m[k] ||= { month:k, capex:0, pmdc:0, investment:0, projects:new Set() });
       m[k][r.bucket] += Number(r.amount) || 0;
-      m[k].projects.add(r.project_name);
+      m[k].projects.add(r.project_id || r.project_name);
     });
     let run = 0;
     return Object.values(m).sort((a,b) => a.month.localeCompare(b.month)).map(x => {
@@ -220,7 +220,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
       const k = r[key] || "Unspecified";
       (m[k] ||= { name:k, value:0, projects:new Set() });
       m[k].value += Number(r.amount) || 0;
-      m[k].projects.add(r.project_name);
+      m[k].projects.add(r.project_id || r.project_name);
     });
     // Sort first, then colour: assigning by map order gave the largest bar
     // whatever hue its insertion position happened to land on.
@@ -260,9 +260,19 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
     const pmdc  = sum(cap, r => r.bucket === "pmdc");
     const peak  = monthly.reduce((a,b) => (b.total > (a?.total ?? -1) ? b : a), null);
     const drawn = rel.reduce((s,r) => s + (Number(r.amount_released)||0), 0);
+    // Count distinct PROJECTS, not distinct names. The MHH block fund is entered
+    // as five month-suffixed rows — "(May 2026)", "(June 2026)" and so on — all
+    // belonging to one project, so counting names reported 107 against the
+    // register's 103. A row with no project yet still counts once, by name, so
+    // the figure never silently undercounts.
+    const countProjects = (rows) => {
+      const ids = new Set(), orphans = new Set();
+      rows.forEach(r => r.project_id ? ids.add(r.project_id) : orphans.add(r.project_name));
+      return ids.size + orphans.size;
+    };
     return { capex, pmdc, capexTotal:capex+pmdc, investment:sum(inv),
-             peak, drawn, projects:new Set(cap.map(r => r.project_name)).size,
-             invProjects:new Set(inv.map(r => r.project_name)).size };
+             peak, drawn, projects:countProjects(cap),
+             invProjects:countProjects(inv) };
   }, [cap, inv, monthly, rel]);
 
   const pctDrawn = totals.capexTotal ? (totals.drawn/totals.capexTotal*100) : 0;
