@@ -11,6 +11,8 @@ import { PastProjectsPage } from "./PastProjects.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
 import { AskPanel } from "./AskPanel.jsx";
 import { AssistantAvatar } from "./AssistantAvatar.jsx";
+import { startSession, endSession, track } from "./sessionTrack.js";
+import { SessionDetail } from "./SessionDetail.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps } from "./tourSteps.js";
@@ -8308,7 +8310,9 @@ function RestoreSnapshotButton({ T, session, entry }) {
 }
 
 // ─── ACTIVITY LOG ─────────────────────────────────────────────────────────────
-function ActivityLogPage({ T, session }) {
+function ActivityLogPage({ T, session, supa }) {
+  // A login row opens the session behind it; everything else is inert.
+  const [openSession, setOpenSession] = useState(null);
   const [entries,      setEntries]      = useState([]);
   const LOG_SORT = useMemo(() => ({
     when:   e => e.created_at || "",
@@ -8360,6 +8364,7 @@ function ActivityLogPage({ T, session }) {
     assigned:          A(AMBER,     "Assigned"),
     unassigned:        A(AMBER,     "Unassigned"),
     assignment_updated:A(AMBER,     "Reassigned"),
+    login:             A(VIOLET,    "Signed In"),
   };
   const ROLE_CFG = {
     pmo:             { label:"Admin",   c:T.textOf(GOLD) },
@@ -8373,6 +8378,7 @@ function ActivityLogPage({ T, session }) {
     project_assignments: "Assignment",
     settings:            "Settings",
     auth:                "Auth",
+    session:             "Session",
   };
   const ACTION_OPTIONS = [
     { value:"",               label:"All Actions" },
@@ -8383,6 +8389,7 @@ function ActivityLogPage({ T, session }) {
     { value:"assigned",       label:"Assigned" },
     { value:"deleted",        label:"Deleted" },
     { value:"import",         label:"Import" },
+    { value:"login",          label:"Signed In" },
   ];
   const ENTITY_OPTIONS = [
     { value:"",                    label:"All Types" },
@@ -8488,8 +8495,13 @@ function ActivityLogPage({ T, session }) {
                 const rc  = ROLE_CFG[e.actor_role] || { label:e.actor_role||"—", c:T.dim };
                 const ent = ENTITY_LABELS[e.entity_type] || e.entity_type || "—";
                 const rowBg = i%2===0 ? "transparent" : T.tableRow;
+                // Only a login row leads anywhere. Everything else in the log
+                // describes a change that is already fully summarised here.
+                const sid = e.action === "login" ? (e.details?.session_id || e.entity_id) : null;
                 return (
-                  <tr key={e.id} style={{ background:rowBg }}>
+                  <tr key={e.id} style={{ background:rowBg, cursor: sid ? "pointer" : "default" }}
+                    onClick={sid ? () => setOpenSession(sid) : undefined}
+                    title={sid ? "Open this session" : undefined}>
                     {/* Timestamp, on a continuous rail. The connector runs
                         between rows so the log reads as a sequence of events
                         rather than a grid of cells (§47). */}
@@ -8543,6 +8555,10 @@ function ActivityLogPage({ T, session }) {
             </tbody>
           </table>
         </div>
+      )}
+      {openSession && (
+        <SessionDetail T={T} session={session} supa={supa}
+          sessionId={openSession} onClose={() => setOpenSession(null)} />
       )}
     </div>
   );
@@ -10960,6 +10976,7 @@ export default function App() {
   const openProject = useCallback((id) => {
     setReturnPage(page);
     setSelectedProjectId(id);
+    track("project", id, { from: page });
   }, [page]);
 
   const closeProject = useCallback(() => {
@@ -11055,6 +11072,10 @@ export default function App() {
   }, []);
 
   const handleLogout = async () => {
+    // Await the close so the session gets a real ended_at. This is the only
+    // moment we know for certain a session finished; every other ending is
+    // inferred from the heartbeat going quiet.
+    try { await endSession(); } catch(_) {}
     try { localStorage.removeItem("pmo_session"); } catch(_) {}
     setSession(null);
     setPage("cmd");
@@ -11228,6 +11249,13 @@ export default function App() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+  // Session tracking begins once there is a signed-in session and runs until
+  // sign-out. Fire-and-forget throughout: nothing the user does waits on it.
+  useEffect(() => {
+    if (!session?.user_id) return;
+    startSession(supa, session);
+  }, [session?.user_id]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // Close the mobile drawer whenever the viewport grows back to desktop.
   useEffect(() => { if (!vp.isCompact) setNavMobileOpen(false); }, [vp.isCompact]);
 
@@ -11240,6 +11268,14 @@ export default function App() {
     // empty list rather than saying anything.
     ((page === "cashflow" || page === "past") && session?.role !== "pmo") ? "proj" :
     page;
+
+  // Every page the user lands on, recorded once per change rather than per
+  // render. Must sit below effectivePage: referencing it above its own const
+  // threw "Cannot access before initialization" and blanked the whole app.
+  useEffect(() => {
+    if (!session?.user_id || !effectivePage) return;
+    track("page", effectivePage);
+  }, [effectivePage, session?.user_id]);
 
   if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:TYPE.body.fontFamily }}>Loading…</div>;
   if (inviteError) return <InviteErrorScreen T={T} message={inviteError} onBackToSignIn={() => setInviteError(null)} />;
@@ -11393,7 +11429,7 @@ export default function App() {
         {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
-            {effectivePage === "log"   && <ActivityLogPage T={T} session={session} />}
+            {effectivePage === "log"   && <ActivityLogPage T={T} session={session} supa={supa} />}
             {effectivePage === "users" && <UserManagementPage T={T} session={session} />}
             {effectivePage === "set"  && <SettingsPage T={T} session={session} />}
           </>

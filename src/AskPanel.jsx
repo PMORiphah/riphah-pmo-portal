@@ -6,6 +6,7 @@ import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, CAN_HOVER, useCountUp, useCursorLight } from "./ui.jsx";
 import { useNear } from "./presence.jsx";
 import { useSpeech } from "./speech.js";
+import { track } from "./sessionTrack.js";
 import { AssistantAvatar, AssistantLauncher } from "./AssistantAvatar.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -319,9 +320,14 @@ export function AskPanel({ T, session, supa, isCompact }) {
           history: msgs.map((m) => ({ role: m.role, content: m.content })),
         }),
       }, session.access_token);
-      if (r?.error) { setErr(r.error); setMsgs(next); }
-      else setMsgs([...next, { role: "assistant", content: r.answer,
-                               headline: r.headline, used: r.used }]);
+      if (r?.error) {
+        setErr(r.error); setMsgs(next);
+        track("chat", question, { error: r.error });
+      } else {
+        setMsgs([...next, { role: "assistant", content: r.answer,
+                            headline: r.headline, used: r.used }]);
+        track("chat", question, { answer: r.answer, used: r.used });
+      }
     } catch (e) {
       setErr(e?.message || "The assistant could not be reached.");
     }
