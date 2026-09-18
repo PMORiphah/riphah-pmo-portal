@@ -88,9 +88,10 @@ function StatTile({ T, label, value, sub, colour, Icon, insight, index = 0, icon
       onMouseMove={cl.onMouseMove}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => { setHover(false); cl.onMouseLeave(); }}
-      className={`pmo-in pmo-near ${hover ? "pmo-hot" : ""}`}
+      className={`pmo-in ${hover ? "pmo-hot" : ""}`}
       style={{
         animationDelay: `${index * 55}ms`, position: "relative", overflow: "visible",
+        height: "100%", display: "flex", flexDirection: "column",
         "--near-light": `${c}22`,
         background: hover
           ? `linear-gradient(158deg, ${T.surfaceHi} 0%, ${T.surfaceRaised} 52%, ${c}${T.washStrong} 100%)`
@@ -118,19 +119,22 @@ function StatTile({ T, label, value, sub, colour, Icon, insight, index = 0, icon
         <span style={{ ...TYPE.label, color: T.muted }}>{label}</span>
       </div>
       <div style={{ position: "relative", ...TYPE.metricSm, fontSize: 25, color: T.text, lineHeight: 1.05 }}>{shown}</div>
-      <div style={{ position: "relative", ...TYPE.caption, color: hover ? T.textSoft : T.dim, marginTop: 4,
+      <div style={{ position: "relative", ...TYPE.caption, color: hover ? T.textSoft : T.dim,
+        marginTop: "auto", paddingTop: 4,
         transition: `color ${MOTION.base}` }}>{sub}</div>
     </div>
   );
 
+  // WithInsight introduces a wrapper element. Without height:100% the wrapped
+  // tiles render shorter than the unwrapped ones in the same grid row.
   return insight ? (
     <WithInsight T={T} side="bottom" align="left" width={252} tone={c}
-      title={label} line={insight}>{body}</WithInsight>
+      title={label} line={insight} style={{ height: "100%" }}>{body}</WithInsight>
   ) : body;
 }
 
 /* ── The page ────────────────────────────────────────────────────────────── */
-export function CashflowsPage({ T, session, supa, isCompact }) {
+export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) {
   const [rows, setRows]   = useState(null);
   const [rel, setRel]     = useState([]);
   const [err, setErr]     = useState(null);
@@ -433,9 +437,10 @@ export function CashflowsPage({ T, session, supa, isCompact }) {
         </Reveal>
 
         {/* ── Breakdown ────────────────────────────────────────────────── */}
-        <div style={{ display:"grid", gap:SP.lg, gridTemplateColumns: isCompact ? "1fr" : "1.3fr 1fr" }}>
-          <Reveal delay={100}>
-          <Section T={T} tone={BRAND.gold} pad={SP.lg}>
+        <div style={{ display:"grid", gap:SP.lg, alignItems:"stretch",
+          gridTemplateColumns: isCompact ? "1fr" : "1.3fr 1fr" }}>
+          <Reveal delay={100} style={{ display:"flex" }}>
+          <Section T={T} tone={BRAND.gold} pad={SP.lg} style={{ flex:1 }}>
             <SectionTitle T={T} icon={Layers} title="CAPEX by breakdown"
               sub="PMDC included — hover or click a bar to filter"
               right={
@@ -452,8 +457,8 @@ export function CashflowsPage({ T, session, supa, isCompact }) {
           </Section>
           </Reveal>
 
-          <Reveal delay={140}>
-          <Section T={T} tone={T.info} pad={SP.lg}>
+          <Reveal delay={140} style={{ display:"flex" }}>
+          <Section T={T} tone={T.info} pad={SP.lg} style={{ flex:1 }}>
             <SectionTitle T={T} icon={PieIcon} title="Share of CAPEX" sub="Hover a slice for its detail" />
             <ShareDonut T={T} data={byCut} total={`PKR ${fmtM(totals.capexTotal)}`}
               totalLabel="CAPEX total" fmt={fmtM} height={isCompact ? 230 : 270}
@@ -567,9 +572,25 @@ export function CashflowsPage({ T, session, supa, isCompact }) {
                   </div>
                   {open && (
                     <div style={{ background:T.card2, padding:`${SP.sm}px 14px ${SP.md}px 42px` }}>
-                      {lines.map(l => (
-                        <div key={l.id} style={{ display:"flex", alignItems:"center", gap:10,
-                          padding:"5px 0", borderBottom:`1px solid ${T.border}` }}>
+                      {lines.map(l => {
+                        // A month opens to show which projects sit behind the
+                        // figure, and the obvious next question is "show me that
+                        // one" — so each line goes to the project. Rows without a
+                        // project_id stay inert rather than looking clickable.
+                        const go = l.project_id && onSelectProject
+                          ? () => onSelectProject(l.project_id) : null;
+                        return (
+                        <div key={l.id} onClick={go || undefined}
+                          onKeyDown={go ? (e) => { if (e.key === "Enter") go(); } : undefined}
+                          tabIndex={go ? 0 : undefined}
+                          role={go ? "button" : undefined}
+                          title={go ? `Open ${l.project_name}` : undefined}
+                          className={go ? "pmo-focusable pmo-row" : ""}
+                          style={{ display:"flex", alignItems:"center", gap:10,
+                          padding:"5px 8px", margin:"0 -8px", borderRadius:R.sm,
+                          cursor: go ? "pointer" : "default",
+                          borderBottom:`1px solid ${T.border}`,
+                          transition:`background ${MOTION.fast}` }}>
                           <span style={{ width:3, height:15, borderRadius:2, flexShrink:0,
                             background: l.bucket === "pmdc" ? DATA.warning : BRAND.blue }} />
                           <span style={{ flex:1, fontSize:12, color:T.textSoft, overflow:"hidden",
@@ -580,8 +601,10 @@ export function CashflowsPage({ T, session, supa, isCompact }) {
                           )}
                           <span style={{ fontSize:12, fontWeight:600, color:T.text, width:78,
                             textAlign:"right", flexShrink:0 }}>{fmtM(l.amount)}</span>
+                          {go && <ChevronRight size={12} color={T.dim} style={{ flexShrink:0 }} />}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

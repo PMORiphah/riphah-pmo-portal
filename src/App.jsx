@@ -11424,7 +11424,8 @@ export default function App() {
             {effectivePage === "photowall" && <PhotoWallPage T={T} session={session} supa={supa} onSelectProject={openProject} />}
             {effectivePage === "perf" && <div data-tour="performance-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><PerformancePage T={T} session={session} onSelectProject={openProject} /></div>}
             {effectivePage === "risks" && <div data-tour="risk-register" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><RiskRegisterPage T={T} session={session} supa={supa} /></div>}
-            {effectivePage === "cashflow" && <CashflowsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
+            {effectivePage === "cashflow" && <CashflowsPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
+              onSelectProject={openProject} />}
         {effectivePage === "schedule" && <div data-tour="schedule-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><SchedulePage T={T} session={session} onSelectProject={openProject} /></div>}
         {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
