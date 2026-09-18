@@ -278,7 +278,7 @@ const NAV = [
   { id:"risks", Icon:ShieldAlert,    label:"Risk Register" },
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows", pmoOnly:true },
   { id:"schedule", Icon:CalendarRange, label:"Timeline & Schedule" },
-  { id:"past",     Icon:History,       label:"Past Projects" },
+  { id:"past",     Icon:History,       label:"Past Projects", pmoOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
   { id:"photowall", Icon:Camera,     label:"Gallery" },
   { id:"team", Icon:Users,           label:"Team & About" },
@@ -11234,7 +11234,11 @@ export default function App() {
   // PMs cannot see Capex Dashboard — redirect to Projects
   const effectivePage =
     (session?.role === "project_manager" && (page === "cmd" || page === "camp")) ? "proj" :
-    (page === "cashflow" && session?.role !== "pmo") ? "proj" :
+    // Both PMO-only pages redirect rather than rendering empty. Hiding the nav
+    // entry is not enough on its own: a restored session, a bookmark or a stale
+    // page value can still land here, and Past Projects would have shown an
+    // empty list rather than saying anything.
+    ((page === "cashflow" || page === "past") && session?.role !== "pmo") ? "proj" :
     page;
 
   if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:TYPE.body.fontFamily }}>Loading…</div>;
