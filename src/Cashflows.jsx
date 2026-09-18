@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
-import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
+import { TYPE, SP, R, MOTION, BRAND, DATA, seriesColours } from "./theme.js";
 import {
   Surface, Section, SectionTitle, RankedBars, ShareStrip, WithInsight, InsightNote,
   Reveal, Badge, EmptyState, SkeletonCard, SkeletonChart, Progress,
@@ -67,9 +67,6 @@ const mLabel = (iso) => {
 const fmtM = (n) => n == null ? "—"
   : (Number(n) / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";
 const axisStyle = (T) => ({ fontSize: 10.5, fontFamily: TYPE.body.fontFamily, fill: T.dim });
-const PALETTE = [BRAND.blue, BRAND.gold, DATA.positive, DATA.info, DATA.warning,
-                 "#8B6DB5", "#4EA8A0", "#C2708A", "#6B8CB5", "#B58A5E", "#7FA35C"];
-
 /* ── Stat tile ───────────────────────────────────────────────────────────────
    The dashboard's KPI card (EditableKCard), minus the editing machinery this
    page has no use for: proximity lift + cursor light on the same node, a
@@ -91,7 +88,7 @@ function StatTile({ T, label, value, sub, colour, Icon, insight, index = 0, icon
       className={`pmo-in ${hover ? "pmo-hot" : ""}`}
       style={{
         animationDelay: `${index * 55}ms`, position: "relative", overflow: "visible",
-        height: "100%", display: "flex", flexDirection: "column",
+        width: "100%", height: "100%", display: "flex", flexDirection: "column",
         "--near-light": `${c}22`,
         background: hover
           ? `linear-gradient(158deg, ${T.surfaceHi} 0%, ${T.surfaceRaised} 52%, ${c}${T.washStrong} 100%)`
@@ -125,11 +122,14 @@ function StatTile({ T, label, value, sub, colour, Icon, insight, index = 0, icon
     </div>
   );
 
-  // WithInsight introduces a wrapper element. Without height:100% the wrapped
-  // tiles render shorter than the unwrapped ones in the same grid row.
+  // WithInsight renders an inline-flex span, which shrinks to its content — so a
+  // wrapped tile never filled its grid column and the row looked like five
+  // narrow cards with wide gaps. width and height 100% make the wrapper behave
+  // like the card it stands in for.
   return insight ? (
     <WithInsight T={T} side="bottom" align="left" width={252} tone={c}
-      title={label} line={insight} style={{ height: "100%" }}>{body}</WithInsight>
+      title={label} line={insight}
+      style={{ width: "100%", height: "100%" }}>{body}</WithInsight>
   ) : body;
 }
 
@@ -222,11 +222,14 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
       m[k].value += Number(r.amount) || 0;
       m[k].projects.add(r.project_name);
     });
-    return Object.values(m).map((x,i) => ({ ...x, count:x.projects.size, key:x.name,
-      label:x.name, color:PALETTE[i % PALETTE.length],
-      meta:`${x.projects.size} project${x.projects.size===1?"":"s"}` }))
-      .sort((a,b) => b.value - a.value);
-  }, [cap, cut]);
+    // Sort first, then colour: assigning by map order gave the largest bar
+    // whatever hue its insertion position happened to land on.
+    const sorted = Object.values(m).sort((a,b) => b.value - a.value);
+    const cols = seriesColours(sorted.length, T.mode !== "light");
+    return sorted.map((x,i) => ({ ...x, count:x.projects.size, key:x.name,
+      label:x.name, color:cols[i],
+      meta:`${x.projects.size} project${x.projects.size===1?"":"s"}` }));
+  }, [cap, cut, T.mode]);
 
   // Wired to the same filter the cut is drawn from, so clicking a bar filters
   // the page exactly as the label implies. Org and cost centre have no
@@ -242,9 +245,10 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
       (m[k] ||= { name:k, value:0 });
       m[k].value += Number(r.amount) || 0;
     });
-    return Object.entries(m).map(([_,x],i) => ({ key:x.name, name:x.name, value:x.value,
-      color:PALETTE[i % PALETTE.length] }));
-  }, [cap]);
+    const sorted = Object.values(m).sort((a,b) => b.value - a.value);
+    const cols = seriesColours(sorted.length, T.mode !== "light");
+    return sorted.map((x,i) => ({ key:x.name, name:x.name, value:x.value, color:cols[i] }));
+  }, [cap, T.mode]);
 
   const pmdcMonthly = useMemo(
     () => monthly.filter(x => x.pmdc > 0).map(x => ({ label:x.label, pmdc:x.pmdc })), [monthly]);

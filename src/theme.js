@@ -364,6 +364,38 @@ const legacy = (t) => ({
 
 // Brand + data colours are theme-independent; merge them in so a component
 // only ever needs `T`.
+
+/* ── SERIES COLOURS ──────────────────────────────────────────────────────────
+   A fixed palette cannot work here. The old eleven-colour list had seven pairs
+   closer than 25 degrees of hue — gold and warning were one degree apart, and
+   so were info and blue — so a chart of campuses showed two pairs that read as
+   the same colour. Worse, "by cost centre" has 37 categories against 11
+   colours, so it wrapped three times and genuinely repeated.
+
+   Generating from the count instead guarantees separation at any size: hues are
+   spread evenly around the wheel, and lightness alternates between two bands so
+   neighbours differ in value as well as hue — which keeps them apart for
+   colour-blind readers and in greyscale. Measured: 11 categories land 32
+   degrees apart, 37 still manage 9, and neither repeats. */
+export function seriesColours(n, dark = true) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const h = (202 + (i * 360) / n) % 360;
+    const band = i % 2;
+    const l = dark ? (band ? 0.56 : 0.44) : (band ? 0.46 : 0.34);
+    const sat = band ? 0.55 : 0.68;
+    // HSL to RGB, written out rather than pulled in, to keep theme.js dependency-free
+    const a = sat * Math.min(l, 1 - l);
+    const f = (k) => {
+      const kk = (k + h / 30) % 12;
+      const c = l - a * Math.max(-1, Math.min(kk - 3, Math.min(9 - kk, 1)));
+      return Math.round(255 * c).toString(16).padStart(2, "0");
+    };
+    out.push(`#${f(0)}${f(8)}${f(4)}`);
+  }
+  return out;
+}
+
 export const DK = { ...DARK,  ...BRAND, ...DATA, ...legacy(DARK),  TYPE, SP, R, MOTION, FONT };
 export const LT = { ...LIGHT, ...BRAND, ...DATA, ...legacy(LIGHT), TYPE, SP, R, MOTION, FONT };
 
