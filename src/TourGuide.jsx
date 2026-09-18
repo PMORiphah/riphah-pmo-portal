@@ -368,7 +368,7 @@ function TourCaption({ T, step, index, total, rect, loading, speech, onNext, onB
           moves with the caption rather than being a badge on a tooltip. */}
       <div style={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
         <div style={{ marginLeft: -14, marginTop: -8, flexShrink: 0 }}>
-          <AssistantAvatar size={58} boxScale={1.14} track={false}
+          <AssistantAvatar T={T} size={58} boxScale={1.14} track={false}
             state={loading ? "thinking" : speech?.on ? "speaking" : "idle"} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>

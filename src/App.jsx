@@ -319,7 +319,7 @@ function TourInviteCard({ T, show, role, name, onDismiss }) {
         {/* The assistant introduces itself rather than showing the guest their
             own initial — it is the thing that hosts the tour. */}
         <div style={{ marginLeft: -12, marginTop: -14, marginBottom: -14, flexShrink: 0 }}>
-          <AssistantAvatar size={72} boxScale={1.12} track={false} state="idle" />
+          <AssistantAvatar T={T} size={72} boxScale={1.12} track={false} state="idle" />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* name.split(" ")[0] took only the first space-separated token, which

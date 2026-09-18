@@ -381,7 +381,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
               borderBottom: `1px solid ${T.border}`,
               background: `linear-gradient(140deg, ${T.surfaceRaised}, ${BRAND.blue}0F)` }}>
               <div style={{ marginLeft: -8, marginRight: -2, flexShrink: 0 }}>
-                <AssistantAvatar size={102} boxScale={1.16} track={false}
+                <AssistantAvatar T={T} size={102} boxScale={1.16} track={false}
                   state={busy ? "thinking" : speech.speakingId !== null ? "speaking"
                          : err ? "error" : "idle"} />
               </div>
@@ -446,7 +446,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
                   {/* 26px was too small to show the thinking state at all — the gold
                       sweep, scanline and data streams were sub-pixel. At 78 the
                       animation actually reads, which is the whole point of it. */}
-                  <AssistantAvatar size={78} boxScale={1.2} track={false} state="thinking" />
+                  <AssistantAvatar T={T} size={78} boxScale={1.2} track={false} state="thinking" />
                   <span className="ask-dot" style={{ ...TYPE.caption, marginLeft: -4 }}>
                     Reading the portfolio…
                   </span>

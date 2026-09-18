@@ -112,8 +112,46 @@ function useAvatarStyles() {
  * @param size   rendered px (70 desktop launcher, 56 mobile, 34 in a header)
  * @param track  follow the cursor across the whole page
  */
+/* Two palettes, one character.
+   On a dark page the light comes from the character: a navy glass shell, a glow,
+   bright rings. None of that works on white — a glow needs darkness to glow
+   into, and the navy body becomes a hole punched in the page rather than an
+   object sitting on it. In light mode the shell turns pale pearl, the gold
+   deepens enough to hold against white, and the glow becomes a real two-layer
+   drop shadow. The geometry is identical, so it stays the same character. */
+const PALETTE = {
+  dark: {
+    shell: ["#3E5F8A", "#22405F", "#14263D", "#0A1526"],
+    lo:    ["#2A4868", "#0D1B2E"],
+    visor: ["#16355A", "#0A1A2F", "#03070E"],
+    gold:  ["#F6D79A", "#E0A94A", "#9A6C1E"],
+    gloss: "#BFDCFF", glossA: 0.55, sheen: "#9FD8FF", sheenA: 0.35,
+    rim: "rgba(224,169,74,.50)", rimW: 1.2, rimA: 0.75, spec: "#7FD4FF",
+    budGlow: 0.3, coreA: 0.38,
+    shadow: "drop-shadow(0 6px 16px rgba(0,0,0,.5))",
+    ring1: (g) => `${g}5C`, ring2: (c) => `${c}47`,
+    dots: ["#4FD8E8", "#E0A94A"], dotBase: 0.30,
+    aura1: (b) => `${b}3D`, aura2: (g) => `${g}2E`,
+  },
+  light: {
+    shell: ["#FFFFFF", "#EEF3F9", "#D3DEEB", "#AFC0D4"],
+    lo:    ["#E6EDF6", "#B9C8DA"],
+    visor: ["#1B3A5C", "#0C1E36", "#05101E"],
+    gold:  ["#E7C27A", "#B8861F", "#7A560F"],
+    gloss: "#FFFFFF", glossA: 0.85, sheen: "#FFFFFF", sheenA: 0.7,
+    rim: "rgba(140,100,20,.45)", rimW: 1.4, rimA: 0.9, spec: "#4C87C4",
+    budGlow: 0.22, coreA: 0.30,
+    shadow: "drop-shadow(0 10px 18px rgba(20,40,70,.22)) "
+          + "drop-shadow(0 2px 4px rgba(20,40,70,.14))",
+    ring1: () => "rgba(150,105,25,.50)", ring2: () => "rgba(30,95,150,.38)",
+    dots: ["#2C7BC4", "#B8861F"], dotBase: 0.28,
+    aura1: () => "rgba(44,123,196,.13)", aura2: () => "rgba(184,124,20,.10)",
+  },
+};
+
 export function AssistantAvatar({ state = "idle", size = 70, track = true,
-                                  interactive = false, ripple = 0, boxScale = 1.55 }) {
+                                  interactive = false, ripple = 0, boxScale = 1.55,
+                                  T }) {
   useAvatarStyles();
   const rootRef   = useRef(null);
   const headRef   = useRef(null);
@@ -184,7 +222,10 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
   }, [track]);
 
   const S = size, box = S * boxScale;   // room for aura and orbit
-  const gold = BRAND.gold, cyan = "#4FD8E8";
+  // T.mode is "dark" or "light"; default to dark so a call site that forgets to
+  // pass the theme still renders the shipping look rather than nothing.
+  const P = PALETTE[T?.mode === "light" ? "light" : "dark"];
+  const gold = P.gold[1], cyan = "#4FD8E8";
 
   return (
     <div ref={rootRef} className={`av-root is-${state}`}
@@ -197,20 +238,20 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
         display: "grid", placeItems: "center", pointerEvents: "none" }}>
         <span className="av-aura" style={{ position: "absolute", width: box, height: box,
           borderRadius: "50%", background:
-            `radial-gradient(circle, ${BRAND.blue}3D 0%, transparent 66%)` }} />
+            `radial-gradient(circle, ${P.aura1(BRAND.blue)} 0%, transparent 66%)` }} />
         <span className="av-aura2" style={{ position: "absolute", width: box * 0.74,
           height: box * 0.74, borderRadius: "50%", background:
-            `radial-gradient(circle, ${gold}2E 0%, transparent 62%)` }} />
+            `radial-gradient(circle, ${P.aura2(gold)} 0%, transparent 62%)` }} />
       </div>
 
       {/* orbital rings */}
       <svg aria-hidden="true" viewBox="0 0 300 300"
         style={{ position: "absolute", width: box, height: box, pointerEvents: "none" }}>
         <ellipse className="av-ring1" cx="150" cy="150" rx="118" ry="39" fill="none"
-          stroke={`${gold}5C`} strokeWidth="1.1" strokeDasharray="1.5 13"
+          stroke={P.ring1(gold)} strokeWidth={P.rimW} strokeDasharray="1.5 13"
           transform="rotate(-16 150 150)" />
         <ellipse className="av-ring2" cx="150" cy="150" rx="99" ry="30" fill="none"
-          stroke={`${cyan}47`} strokeWidth="1" strokeDasharray="2 14"
+          stroke={P.ring2(cyan)} strokeWidth="1.1" strokeDasharray="2 14"
           transform="rotate(18 150 150)" />
       </svg>
 
@@ -222,8 +263,8 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
             <span key={i} className="av-dot" style={{
               position: "absolute", width: i % 3 === 0 ? 2.6 : 1.8,
               height: i % 3 === 0 ? 2.6 : 1.8, borderRadius: "50%",
-              background: i % 2 ? cyan : gold,
-              opacity: 0.30 + (i % 3) * 0.16,
+              background: P.dots[i % 2],
+              opacity: P.dotBase + (i % 3) * 0.16,
               "--orb": `${box * (0.30 + (i % 4) * 0.055)}px`,
               animationDuration: `${13 + i * 3.1}s`,
               animationDelay: `${-i * 2.3}s`,
@@ -242,26 +283,26 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
       <div className="av-float" style={{ position: "relative" }}>
         <svg width={S} height={S} viewBox="0 0 240 240" role="img" aria-label="Portal assistant"
           style={{ display: "block", overflow: "visible",
-            filter: `drop-shadow(0 6px 16px rgba(0,0,0,.5))` }}>
+            filter: P.shadow }}>
           <defs>
             <linearGradient id="avShell" x1="0.25" y1="0" x2="0.75" y2="1">
-              <stop offset="0%" stopColor="#3E5F8A" /><stop offset="30%" stopColor="#22405F" />
-              <stop offset="70%" stopColor="#14263D" /><stop offset="100%" stopColor="#0A1526" />
+              <stop offset="0%" stopColor={P.shell[0]} /><stop offset="30%" stopColor={P.shell[1]} />
+              <stop offset="70%" stopColor={P.shell[2]} /><stop offset="100%" stopColor={P.shell[3]} />
             </linearGradient>
             <linearGradient id="avLo" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#2A4868" /><stop offset="100%" stopColor="#0D1B2E" />
+              <stop offset="0%" stopColor={P.lo[0]} /><stop offset="100%" stopColor={P.lo[1]} />
             </linearGradient>
             <radialGradient id="avVisor" cx="40%" cy="26%" r="84%">
-              <stop offset="0%" stopColor="#16355A" /><stop offset="46%" stopColor="#0A1A2F" />
-              <stop offset="100%" stopColor="#03070E" />
+              <stop offset="0%" stopColor={P.visor[0]} /><stop offset="46%" stopColor={P.visor[1]} />
+              <stop offset="100%" stopColor={P.visor[2]} />
             </radialGradient>
             <linearGradient id="avGold" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#F6D79A" /><stop offset="48%" stopColor={gold} />
-              <stop offset="100%" stopColor="#9A6C1E" />
+              <stop offset="0%" stopColor={P.gold[0]} /><stop offset="48%" stopColor={P.gold[1]} />
+              <stop offset="100%" stopColor={P.gold[2]} />
             </linearGradient>
             <linearGradient id="avGloss" x1="0" y1="0" x2="0.2" y2="1">
-              <stop offset="0%" stopColor="#BFDCFF" stopOpacity=".55" />
-              <stop offset="100%" stopColor="#BFDCFF" stopOpacity="0" />
+              <stop offset="0%" stopColor={P.gloss} stopOpacity={P.glossA} />
+              <stop offset="100%" stopColor={P.gloss} stopOpacity="0" />
             </linearGradient>
             <radialGradient id="avCore" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="#BFF6FF" stopOpacity=".95" />
@@ -281,21 +322,21 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
 
           <g ref={budRef}>
             <path d="M120 48 L120 26" stroke="url(#avGold)" strokeWidth="2.6" strokeLinecap="round" />
-            <circle className="av-bud" cx="120" cy="21" r="9" fill={gold} opacity=".3" filter="url(#avGlow)" />
+            <circle className="av-bud" cx="120" cy="21" r="9" fill={gold} opacity={P.budGlow} filter="url(#avGlow)" />
             <circle cx="120" cy="21" r="5.6" fill="url(#avGold)" />
           </g>
 
           <g>
-            <circle cx="44" cy="168" r="11" fill="url(#avLo)" stroke={`${gold}73`} strokeWidth="1" />
-            <circle cx="41" cy="164.5" r="3.6" fill="#7FD4FF" opacity=".5" />
-            <circle cx="196" cy="168" r="11" fill="url(#avLo)" stroke={`${gold}73`} strokeWidth="1" />
-            <circle cx="193" cy="164.5" r="3.6" fill="#7FD4FF" opacity=".5" />
+            <circle cx="44" cy="168" r="11" fill="url(#avLo)" stroke={P.rim} strokeWidth={P.rimW} />
+            <circle cx="41" cy="164.5" r="3.6" fill={P.spec} opacity=".5" />
+            <circle cx="196" cy="168" r="11" fill="url(#avLo)" stroke={P.rim} strokeWidth={P.rimW} />
+            <circle cx="193" cy="164.5" r="3.6" fill={P.spec} opacity=".5" />
           </g>
 
           <g>
             <path d="M94 152 Q120 145 146 152 L150 185 Q120 196 90 185 Z" fill="url(#avLo)" />
-            <path d="M94 152 Q120 145 146 152" fill="none" stroke={`${gold}80`} strokeWidth="1.2" />
-            <rect x="106" y="166" width="28" height="12" rx="6" fill="#05101F" opacity=".85" />
+            <path d="M94 152 Q120 145 146 152" fill="none" stroke={P.rim} strokeWidth={P.rimW} />
+            <rect x="106" y="166" width="28" height="12" rx="6" fill={P.visor[2]} opacity=".9" />
             <rect className="av-mglow" x="106" y="166" width="28" height="12" rx="6"
               fill={cyan} opacity=".0" filter="url(#avGlow)" />
             <rect className="av-mouth" x="111" y="170.5" width="18" height="3" rx="1.5"
@@ -304,25 +345,25 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
 
           <g ref={headRef}>
             <ellipse cx="66" cy="104" rx="15" ry="19" fill="url(#avLo)" />
-            <ellipse cx="66" cy="104" rx="15" ry="19" fill="none" stroke={`${gold}80`} strokeWidth="1.2" />
+            <ellipse cx="66" cy="104" rx="15" ry="19" fill="none" stroke={P.rim} strokeWidth={P.rimW} />
             <ellipse cx="174" cy="104" rx="15" ry="19" fill="url(#avLo)" />
-            <ellipse cx="174" cy="104" rx="15" ry="19" fill="none" stroke={`${gold}80`} strokeWidth="1.2" />
+            <ellipse cx="174" cy="104" rx="15" ry="19" fill="none" stroke={P.rim} strokeWidth={P.rimW} />
 
             <ellipse cx="120" cy="104" rx="63" ry="59" fill="url(#avShell)" />
             <g clipPath="url(#avHeadClip)">
               <ellipse cx="108" cy="56" rx="44" ry="23" fill="url(#avGloss)" />
-              <path d="M57 104 A63 59 0 0 1 120 45" fill="none" stroke="#9FD8FF"
-                strokeWidth="1.6" opacity=".35" />
+              <path d="M57 104 A63 59 0 0 1 120 45" fill="none" stroke={P.sheen}
+                strokeWidth="1.6" opacity={P.sheenA} />
             </g>
             <ellipse cx="120" cy="104" rx="63" ry="59" fill="none"
-              stroke="url(#avGold)" strokeWidth="1.8" opacity=".75" />
+              stroke="url(#avGold)" strokeWidth={P.rimW + 0.4} opacity={P.rimA} />
 
             <ellipse cx="120" cy="104" rx="50" ry="45" fill="url(#avVisor)" />
             <ellipse cx="120" cy="104" rx="50" ry="45" fill="none"
-              stroke={`${gold}59`} strokeWidth="1.4" />
+              stroke={P.rim} strokeWidth="1.4" />
 
             <g clipPath="url(#avVisorClip)">
-              <ellipse cx="120" cy="104" rx="34" ry="30" fill="url(#avCore)" opacity=".38" />
+              <ellipse cx="120" cy="104" rx="34" ry="30" fill="url(#avCore)" opacity={P.coreA} />
               <g ref={eyesRef}>
                 <g ref={lidRef} filter="url(#avSoft)">
                   <path className="av-calm" d="M93 110 Q104 94 115 110" stroke="#9FF4FF"
@@ -385,7 +426,8 @@ export function AssistantLauncher({ T, onOpen, isCompact, state = "idle" }) {
 
       {hover && !isCompact && (
         <div className="av-tip" style={{
-          background: `${T.surfaceFloat}E6`, backdropFilter: "blur(14px)",
+          background: T.mode === "light" ? T.surfaceOver : `${T.surfaceFloat}E6`,
+          backdropFilter: "blur(14px)",
           border: `1px solid ${T.borderStrong}`, borderRadius: R.md,
           padding: "8px 13px", boxShadow: T.shadowLg, whiteSpace: "nowrap",
           pointerEvents: "none", marginRight: -4,
@@ -412,7 +454,7 @@ export function AssistantLauncher({ T, onOpen, isCompact, state = "idle" }) {
           transform: pressed ? "scale(.9)" : hover ? "scale(1.06)" : "scale(1)",
           transition: `transform ${pressed ? "120ms" : MOTION.base} cubic-bezier(.22,.8,.3,1)`,
         }}>
-        <AssistantAvatar state={hover ? "hover" : state} size={size} ripple={ripple} />
+        <AssistantAvatar T={T} state={hover ? "hover" : state} size={size} ripple={ripple} />
       </button>
     </div>
   );
