@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Sparkles, X, Send, Loader2, AlertTriangle, RotateCcw, Database,
          Wallet, Layers, TrendingUp, CalendarRange, Volume2, Square } from "lucide-react";
@@ -7,7 +7,7 @@ import { Button, CAN_HOVER, useCountUp, useCursorLight } from "./ui.jsx";
 import { useNear } from "./presence.jsx";
 import { useSpeech } from "./speech.js";
 import { track } from "./sessionTrack.js";
-import { AssistantAvatar, AssistantLauncher } from "./AssistantAvatar.jsx";
+import { AssistantAvatar, AssistantLauncher, launcherLift } from "./AssistantAvatar.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    ASK — the portal assistant
@@ -336,6 +336,12 @@ export function AskPanel({ T, session, supa, isCompact }) {
 
   const panelW = isCompact ? "100%" : 460;
 
+  // The panel grows out of the character. Once the launcher has been dragged up
+  // the edge, growing from the panel's own bottom corner would come from empty
+  // space, so the origin rises by however far the character was moved. The same
+  // origin serves the collapse on close, so it shrinks back into the character.
+  const lift = useMemo(() => (open && !isCompact ? launcherLift(false) : 0), [open, isCompact]);
+
   return (
     <>
       {/* launcher */}
@@ -365,6 +371,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
             style={{
               width: isCompact ? "100%" : 440,
               height: isCompact ? "100%" : "min(680px, calc(100vh - 40px))",
+              transformOrigin: lift > 0 ? `100% calc(100% - ${lift}px)` : undefined,
               display: "flex", flexDirection: "column",
               background: isCompact ? T.surface : `${T.surface}F2`,
               backdropFilter: isCompact ? undefined : "blur(22px) saturate(1.15)",

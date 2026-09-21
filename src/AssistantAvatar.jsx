@@ -401,16 +401,130 @@ export function AssistantAvatar({ state = "idle", size = 70, track = true,
 }
 
 /** Launcher: the avatar as a button, with proximity tooltip and click ripple. */
+/* ── MOVABLE LAUNCHER ─────────────────────────────────────────────────────────
+   The character sits over whatever is in the bottom-right corner — table
+   totals, the RACI header, the last column of a list. It can be dragged up and
+   down the right edge, and it stays where it was left.
+
+   Two details that are easy to get wrong:
+
+   · The hit area is the robot, not its aura. The avatar draws in a box 1.55x
+     its size so the glow and orbit have room, and the button used to be that
+     whole box — an invisible ring about 33px wide around the character that
+     caught clicks meant for the page underneath. The button is now the robot's
+     own size; the aura overflows it with pointer-events off.
+
+   · A drag is not a click. Past a 6px threshold the gesture becomes a move, and
+     the click the browser fires at the end of it is ignored — by time, not by a
+     flag, so a click event that never arrives cannot leave the next real click
+     swallowed.
+
+   The position is kept per layout, because phone and desktop differ, clamped so
+   the aura never slides under the top bar, and re-clamped when the window
+   shrinks without overwriting what was saved, so it returns when the window
+   grows again. When focused, the arrow keys move it and Home puts it back. */
+const LAUNCHER_SIZE = (compact) => (compact ? 56 : 122);
+const AURA_PAD = (compact) => (LAUNCHER_SIZE(compact) * 1.55 - LAUNCHER_SIZE(compact)) / 2;
+const TOP_CLEARANCE = (compact) => (compact ? 60 : 64);
+const launcherKey = (compact) => `pmo.launcher.bottom.${compact ? "phone" : "desk"}`;
+
+// Where the character sat before it could be moved: the old offsets plus the
+// aura ring the button no longer includes, so its resting place is unchanged.
+export const launcherHome = (compact) => Math.round((compact ? 74 : 20) + AURA_PAD(compact));
+const launcherRight = (compact) => Math.round((compact ? 10 : 22) + AURA_PAD(compact));
+
+export function readLauncherBottom(compact) {
+  const home = launcherHome(compact);
+  try {
+    const v = Number(localStorage.getItem(launcherKey(compact)));
+    return Number.isFinite(v) && v > home ? v : home;
+  } catch { return home; }
+}
+
+// The launcher unmounts while the panel is open, so it leaves its last
+// on-screen position here for the panel to grow out of.
+const lastShown = { desk: null, phone: null };
+export function launcherLift(compact) {
+  const b = lastShown[compact ? "phone" : "desk"] ?? readLauncherBottom(compact);
+  return Math.max(0, b - launcherHome(compact));
+}
+
 export function AssistantLauncher({ T, onOpen, isCompact, state = "idle" }) {
   const [hover, setHover] = useState(false);
   const [ripple, setRipple] = useState(0);
   const [pressed, setPressed] = useState(false);
+  const [dragging, setDragging] = useState(false);
   // 122 on desktop rather than the 70 the spec suggested: judged in place on a
-  // real screen, 70 read as small against the dashboard. Mobile stays at 56,
-  // where it was already right.
-  const size = isCompact ? 56 : 122;
+  // real screen, 70 read as small against the dashboard. Mobile stays at 56.
+  const size = LAUNCHER_SIZE(isCompact);
+  const pad  = AURA_PAD(isCompact);
+  const home = launcherHome(isCompact);
+  const [bottom, setBottom] = useState(() => readLauncherBottom(isCompact));
+  const wrap = useRef(null);
+  const drag = useRef(null);
+  const lastDragEnd = useRef(0);
+
+  const clamp = useCallback((b) => {
+    const max = Math.max(home,
+      Math.round(window.innerHeight - size - pad - TOP_CLEARANCE(isCompact)));
+    return Math.min(max, Math.max(home, Math.round(b)));
+  }, [home, size, pad, isCompact]);
+
+  // Re-read on mount, on a layout change, and whenever the window resizes.
+  useEffect(() => {
+    const fit = () => setBottom(clamp(readLauncherBottom(isCompact)));
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [clamp, isCompact]);
+
+  useEffect(() => { lastShown[isCompact ? "phone" : "desk"] = bottom; }, [bottom, isCompact]);
+
+  const save = (b) => {
+    try { localStorage.setItem(launcherKey(isCompact), String(b)); } catch { /* private mode */ }
+  };
+
+  const onPointerDown = (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    drag.current = { id: e.pointerId, y0: e.clientY, b0: bottom, b: bottom, moved: false };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not supported */ }
+  };
+  const onPointerMove = (e) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    const dy = e.clientY - d.y0;
+    if (!d.moved) {
+      if (Math.abs(dy) < 6) return;
+      d.moved = true;
+      setDragging(true);
+    }
+    d.b = clamp(d.b0 - dy);
+    // Written straight to the element so the avatar is not re-rendered 60 times
+    // a second; the render below reads the same value if one happens mid-drag.
+    if (wrap.current) wrap.current.style.bottom = `${d.b}px`;
+  };
+  const endDrag = (e) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    drag.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    if (!d.moved) return;
+    lastDragEnd.current = performance.now();
+    setDragging(false);
+    setBottom(d.b);
+    save(d.b);
+  };
+  const onKeyDown = (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown" && e.key !== "Home") return;
+    e.preventDefault();
+    const b = e.key === "Home" ? home : clamp(bottom + (e.key === "ArrowUp" ? 48 : -48));
+    setBottom(b);
+    save(b);
+  };
 
   const open = useCallback(() => {
+    // The click that ends a drag is not a request to open.
+    if (performance.now() - lastDragEnd.current < 450) return;
     // §7: react, compress, pulse, then hand over — the entity opening a channel
     // rather than a modal appearing. Kept under 650ms so it never feels slow.
     setPressed(true);
@@ -419,28 +533,41 @@ export function AssistantLauncher({ T, onOpen, isCompact, state = "idle" }) {
     setTimeout(() => onOpen?.(), 300);
   }, [onOpen]);
 
-  return (
-    <div style={{ position: "fixed", zIndex: 1200,
-      right: isCompact ? 10 : 22, bottom: isCompact ? 74 : 20,
-      display: "flex", alignItems: "center", gap: 10 }}>
+  const shown = drag.current?.moved ? drag.current.b : bottom;
 
-      {hover && !isCompact && (
+  return (
+    <div ref={wrap} style={{ position: "fixed", zIndex: 1200,
+      right: launcherRight(isCompact), bottom: shown,
+      display: "flex", alignItems: "center",
+      // the same distance from the robot as before the button lost its aura ring
+      gap: Math.round(pad) + 6,
+      userSelect: "none", WebkitUserSelect: "none" }}>
+
+      {hover && !dragging && !isCompact && (
         <div className="av-tip" style={{
           background: T.mode === "light" ? T.surfaceOver : `${T.surfaceFloat}E6`,
           backdropFilter: "blur(14px)",
           border: `1px solid ${T.borderStrong}`, borderRadius: R.md,
           padding: "8px 13px", boxShadow: T.shadowLg, whiteSpace: "nowrap",
-          pointerEvents: "none", marginRight: -4,
+          pointerEvents: "none",
         }}>
           <div style={{ ...TYPE.label, color: T.text }}>Portal assistant</div>
           <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>
             Ask about your portfolio
+          </div>
+          <div style={{ ...TYPE.caption, color: T.dim, marginTop: 5, fontSize: 11 }}>
+            Drag up or down to move it
           </div>
         </div>
       )}
 
       <button
         onClick={open}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onKeyDown={onKeyDown}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         onFocus={() => setHover(true)}
@@ -448,13 +575,22 @@ export function AssistantLauncher({ T, onOpen, isCompact, state = "idle" }) {
         className="pmo-focusable"
         data-tour="assistant-launcher"
         aria-label="Open the portal assistant"
+        aria-keyshortcuts="ArrowUp ArrowDown Home"
         style={{
-          background: "none", border: "none", padding: 0, cursor: "pointer",
-          lineHeight: 0, borderRadius: "50%",
-          transform: pressed ? "scale(.9)" : hover ? "scale(1.06)" : "scale(1)",
+          position: "relative", width: size, height: size, flexShrink: 0,
+          background: "none", border: "none", padding: 0, lineHeight: 0,
+          borderRadius: "50%", overflow: "visible", touchAction: "none",
+          cursor: dragging ? "grabbing" : "pointer",
+          transform: pressed ? "scale(.9)" : (hover || dragging) ? "scale(1.06)" : "scale(1)",
           transition: `transform ${pressed ? "120ms" : MOTION.base} cubic-bezier(.22,.8,.3,1)`,
         }}>
-        <AssistantAvatar T={T} state={hover ? "hover" : state} size={size} ripple={ripple} />
+        {/* The avatar overflows the button with pointer-events off, so only the
+            robot itself is a target and its glow never blocks the page. */}
+        <span style={{ position: "absolute", left: "50%", top: "50%", lineHeight: 0,
+          transform: "translate(-50%, -50%)", pointerEvents: "none" }}>
+          <AssistantAvatar T={T} state={dragging ? "listening" : hover ? "hover" : state}
+            size={size} ripple={ripple} />
+        </span>
       </button>
     </div>
   );
