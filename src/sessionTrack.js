@@ -83,6 +83,9 @@ export function track(kind, label, meta) {
   if (queue.length >= 25) flush(); else scheduleFlush();
 }
 
+/** Called when the access token is renewed, so tracking keeps working. */
+export function setTrackToken(t) { if (t) tokenRef = t; }
+
 /** Called once after sign-in. */
 export async function startSession(supa, session) {
   if (sessionId || !session?.user_id) return null;

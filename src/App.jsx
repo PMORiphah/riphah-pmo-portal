@@ -11,7 +11,9 @@ import { PastProjectsPage } from "./PastProjects.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
 import { AskPanel } from "./AskPanel.jsx";
 import { AssistantAvatar } from "./AssistantAvatar.jsx";
-import { startSession, endSession, track } from "./sessionTrack.js";
+import { startSession, endSession, track, setTrackToken } from "./sessionTrack.js";
+import { saveSession, loadSession, clearSession, renewSession, revokeSession,
+         onRenewedElsewhere, isFresh, RENEW_EARLY_S } from "./auth.js";
 import { SessionDetail } from "./SessionDetail.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
@@ -161,7 +163,9 @@ const supa = async (path, opts = {}, token = null) => {
 };
 
 const _supaFetch = async (path, opts = {}, token = null) => {
+  // no-store: every load, including a hard refresh, reads live figures.
   const r = await fetch(SUPA_URL + path, {
+    cache: "no-store",
     ...opts,
     headers: {
       "Content-Type": "application/json",
@@ -9600,7 +9604,7 @@ function InviteErrorScreen({ T, message, onBackToSignIn }) {
   );
 }
 
-function SetPasswordPage({ T, dark, token, type, onDone }) {
+function SetPasswordPage({ T, dark, token, refreshToken, type, onDone }) {
   const [np,     setNp]     = useState("");
   const [cp,     setCp]     = useState("");
   const [showNp, setShowNp] = useState(false);
@@ -9636,8 +9640,10 @@ function SetPasswordPage({ T, dark, token, type, onDone }) {
         full_name:    profile.full_name || "",
         role:         profile.role      || "guest",
         expires_at:   Math.floor(Date.now()/1000) + 3600,
+        refresh_token: refreshToken || null,
+        remember:     true,
       };
-      try { localStorage.setItem("pmo_session", JSON.stringify(session)); } catch(_) {}
+      saveSession(session);
       onDone(session);
     } catch(e) {
       setStatus({ok:false, msg: e.message || "Failed to set password. The link may have expired — ask the PMO to re-send your invite."});
@@ -9812,7 +9818,8 @@ function Login({ T, dark, onLogin }) {
     setBioBusy(true); setErr(null);
     try {
       const session = await signInWithBiometric();
-      try { localStorage.setItem("pmo_session", JSON.stringify(session)); } catch(_) {}
+      session.remember = true;      // this device is trusted: that is what enrolling it means
+      saveSession(session);
       if (reducedMotion) { onLogin(session); return; }
       setSuccess(true);
       setTimeout(() => onLogin(session), 460);
@@ -9865,8 +9872,10 @@ function Login({ T, dark, onLogin }) {
         full_name: profile.full_name || user,
         role: profile.role || "guest",
         expires_at: auth.expires_at,
+        refresh_token: auth.refresh_token,
+        remember,
       };
-      try { if (remember) localStorage.setItem("pmo_session", JSON.stringify(session)); } catch(_) {}
+      saveSession(session);
 
       // §25 — authentication has succeeded; play the hand-over before the
       // dashboard mounts. Under reduced motion this is skipped entirely, and
@@ -10210,8 +10219,10 @@ function Login({ T, dark, onLogin }) {
 
           {/* Remember + Forgot */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24 }}>
-            <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:12.5, color:"rgba(255,255,255,0.5)" }}>
-              <span onClick={()=>setRemember(r=>!r)} role="checkbox" aria-checked={remember} tabIndex={0}
+            {/* The whole label toggles it: the words used to do nothing, so
+                people clicked "Remember me", saw no change, and moved on. */}
+            <label onClick={()=>setRemember(r=>!r)} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:12.5, color:"rgba(255,255,255,0.5)", userSelect:"none" }}>
+              <span role="checkbox" aria-checked={remember} tabIndex={0}
                 onKeyDown={e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); setRemember(r=>!r); } }}
                 className="pmo-focusable"
                 style={{
@@ -10964,14 +10975,42 @@ export default function App() {
     return () => { alive = false; clearInterval(iv); };
   }, [session?.access_token, session?.user_id, unreadTick]);
 
-  // Session expiry timer
+  // Keep the session alive. The access token lasts an hour; five minutes
+  // before it runs out it is renewed in place (see auth.js for why in place).
+  // A network blip retries every minute until the token actually lapses; only
+  // a refused renewal — or a session with no refresh token — ends in the
+  // "session expired" screen. Timers do not run while a laptop sleeps, so the
+  // plan is re-made whenever the tab becomes visible again.
   useEffect(() => {
-    if (!session?.expires_at) return;
-    const msLeft = (session.expires_at - 30) * 1000 - Date.now();
-    if (msLeft <= 0) { setSessionExpired(true); return; }
-    const t = setTimeout(() => setSessionExpired(true), msLeft);
-    return () => clearTimeout(t);
-  }, [session?.expires_at]);
+    if (!session?.user_id) return;
+    let alive = true, timer = null;
+    const plan = () => {
+      clearTimeout(timer);
+      if (!alive) return;
+      if (!session.refresh_token) {
+        const ms = (session.expires_at - 30) * 1000 - Date.now();
+        timer = setTimeout(() => setSessionExpired(true), Math.max(ms, 0));
+        return;
+      }
+      const ms = (session.expires_at - RENEW_EARLY_S) * 1000 - Date.now();
+      timer = setTimeout(renew, Math.max(ms, 0));
+    };
+    const renew = async () => {
+      const r = await renewSession(session);
+      if (!alive) return;
+      if (r === "ok") { setTrackToken(session.access_token); plan(); return; }
+      if (r === "dead" || !isFresh(session, 30)) { setSessionExpired(true); return; }
+      timer = setTimeout(renew, 60000);
+    };
+    plan();
+    const off = onRenewedElsewhere(session, () => { setTrackToken(session.access_token); plan(); });
+    const onVisible = () => { if (document.visibilityState === "visible") plan(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false; clearTimeout(timer); off();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [session]);
 
   const openProject = useCallback((id) => {
     setReturnPage(page);
@@ -11018,7 +11057,7 @@ export default function App() {
           if (!res.ok || !data.access_token) {
             throw new Error(data.error_description || data.msg || "This link is no longer valid.");
           }
-          setInviteState({ token: data.access_token, type: searchType });
+          setInviteState({ token: data.access_token, refresh: data.refresh_token || null, type: searchType });
         } catch (e) {
           setInviteError(
             "This invitation link has already been used or has expired. " +
@@ -11042,7 +11081,7 @@ export default function App() {
         const token = params.get("access_token");
         const hashError = params.get("error_code") || params.get("error");
         if ((type === "invite" || type === "recovery") && token) {
-          setInviteState({ token, type });
+          setInviteState({ token, refresh: params.get("refresh_token"), type });
           window.history.replaceState({}, "", window.location.pathname);
           setRestoring(false);
           return;
@@ -11059,14 +11098,19 @@ export default function App() {
         }
       }
 
-      // 2. Restore saved session
-      try {
-        const raw = localStorage.getItem("pmo_session");
-        if (raw) {
-          const s = JSON.parse(raw);
-          if (s.expires_at && Date.now() < (s.expires_at - 60) * 1000) setSession(s);
+      // 2. Restore the saved session. A reload or hard refresh lands here: if
+      // the access token has lapsed but the refresh token is still good, the
+      // session is renewed before anything renders, so the user never sees the
+      // sign-in page. Every page then loads its data fresh.
+      const saved = loadSession();
+      if (saved) {
+        if (isFresh(saved, 60)) setSession(saved);
+        else {
+          const r = await renewSession(saved);
+          if (r === "ok") setSession(saved);
+          else if (r === "dead") clearSession();
         }
-      } catch(_) {}
+      }
       setRestoring(false);
     })();
   }, []);
@@ -11076,7 +11120,8 @@ export default function App() {
     // moment we know for certain a session finished; every other ending is
     // inferred from the heartbeat going quiet.
     try { await endSession(); } catch(_) {}
-    try { localStorage.removeItem("pmo_session"); } catch(_) {}
+    await revokeSession(session);
+    clearSession();
     setSession(null);
     setPage("cmd");
   };
@@ -11279,7 +11324,7 @@ export default function App() {
 
   if (restoring) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:DK.mainBg, color:DK.muted, fontSize:13, fontFamily:TYPE.body.fontFamily }}>Loading…</div>;
   if (inviteError) return <InviteErrorScreen T={T} message={inviteError} onBackToSignIn={() => setInviteError(null)} />;
-  if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
+  if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} refreshToken={inviteState.refresh} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
   if (!session) return <><Login T={T} dark={dark} onLogin={setSession} /><InstallPrompt T={T} /></>;
 
   // Contextual quick actions for the header. Deliberately small: two per page
@@ -11445,7 +11490,7 @@ export default function App() {
       )}
       {sessionExpired && (
         <SessionExpiredModal T={T} onSignIn={() => {
-          try { localStorage.removeItem("pmo_session"); } catch(_) {}
+          clearSession();
           setSession(null); setSessionExpired(false); setPage("cmd");
         }} />
       )}
