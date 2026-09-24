@@ -72,12 +72,23 @@ export function TourProvider({ T, children, nav }) {
   const reduced = typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-  const start = useCallback((list) => { setSteps(list); setIdx(0); }, []);
-  const stop = useCallback(async () => {
+  // nav.onStart / onStep / onAbandon report progress so the PMO can see who
+  // took the tour and where they stopped. All three are optional.
+  const start = useCallback((list) => {
+    setSteps(list); setIdx(0);
+    nav?.onStart?.(list.length);
+  }, [nav]);
+  const finishedRef = useRef(false);
+  const stop = useCallback(async (opts) => {
+    // Closing part way is the interesting case: it says which step lost them.
+    if (!finishedRef.current && steps && !opts?.finished) {
+      nav?.onAbandon?.(idx, steps.length, steps[idx]);
+    }
+    finishedRef.current = false;
     if (cleanupRef.current) { try { await cleanupRef.current(); } catch (_) {} }
     cleanupRef.current = null;
     setSteps(null); setRect(null); setPhase("idle");
-  }, []);
+  }, [steps, idx, nav]);
 
   // Drives every step: navigate → wait for the target → scroll it into view →
   // measure it → run the optional demo → show the caption.
@@ -180,7 +191,10 @@ export function TourProvider({ T, children, nav }) {
         } catch (_) { /* a demo failing must never block the tour */ }
         measure(step.selector);
       }
-      if (!cancelled) setPhase("ready");
+      if (!cancelled) {
+        setPhase("ready");
+        nav?.onStep?.(idx, steps.length, step);
+      }
     })();
 
     return () => {
@@ -194,7 +208,7 @@ export function TourProvider({ T, children, nav }) {
 
   const next = useCallback(async () => {
     if (!steps) return;
-    if (idx >= steps.length - 1) { await nav.onFinish?.(); stop(); return; }
+    if (idx >= steps.length - 1) { finishedRef.current = true; await nav.onFinish?.(); stop({ finished: true }); return; }
     if (cleanupRef.current) { try { await cleanupRef.current(); } catch (_) {} cleanupRef.current = null; }
     setIdx((i) => i + 1);
   }, [steps, idx, nav, stop]);

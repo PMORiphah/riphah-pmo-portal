@@ -11,7 +11,8 @@ import { PastProjectsPage } from "./PastProjects.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
 import { AskPanel } from "./AskPanel.jsx";
 import { AssistantAvatar } from "./AssistantAvatar.jsx";
-import { startSession, endSession, track, setTrackToken } from "./sessionTrack.js";
+import { startSession, endSession, track, setTrackToken, getSessionId } from "./sessionTrack.js";
+import { initTourTracking, endTourTracking, tourEvent } from "./tourTrack.js";
 import { saveSession, loadSession, clearSession, renewSession, revokeSession,
          onRenewedElsewhere, isFresh, RENEW_EARLY_S } from "./auth.js";
 import { SessionDetail } from "./SessionDetail.jsx";
@@ -301,7 +302,7 @@ const PMO_NAV = [
 // Guest-only — a Project Manager is never offered this card at all (see the
 // gating effect below), so the isPM branching that used to live here is
 // unreachable and removed rather than left as dead code.
-function TourInviteCard({ T, show, role, name, onDismiss }) {
+function TourInviteCard({ T, show, role, name, onDismiss, onAccept }) {
   const tour = useTour();
   const vpTC = useViewport();
   const near = useNear();   // must be called before any early return — hooks can't be conditional
@@ -347,7 +348,7 @@ function TourInviteCard({ T, show, role, name, onDismiss }) {
             cursor: "pointer", padding: "10px 15px", ...TYPE.bodySm, fontSize: 16,
             transition: `all ${MOTION.fast}` }}>Not now</button>
         <button className="pmo-focusable pmo-btn"
-          onClick={() => { onDismiss(); tour.start(guestSteps()); }}
+          onClick={() => { onAccept(); tour.start(guestSteps()); }}
           onMouseEnter={() => setStartHover(true)} onMouseLeave={() => setStartHover(false)}
           style={{ padding: "10px 24px",
             background: startHover
@@ -8314,6 +8315,82 @@ function RestoreSnapshotButton({ T, session, entry }) {
 }
 
 // ─── ACTIVITY LOG ─────────────────────────────────────────────────────────────
+// How far one person got through the tour. Opened from a tour row in the log,
+// the same way a sign-in row opens its session. The step rows carry the section
+// and title, so the drop-off point reads in plain words rather than a number.
+function TourDetail({ T, who, steps, marks, onClose }) {
+  const ordered = [...steps].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  const outcome = marks.find(m => m.action === "tour_completed") ? "Finished the tour"
+    : marks.find(m => m.action === "tour_abandoned") ? "Left part way through"
+    : marks.find(m => m.action === "tour_declined")  ? "Declined the invitation"
+    : marks.find(m => m.action === "tour_started")   ? "Started the tour"
+    : "Was offered the tour";
+  const fmt = d => new Date(d).toLocaleString("en-GB",
+    { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
+  const secs = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 1000));
+  const started = marks.find(m => m.action === "tour_started");
+  const ended   = marks.find(m => m.action === "tour_completed" || m.action === "tour_abandoned");
+  const total = started && ended ? secs(started.created_at, ended.created_at) : null;
+  const last = ordered[ordered.length - 1];
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:2000,
+      background:"rgba(0,0,0,0.55)", backdropFilter:"blur(3px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <div onClick={e => e.stopPropagation()} className="pmo-scroll" style={{
+        background:T.card, border:`1px solid ${T.borderStrong}`, borderRadius:R.lg,
+        width:"min(620px, 100%)", maxHeight:"80vh", overflowY:"auto", boxShadow:T.shadowLg }}>
+        <div style={{ padding:"18px 22px", borderBottom:`1px solid ${T.border}`,
+          display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+          <div>
+            <div style={{ ...TYPE.h3, color:T.text }}>{who.name}</div>
+            <div style={{ ...TYPE.bodySm, color:T.muted, marginTop:3 }}>
+              {outcome}
+              {last?.step_total ? ` · reached step ${(last.step_index ?? 0) + 1} of ${last.step_total}` : ""}
+              {total != null ? ` · ${total < 90 ? `${total}s` : `${Math.round(total / 60)} min`}` : ""}
+            </div>
+          </div>
+          <button className="pmo-focusable pmo-btn" onClick={onClose} style={{ background:"none",
+            border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"6px 12px",
+            color:T.muted, cursor:"pointer", fontSize:12 }}>Close</button>
+        </div>
+        <div style={{ padding:"14px 22px 20px" }}>
+          {ordered.length === 0 ? (
+            <div style={{ ...TYPE.bodySm, color:T.dim, padding:"18px 0" }}>
+              No steps were reached — the tour was not opened.
+            </div>
+          ) : ordered.map((t, i) => {
+            const next = ordered[i + 1];
+            const dwell = next ? secs(t.created_at, next.created_at)
+                        : ended ? secs(t.created_at, ended.created_at) : null;
+            const isLast = i === ordered.length - 1;
+            const leftHere = isLast && marks.some(m => m.action === "tour_abandoned");
+            return (
+              <div key={t.id} style={{ display:"flex", gap:12, padding:"8px 0",
+                borderBottom: i === ordered.length - 1 ? "none" : `1px solid ${T.border}` }}>
+                <div style={{ ...TYPE.caption, color:T.dim, width:52, flexShrink:0,
+                  fontVariantNumeric:"tabular-nums", paddingTop:2 }}>
+                  {(t.step_index ?? 0) + 1}/{t.step_total ?? "?"}
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ ...TYPE.bodySm, color: leftHere ? T.textOf(AMBER) : T.text }}>
+                    {t.step_title || t.section || "Step"}
+                    {leftHere && <span style={{ ...TYPE.caption, marginLeft:8 }}>— left here</span>}
+                  </div>
+                  <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>
+                    {t.section ? `${t.section} · ` : ""}{fmt(t.created_at)}
+                    {dwell != null ? ` · ${dwell}s on this step` : ""}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActivityLogPage({ T, session, supa }) {
   // A login row opens the session behind it; everything else is inert.
   const [openSession, setOpenSession] = useState(null);
@@ -8332,6 +8409,13 @@ function ActivityLogPage({ T, session, supa }) {
   const [dateFrom,     setDateFrom]     = useState("");
   const [dateTo,       setDateTo]       = useState("");
 
+  // Tour activity lives in its own table (writing it to user_profiles is what
+  // used to fill this log with "User X updated"). It is folded into the same
+  // feed here so the log stays one list. The per-step rows are kept aside for
+  // the detail panel rather than shown as 21 separate entries.
+  const [tourSteps, setTourSteps] = useState([]);
+  const [openTour, setOpenTour] = useState(null);
+
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
@@ -8340,8 +8424,55 @@ function ActivityLogPage({ T, session, supa }) {
       if (entityFilter) q += `&entity_type=eq.${entityFilter}`;
       if (dateFrom)     q += `&created_at=gte.${dateFrom}T00:00:00`;
       if (dateTo)       q += `&created_at=lte.${dateTo}T23:59:59`;
-      const data = await supa(q, {}, session.access_token);
-      setEntries(data);
+
+      let tq = "/rest/v1/tour_events?select=id,user_id,session_id,event,step_index,step_total,section,step_title,device,created_at"
+             + "&order=created_at.desc&limit=2000";
+      if (dateFrom) tq += `&created_at=gte.${dateFrom}T00:00:00`;
+      if (dateTo)   tq += `&created_at=lte.${dateTo}T23:59:59`;
+
+      const [data, tour, people] = await Promise.all([
+        supa(q, {}, session.access_token),
+        supa(tq, {}, session.access_token).catch(() => []),
+        supa("/rest/v1/user_profiles?select=id,username,full_name,role", {}, session.access_token).catch(() => []),
+      ]);
+      const who = new Map((people || []).map(u => [u.id, u]));
+      const steps = (tour || []).filter(t => t.event === "step");
+      setTourSteps(steps);
+
+      const TOUR_ACTION = {
+        offered:   "tour_offered",
+        declined:  "tour_declined",
+        started:   "tour_started",
+        completed: "tour_completed",
+        abandoned: "tour_abandoned",
+      };
+      const tourEntries = (tour || [])
+        .filter(t => t.event !== "step")
+        .map(t => {
+          const u = who.get(t.user_id) || {};
+          const name = u.full_name || u.username || "Someone";
+          const at = t.step_index != null && t.step_total
+            ? ` at step ${t.step_index + 1} of ${t.step_total}${t.section ? ` (${t.section})` : ""}`
+            : "";
+          const summary =
+            t.event === "offered"   ? `${name} was offered the tour`
+            : t.event === "declined"  ? `${name} declined the tour`
+            : t.event === "started"   ? `${name} started the tour`
+            : t.event === "completed" ? `${name} finished the tour`
+            : `${name} left the tour${at}`;
+          return {
+            id: `tour-${t.id}`, actor_name: name, actor_role: u.role,
+            action: TOUR_ACTION[t.event] || "tour", entity_type: "tour",
+            entity_id: t.user_id, summary, created_at: t.created_at,
+            details: t, _tourUser: t.user_id,
+          };
+        });
+
+      const merged = [...data, ...tourEntries]
+        .filter(e => !actionFilter || e.action === actionFilter)
+        .filter(e => !entityFilter || e.entity_type === entityFilter)
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      setEntries(merged);
     } catch(e) { setErr(e.message); }
     setLoading(false);
   }, [session.access_token, actionFilter, entityFilter, dateFrom, dateTo]);
@@ -8369,6 +8500,11 @@ function ActivityLogPage({ T, session, supa }) {
     unassigned:        A(AMBER,     "Unassigned"),
     assignment_updated:A(AMBER,     "Reassigned"),
     login:             A(VIOLET,    "Signed In"),
+    tour_offered:      A(DATA.neutral, "Tour Offered"),
+    tour_declined:     A(DATA.neutral, "Tour Declined"),
+    tour_started:      A(DATA.cyan,    "Tour Started"),
+    tour_completed:    A(EMERALD,   "Tour Finished"),
+    tour_abandoned:    A(AMBER,     "Tour Left"),
   };
   const ROLE_CFG = {
     pmo:             { label:"Admin",   c:T.textOf(GOLD) },
@@ -8383,6 +8519,7 @@ function ActivityLogPage({ T, session, supa }) {
     settings:            "Settings",
     auth:                "Auth",
     session:             "Session",
+    tour:                "Tour",
   };
   const ACTION_OPTIONS = [
     { value:"",               label:"All Actions" },
@@ -8394,6 +8531,11 @@ function ActivityLogPage({ T, session, supa }) {
     { value:"deleted",        label:"Deleted" },
     { value:"import",         label:"Import" },
     { value:"login",          label:"Signed In" },
+    { value:"tour_started",   label:"Tour Started" },
+    { value:"tour_completed", label:"Tour Finished" },
+    { value:"tour_abandoned", label:"Tour Left" },
+    { value:"tour_declined",  label:"Tour Declined" },
+    { value:"tour_offered",   label:"Tour Offered" },
   ];
   const ENTITY_OPTIONS = [
     { value:"",                    label:"All Types" },
@@ -8401,6 +8543,7 @@ function ActivityLogPage({ T, session, supa }) {
     { value:"comments",            label:"Comments" },
     { value:"user_profiles",       label:"Users" },
     { value:"project_assignments", label:"Assignments" },
+    { value:"tour",                label:"Tour" },
   ];
 
   const fmtDT = d => {
@@ -8502,10 +8645,13 @@ function ActivityLogPage({ T, session, supa }) {
                 // Only a login row leads anywhere. Everything else in the log
                 // describes a change that is already fully summarised here.
                 const sid = e.action === "login" ? (e.details?.session_id || e.entity_id) : null;
+                const tourUser = e.entity_type === "tour" ? e._tourUser : null;
+                const clickable = sid || tourUser;
                 return (
-                  <tr key={e.id} style={{ background:rowBg, cursor: sid ? "pointer" : "default" }}
-                    onClick={sid ? () => setOpenSession(sid) : undefined}
-                    title={sid ? "Open this session" : undefined}>
+                  <tr key={e.id} style={{ background:rowBg, cursor: clickable ? "pointer" : "default" }}
+                    onClick={sid ? () => setOpenSession(sid)
+                           : tourUser ? () => setOpenTour({ userId: tourUser, name: e.actor_name }) : undefined}
+                    title={sid ? "Open this session" : tourUser ? "See how far they got" : undefined}>
                     {/* Timestamp, on a continuous rail. The connector runs
                         between rows so the log reads as a sequence of events
                         rather than a grid of cells (§47). */}
@@ -8563,6 +8709,11 @@ function ActivityLogPage({ T, session, supa }) {
       {openSession && (
         <SessionDetail T={T} session={session} supa={supa}
           sessionId={openSession} onClose={() => setOpenSession(null)} />
+      )}
+      {openTour && (
+        <TourDetail T={T} who={openTour} steps={tourSteps.filter(t => t.user_id === openTour.userId)}
+          marks={entries.filter(e => e.entity_type === "tour" && e._tourUser === openTour.userId)}
+          onClose={() => setOpenTour(null)} />
       )}
     </div>
   );
@@ -10928,22 +11079,42 @@ export default function App() {
   // other with no way to reach it. This flag lets whichever claims it first
   // hold the floor; the other waits until it's released before showing.
   const [blockingAlertActive, setBlockingAlertActive] = useState(false);
+  // The old guard read session.tutorial_offered_at, which sign-in never loads
+  // — so it was always undefined, the invite reappeared on EVERY desktop
+  // sign-in, and each appearance rewrote the timestamp (which is what filled
+  // the audit log with "User X updated"). The state is now read from the
+  // profile, and anyone who has finished, declined or closed the invite is
+  // never asked again. "Take the tour" in the sidebar still works any time.
   useEffect(() => {
     if (!session?.access_token || session.role !== "guest") return;
-    if (session.tutorial_offered_at) return;
+    let cancelled = false;
     // Desktop-only: skip entirely on mobile, including the write below —
     // if we marked it offered here, a guest whose first login happens to
     // be on a phone would never see the invite later on desktop either,
     // since the one-time offer would already be spent.
     if (vpTourGuard.isCompact) return;
-    const t = setTimeout(() => {
-      setShowTourInvite(true);
-      supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
-        method: "PATCH", headers: { Prefer: "return=minimal" },
-        body: JSON.stringify({ tutorial_offered_at: new Date().toISOString() }),
-      }, session.access_token).catch(() => {});
-    }, 1400); // after the page's own entrance stagger settles
-    return () => clearTimeout(t);
+    let t = null;
+    (async () => {
+      let st = null;
+      try {
+        const rows = await supa(
+          `/rest/v1/user_profiles?select=tutorial_offered_at,tutorial_completed_at,tutorial_dismissed_at&id=eq.${session.user_id}`,
+          {}, session.access_token);
+        st = Array.isArray(rows) ? rows[0] : null;
+      } catch (_) { return; }        // can't tell: say nothing rather than nag
+      if (cancelled || !st) return;
+      if (st.tutorial_offered_at || st.tutorial_completed_at || st.tutorial_dismissed_at) return;
+      t = setTimeout(() => {
+        if (cancelled) return;
+        setShowTourInvite(true);
+        tourEvent("offered", { sessionId: getSessionId() });
+        supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ tutorial_offered_at: new Date().toISOString() }),
+        }, session.access_token).catch(() => {});
+      }, 1400); // after the page's own entrance stagger settles
+    })();
+    return () => { cancelled = true; if (t) clearTimeout(t); };
   }, [session]);
 
   // openSampleProject and tourNav were declared here, before openProject and
@@ -11182,9 +11353,30 @@ export default function App() {
 
   const markTourComplete = useCallback(async () => {
     if (!session?.access_token) return;
+    tourEvent("completed", { sessionId: getSessionId() });
     await supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
       method: "PATCH", headers: { Prefer: "return=minimal" },
       body: JSON.stringify({ tutorial_completed_at: new Date().toISOString() }),
+    }, session.access_token).catch(() => {});
+  }, [session]);
+
+  // Where someone stopped is the whole point of tracking this, so the step is
+  // recorded on the profile too — it is what the old tutorial_last_step column
+  // was always meant to hold.
+  const markTourStep = useCallback((i, total, step) => {
+    tourEvent("step", { sessionId: getSessionId(), stepIndex: i, stepTotal: total,
+                        section: step?.section, stepTitle: step?.title });
+  }, []);
+  const markTourStart = useCallback((total) => {
+    tourEvent("started", { sessionId: getSessionId(), stepTotal: total });
+  }, []);
+  const markTourAbandon = useCallback((i, total, step) => {
+    if (!session?.access_token) return;
+    tourEvent("abandoned", { sessionId: getSessionId(), stepIndex: i, stepTotal: total,
+                             section: step?.section, stepTitle: step?.title });
+    supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
+      method: "PATCH", headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ tutorial_last_step: i + 1 }),
     }, session.access_token).catch(() => {});
   }, [session]);
 
@@ -11193,6 +11385,9 @@ export default function App() {
     setTab: (pg, tab) => { if (pg === "cmd") setDashTab(tab); },
     openSampleProject,
     onFinish: markTourComplete,
+    onStart: markTourStart,
+    onStep: markTourStep,
+    onAbandon: markTourAbandon,
   };
 
   // Data freshness, read from the newest activity-log entry rather than the
@@ -11299,6 +11494,11 @@ export default function App() {
   useEffect(() => {
     if (!session?.user_id) return;
     startSession(supa, session);
+    initTourTracking({
+      supa, token: session.access_token, userId: session.user_id,
+      device: vp.isCompact ? "mobile" : "desktop",
+    });
+    return () => endTourTracking();
   }, [session?.user_id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close the mobile drawer whenever the viewport grows back to desktop.
@@ -11357,7 +11557,17 @@ export default function App() {
     <TourProvider T={T} nav={tourNav}>
       <TourInviteCard T={T} show={showTourInvite}
         role={session?.role} name={session?.full_name}
-        onDismiss={() => setShowTourInvite(false)} />
+        onAccept={() => setShowTourInvite(false)}
+        onDismiss={() => {
+          setShowTourInvite(false);
+          tourEvent("declined", { sessionId: getSessionId() });
+          if (session?.access_token) {
+            supa(`/rest/v1/user_profiles?id=eq.${session.user_id}`, {
+              method: "PATCH", headers: { Prefer: "return=minimal" },
+              body: JSON.stringify({ tutorial_dismissed_at: new Date().toISOString() }),
+            }, session.access_token).catch(() => {});
+          }
+        }} />
       <DeadlineAlertPopups T={T} session={session}
         blockingAlertActive={blockingAlertActive} setBlockingAlertActive={setBlockingAlertActive} />
       <PddAlertPMO T={T} session={session} supa={supa}
