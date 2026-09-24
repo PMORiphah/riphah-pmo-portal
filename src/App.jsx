@@ -8811,14 +8811,17 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
   const listNear = useNear();
   const convNear = useNear();
   const [projects,       setProjects]       = useState([]);
-  const [summary,        setSummary]        = useState([]); // {id, project_id, is_read_by_pmo, created_at, user_profiles:{role}}
+  const [summary,        setSummary]        = useState([]); // {id, project_id, author_id, is_read_by_pmo, created_at, user_profiles:{role}}
+  const [readIds,        setReadIds]        = useState(new Set()); // comments this user has opened
   const [userAssignments,setUserAssignments]= useState(new Set());
   const [selId,          setSelId]          = useState(null);
   const [selProject,     setSelProject]     = useState(null);
   const [thread,         setThread]         = useState([]);
   const [threadPMs,      setThreadPMs]      = useState([]);
   const [loadingThread,  setLoadingThread]  = useState(false);
-  const [view, setView] = useState(session.role === "project_manager" ? "all" : "inbox");
+  // Only the PMO has an Inbox tab. Anyone else starting on "inbox" would land on
+  // a filter with no tab to leave it by, and see an empty list.
+  const [view, setView] = useState(session.role === "pmo" ? "inbox" : "all");
   const [replyingTo,     setReplyingTo]     = useState(null);
   const [body,           setBody]           = useState("");
   const [posting,        setPosting]        = useState(false);
@@ -8831,8 +8834,14 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       setProjects(projData);
     } catch(_) {}
     try {
-      const sumData = await supa("/rest/v1/comments?select=id,project_id,is_read_by_pmo,created_at,author_role,user_profiles!comments_author_id_fkey(role)&order=created_at.desc", {}, session.access_token);
+      const sumData = await supa("/rest/v1/comments?select=id,project_id,author_id,is_read_by_pmo,created_at,author_role,user_profiles!comments_author_id_fkey(role)&order=created_at.desc", {}, session.access_token);
       setSummary(sumData);
+    } catch(_) {}
+    // Who has read what is per person (comment_reads) — is_read_by_pmo only ever
+    // meant "the PMO has seen it", so it cannot mark anything new for anyone else.
+    try {
+      const reads = await supa("/rest/v1/comment_reads?select=comment_id", {}, session.access_token);
+      setReadIds(new Set((reads||[]).map(r => r.comment_id)));
     } catch(_) {}
     try {
       if (session.role === "project_manager") {
@@ -8882,6 +8891,9 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
             headers:{ "Prefer":"resolution=ignore-duplicates,return=minimal" } },
           session.access_token
         );
+        // Reflect it straight away so the "N new" marker on the project clears
+        // without waiting for the next poll.
+        setReadIds(prev => { const n = new Set(prev); toMark.forEach(c => n.add(c.id)); return n; });
         onReadChange?.();
       }
 
@@ -8959,11 +8971,13 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
     summary.forEach(c => {
       if (!m[c.project_id]) m[c.project_id] = { total:0, unread:0, lastAt:null };
       m[c.project_id].total++;
-      if (!c.is_read_by_pmo && (c.author_role || c.user_profiles?.role) !== "pmo") m[c.project_id].unread++;
+      // New to *this* reader: someone else wrote it and they have not opened it.
+      // Matches the sidebar badge, which has always counted it this way.
+      if (c.author_id !== session.user_id && !readIds.has(c.id)) m[c.project_id].unread++;
       if (!m[c.project_id].lastAt || c.created_at > m[c.project_id].lastAt) m[c.project_id].lastAt = c.created_at;
     });
     return m;
-  }, [summary]);
+  }, [summary, readIds, session.user_id]);
 
   const inboxCount = useMemo(() =>
     Object.values(commentsByProject).reduce((s, v) => s + v.unread, 0), [commentsByProject]);
@@ -9027,6 +9041,8 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
             <div style={{ padding:"24px 16px", textAlign:"center", color:T.dim, fontSize:12, lineHeight:1.7 }}>
               {view==="inbox"
                 ? "No unread updates from project managers."
+                : session.role === "guest"
+                  ? "No projects with comments yet."
                 : session.role === "project_manager"
                   ? "No projects assigned to you yet.\nContact the PMO to get access."
                   : "No projects with comments yet."}
