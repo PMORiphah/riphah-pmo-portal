@@ -149,6 +149,7 @@ If a page or an answer disagrees with these figures, it is wrong until proven ot
 - New or major visual features, and anything touching sign-in, go to `/preview/` first. The PMO reviews on phone and desktop before promotion.
 - Tag `pre-<feature>` before every deploy and verify on the live site. Screenshot after every change: a clean build and console have hidden visibly broken pages before.
 - Build queued features one at a time and ask before starting the next.
+- **New tables need explicit grants (Supabase change from 30 Oct 2026).** Every migration that creates a table or view in `public` must also run `grant select on public.<t> to anon; grant select, insert, update, delete on public.<t> to authenticated, service_role;`, or the Data API returns "permission denied". Access is still decided by RLS. Tables created before 30 Oct 2026 keep their grants.
 - **Schema changes: show the migration before running it. Bulk data changes: preview the exact rows, take a backup table (`backup_<date>_<table>`), and apply with per-item confirmation.**
 - Import date conflicts: ask about each project one by one; never decide silently.
 - Always ask whether to send the invitation email before creating a user.
