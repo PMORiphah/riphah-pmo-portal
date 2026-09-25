@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { History, Search, X, Send, Mail, Pencil, ChevronDown, ChevronRight,
          Clock, AlertTriangle, CheckCircle2, MessageSquare, Plus,
-         Upload, Download } from "lucide-react";
+         Upload, Download, ArrowLeft, CalendarRange, ListTree, List } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
-import { Select, Input, Button, CAN_HOVER } from "./ui.jsx";
+import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
+import { ProjectTasks } from "./Tasks.jsx";
 
 let _xlsx;
 const loadXLSX = () => (_xlsx ||= import("xlsx"));
@@ -81,7 +82,12 @@ function usePastStyles() {
    ─────────────────────────────────────────────────────────────────────────── */
 const XL_COLS = ["Project ID","Project Name","Campus","Fiscal Year","Approved Amount",
                  "Released Amount","Project Manager","Status","Why Still Open","Notes",
-                 "Last Followed Up"];
+                 "Last Followed Up","Planned Start","Planned Finish","Revised Finish",
+                 "Budget Release Date","Actual Start","Actual Finish"];
+// Date columns, in sheet order, and the field each one fills.
+const XL_DATES = [["Planned Start","start_date"],["Planned Finish","end_date"],
+                  ["Revised Finish","revised_end_date"],["Budget Release Date","budget_release_date"],
+                  ["Actual Start","actual_start_date"],["Actual Finish","actual_end_date"]];
 const STATUS_IN = { "open":"open", "closing":"closing", "closed":"closed" };
 
 const xlNum = (v) => {
@@ -129,6 +135,31 @@ function parseSheet(aoa, pmByName) {
       pm_user_id = pmByName[rawPm.toLowerCase()] || null;
       if (!pm_user_id) errors.push(`Row ${line}: no portal account for "${rawPm}" — imported with no manager.`);
     }
+    // The six schedule dates. Any one that cannot be read stops the row, as the
+    // amounts do; a wrong date is worse than a missing one.
+    const dates = {};
+    for (const [h, key] of XL_DATES) {
+      const i = col(h);
+      const v = i >= 0 ? xlDate(row[i]) : null;
+      if (v === undefined) { errors.push(`Row ${line}: ${h.toLowerCase()} "${row[i]}" not understood.`); return; }
+      dates[key] = v;
+    }
+    if (dates.start_date && dates.end_date && dates.end_date < dates.start_date) {
+      errors.push(`Row ${line}: "${name.slice(0,34)}" finishes before it starts.`); return;
+    }
+    // A budget release date becomes the actual start, as on CAPEX projects.
+    // Say so when the sheet gives a different actual start, rather than let
+    // the database quietly overwrite it.
+    if (dates.budget_release_date) {
+      if (dates.actual_start_date && dates.actual_start_date !== dates.budget_release_date)
+        errors.push(`Row ${line}: actual start ${dates.actual_start_date} replaced by the budget `
+                  + `release date ${dates.budget_release_date}.`);
+      dates.actual_start_date = dates.budget_release_date;
+    }
+    if (dates.actual_start_date && dates.actual_end_date && dates.actual_end_date < dates.actual_start_date) {
+      errors.push(`Row ${line}: "${name.slice(0,34)}" actual finish is before its actual start.`); return;
+    }
+
     const rawSt = String(row[iSt] ?? "").trim().toLowerCase();
     const status = STATUS_IN[rawSt] || "open";
     if (rawSt && !STATUS_IN[rawSt]) errors.push(`Row ${line}: status "${row[iSt]}" not recognised, using Open.`);
@@ -137,13 +168,321 @@ function parseSheet(aoa, pmByName) {
       campus: String(row[iCam] ?? "").trim() || null, fiscal_year: fy,
       approved_amount: app ?? 0, released_amount: rel ?? 0, pm_user_id, pm_label: rawPm,
       status, reason_open: String(row[iWhy] ?? "").trim() || null,
-      notes: String(row[iNo] ?? "").trim() || null, last_followed_up: fu });
+      notes: String(row[iNo] ?? "").trim() || null, last_followed_up: fu, ...dates });
   });
   return { errors, rows };
 }
 
-/* ── The thread ──────────────────────────────────────────────────────────── */
-function ThreadModal({ T, session, supa, row, isPMO, isCompact, onClose, onChanged }) {
+/* ── Schedule ────────────────────────────────────────────────────────────────
+   Six dates, all PMO-entered. The one that matters for chasing is the finish
+   the project is now held to: the revised finish when there is one, otherwise
+   the planned finish. A project is overdue when that date has passed and no
+   actual finish has been recorded.
+   ─────────────────────────────────────────────────────────────────────────── */
+const DAY = 86400000;
+const d0 = (s) => { if (!s) return null; const d = new Date(String(s).slice(0,10) + "T00:00:00"); return isNaN(d) ? null : d; };
+const today0 = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+const dayDiff = (a, b) => Math.round((b - a) / DAY);
+const fmtDate = (s) => { const d = d0(s); return d ? d.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }) : "—"; };
+const span = (n) => {
+  if (n == null) return "—";
+  const a = Math.abs(n);
+  if (a >= 60) { const m = Math.round(a / 30.44); return `${m} mo`; }
+  return `${a} day${a === 1 ? "" : "s"}`;
+};
+
+export function scheduleOf(r) {
+  const pe = d0(r.end_date), re = d0(r.revised_end_date), ae = d0(r.actual_end_date);
+  const due = re || pe;
+  if (ae) return { key:"finished", late: pe ? dayDiff(pe, ae) : null };
+  if (r.status === "closed") return { key:"closed" };
+  if (!due) return { key:"unscheduled" };
+  const t = today0();
+  if (due < t) return { key:"overdue", days: dayDiff(due, t), revised: !!re };
+  const slip = re && pe ? dayDiff(pe, re) : 0;
+  return { key: slip > 0 ? "revised" : "on_track", left: dayDiff(t, due), slip };
+}
+const SCHED = {
+  overdue:     { label:"Overdue",      color:DATA.danger },
+  revised:     { label:"Revised",      color:DATA.warning },
+  on_track:    { label:"On schedule",  color:BRAND.blueBright },
+  finished:    { label:"Finished",     color:DATA.positive },
+  closed:      { label:"Closed",       color:DATA.positive },
+  unscheduled: { label:"No dates",     color:"#8FA3BF" },
+};
+const schedLine = (s) => {
+  switch (s.key) {
+    case "overdue":  return `${span(s.days)} past ${s.revised ? "revised" : "planned"} finish`;
+    case "revised":  return `moved ${span(s.slip)} · ${span(s.left)} left`;
+    case "on_track": return `${span(s.left)} left`;
+    case "finished": return s.late == null ? "finished" : s.late > 0 ? `finished ${span(s.late)} late` : "finished on time";
+    case "closed":   return "closed";
+    default:         return "no schedule recorded";
+  }
+};
+
+
+/* ── Edit dates (PMO) ────────────────────────────────────────────────────── */
+const DATE_FIELDS = [
+  ["start_date",          "Planned start"],
+  ["end_date",            "Planned finish"],
+  ["revised_end_date",    "Revised expected finish"],
+  ["budget_release_date", "Budget release date"],
+  ["actual_start_date",   "Actual start"],
+  ["actual_end_date",     "Actual finish (PCD received)"],
+];
+
+function ScheduleModal({ T, session, supa, row, isCompact, onClose, onSaved }) {
+  const [f, setF] = useState(() => Object.fromEntries(DATE_FIELDS.map(([k]) => [k, row[k] || ""])));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+  // Same rule as the database: a release date becomes the actual start.
+  const set = (k, v) => setF(s => k === "budget_release_date" && v
+    ? { ...s, budget_release_date:v, actual_start_date:v } : { ...s, [k]:v });
+
+  const save = async () => {
+    setErr(null);
+    if (f.start_date && f.end_date && f.end_date < f.start_date)
+      return setErr("The planned finish can't be before the planned start.");
+    if (f.actual_start_date && f.actual_end_date && f.actual_end_date < f.actual_start_date)
+      return setErr("The actual finish can't be before the actual start.");
+    setBusy(true);
+    try {
+      await supa(`/rest/v1/past_projects?id=eq.${row.id}`, {
+        method:"PATCH", headers:{ Prefer:"return=minimal" },
+        body: JSON.stringify(Object.fromEntries(DATE_FIELDS.map(([k]) => [k, f[k] || null]))),
+      }, session.access_token);
+      onSaved();
+    } catch (e) { setErr(e.message || "Could not save the dates."); }
+    setBusy(false);
+  };
+
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+    padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
+    outline:"none", width:"100%", boxSizing:"border-box" };
+  const group = (title, keys, note) => (
+    <div style={{ marginBottom:SP.md, padding:SP.md, borderRadius:R.md, background:T.card2,
+      border:`1px solid ${T.border}` }}>
+      <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>{title}</div>
+      <div style={{ display:"grid", gap:SP.sm,
+        gridTemplateColumns: isCompact ? "1fr" : `repeat(${keys.length}, minmax(0,1fr))` }}>
+        {keys.map(k => (
+          <label key={k} style={{ display:"block" }}>
+            <div style={{ fontSize:11.5, color:T.muted, marginBottom:4 }}>
+              {DATE_FIELDS.find(x => x[0] === k)[1]}
+            </div>
+            <input type="date" value={f[k]} onChange={e => set(k, e.target.value)} style={inp} />
+          </label>
+        ))}
+      </div>
+      {note && <div style={{ fontSize:11.5, color:T.dim, marginTop:SP.sm, lineHeight:1.55 }}>{note}</div>}
+    </div>
+  );
+
+  return createPortal(
+    <div onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position:"fixed", inset:0, zIndex:1350, background:"rgba(3,8,16,0.74)",
+        backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", display:"flex",
+        alignItems: isCompact ? "flex-end" : "center", justifyContent:"center",
+        padding: isCompact ? 0 : SP.xl, animation:"pmoFade .18s ease" }}>
+      <div className="pmo-scale pmo-scroll" role="dialog" aria-modal="true" aria-label="Edit schedule"
+        style={{ width:640, maxWidth:"100%", maxHeight:"90vh", overflow:"auto", background:T.surface,
+          border:`1px solid ${T.border}`, borderRadius: isCompact ? `${R.xl}px ${R.xl}px 0 0` : R.xl,
+          boxShadow:T.shadowLg, padding:SP.xxl }}>
+        <div style={{ ...TYPE.display, fontSize:17, color:T.text, marginBottom:4 }}>Schedule dates</div>
+        <div style={{ fontSize:12.5, color:T.muted, marginBottom:SP.lg, lineHeight:1.6 }}>{row.name}</div>
+
+        {group("The plan", ["start_date","end_date","revised_end_date"],
+          "Revised expected finish is the date it is now held to. Leave it empty if the plan has not moved.")}
+        {group("What happened", ["budget_release_date","actual_start_date","actual_end_date"],
+          "Setting the budget release date also sets the actual start, as on current projects. "
+          + "Leave the actual finish empty while the project is still open.")}
+
+        {err && (
+          <div style={{ marginBottom:SP.md, padding:"9px 12px", borderRadius:R.sm,
+            background:`${DATA.danger}14`, border:`1px solid ${DATA.danger}3D`,
+            fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>
+        )}
+        <div style={{ display:"flex", justifyContent:"flex-end", gap:SP.sm }}>
+          <Button T={T} variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button T={T} variant="primary" onClick={save} loading={busy}>Save dates</Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+
+/* ── Timeline tab ────────────────────────────────────────────────────────── */
+function ScheduleTab({ T, session, supa, row, roll, isPMO, isCompact, onChanged }) {
+  const [editing, setEditing] = useState(false);
+  const [hot, setHot] = useState(null);
+  const s = scheduleOf(row);
+  const sm = SCHED[s.key];
+
+  const ps = d0(row.start_date), pe = d0(row.end_date), re = d0(row.revised_end_date);
+  const as = d0(row.actual_start_date), ae = d0(row.actual_end_date), br = d0(row.budget_release_date);
+  const ts = d0(roll?.tasks_start), te = d0(roll?.tasks_end);
+  const t = today0();
+
+  // Bars to draw, each only when both ends exist.
+  const bars = [
+    ps && pe && { key:"plan", label:"Planned", a:ps, b:pe, color:BRAND.blueBright,
+                  note:`${fmtDate(row.start_date)} → ${fmtDate(row.end_date)} · ${span(dayDiff(ps,pe))}` },
+    ps && re && { key:"rev", label:"Revised", a:ps, b:re, color:DATA.warning,
+                  note:`finish moved ${pe ? span(dayDiff(pe,re)) : ""} to ${fmtDate(row.revised_end_date)}` },
+    as && { key:"act", label:"Actual", a:as, b:ae || t, open:!ae, color:ae ? DATA.positive : sm.color,
+            note: ae ? `${fmtDate(row.actual_start_date)} → ${fmtDate(row.actual_end_date)} · ${span(dayDiff(as,ae))}`
+                     : `started ${fmtDate(row.actual_start_date)} · ${span(dayDiff(as,t))} so far, not finished` },
+    ts && te && { key:"wbs", label:"Work (WBS)", a:ts, b:te, color:"#8B7CF6", pct: roll?.weighted_pct,
+                  note:`${roll.task_count} task${roll.task_count === 1 ? "" : "s"} · ${Math.round(roll.weighted_pct || 0)}% complete` },
+  ].filter(Boolean);
+
+  const all = [ps, pe, re, as, ae, br, ts, te].filter(Boolean);
+  let axis = null;
+  if (bars.length) {
+    let lo = new Date(Math.min(...all, t)), hi = new Date(Math.max(...all, t));
+    lo = new Date(lo.getFullYear(), lo.getMonth(), 1);
+    hi = new Date(hi.getFullYear(), hi.getMonth() + 1, 1);
+    axis = { lo, hi, span: Math.max((hi - lo) / DAY, 1) };
+  }
+  const pct = (d) => axis ? ((d - axis.lo) / DAY) / axis.span * 100 : 0;
+  const ticks = [];
+  if (axis) {
+    // Few enough labels to never touch: about four on a phone, nine on a desk.
+    const months = Math.round(axis.span / 30.44);
+    const want = Math.max(1, Math.ceil(months / (isCompact ? 4 : 9)));
+    const step = [1, 2, 3, 6, 12, 24].find(n => n >= want) || 24;
+    for (let d = new Date(axis.lo); d <= axis.hi; d = new Date(d.getFullYear(), d.getMonth() + step, 1))
+      ticks.push(new Date(d));
+  }
+
+  const tiles = [
+    ["Planned start", row.start_date], ["Planned finish", row.end_date],
+    ["Revised finish", row.revised_end_date], ["Budget released", row.budget_release_date],
+    ["Actual start", row.actual_start_date], ["Actual finish", row.actual_end_date],
+  ];
+  const facts = [
+    ["Planned duration", ps && pe ? span(dayDiff(ps, pe)) : "—"],
+    ["Actual duration", as ? (ae ? span(dayDiff(as, ae)) : `${span(dayDiff(as, t))} so far`) : "—"],
+    ["Finish moved by", pe && re ? span(dayDiff(pe, re)) : "—"],
+    [s.key === "finished" ? "Finished" : "Against the plan", schedLine(s)],
+  ];
+
+  return (
+    <div>
+      <Surface T={T} tone={sm.color} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.lg }}>
+        <div style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", marginBottom:SP.md }}>
+          <CalendarRange size={15} color={T.textOf(sm.color)} />
+          <span style={{ ...TYPE.label, color:T.text }}>Schedule</span>
+          <span style={{ ...TYPE.caption, fontWeight:700, padding:"2px 9px", borderRadius:R.pill,
+            background:`${sm.color}${T.badge}`, color:T.textOf(sm.color) }}>{sm.label}</span>
+          <span style={{ ...TYPE.caption, color:T.muted }}>{schedLine(s)}</span>
+          {isPMO && (
+            <div style={{ marginLeft:"auto" }}>
+              <Button T={T} variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Edit dates</Button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display:"grid", gap:SP.sm, marginBottom:SP.md,
+          gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(6, minmax(0,1fr))" }}>
+          {tiles.map(([k, v]) => (
+            <div key={k} style={{ padding:"9px 11px", borderRadius:R.md, background:T.card2,
+              border:`1px solid ${T.border}` }}>
+              <div style={{ ...TYPE.label, color:T.dim, fontSize:8.5 }}>{k}</div>
+              <div style={{ fontSize:12.5, fontWeight:700, marginTop:3,
+                color: v ? T.text : T.dim }}>{fmtDate(v)}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display:"grid", gap:SP.sm,
+          gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(4, minmax(0,1fr))" }}>
+          {facts.map(([k, v]) => (
+            <div key={k}>
+              <div style={{ ...TYPE.caption, color:T.dim }}>{k}</div>
+              <div style={{ fontSize:13, color:T.textSoft, fontWeight:600, marginTop:2 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </Surface>
+
+      {axis ? (
+        <Surface T={T} pad={isCompact ? SP.md : SP.lg}>
+          <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>Plan against reality</div>
+          <div style={{ display:"grid", gridTemplateColumns:`${isCompact ? 74 : 110}px 1fr`, rowGap:10,
+            alignItems:"center" }}>
+            <div />
+            <div style={{ position:"relative", height:16 }}>
+              {ticks.map(d => (
+                <span key={+d} style={{ position:"absolute", left:`${pct(d)}%`, ...TYPE.caption,
+                  color:T.dim, fontSize:10, transform:"translateX(-50%)", whiteSpace:"nowrap" }}>
+                  {d.toLocaleDateString("en-GB", { month:"short", year:"2-digit" })}
+                </span>
+              ))}
+            </div>
+            {bars.map(b => (
+              <Fragment key={b.key}>
+                <div style={{ fontSize:12, color:T.muted, fontWeight:600 }}>{b.label}</div>
+                <div style={{ position:"relative", height:22, background:T.card2, borderRadius:R.sm }}
+                  onMouseEnter={() => setHot(b.key)} onMouseLeave={() => setHot(null)}>
+                  <div aria-hidden="true" style={{ position:"absolute", top:-5, bottom:-5, left:`${pct(t)}%`,
+                    width:0, borderLeft:`1.5px dashed ${DATA.danger}AA`, zIndex:2, pointerEvents:"none" }} />
+                  <div style={{ position:"absolute", top:4, bottom:4, left:`${pct(b.a)}%`,
+                    width:`${Math.max(pct(b.b) - pct(b.a), 0.8)}%`, borderRadius:4,
+                    background: b.open
+                      ? `repeating-linear-gradient(135deg, ${b.color}66 0 6px, ${b.color}33 6px 12px)`
+                      : `${b.color}${hot === b.key ? "EE" : "BB"}`,
+                    border:`1px solid ${b.color}`, boxShadow: hot === b.key ? T.glowSoft(b.color) : "none",
+                    transition:`background ${MOTION.fast}, box-shadow ${MOTION.base}`, overflow:"hidden" }}>
+                    {b.pct != null && (
+                      <div style={{ width:`${Math.min(b.pct,100)}%`, height:"100%", background:`${b.color}` }} />
+                    )}
+                  </div>
+                  {hot === b.key && (
+                    <div style={{ position:"absolute", bottom:"calc(100% + 6px)",
+                      left:`${Math.min(Math.max(pct(b.a), 2), 60)}%`, zIndex:5, padding:"6px 10px",
+                      borderRadius:R.sm, background:T.surfaceRaised, border:`1px solid ${T.borderStrong}`,
+                      boxShadow:T.shadowLg, fontSize:11.5, color:T.text, whiteSpace:"nowrap",
+                      pointerEvents:"none" }}>{b.note}</div>
+                  )}
+                </div>
+              </Fragment>
+            ))}
+            <div />
+            <div style={{ position:"relative", height:14 }}>
+              <span style={{ position:"absolute", left:`${pct(t)}%`, transform:"translateX(-50%)",
+                ...TYPE.caption, fontSize:10, color:T.textOf(DATA.danger), fontWeight:700 }}>today</span>
+            </div>
+          </div>
+          {br && (
+            <div style={{ ...TYPE.caption, color:T.dim, marginTop:SP.md }}>
+              Budget released {fmtDate(row.budget_release_date)}.
+            </div>
+          )}
+        </Surface>
+      ) : (
+        <div style={{ padding:SP.xl, textAlign:"center", borderRadius:R.md,
+          border:`1px dashed ${T.borderStrong}`, color:T.muted, fontSize:13, lineHeight:1.6 }}>
+          No schedule recorded yet.
+          {isPMO ? " Use Edit dates to add the planned and actual dates." : ""}
+        </div>
+      )}
+
+      {editing && (
+        <ScheduleModal T={T} session={session} supa={supa} row={row} isCompact={isCompact}
+          onClose={() => setEditing(false)}
+          onSaved={() => { setEditing(false); onChanged?.(); }} />
+      )}
+    </div>
+  );
+}
+
+
+/* ── Follow-up tab: the reason it is still open, and the thread ─────────── */
+function FollowUpPanel({ T, session, supa, row, isPMO, onChanged }) {
   const [msgs, setMsgs]   = useState(null);
   const [body, setBody]   = useState("");
   const [busy, setBusy]   = useState(false);
@@ -162,7 +501,7 @@ function ThreadModal({ T, session, supa, row, isPMO, isCompact, onClose, onChang
     } catch (e) { setErr(e.message); setMsgs([]); }
   }, [row.id, supa, session]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { endRef.current?.scrollIntoView({ block:"nearest" }); }, [msgs]);
+  useEffect(() => { if (msgs?.length) endRef.current?.scrollIntoView({ block:"nearest" }); }, [msgs]);
 
   const post = async () => {
     if (!body.trim()) return;
@@ -199,144 +538,353 @@ function ThreadModal({ T, session, supa, row, isPMO, isCompact, onClose, onChang
     padding:"9px 11px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", width:"100%", boxSizing:"border-box" };
 
-  return createPortal(
-    <div onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
-      style={{ position:"fixed", inset:0, zIndex:1300, background:"rgba(3,8,16,0.74)",
-        backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", display:"flex",
-        alignItems: isCompact ? "flex-end" : "center", justifyContent:"center",
-        padding: isCompact ? 0 : SP.xl, animation:"pmoFade .18s ease" }}>
-      <div className="pmo-scale pmo-scroll" role="dialog" aria-modal="true" aria-label="Past project follow-up"
-        style={{ width:680, maxWidth:"100%", maxHeight:"90vh", overflow:"auto",
-          background:T.surface, border:`1px solid ${T.border}`,
-          borderRadius: isCompact ? `${R.xl}px ${R.xl}px 0 0` : R.xl,
-          boxShadow:T.shadowLg }}>
-
-        <div style={{ position:"sticky", top:0, zIndex:2, padding:`${SP.lg}px ${SP.xl}px`,
-          background:`linear-gradient(90deg, ${st.color}${T.washStrong}, transparent)`,
-          borderBottom:`1px solid ${T.border}`, backdropFilter:"blur(10px)" }}>
-          <div style={{ display:"flex", alignItems:"flex-start", gap:SP.md }}>
-            <div style={{ flex:1, minWidth:0 }}>
-              {row.code && <div style={{ ...TYPE.mono, fontSize:9.5, color:T.dim }}>{row.code}</div>}
-              <div style={{ ...TYPE.display, fontSize:16, color:T.text, lineHeight:1.35 }}>{row.name}</div>
-              <div style={{ ...TYPE.caption, color:T.muted, marginTop:4 }}>
-                {row.fiscal_year} · {row.campus || "No campus"} · {row.pm_name || "No project manager"}
-              </div>
-            </div>
-            <button className="pmo-focusable pmo-btn" onClick={onClose} aria-label="Close"
-              style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, padding:4 }}>
-              <X size={17} />
+  return (
+    <div style={{ maxWidth:820 }}>
+      {/* Why it is still open — PMO's field. A PM reads it and answers below. */}
+      <div style={{ marginBottom:SP.lg }}>
+        <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:6 }}>
+          <span style={{ ...TYPE.label, color:T.muted }}>Why it is still open</span>
+          {isPMO && !editing && (
+            <button className="pmo-focusable pmo-btn" onClick={() => setEditing(true)}
+              aria-label="Edit reason and status"
+              style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:2 }}>
+              <Pencil size={12} />
             </button>
-          </div>
-          <div style={{ display:"flex", gap:SP.sm, marginTop:SP.md, flexWrap:"wrap" }}>
-            {[["Approved", fmtM(row.approved_amount)],
-              ["Released", fmtM(row.released_amount)],
-              ["Status", st.label]].map(([k,v],i) => (
-              <div key={k} style={{ padding:"6px 12px", borderRadius:R.sm, background:T.card2,
-                border:`1px solid ${T.border}` }}>
-                <div style={{ ...TYPE.label, color:T.dim, fontSize:8.5 }}>{k}</div>
-                <div style={{ fontSize:12.5, fontWeight:700,
-                  color: i===2 ? T.textOf(st.color) : T.text }}>{v}</div>
-              </div>
-            ))}
-          </div>
+          )}
         </div>
-
-        <div style={{ padding:`${SP.lg}px ${SP.xl}px` }}>
-          {/* Why it is still open — PMO's field. A PM reads it and answers below. */}
-          <div style={{ marginBottom:SP.lg }}>
-            <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:6 }}>
-              <span style={{ ...TYPE.label, color:T.muted }}>Why it is still open</span>
-              {isPMO && !editing && (
-                <button className="pmo-focusable pmo-btn" onClick={() => setEditing(true)}
-                  style={{ background:"none", border:"none", cursor:"pointer", color:T.dim, padding:2 }}>
-                  <Pencil size={12} />
-                </button>
-              )}
+        {editing ? (
+          <div>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
+              style={{ ...inp, resize:"vertical", lineHeight:1.6, marginBottom:SP.sm }} />
+            <div style={{ display:"flex", gap:SP.sm, alignItems:"center", flexWrap:"wrap" }}>
+              <Select T={T} value={status} onChange={e => setStatus(e.target.value)}>
+                {Object.entries(STATUS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+              </Select>
+              <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm }}>
+                <Button T={T} variant="ghost" onClick={() => {
+                  setEditing(false); setReason(row.reason_open || ""); setStatus(row.status); }}>
+                  Cancel
+                </Button>
+                <Button T={T} variant="primary" onClick={saveRecord} loading={busy}>Save</Button>
+              </div>
             </div>
-            {editing ? (
-              <div>
-                <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
-                  style={{ ...inp, resize:"vertical", lineHeight:1.6, marginBottom:SP.sm }} />
-                <div style={{ display:"flex", gap:SP.sm, alignItems:"center", flexWrap:"wrap" }}>
-                  <Select T={T} value={status} onChange={e => setStatus(e.target.value)}>
-                    {Object.entries(STATUS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </Select>
-                  <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm }}>
-                    <Button T={T} variant="ghost" onClick={() => {
-                      setEditing(false); setReason(row.reason_open || ""); setStatus(row.status); }}>
-                      Cancel
-                    </Button>
-                    <Button T={T} variant="primary" onClick={saveRecord} loading={busy}>Save</Button>
+          </div>
+        ) : (
+          <div style={{ fontSize:13, color: row.reason_open ? T.textSoft : T.dim, lineHeight:1.65,
+            padding:"11px 13px", borderRadius:R.md, background:T.card2,
+            borderLeft:`3px solid ${st.color}` }}>
+            {row.reason_open || "No reason recorded yet."}
+          </div>
+        )}
+      </div>
+
+      <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>
+        Follow-up {msgs?.length ? `· ${msgs.length} message${msgs.length===1?"":"s"}` : ""}
+      </div>
+
+      {msgs === null ? (
+        <div style={{ fontSize:12.5, color:T.dim }}>Loading…</div>
+      ) : msgs.length === 0 ? (
+        <div style={{ padding:SP.lg, textAlign:"center", borderRadius:R.md,
+          border:`1px dashed ${T.borderStrong}`, color:T.dim, fontSize:12.5 }}>
+          Nothing asked yet. Start the conversation below.
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:SP.sm }}>
+          {msgs.map(m => {
+            const mine = m.author_id === session.user_id;
+            const pmo  = m.author_role === "pmo";
+            return (
+              <div key={m.id} style={{ display:"flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
+                <div style={{ maxWidth:"82%", padding:"10px 13px", borderRadius:R.md,
+                  background: pmo ? `${BRAND.blue}1A` : T.card2,
+                  border:`1px solid ${pmo ? `${BRAND.blue}3D` : T.border}` }}>
+                  <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:4 }}>
+                    <span style={{ fontSize:11.5, fontWeight:700, color: pmo ? T.textOf(BRAND.blue) : T.text }}>
+                      {m.author_name || "Unknown"}
+                    </span>
+                    <span style={{ ...TYPE.caption, color:T.dim }}>{when(m.created_at)}</span>
                   </div>
+                  <div style={{ fontSize:13, color:T.textSoft, lineHeight:1.6, whiteSpace:"pre-wrap" }}>{m.body}</div>
                 </div>
               </div>
-            ) : (
-              <div style={{ fontSize:13, color: row.reason_open ? T.textSoft : T.dim, lineHeight:1.65,
-                padding:"11px 13px", borderRadius:R.md, background:T.card2,
-                borderLeft:`3px solid ${st.color}` }}>
-                {row.reason_open || "No reason recorded yet."}
-              </div>
-            )}
-          </div>
+            );
+          })}
+          <div ref={endRef} />
+        </div>
+      )}
 
-          <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>
-            Follow-up {msgs?.length ? `· ${msgs.length} message${msgs.length===1?"":"s"}` : ""}
-          </div>
+      {err && <div style={{ marginTop:SP.sm, fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>}
 
-          {msgs === null ? (
-            <div style={{ fontSize:12.5, color:T.dim }}>Loading…</div>
-          ) : msgs.length === 0 ? (
-            <div style={{ padding:SP.lg, textAlign:"center", borderRadius:R.md,
-              border:`1px dashed ${T.borderStrong}`, color:T.dim, fontSize:12.5 }}>
-              Nothing asked yet. Start the conversation below.
+      <div style={{ display:"flex", gap:SP.sm, marginTop:SP.lg, alignItems:"flex-end" }}>
+        <textarea value={body} onChange={e => setBody(e.target.value)} rows={2}
+          placeholder={isPMO ? "Ask the project manager where this stands…" : "Reply with the current position…"}
+          onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) post(); }}
+          style={{ ...inp, resize:"vertical", lineHeight:1.55 }} />
+        <Button T={T} variant="primary" icon={Send} onClick={post}
+          loading={busy} disabled={!body.trim()}>Post</Button>
+      </div>
+    </div>
+  );
+}
+
+
+/* ── One past project, full page ─────────────────────────────────────────── */
+function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBack, onChanged }) {
+  const [tab, setTab] = useState("followup");
+  const st = STATUS[row.status] || STATUS.open;
+  const s  = scheduleOf(row);
+  const sm = SCHED[s.key];
+  // PMO always; the project's own manager once the page is opened to them.
+  // The database decides either way.
+  const canWriteTasks = isPMO || (row.pm_user_id && row.pm_user_id === session.user_id);
+
+  return (
+    <div className="past-row">
+      <button className="pmo-focusable pmo-btn" onClick={onBack}
+        style={{ display:"inline-flex", alignItems:"center", gap:6, background:"none", border:"none",
+          cursor:"pointer", color:T.muted, padding:"2px 0", marginBottom:SP.md, ...TYPE.caption,
+          fontSize:12.5 }}>
+        <ArrowLeft size={14} /> Past projects
+      </button>
+
+      <Surface T={T} tone={st.color} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.md }}>
+        {row.code && <div style={{ ...TYPE.mono, fontSize:10, color:T.dim }}>{row.code}</div>}
+        <div style={{ ...TYPE.display, fontSize: isCompact ? 17 : 20, color:T.text, lineHeight:1.3 }}>{row.name}</div>
+        <div style={{ ...TYPE.caption, color:T.muted, marginTop:4 }}>
+          {row.fiscal_year} · {row.campus || "No campus"} · {row.pm_name || "No project manager"}
+        </div>
+        <div style={{ display:"flex", gap:SP.sm, marginTop:SP.md, flexWrap:"wrap" }}>
+          {[["Approved", `PKR ${fmtM(row.approved_amount)}`, null],
+            ["Released", `PKR ${fmtM(row.released_amount)}`, null],
+            ["Status", st.label, st.color],
+            ["Schedule", s.key === "overdue" ? `Overdue ${span(s.days)}` : sm.label, sm.color]].map(([k,v,c]) => (
+            <div key={k} style={{ padding:"6px 12px", borderRadius:R.sm, background:T.card2,
+              border:`1px solid ${T.border}` }}>
+              <div style={{ ...TYPE.label, color:T.dim, fontSize:8.5 }}>{k}</div>
+              <div style={{ fontSize:12.5, fontWeight:700, color: c ? T.textOf(c) : T.text }}>{v}</div>
             </div>
-          ) : (
-            <div style={{ display:"flex", flexDirection:"column", gap:SP.sm }}>
-              {msgs.map(m => {
-                const mine = m.author_id === session.user_id;
-                const pmo  = m.author_role === "pmo";
+          ))}
+        </div>
+      </Surface>
+
+      <div className="pmo-scroll" style={{ overflowX: isCompact ? "auto" : "visible", marginBottom:SP.lg }}>
+        <Tabs T={T} active={tab} onChange={setTab} isMobile={isCompact}
+          tabs={[
+            { id:"followup", label:"Follow-up", Icon:MessageSquare },
+            { id:"timeline", label:"Timeline",  Icon:CalendarRange },
+            { id:"wbs",      label:"WBS",       Icon:ListTree },
+          ]} />
+      </div>
+
+      {tab === "followup" && (
+        <FollowUpPanel key={row.id + row.updated_at} T={T} session={session} supa={supa}
+          row={row} isPMO={isPMO} onChanged={onChanged} />
+      )}
+      {tab === "timeline" && (
+        <ScheduleTab T={T} session={session} supa={supa} row={row} roll={roll}
+          isPMO={isPMO} isCompact={isCompact} onChanged={onChanged} />
+      )}
+      {tab === "wbs" && (
+        <ProjectTasks kind="past" T={T} session={session} supa={supa} projectId={row.id}
+          canWrite={canWriteTasks} isPMO={isPMO} isCompact={isCompact} onChanged={onChanged} />
+      )}
+    </div>
+  );
+}
+
+
+/* ── Every past project on one time axis ─────────────────────────────────── */
+function PastGantt({ T, list, rollup, isCompact, onOpen }) {
+  const [hover, setHover] = useState(null);
+  const scroller = useRef(null);
+  const centred = useRef(false);
+  const t = today0();
+
+  const { groups, unscheduled, axis } = useMemo(() => {
+    const drawn = [], none = [];
+    list.forEach(r => {
+      const a = d0(r.start_date) || d0(r.actual_start_date);
+      const b = d0(r.revised_end_date) || d0(r.end_date) || d0(r.actual_end_date);
+      (a && b && b >= a) ? drawn.push({ ...r, _a:a, _b:b }) : none.push(r);
+    });
+    let axis = null;
+    if (drawn.length) {
+      let lo = t, hi = t;
+      drawn.forEach(r => [r._a, r._b, d0(r.end_date), d0(r.actual_end_date), d0(r.actual_start_date)]
+        .forEach(d => { if (d) { if (d < lo) lo = d; if (d > hi) hi = d; } }));
+      const from = new Date(lo.getFullYear(), lo.getMonth() - 1, 1);
+      const to   = new Date(hi.getFullYear(), hi.getMonth() + 2, 1);
+      const months = [];
+      for (let d = new Date(from); d < to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) months.push(d);
+      axis = { from, to, months, span:(to - from) / DAY };
+    }
+    const m = {};
+    drawn.forEach(r => { (m[r.fiscal_year] ||= []).push(r); });
+    Object.values(m).forEach(g => g.sort((x, y) => x._a - y._a));
+    return { groups:Object.entries(m).sort((a, b) => b[0].localeCompare(a[0])), unscheduled:none, axis };
+  }, [list]);
+
+  const COLW = isCompact ? 40 : 54;
+  const W = axis ? axis.months.length * COLW : 0;
+  const x = (d) => axis ? ((d - axis.from) / DAY) / axis.span * W : 0;
+  const NAMEW = isCompact ? 128 : 260, ROWH = isCompact ? 32 : 36;
+
+  useEffect(() => {
+    if (!axis || centred.current || !scroller.current) return;
+    centred.current = true;
+    scroller.current.scrollLeft = Math.max(0, x(t) - scroller.current.clientWidth * 0.45);
+  });
+
+  if (!axis) return (
+    <div style={{ padding:SP.xxl, textAlign:"center", background:T.surface, border:`1px solid ${T.border}`,
+      borderRadius:R.lg, color:T.muted, fontSize:13, lineHeight:1.6 }}>
+      None of these past projects has dates yet, so there is nothing to draw.
+      Open a project and use Timeline → Edit dates, or add the date columns to the import sheet.
+    </div>
+  );
+
+  const legend = [["Planned", BRAND.blueBright], ["Moved by revision", DATA.warning],
+                  ["Actual", DATA.positive], ["Overdue", DATA.danger]];
+
+  return (
+    <div>
+      <div style={{ display:"flex", gap:SP.md, flexWrap:"wrap", marginBottom:SP.sm }}>
+        {legend.map(([k, c]) => (
+          <span key={k} style={{ display:"inline-flex", alignItems:"center", gap:6, ...TYPE.caption, color:T.muted }}>
+            <span style={{ width:14, height:8, borderRadius:2, background:`${c}BB`, border:`1px solid ${c}` }} />{k}
+          </span>
+        ))}
+      </div>
+      <div style={{ display:"flex", background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg,
+        overflow:"hidden", boxShadow:T.shadow }}>
+        {/* Names, fixed */}
+        <div style={{ width:NAMEW, flexShrink:0, borderRight:`1px solid ${T.border}` }}>
+          <div style={{ height:30, borderBottom:`1px solid ${T.borderStrong}` }} />
+          {groups.map(([fy, rows]) => (
+            <Fragment key={fy}>
+              <div style={{ height:26, display:"flex", alignItems:"center", padding:"0 10px",
+                background:T.card2, ...TYPE.label, color:T.text, fontSize:10.5 }}>{fy}</div>
+              {rows.map(r => {
+                const s = scheduleOf(r);
                 return (
-                  <div key={m.id} style={{ display:"flex",
-                    justifyContent: mine ? "flex-end" : "flex-start" }}>
-                    <div style={{ maxWidth:"82%", padding:"10px 13px", borderRadius:R.md,
-                      background: pmo ? `${BRAND.blue}1A` : T.card2,
-                      border:`1px solid ${pmo ? `${BRAND.blue}3D` : T.border}` }}>
-                      <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:4 }}>
-                        <span style={{ fontSize:11.5, fontWeight:700,
-                          color: pmo ? T.textOf(BRAND.blue) : T.text }}>
-                          {m.author_name || "Unknown"}
-                        </span>
-                        <span style={{ ...TYPE.caption, color:T.dim }}>{when(m.created_at)}</span>
-                      </div>
-                      <div style={{ fontSize:13, color:T.textSoft, lineHeight:1.6,
-                        whiteSpace:"pre-wrap" }}>{m.body}</div>
+                  <div key={r.id} onClick={() => onOpen(r)}
+                    onMouseEnter={() => setHover(r.id)} onMouseLeave={() => setHover(null)}
+                    style={{ height:ROWH, display:"flex", flexDirection:"column", justifyContent:"center",
+                      padding:"0 10px", cursor:"pointer", borderBottom:`1px solid ${T.border}`,
+                      background: hover === r.id ? T.surfaceRaised : "transparent" }}>
+                    <div style={{ fontSize:12, color:T.text, fontWeight:600, overflow:"hidden",
+                      textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
+                    <div style={{ ...TYPE.caption, fontSize:10.5, color: s.key === "overdue"
+                      ? T.textOf(DATA.danger) : T.dim, whiteSpace:"nowrap", overflow:"hidden",
+                      textOverflow:"ellipsis" }}>
+                      {s.key === "overdue" ? `Overdue ${span(s.days)}` : (r.campus || r.pm_name || SCHED[s.key].label)}
                     </div>
                   </div>
                 );
               })}
-              <div ref={endRef} />
+            </Fragment>
+          ))}
+        </div>
+
+        {/* Bars, scrolling */}
+        <div ref={scroller} className="pmo-scroll" style={{ overflowX:"auto", flex:1, position:"relative" }}>
+          <div style={{ width:W, position:"relative" }}>
+            <div style={{ height:30, display:"flex", borderBottom:`1px solid ${T.borderStrong}` }}>
+              {axis.months.map(m => (
+                <div key={+m} style={{ width:COLW, flexShrink:0, ...TYPE.caption, fontSize:10,
+                  color: m.getMonth() === 0 ? T.text : T.dim, fontWeight: m.getMonth() === 0 ? 700 : 400,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  borderLeft:`1px solid ${m.getMonth() === 0 ? T.borderStrong : T.border}` }}>
+                  {m.getMonth() === 0 ? m.getFullYear() : MONTHS[m.getMonth()]}
+                </div>
+              ))}
             </div>
-          )}
-
-          {err && (
-            <div style={{ marginTop:SP.sm, fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>
-          )}
-
-          <div style={{ display:"flex", gap:SP.sm, marginTop:SP.lg, alignItems:"flex-end" }}>
-            <textarea value={body} onChange={e => setBody(e.target.value)} rows={2}
-              placeholder={isPMO ? "Ask the project manager where this stands…"
-                                 : "Reply with the current position…"}
-              onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) post(); }}
-              style={{ ...inp, resize:"vertical", lineHeight:1.55 }} />
-            <Button T={T} variant="primary" icon={Send} onClick={post}
-              loading={busy} disabled={!body.trim()}>Post</Button>
+            {groups.map(([fy, rows]) => (
+              <Fragment key={fy}>
+                <div style={{ height:26, background:T.card2 }} />
+                {rows.map(r => {
+                  const s  = scheduleOf(r);
+                  const pa = d0(r.start_date), pe = d0(r.end_date), re = d0(r.revised_end_date);
+                  const as = d0(r.actual_start_date), ae = d0(r.actual_end_date);
+                  const planA = pa || r._a, planB = pe || r._b;
+                  const over = s.key === "overdue";
+                  const pctDone = rollup[r.id]?.weighted_pct;
+                  return (
+                    <div key={r.id} onClick={() => onOpen(r)}
+                      onMouseEnter={() => setHover(r.id)} onMouseLeave={() => setHover(null)}
+                      style={{ height:ROWH, position:"relative", cursor:"pointer",
+                        borderBottom:`1px solid ${T.border}`,
+                        background: hover === r.id ? T.surfaceRaised : "transparent" }}>
+                      {/* planned */}
+                      <div style={{ position:"absolute", top:ROWH/2 - 7, height:10, left:x(planA),
+                        width:Math.max(x(planB) - x(planA), 4), borderRadius:3,
+                        background:`${BRAND.blueBright}${hover === r.id ? "CC" : "88"}`,
+                        border:`1px solid ${over && !re ? DATA.danger : BRAND.blueBright}`,
+                        transition:`background ${MOTION.fast}` }} />
+                      {/* moved by revision */}
+                      {re && pe && re > pe && (
+                        <div style={{ position:"absolute", top:ROWH/2 - 7, height:10, left:x(pe),
+                          width:Math.max(x(re) - x(pe), 3), borderRadius:3,
+                          background:`repeating-linear-gradient(135deg, ${DATA.warning}99 0 5px, ${DATA.warning}44 5px 10px)`,
+                          border:`1px solid ${over ? DATA.danger : DATA.warning}` }} />
+                      )}
+                      {/* actual, under the plan */}
+                      {as && (
+                        <div style={{ position:"absolute", top:ROWH/2 + 5, height:4, left:x(as),
+                          width:Math.max(x(ae || t) - x(as), 3), borderRadius:2,
+                          background: ae ? DATA.positive : over ? DATA.danger : `${DATA.positive}88` }} />
+                      )}
+                      {ae && (
+                        <CheckCircle2 size={12} color={DATA.positive}
+                          style={{ position:"absolute", top:ROWH/2 - 8, left:x(ae) + 3 }} />
+                      )}
+                      {over && (
+                        <span style={{ position:"absolute", top:ROWH/2 - 9, left:x(re || pe) + 6,
+                          ...TYPE.caption, fontSize:10, fontWeight:700, color:T.textOf(DATA.danger),
+                          whiteSpace:"nowrap" }}>overdue {span(s.days)}</span>
+                      )}
+                      {pctDone != null && !over && (
+                        <span style={{ position:"absolute", top:ROWH/2 - 9, left:x(re || planB) + 6,
+                          ...TYPE.caption, fontSize:10, color:T.dim, whiteSpace:"nowrap" }}>
+                          {Math.round(pctDone)}% of tasks</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </Fragment>
+            ))}
+            {/* today */}
+            <div aria-hidden="true" style={{ position:"absolute", top:0, bottom:0, left:x(t), width:0,
+              borderLeft:`1.5px dashed ${DATA.danger}AA`, pointerEvents:"none" }}>
+              <span style={{ position:"absolute", top:36, left:4, ...TYPE.caption, fontSize:9.5,
+                fontWeight:700, color:T.textOf(DATA.danger) }}>today</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>,
-    document.body
+
+      {unscheduled.length > 0 && (
+        <div style={{ marginTop:SP.lg }}>
+          <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>
+            Not on the chart · {unscheduled.length} without a start and finish date
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {unscheduled.map(r => (
+              <button key={r.id} className="pmo-focusable pmo-btn" onClick={() => onOpen(r)}
+                style={{ padding:"5px 11px", borderRadius:R.pill, border:`1px solid ${T.border}`,
+                  background:T.surface, color:T.textSoft, fontSize:12, cursor:"pointer" }}>
+                <span style={{ color:T.dim }}>{r.fiscal_year}</span> · {r.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
 
 
 /* ── Import ─────────────────────────────────────────────────────────────── */
@@ -390,6 +938,9 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
         approved_amount:r.approved_amount, released_amount:r.released_amount,
         pm_user_id:r.pm_user_id, status:r.status, reason_open:r.reason_open,
         notes:r.notes, last_followed_up:r.last_followed_up, created_by:session.user_id,
+        start_date:r.start_date, end_date:r.end_date, revised_end_date:r.revised_end_date,
+        budget_release_date:r.budget_release_date, actual_start_date:r.actual_start_date,
+        actual_end_date:r.actual_end_date,
       }));
       for (let i = 0; i < body.length; i += 50) {
         await supa("/rest/v1/past_projects",
@@ -547,7 +1098,9 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
   const [fy, setFy]       = useState("");
   const [status, setStatus] = useState("open_all");
   const [pm, setPm]       = useState("");
-  const [open, setOpen]   = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const [view, setView]   = useState("list");      // list | timeline
+  const [rollup, setRollup] = useState({});       // past_project_id -> task roll-up
   const [collapsed, setCollapsed] = useState({});
   const [hover, setHover] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -562,8 +1115,16 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
                            {}, session.access_token);
       setRows(Array.isArray(r) ? r : []);
     } catch (e) { setErr(e.message); setRows([]); }
+    // Task progress for the timeline. A failure here must not cost the page.
+    try {
+      const t = await supa("/rest/v1/past_project_task_rollup?select=*", {}, session.access_token);
+      setRollup(Object.fromEntries((Array.isArray(t) ? t : []).map(x => [x.past_project_id, x])));
+    } catch { /* roll-up is optional */ }
   }, [supa, session]);
   useEffect(() => { load(); }, [load]);
+  const openRow = useMemo(() => (rows || []).find(r => r.id === openId) || null, [rows, openId]);
+  const pageRef = useRef(null);
+  useEffect(() => { pageRef.current?.scrollTo?.({ top:0 }); }, [openId]);
 
   // Needed for the template's dropdown and to match a name back to an account
   // on import. PMO only — a project manager never sees these controls.
@@ -616,6 +1177,7 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
       value: src.reduce((s,r) => s + (parseFloat(r.approved_amount)||0), 0),
       stale: src.filter(r => (r.days_since_followup ?? 9999) > 30).length,
       unasked: src.filter(r => !r.update_count).length,
+      overdue: src.filter(r => scheduleOf(r).key === "overdue").length,
     };
   }, [rows]);
 
@@ -669,6 +1231,14 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
                       + "to show, so it is worth writing properly."],
       ["Notes","Anything else worth keeping. Optional."],
       ["Last Followed Up","YYYY-MM-DD, if known. Optional."],
+      ["Planned Start","YYYY-MM-DD. When the project was meant to start. Optional."],
+      ["Planned Finish","YYYY-MM-DD. When it was meant to finish. Must not be before Planned Start."],
+      ["Revised Finish","YYYY-MM-DD. The date it is now expected to finish, if it has moved."],
+      ["Budget Release Date","YYYY-MM-DD. When the money was released. This also becomes the "
+                           + "Actual Start, as it does for current projects."],
+      ["Actual Start","YYYY-MM-DD. Leave blank if a Budget Release Date is given."],
+      ["Actual Finish","YYYY-MM-DD. When the work was really completed (PCD received). "
+                     + "Leave blank while it is still open."],
     ];
     guide.forEach(([k,v],i) => {
       const r=7+i, a=g.getCell(`B${r}`), b=g.getCell(`C${r}`);
@@ -679,13 +1249,14 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
       [a,b].forEach(c => c.border={ bottom:{ style:"hair", color:{argb:RULE} } });
       g.getRow(r).height=21;
     });
-    title(20,"Things worth knowing",13);
+    const tip = 7 + guide.length + 2;
+    title(tip,"Things worth knowing",13);
     [ "These are kept completely separate from FY 26-27. They appear in no current-year total, "
       + "chart, deadline alert or the risk matrix.",
       "A project manager sees only their own past projects and can reply in the portal. They "
       + "cannot change the reason or close a project — those stay with PMO.",
       "Leave unused rows blank. Empty rows are ignored.",
-    ].forEach((t,i) => para(22 + i*2, "\u2022  " + t));
+    ].forEach((t,i) => para(tip + 2 + i*2, "\u2022  " + t));
 
     const ws = wb.addWorksheet("Past Projects", {
       views:[{ state:"frozen", xSplit:2, ySplit:1, showGridLines:false }],
@@ -693,7 +1264,7 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
                   printTitlesRow:"1:1" },
     });
     ws.columns = XL_COLS.map((h,i) => ({ header:h,
-      width:[16,46,14,13,18,18,26,12,58,32,17][i] }));
+      width:[16,46,14,13,18,18,26,12,58,32,17,15,15,15,19,15,15][i] }));
     ws.getRow(1).height=28; ws.getRow(1).eachCell(head);
 
     const names = (pmSuggest||[]).map(p => (p.full_name || p.username))
@@ -707,7 +1278,7 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
         cell.border={ bottom:{style:"hair",color:{argb:RULE}}, right:{style:"hair",color:{argb:RULE}} };
         if (i % 2 === 0) cell.fill={ type:"pattern", pattern:"solid", fgColor:{argb:"FFF6F9FC"} };
         if (c === 5 || c === 6) cell.numFmt = "#,##0";
-        if (c === 11) cell.numFmt = "yyyy-mm-dd";
+        if (c >= 11) cell.numFmt = "yyyy-mm-dd";
         if (c === 3 || c === 4 || c === 8) cell.alignment={ horizontal:"center" };
       }
       row.getCell(4).dataValidation = { type:"list", allowBlank:true,
@@ -717,7 +1288,7 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
       if (names.length) row.getCell(7).dataValidation = { type:"list", allowBlank:true,
         formulae:[`"${names.join(",")}"`] };
     }
-    ws.autoFilter = { from:"A1", to:"K1" };
+    ws.autoFilter = { from:"A1", to:"Q1" };
 
     const buf = await wb.xlsx.writeBuffer();
     const url = URL.createObjectURL(new Blob([buf],
@@ -731,7 +1302,7 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
   if (rows === null) return <div style={{ padding:SP.xxl, color:T.muted, fontSize:13 }}>Loading past projects…</div>;
 
   return (
-    <div className="pmo-scroll" style={{ flex:1, overflow:"auto", background:T.page }}>
+    <div ref={pageRef} className="pmo-scroll" style={{ flex:1, overflow:"auto", background:T.page }}>
       <div style={{ padding: isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px`, position:"relative" }}>
 
         {/* Ambient wash. Sits in its own absolutely-positioned layer with
@@ -748,16 +1319,24 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
         </div>
 
         <div style={{ position:"relative", zIndex:1 }}>
+          {openRow ? (
+            <PastProjectDetail T={T} session={session} supa={supa} row={openRow}
+              roll={rollup[openRow.id]} isPMO={isPMO} isCompact={isCompact}
+              onBack={() => setOpenId(null)} onChanged={load} />
+          ) : (<>
           {/* Summary strip */}
           <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
-            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(4, minmax(0,1fr))" }}>
+            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(5, minmax(0,1fr))" }}>
             {[
               { k:"Still open",      v:totals.openCount, sub:"from prior years", c:DATA.danger,  Icon:History },
+              { k:"Overdue",         v:totals.overdue, sub:"past their finish date", c:DATA.danger, Icon:CalendarRange },
               { k:"Value involved",  v:`PKR ${fmtM(totals.value)}`, sub:"approved on open items", c:BRAND.gold, Icon:AlertTriangle },
               { k:"Not chased",      v:totals.stale, sub:"over 30 days", c:DATA.warning, Icon:Clock },
               { k:"Never asked",     v:totals.unasked, sub:"no follow-up at all", c:T.muted, Icon:MessageSquare },
-            ].map(({k,v,sub,c,Icon}, i) => (
+            ].map(({k,v,sub,c,Icon}, i, all) => (
               <div key={k} className="past-row" style={{ animationDelay:`${i*50}ms`,
+                // Five cards in a two-column phone grid: the last one takes the row.
+                gridColumn: isCompact && all.length % 2 && i === all.length - 1 ? "1 / -1" : undefined,
                 position:"relative", overflow:"hidden", padding:`${SP.md}px ${SP.lg}px`,
                 background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg,
                 boxShadow:T.shadow }}>
@@ -798,6 +1377,20 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
             </Select>
             <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:SP.sm,
               flexWrap:"wrap" }}>
+              <div role="tablist" aria-label="View" style={{ display:"flex", padding:2, borderRadius:R.pill,
+                border:`1px solid ${T.border}`, background:T.surface }}>
+                {[["list","List",List],["timeline","Timeline",CalendarRange]].map(([v,l,Ic]) => (
+                  <button key={v} role="tab" aria-selected={view === v}
+                    className="pmo-focusable pmo-btn" onClick={() => setView(v)}
+                    style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 11px",
+                      borderRadius:R.pill, border:"none", cursor:"pointer", fontSize:12,
+                      background: view === v ? `${BRAND.blue}22` : "transparent",
+                      color: view === v ? T.textOf(BRAND.blue) : T.muted,
+                      fontWeight: view === v ? 700 : 500 }}>
+                    <Ic size={12} /> {l}
+                  </button>
+                ))}
+              </div>
               <span style={{ ...TYPE.caption, color:T.muted }}>{list.length} shown</span>
               {isPMO && (
                 <>
@@ -814,7 +1407,10 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
 
           {err && <div style={{ fontSize:12.5, color:T.textOf(DATA.danger), marginBottom:SP.md }}>{err}</div>}
 
-          {groups.length === 0 ? (
+          {view === "timeline" ? (
+            <PastGantt T={T} list={list} rollup={rollup} isCompact={isCompact}
+              onOpen={(r) => setOpenId(r.id)} />
+          ) : groups.length === 0 ? (
             <div style={{ padding:SP.xxl, textAlign:"center", background:T.surface,
               border:`1px solid ${T.border}`, borderRadius:R.lg, color:T.muted, fontSize:13 }}>
               Nothing matches these filters.
@@ -845,7 +1441,7 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
                       const on = CAN_HOVER ? { onMouseEnter:() => setHover(r.id),
                                                onMouseLeave:() => setHover(null) } : {};
                       return (
-                        <div key={r.id} {...on} onClick={() => setOpen(r)}
+                        <div key={r.id} {...on} onClick={() => setOpenId(r.id)}
                           className="past-row" style={{ animationDelay:`${Math.min(i,8)*40 + gi*60}ms`,
                             position:"relative", overflow:"hidden", cursor:"pointer",
                             display:"flex", alignItems:"stretch", gap:SP.md,
@@ -873,6 +1469,15 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
                                   <Clock size={10} /> stale
                                 </span>
                               )}
+                              {(() => {
+                                const sc = scheduleOf(r);
+                                return sc.key === "overdue" && (
+                                  <span style={{ display:"inline-flex", alignItems:"center", gap:4,
+                                    ...TYPE.caption, fontWeight:700, color:T.textOf(DATA.danger) }}>
+                                    <CalendarRange size={10} /> overdue {span(sc.days)}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <div style={{ ...TYPE.caption, color:T.muted, marginTop:3 }}>
                               {r.campus || "No campus"} · {r.pm_name || "No project manager"} · {ago(r.days_since_followup)}
@@ -906,6 +1511,7 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
               </div>
             );
           })}
+          </>)}
         </div>
       </div>
 
@@ -915,11 +1521,6 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
           onClose={() => setImporting(false)} onDone={load} />
       )}
 
-      {open && (
-        <ThreadModal T={T} session={session} supa={supa} row={open} isPMO={isPMO}
-          isCompact={isCompact} onClose={() => setOpen(null)}
-          onChanged={() => { load(); setOpen(o => o && rows.find(x => x.id === o.id) || o); }} />
-      )}
     </div>
   );
 }

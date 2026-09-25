@@ -34,6 +34,13 @@ const STATUS = {
   cancelled:  { label:"Cancelled",   color:"#6B7A8C" },
 };
 
+/* The same breakdown serves two kinds of project. Past projects keep their
+   tasks in their own table so nothing of theirs can reach an FY 26-27 view. */
+const TASK_SOURCES = {
+  project: { table:"project_tasks",      fk:"project_id" },
+  past:    { table:"past_project_tasks", fk:"past_project_id" },
+};
+
 /* Build the tree and roll leaf dates and progress up into the parents. */
 function buildTree(rows) {
   const byId = new Map(rows.map(r => [r.id, { ...r, children: [] }]));
@@ -167,7 +174,7 @@ function parseSheet(aoa) {
 }
 
 /* ── Add / edit ─────────────────────────────────────────────────────────── */
-function TaskModal({ T, session, supa, projectId, task, parentId, isPMO, nextOrder, onClose, onSaved, isMobile }) {
+function TaskModal({ T, session, supa, src, projectId, task, parentId, isPMO, nextOrder, onClose, onSaved, isMobile }) {
   const [f, setF] = useState(() => task ? { ...task } : {
     name:"", owner:"", start_date:"", end_date:"", pct_complete:0,
     status:"not_started", is_milestone:false, notes:"",
@@ -190,7 +197,7 @@ function TaskModal({ T, session, supa, projectId, task, parentId, isPMO, nextOrd
     setSaving(true);
     try {
       const body = {
-        project_id: projectId,
+        [src.fk]: projectId,
         parent_id: task ? task.parent_id : (parentId || null),
         name: f.name.trim(),
         owner: f.owner?.trim() || null,
@@ -209,11 +216,11 @@ function TaskModal({ T, session, supa, projectId, task, parentId, isPMO, nextOrd
       }
       if (!task?.id) body.sort_order = nextOrder ?? 0;
       if (task?.id) {
-        await supa(`/rest/v1/project_tasks?id=eq.${task.id}`,
+        await supa(`/rest/v1/${src.table}?id=eq.${task.id}`,
           { method:"PATCH", body:JSON.stringify(body), headers:{ Prefer:"return=minimal" } },
           session.access_token);
       } else {
-        await supa("/rest/v1/project_tasks",
+        await supa(`/rest/v1/${src.table}`,
           { method:"POST", body:JSON.stringify(body), headers:{ Prefer:"return=minimal" } },
           session.access_token);
       }
@@ -330,7 +337,7 @@ function TaskModal({ T, session, supa, projectId, task, parentId, isPMO, nextOrd
 
 
 /* ── Import ─────────────────────────────────────────────────────────────── */
-function ImportModal({ T, session, supa, projectId, existingCount, onClose, onDone, isMobile }) {
+function ImportModal({ T, session, supa, src, projectId, existingCount, onClose, onDone, isMobile }) {
   const [parsed, setParsed] = useState(null);      // { tasks, errors, fileName }
   const [mode, setMode]     = useState("append");  // append | replace
   const [busy, setBusy]     = useState(false);
@@ -369,7 +376,7 @@ function ImportModal({ T, session, supa, projectId, existingCount, onClose, onDo
     setBusy(true); setErr(null);
     try {
       if (mode === "replace") {
-        await supa(`/rest/v1/project_tasks?project_id=eq.${projectId}`,
+        await supa(`/rest/v1/${src.table}?${src.fk}=eq.${projectId}`,
           { method:"DELETE", headers:{ Prefer:"return=minimal" } }, session.access_token);
       }
       // Insert level by level so a child always has its parent's id to hand.
@@ -378,14 +385,14 @@ function ImportModal({ T, session, supa, projectId, existingCount, onClose, onDo
       let order = 0;
       for (const t of parsed.tasks) {
         const body = {
-          project_id: projectId,
+          [src.fk]: projectId,
           parent_id: t.level > 1 ? (parentAt[t.level - 1] || null) : null,
           name: t.name, owner: t.owner,
           start_date: t.start_date, end_date: t.end_date,
           pct_complete: t.pct_complete, status: t.status,
           is_milestone: t.is_milestone, sort_order: order++,
         };
-        const [row] = await supa("/rest/v1/project_tasks",
+        const [row] = await supa(`/rest/v1/${src.table}`,
           { method:"POST", body:JSON.stringify(body), headers:{ Prefer:"return=representation" } },
           session.access_token);
         parentAt[t.level] = row?.id;
@@ -530,7 +537,8 @@ function ImportModal({ T, session, supa, projectId, existingCount, onClose, onDo
 }
 
 /* ── The panel ──────────────────────────────────────────────────────────── */
-export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isCompact }) {
+export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isCompact, kind = "project", onChanged }) {
+  const src = TASK_SOURCES[kind] || TASK_SOURCES.project;
   const [rows, setRows] = useState(null);
   const [err, setErr]   = useState(null);
   const [open, setOpen] = useState({});
@@ -542,12 +550,15 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
   const load = useCallback(async () => {
     try {
       const r = await supa(
-        `/rest/v1/project_tasks?project_id=eq.${projectId}&select=*&order=sort_order.asc,created_at.asc`,
+        `/rest/v1/${src.table}?${src.fk}=eq.${projectId}&select=*&order=sort_order.asc,created_at.asc`,
         {}, session.access_token);
       setRows(Array.isArray(r) ? r : []);
     } catch (e) { setErr(e.message); setRows([]); }
-  }, [supa, session, projectId]);
+  }, [supa, session, projectId, src]);
   useEffect(() => { load(); }, [load]);
+  // After a write, reload here and let the parent refresh anything it derives
+  // from the tasks (the past-project timeline roll-up).
+  const reload = useCallback(async () => { await load(); onChanged?.(); }, [load, onChanged]);
 
   const tree = useMemo(() => rows ? buildTree(rows) : [], [rows]);
   const list = useMemo(() => flatten(tree, 0, open), [tree, open]);
@@ -736,10 +747,10 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
   const patch = async (id, body) => {
     setBusy(true);
     try {
-      await supa(`/rest/v1/project_tasks?id=eq.${id}`,
+      await supa(`/rest/v1/${src.table}?id=eq.${id}`,
         { method:"PATCH", body:JSON.stringify(body), headers:{ Prefer:"return=minimal" } },
         session.access_token);
-      await load();
+      await reload();
     } catch (e) { setErr(e.message); }
     setBusy(false);
   };
@@ -747,8 +758,8 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
   const del = async (t) => {
     setBusy(true);
     try {
-      await supa(`/rest/v1/project_tasks?id=eq.${t.id}`, { method:"DELETE" }, session.access_token);
-      setConfirmDel(null); await load();
+      await supa(`/rest/v1/${src.table}?id=eq.${t.id}`, { method:"DELETE" }, session.access_token);
+      setConfirmDel(null); await reload();
     } catch (e) { setErr(e.message); }
     setBusy(false);
   };
@@ -947,16 +958,16 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
       )}
 
       {modal && (
-        <TaskModal T={T} session={session} supa={supa} projectId={projectId}
+        <TaskModal T={T} session={session} supa={supa} src={src} projectId={projectId}
           task={modal.task} parentId={modal.parentId} isPMO={isPMO} isMobile={isCompact}
           nextOrder={(rows || []).reduce((m, r) => Math.max(m, r.sort_order || 0), 0) + 1}
-          onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />
+          onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
       )}
 
       {importing && (
-        <ImportModal T={T} session={session} supa={supa} projectId={projectId}
+        <ImportModal T={T} session={session} supa={supa} src={src} projectId={projectId}
           existingCount={rows.length} isMobile={isCompact}
-          onClose={() => setImporting(false)} onDone={load} />
+          onClose={() => setImporting(false)} onDone={reload} />
       )}
 
       {confirmDel && (

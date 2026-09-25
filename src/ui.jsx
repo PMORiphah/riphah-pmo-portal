@@ -1355,8 +1355,11 @@ export function Tabs({ T, tabs, active, onChange, isMobile, onDirection }) {
   const [hover, setHover] = useState(null);
 
   const measure = useCallback(() => {
+    // Each button sits in its own position:relative wrapper, so the button's
+    // own offsetLeft is always 0. Measure the wrapper, which is positioned
+    // against the strip, or the underline never leaves the first tab.
     const el = wrap.current?.querySelector(`[data-tab="${active}"]`);
-    if (el) setInd({ left:el.offsetLeft, width:el.offsetWidth });
+    if (el) setInd({ left:el.parentElement.offsetLeft + el.offsetLeft, width:el.offsetWidth });
   }, [active]);
 
   useEffect(() => {
