@@ -106,7 +106,7 @@ Views: `portfolio_metrics`, `portfolio_dashboard`, `project_metrics`, `investmen
 
 - Cashflow: CAPEX 556,534,400 + PMDC 119,708,611 = 676,243,011; investment 190,571,528; grand total 866,814,539.
 - Monthly capex_total: Jul 23,234,323 · Aug 49,683,808 · Sep 102,999,150 · Oct 80,778,749 · Nov 106,927,080 · Dec 48,821,465 · Jan 52,056,587 · Feb 42,598,392 · Mar 30,372,069 · Apr 57,243,300 · May 52,953,774 · Jun 28,574,315.
-- Stages (CAPEX, updated 28 Sep 2026): pdd_not_submitted 72 · df_review 3 · ed_review 9 · approved 18 · closed 1. (Nine DF-review projects moved to ED review on 28 Sep at the PMO's request; backup `backup_20260928_projects`.)
+- Stages (CAPEX, updated 28 Sep 2026): pdd_not_submitted 72 · df_review 3 · mt_review 9 · approved 18 · closed 1. (On 28 Sep, at the PMO's request, nine DF-review projects moved to ED review and then to MT review; `backup_20260928_projects` holds their original DF-review rows.)
 - Campuses: Al-Mizan 28 · G-7 24 · I-14 21 · GGC 12 · Lahore 4 · PRH 3 · RIH 3 · Hostels 3 · Central Secretariat 3 · MHH 1 · Malakand 1.
 - Risks: 35 (27 high, 5 medium, 3 low, 0 critical by design).
 - PM loads: Tahir 28 · Nouman 23 · Najam 21 · Asim 12 · Waleed 4 · Maj. Shuaib 3 · Fazal 3 · Ali Naqi 2 · Altaf, Col Tariq, Daud, Ishfaq, Naqash 1 each. 2 CAPEX projects have no PM.
