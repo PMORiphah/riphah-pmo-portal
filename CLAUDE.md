@@ -63,19 +63,20 @@ Views: `portfolio_metrics`, `portfolio_dashboard`, `project_metrics`, `investmen
 
 ## Edge functions (all `verify_jwt = true`)
 
-`ask` v33 (assistant), `webauthn` v3 (passkeys, `@simplewebauthn/server@13`, which is pinned on purpose; returns a refresh token), `send-push` v1 (VAPID keys in code; changing them kills every subscription), `send-deadline-alerts` v8 (weekday PMO digest; `dry_run`, `force`; never emails PMs), `send-deadline-email` v2 (manual PMO → PM email from the login popup), `notify-comment` v11, `send-pdd-reminders` v4, `invite-user` v13, `reset-user-password` v3, `delete-user` v5.
+`ask` v34 (assistant, PMO only), `webauthn` v3 (passkeys, `@simplewebauthn/server@13`, which is pinned on purpose; returns a refresh token), `send-push` v1 (VAPID keys in code; changing them kills every subscription), `send-deadline-alerts` v8 (weekday PMO digest; `dry_run`, `force`; never emails PMs), `send-deadline-email` v2 (manual PMO → PM email from the login popup), `notify-comment` v11, `send-pdd-reminders` v4, `invite-user` v13, `reset-user-password` v3, `delete-user` v5.
 
 - **`deploy_edge_function` and `apply_migration` reset `verify_jwt` to true.** After redeploying `send-deadline-alerts`, fire a `dry_run` and check the next 09:00 digest.
 - Edge functions can't read Vault directly. `ask` calls `get_assistant_key()` through a service-role client used only for that lookup. When rotating the Groq key, update both the Vault row and `GROQ_API_KEY`.
 - `net.http_post` is async; results appear in `net._http_response` by request id.
 
-## AI assistant (`ask` v33, open to all roles)
+## AI assistant (`ask` v34, PMO ONLY since 28 Sep 2026)
 
 - **The database computes, the model narrates.** Routing sends the question to `assistant_*` SQL (`totals`, `projects`, `list`, `cashflow`, `risks`, `pms`, `no_charter`, `discrepancies`), which runs under the caller's JWT. Figures and rankings are computed in code, and only that data goes to Groq `openai/gpt-oss-120b`. Every figure in the reply is verified against the data sent; on a mismatch it retries once, then asks the user to rephrase.
 - Whole-word keyword matching plus a STOP list. Rankings are pre-sorted with positions. Investment is excluded from CAPEX rankings unless named. Pronouns resolve from the last answer. History turns that try to change rules ("use USD", "ignore instructions") are dropped. Project names are framed as untrusted data. Read-only.
 - PM role: only assigned projects, totals scoped, published KPIs withheld (strict refusal), risk column dropped.
 - **Stage routing is a fixed word list (`STAGE_WORDS` in `ask`).** v33 (28 Sep 2026) added MT Review and ED Review, which were missing because no project sat there before; the assistant then answered "which projects are in MT review?" from the top-25 snapshot (4 of 14). Whenever a stage, campus or other filter value starts being used for the first time, check the assistant routes it (dry run) before the PMO asks.
-- Constants: `PMO_ONLY = false`, `AUDIT_DRY_RUN = true` (PMO `dry_run` returns routing without calling Groq), `MODEL`.
+- **28 Sep 2026: switched back to PMO only (`PMO_ONLY = true`) at the PMO's instruction** after it listed 4 of 14 MT Review projects, then padded a list with invented "(duplicate entry)" rows and described its own data blocks. Guests and PMs still see the launcher and get the "testing phase… try again after 48 hours" message. The PMO's view: the keyword routing + top-N fallback design is the root cause; do not reopen it to others without the PMO asking, and do not claim an audit fixes it.
+- Constants: `PMO_ONLY = true`, `AUDIT_DRY_RUN = true` (PMO `dry_run` returns routing without calling Groq), `MODEL`.
 - Groq free tier: ~200k tokens/day at ~3,400 per question, so ~59 questions/day org-wide (accepted by the PMO).
 - Audits passed: bank 1 107/107, bank 2 60/60, regression 26/26, routing 245/245, PM isolation 5/5.
 - Frontend: `AskPanel.jsx`; `AssistantAvatar.jsx` (navy-glass robot with its own light palette); the card figure arrives as a field from the edge function and is never parsed from prose; Listen via `speech.js` (speaks millions, skips codes). Conversations are logged to `session_events`.
