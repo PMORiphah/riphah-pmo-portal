@@ -3516,6 +3516,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
     budget_release_date:project?.budget_release_date||"",
     start_date:project?.start_date||"", end_date:project?.end_date||"",
     actual_start_date:project?.actual_start_date||"", actual_end_date:project?.actual_end_date||"",
+    pcd_received_date:project?.pcd_received_date||"",
     duration_months:project?.duration_months||"", pct_complete:project?.pct_complete||0,
     manual_schedule_flag:project?.manual_schedule_flag||"", manual_budget_flag:project?.manual_budget_flag||"",
     notes:project?.notes||"",
@@ -3538,6 +3539,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         project_type:form.project_type||null, priority:form.priority||null, start_date:form.start_date||null,
         end_date:form.end_date||null,
         actual_start_date:form.actual_start_date||null, actual_end_date:form.actual_end_date||null,
+        pcd_received_date:form.pcd_received_date||null,
         notes:form.notes||null,
         duration_months:calcDurationMonths(form.start_date, form.end_date),
         manual_schedule_flag:form.manual_schedule_flag||null, manual_budget_flag:form.manual_budget_flag||null,
@@ -3651,8 +3653,11 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
               {(() => { const d = calcDurationMonths(form.start_date, form.end_date); return d != null ? `${d} months (auto)` : "— (set both dates)"; })()}
             </div>
           </Col>
+        </Row>
+        <Row>
           <Col><label style={lbl}>Actual Start Date</label><input type="date" value={form.actual_start_date} onChange={e=>set("actual_start_date",e.target.value)} style={inp}/></Col>
           <Col><label style={lbl}>Actual End Date <span style={{fontSize:10,color:T.dim}}>(closed only)</span></label><input type="date" value={form.actual_end_date} onChange={e=>set("actual_end_date",e.target.value)} style={inp}/></Col>
+          <Col><label style={lbl}>PCD Receiving Date</label><input type="date" value={form.pcd_received_date} onChange={e=>set("pcd_received_date",e.target.value)} style={inp}/></Col>
         </Row>
         <Row mb={0}>
           <Col><label style={lbl}>% Complete</label><input type="number" min="0" max="100" value={form.pct_complete} onChange={e=>set("pct_complete",e.target.value)} style={inp}/></Col>
@@ -3698,6 +3703,7 @@ const EXCEL_COLS = {
   "Planned End Date":         "end_date",
   "Actual Start Date":        "actual_start_date",
   "Actual End Date":          "actual_end_date",
+  "PCD Receiving Date":       "pcd_received_date",
   "Duration (months)":        "duration_months",
   "% Complete":               "pct_complete",
   "Schedule Flag":            "manual_schedule_flag",
@@ -3768,10 +3774,10 @@ const EXCEL_COL_LOOKUP = (() => {
     "actual start":            "actual_start_date",
     "actual end date":         "actual_end_date",
     "actual end":              "actual_end_date",
-    "pcd receiving date":      "actual_end_date",
-    "pcd received date":       "actual_end_date",
-    "pcd date":                "actual_end_date",
-    "pcd":                     "actual_end_date",
+    "pcd receiving date":      "pcd_received_date",
+    "pcd received date":       "pcd_received_date",
+    "pcd date":                "pcd_received_date",
+    "pcd":                     "pcd_received_date",
     "duration (months)":       "duration_months",
     "duration":                "duration_months",
     "% complete":              "pct_complete",
@@ -3813,7 +3819,7 @@ async function downloadTemplate() {
     29.6, 20.7,           // Amount Released, Payments Made
     "No", "No",           // Carry Forward, Payments Pending
     "2025-10-01", "2026-09-30", 12, // Planned Start, Planned End, Duration
-    "2025-10-15", "",           // Actual Start, Actual End (blank if not closed)
+    "2025-10-15", "", "",       // Actual Start, Actual End, PCD Receiving Date (blank if not closed)
     77,                    // % Complete
     "on_time", "within",  // Schedule Flag, Budget Flag
     "Islamabad",           // Region
@@ -4031,6 +4037,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
         end_date:            r.end_date            ||null,
         actual_start_date:   r.actual_start_date    ||null,
         actual_end_date:     r.actual_end_date      ||null,
+        pcd_received_date:   r.pcd_received_date    ||null,
         duration_months:     calcDurationMonths(r.start_date||null, r.end_date||null),
         pct_complete:        Math.min(100,Math.max(0,parseFloat(r.pct_complete)||0)),
         manual_schedule_flag:["not_started","on_time","delayed"].includes(r.manual_schedule_flag)?r.manual_schedule_flag:null,
@@ -4431,6 +4438,7 @@ function ProjectsPage({ T, session, onSelectProject,
         p.end_date                                             || "",
         p.actual_start_date                                    || "",
         p.actual_end_date                                      || "",
+        p.pcd_received_date                                    || "",
         p.duration_months                                      || "",
         p.pct_complete                                         || 0,
         p.manual_schedule_flag                                 || "",
@@ -7245,11 +7253,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <Row label="Planned End Date"   value={fmtD(details.end_date)} />
           <Row label="Actual Start Date"  value={fmtD(details.actual_start_date)} />
           <Row label="Actual End Date"    value={fmtD(details.actual_end_date)} />
-          {/* PCD = Project Closing Document. Received when the project is
-              handed over, so this doubles as the closing date. Shown even when
+          {/* PCD = Project Closing Document. Its own date since 28 Sep 2026:
+              the PCD can arrive after the work actually ends. Shown even when
               empty: "—" is the useful signal that no PCD is on record yet. */}
-          <Row label="PCD Receiving Date" value={fmtD(details.actual_end_date)}
-               vc={details.actual_end_date ? T.textOf(EMERALD) : undefined} />
+          <Row label="PCD Receiving Date" value={fmtD(details.pcd_received_date)}
+               vc={details.pcd_received_date ? T.textOf(EMERALD) : undefined} />
           <Row label="Campus / Site" value={details.campus || "—"} />
           <Row label="Duration"     value={plannedDuration.long} />
           {details.notes && (

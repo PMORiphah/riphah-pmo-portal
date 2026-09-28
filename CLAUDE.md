@@ -89,6 +89,7 @@ Views: `portfolio_metrics`, `portfolio_dashboard`, `project_metrics`, `investmen
 
 `dash`, `projects`, `campus`, `perf`, `risks`, `cashflows` (PMO), `timeline` (PMO + guest), `past` (PMO), `upd`, `gallery`, `team`, admin `users`, `logs`, `settings` (PMO). PMs see only Projects, Campus/Sites, Performance, Updates, Gallery, Team & About.
 - Adding a KPI or stage needs three edits: the card, the `stageMap`/filter branch, and `cardLabels`.
+- **PCD Receiving Date** is its own column, `projects.pcd_received_date` (since 28 Sep 2026), entered in Edit Project next to Actual End Date. It is no longer the same as `actual_end_date`. Excel import aliases *PCD Receiving/Received Date, PCD Date, PCD* map to it. The "PCDs Received" dashboard card still counts `closed` projects.
 - Published dashboard KPIs are typed text in `settings.dashboard_kpis`: SU requested 1,166.33M, carry forward PKR 572M, budget reduction 606.81M.
 - Updates: "N new" and the sidebar badge count from the reader's own `comment_reads`.
 - **Past Projects** (25 Sep 2026): list or Gantt (grouped by fiscal year); clicking a project opens a full page with Follow-up / Timeline / WBS tabs. Dates are PMO-only; overdue = revised finish (else planned finish) passed with no actual finish, shown on the page only (not in the digest or popups). The WBS reuses `ProjectTasks` with `kind="past"`. Import/template carry the six date columns; a budget release date becomes the actual start (trigger `trg_past_sync_actual_start`).
