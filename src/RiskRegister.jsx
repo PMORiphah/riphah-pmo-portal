@@ -181,6 +181,74 @@ function RiskRow({ T, risk, onEdit, onDelete, showProject, index = 0 }) {
   );
 }
 
+/* ── Phone layout: one card per risk ──
+   The eight-column table needs ~760px; on a phone that meant two visible
+   columns and a sideways scroll to find status, owner or the edit button.
+   A card keeps every field on screen and gives the actions a real touch
+   target. Tapping the card reveals the description and mitigation plan. ── */
+function RiskCard({ T, risk, onEdit, onDelete, showProject, index = 0 }) {
+  const meta = SEVERITY_META[risk.severity] || SEVERITY_META.medium;
+  const [open, setOpen] = useState(false);
+  const hasMore = !!(risk.description || risk.mitigation_plan);
+  const fact = (k, v) => (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ ...TYPE.caption, color: T.dim, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4 }}>{k}</div>
+      <div style={{ ...TYPE.caption, color: T.textSoft, marginTop: 2 }}>{v}</div>
+    </div>
+  );
+  const iconBtn = { background: "none", border: `1px solid ${T.border}`, borderRadius: R.sm, color: T.muted,
+    cursor: "pointer", width: 34, height: 34, display: "inline-flex", alignItems: "center", justifyContent: "center" };
+  return (
+    <div className="pmo-card-in" style={{ animationDelay: `${Math.min(index, 12) * 45}ms`, position: "relative",
+      background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${meta.color}`,
+      borderRadius: R.md, padding: "12px 12px 12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 9px", borderRadius: R.pill,
+          background: `${meta.color}1E`, color: meta.color, ...TYPE.caption, fontWeight: 700 }}>
+          <span className={risk.severity === "critical" ? "pmo-live-dot" : ""}
+            style={{ width: 6, height: 6, borderRadius: "50%", background: meta.color }} />{meta.label}
+        </span>
+        <span style={{ ...TYPE.caption, color: T.muted, padding: "2px 8px", borderRadius: R.pill,
+          border: `1px solid ${T.border}` }}>{STATUS_META[risk.status]?.label || risk.status}</span>
+        {(onEdit || onDelete) && (
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            {onEdit && <button className="pmo-focusable" onClick={() => onEdit(risk)} aria-label="Edit risk" style={iconBtn}><Pencil size={14} /></button>}
+            {onDelete && <button className="pmo-focusable" onClick={() => onDelete(risk)} aria-label="Delete risk" style={iconBtn}><Trash2 size={14} /></button>}
+          </div>
+        )}
+      </div>
+      <div onClick={() => hasMore && setOpen(o => !o)} style={{ cursor: hasMore ? "pointer" : "default" }}>
+        <div style={{ ...TYPE.bodySm, color: T.text, fontWeight: 600, marginTop: 8, lineHeight: 1.45 }}>{risk.title}</div>
+        {showProject && risk.project_name && (
+          <div style={{ ...TYPE.caption, color: T.dim, marginTop: 2 }}>{risk.project_name}</div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", marginTop: 10 }}>
+          {fact("Category", CATEGORY_META[risk.category]?.label || "—")}
+          {fact("Prob / Impact", `${LEVEL_LABEL[risk.probability] || "—"} / ${LEVEL_LABEL[risk.impact] || "—"}`)}
+          {fact("Owner", risk.owner || "—")}
+          {fact("Identified", relDate(risk.date_identified))}
+        </div>
+        {hasMore && (
+          open ? (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+              {risk.description && <div style={{ ...TYPE.caption, color: T.textSoft, lineHeight: 1.55 }}>{risk.description}</div>}
+              {risk.mitigation_plan && (
+                <div style={{ ...TYPE.caption, color: T.textSoft, lineHeight: 1.55, marginTop: risk.description ? 8 : 0 }}>
+                  <span style={{ color: T.dim, fontWeight: 700 }}>Mitigation: </span>{risk.mitigation_plan}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ ...TYPE.caption, color: T.dim, marginTop: 8, display: "flex", alignItems: "center", gap: 4 }}>
+              <ChevronDown size={12} /> Tap for details
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Live severity preview inside the form — updates the instant probability
    or impact changes, so choosing values feels like watching the risk score
    compute itself rather than filling out a form and finding out later. ── */
@@ -451,8 +519,23 @@ export function RiskRegisterPage({ T, session, supa }) {
               {filtered ? `${filtered.length} of ${risks?.length ?? 0}` : ""}
             </span>
           </div>
+          {vp.isCompact ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: SP.sm, padding: SP.md }}>
+              {filtered === null ? (
+                <div style={{ padding: SP.xl, textAlign: "center", ...TYPE.caption, color: T.dim }}>Loading…</div>
+              ) : filtered.length === 0 ? (
+                <div style={{ padding: SP.xl, textAlign: "center", ...TYPE.caption, color: T.dim }}>
+                  {risks.length === 0 ? "No risks logged yet." : "Nothing matches these filters."}
+                </div>
+              ) : filtered.map((r, i) => (
+                <RiskCard key={r.id} T={T} risk={r} showProject index={i}
+                  onEdit={canWrite ? () => setModal(r) : null}
+                  onDelete={canWrite ? () => setConfirmDel(r) : null} />
+              ))}
+            </div>
+          ) : (
           <div style={{ overflow: "auto", maxHeight: 520 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: vp.isCompact ? 760 : undefined }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, background: T.surface }}>
                   {["Severity", "Risk", "Category", "Prob / Impact", "Status", "Owner", "Identified", ""].map(h => (
@@ -476,6 +559,7 @@ export function RiskRegisterPage({ T, session, supa }) {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       </div>
 
@@ -504,7 +588,7 @@ export function ProjectRisksPanel({ T, session, supa, projectId, canWrite }) {
   };
 
   return (
-    <div style={{ padding: SP.lg }}>
+    <div style={{ padding: vp.isCompact ? `${SP.md}px 0` : SP.lg }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SP.md }}>
         <div style={{ ...TYPE.label, color: T.muted }}>{risks?.length ?? 0} risk{risks?.length === 1 ? "" : "s"} logged</div>
         {canWrite && (
@@ -526,9 +610,17 @@ export function ProjectRisksPanel({ T, session, supa, projectId, canWrite }) {
           <Shield size={22} color={T.dim} />
           <div style={{ ...TYPE.bodySm }}>No risks logged for this project yet.</div>
         </div>
+      ) : vp.isCompact ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: SP.sm }}>
+          {risks.map((r, i) => (
+            <RiskCard key={r.id} T={T} risk={r} index={i}
+              onEdit={canWrite ? () => setModal(r) : null}
+              onDelete={canWrite ? () => setConfirmDel(r) : null} />
+          ))}
+        </div>
       ) : (
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: R.lg, overflowX: "auto", overflowY: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: vp.isCompact ? 760 : undefined }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${T.border}` }}>
                 {["Severity", "Risk", "Category", "Prob / Impact", "Status", "Owner", "Identified", ""].map(h => (
