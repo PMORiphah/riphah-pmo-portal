@@ -1,5 +1,11 @@
 // ask — the Riphah PMO portal assistant
 //
+// v38 (29 Sep 2026, after a 300-question audit): the code now answers risks,
+// cash flow, the overview, published KPIs and approved-vs-released gaps too;
+// the model only writes free text for greetings and how-to questions, and a
+// narrated answer containing a table is rejected. "Approved" = stages
+// Approved + Closed (PMO decision).
+//
 // v37 (29 Sep 2026): amount conditions (e.g. released > 0), a cannot_express
 // guard so no part of a question is dropped silently, risk questions answered
 // by code, and narrated answers that are empty or paste raw rows are rejected.
@@ -54,7 +60,8 @@
 //  15. Pronouns follow the conversation.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { execute, executeRisks, planSchema, plannerPrompt, validatePlan, vocabOf, type Plan, type Risk, type Row } from "./planner.ts";
+import { execute, executeCashflow, executeGap, executeKpi, executeOverview, executeRisks, planSchema, plannerPrompt,
+  validatePlan, vocabOf, type CashRow, type Kpi, type Plan, type Risk, type Row } from "./planner.ts";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL    = "openai/gpt-oss-120b";
@@ -162,6 +169,8 @@ const money = (n: unknown) => {
   return isFinite(v) ? v.toLocaleString("en-US") : String(n ?? "");
 };
 const estimate = (s: string) => Math.ceil(s.length / CHARS_PER_TOKEN);
+// Figures sent to the model are whole rupees (it once printed 676,243,011.0010899).
+const roundNums = (_k: string, v: unknown) => typeof v === "number" && Math.abs(v) >= 1000 ? Math.round(v) : v;
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function anyWord(text: string, keys: string[]): boolean {
@@ -582,23 +591,41 @@ Deno.serve(async (req) => {
     return json({ error: "The assistant is not configured." }, 500);
   }
 
-  // ── v35: plan the question, answer it in code ───────────────────────────
+  // ── v35+: plan the question, answer it in code ──────────────────────────
   // Every row this user can see (RLS). A project manager's rows are their own.
-  const { data: rowData, error: rowErr } = await supa.rpc("assistant_rows");
+  const [{ data: rowData, error: rowErr }, { data: cfData }, { data: riskData, error: riskErr }] = await Promise.all([
+    supa.rpc("assistant_rows"), supa.rpc("assistant_cashflow"),
+    seesRisks ? supa.rpc("assistant_risks", { q: null }) : Promise.resolve({ data: [], error: null }),
+  ]);
   if (rowErr) console.error("assistant_rows", rowErr.message);
+  if (riskErr) console.error("assistant_risks", riskErr.message);
   const allRows = ((rowData ?? []) as Row[]).map((r) => ({
     ...r, df_recommended: Number(r.df_recommended ?? 0), approved: Number(r.approved ?? 0),
     released: Number(r.released ?? 0), risks: Number(r.risks ?? 0),
   }));
+  const cashRows = ((cfData ?? []) as CashRow[]);
+  const riskRows = ((riskData ?? []) as Risk[]);
+  // Published dashboard KPIs, only for roles that can open the dashboard.
+  let kpis: Kpi[] | null = null;
+  if (seesDashboard) {
+    const { data: kpiRow } = await supa.from("settings").select("value").eq("key", "dashboard_kpis").maybeSingle();
+    const kv = (kpiRow?.value ?? {}) as Record<string, { value?: string; sub?: string }>;
+    kpis = ([["su_requested", "SU requested"], ["carry_forward", "Carry forward from the prior fiscal year"],
+             ["budget_reduction", "Budget reduction from SU requested to DF recommended"]] as [string, string][])
+      .filter(([k]) => kv[k] && !EMPTY_VALUE.has(String(kv[k].value ?? "").trim()))
+      .map(([k, label]) => ({ key: k, label, value: String(kv[k].value).trim(),
+        note: EMPTY_VALUE.has(String(kv[k].sub ?? "").trim()) ? "" : String(kv[k].sub).trim() }));
+  }
   const pkToday = pkNow().toISOString().slice(0, 10);
   let plan: Plan | null = null;
   let planModel = "";
   if (allRows.length) {
-    const vocab = vocabOf(allRows);
+    const vocab = vocabOf(allRows, { risk_categories: riskRows.map((r) => String(r.category ?? "")).filter(Boolean),
+      months: cashRows.map((c) => String(c.month).slice(0, 7)) });
     const nowPk = pkNow();
     const planned = await llm(keys, [
       { role: "system", content: plannerPrompt(vocab,
-          `${nowPk.getUTCDate()} ${MONTH_NAMES[nowPk.getUTCMonth()]} ${nowPk.getUTCFullYear()}`)
+          `${nowPk.getUTCDate()} ${MONTH_NAMES[nowPk.getUTCMonth()]} ${nowPk.getUTCFullYear()}`, pkToday)
           + "\nReply with the JSON plan only." },
       ...history.slice(-6).map((m) => ({ role: m.role, content: m.content.slice(0, 600) })),
       { role: "user", content: question },
@@ -608,8 +635,19 @@ Deno.serve(async (req) => {
       catch { console.error("plan not JSON", planned.text.slice(0, 200)); }
     }
   }
-  if (plan && plan.intent === "projects") {
-    const res = execute(plan, allRows, pkToday, question);
+  if (plan && plan.intent !== "other") {
+    let res;
+    switch (plan.intent) {
+      case "risks":
+        res = seesRisks ? executeRisks(plan, riskRows, allRows, question)
+          : { answer: "The risk register isn't available to your account, so I can't say how many risks exist or what they are. The PMO can help.", headline: null, meta: { plan } };
+        break;
+      case "cashflow": res = executeCashflow(plan, cashRows); break;
+      case "overview": res = executeOverview(plan, allRows, pkToday, kpis, question, ownProjectsOnly); break;
+      case "kpi": res = executeKpi(plan, kpis); break;
+      case "gap": res = executeGap(plan, allRows, pkToday, question); break;
+      default: res = execute(plan, allRows, pkToday, question);
+    }
     let answer = res.answer;
     if (ownProjectsOnly) answer = answer.replace("Read as: ", "Read as: your assigned projects · ");
     const used = { role, engine: "planner", model: planModel, ...res.meta,
@@ -617,18 +655,7 @@ Deno.serve(async (req) => {
     if (dryRun) return json({ dryRun: true, plan, answer, headline: res.headline, used });
     return json({ answer, headline: res.headline, used });
   }
-  if (plan && plan.intent === "risks" && seesRisks) {
-    const { data: riskData, error: riskErr } = await supa.rpc("assistant_risks", { q: null });
-    if (riskErr) console.error("assistant_risks", riskErr.message);
-    if (!riskErr) {
-      const res = executeRisks(plan, (riskData ?? []) as Risk[], question);
-      const used = { role, engine: "planner", model: planModel, ...res.meta,
-                     ...(historyDropped ? { history_dropped: historyDropped } : {}) };
-      if (dryRun) return json({ dryRun: true, plan, answer: res.answer, headline: res.headline, used });
-      return json({ answer: res.answer, headline: res.headline, used });
-    }
-  }
-  // Not a project or risk question (or no plan): the v34 path below.
+  // Greetings, how-to and anything else (or no plan at all): the v34 path below.
 
   const recentUser = history.filter((m) => m.role === "user").slice(-2)
     .map((m) => m.content).join(" ");
@@ -663,7 +690,7 @@ Deno.serve(async (req) => {
     }
     if (totalsObj!.capex) delete (totalsObj!.capex as Record<string, unknown>).su_requested;
     totalsAt = parts.length;
-    parts.push(TOTALS_HEAD + JSON.stringify(totalsObj));
+    parts.push(TOTALS_HEAD + JSON.stringify(totalsObj, roundNums));
   }
 
   if (seesDashboard) {
@@ -750,7 +777,7 @@ Deno.serve(async (req) => {
 
   if (((listed && (lf?.campus || lf?.priority)) || pmListed) && totalsObj?.by_stage && totalsAt >= 0) {
     delete totalsObj.by_stage;
-    parts[totalsAt] = TOTALS_HEAD + JSON.stringify(totalsObj);
+    parts[totalsAt] = TOTALS_HEAD + JSON.stringify(totalsObj, roundNums);
     used.stage_totals_withheld = true;
   }
 
@@ -1107,6 +1134,9 @@ Deno.serve(async (req) => {
     // is not an answer (29 Sep: "NOT AVAILABLE" alone, and risk rows verbatim).
     if (prose.replace(/[^a-z]/gi, "").length < 25 || /^\s*(NOT AVAILABLE|COMPLETE)\b/.test(prose))
       faults.push("the answer is empty; answer the question in full sentences");
+    // The model no longer writes project tables (v38): code does.
+    if (/\n\s*\|[^\n]*\|\s*\n\s*\|\s*:?-{3}/.test("\n" + prose))
+      faults.push("do not write a table; answer in two or three plain sentences");
     if (/\|\s*probability\s+\w+\s*\|/i.test(prose))
       faults.push("raw data rows were pasted; write the answer as prose or a markdown table");
     const bad = ungroundedFigures(prose, [context, askedText]);
