@@ -2830,6 +2830,9 @@ function CarryForwardList({ T, session }) {
 }
 
 function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
+  // Budget Released arrives sorted by amount released; every other list is
+  // activity-ranked here.
+  const ordered = activeCard === "budget_released" ? projects : sortRealCodeFirst(projects || []);
   const vpDPL = useViewport();
   if (!projects || projects.length === 0) {
     return (
@@ -2842,7 +2845,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
   const cardLabels = {
     pipeline: { pdd_not_submitted:"PDD Not Submitted", pdds_submitted:"PDD Submitted", in_df:"DF Review", in_ed:"ED Review", in_mt:"MT Review", approved:"Approved", closed:"Closed" },
     execution: { active_projects:"Active Projects", on_schedule:"On Schedule", delayed:"Delayed", over_budget:"Over Budget", scope_change:"Change in Scope", closed:"Closed" },
-    financials: { payments_pending:"Payments Pending" },
+    financials: { payments_pending:"Payments Pending", budget_released:"Budget Released" },
     budgeting: { df_recommended:"DF Recommended", approved_projects:"Approved Projects", budgeted_projects:"Budgeted Projects", non_budgeted_projects:"Non-Budgeted Projects", carry_forward:"Carry Forward", pcds_received:"PCDs Received" },
   };
   const filterLabel = activeCard ? (cardLabels[tab]?.[activeCard] || "All") : "All";
@@ -2857,7 +2860,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:3, height:14, background:GOLD, borderRadius:2 }} />
           <span style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1 }}>
-            {tab === "pipeline" ? "PDD Status" : "Project Health"} — {filterLabel}
+            {tab === "pipeline" ? "PDD Status" : tab === "financials" ? "Payments Status" : "Project Health"} — {filterLabel}
           </span>
           <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:R.pill }}>
             {projects.length} {projects.length === 1 ? "project" : "projects"}
@@ -2869,12 +2872,15 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
       {/* Table */}
       {vpDPL.isCompact ? (
         <div style={{ display:"flex", flexDirection:"column", gap:SP.sm, padding:SP.md }}>
-          {sortRealCodeFirst(projects).map((p, i) => {
+          {ordered.map((p, i) => {
             const st = STAGE_META[p.workflow_stage];
             const pClr = PRIORITY_META[p.priority]?.color || T.dim;
             const metrics = [{ label:"BAC", value:fmtM(p.bac), color:(T.goldText || GOLD) }];
             if (tab === "budgeting" && activeCard === "df_recommended") {
               metrics.push({ label:"DF Recommended", value:fmtM(p.df_recommended_amount), color:(T.goldText || GOLD) });
+            }
+            if (activeCard === "budget_released") {
+              metrics.push({ label:"Released", value:fmtM(p.amount_released), color:T.textOf(EMERALD) });
             }
             return (
               <MobileProjectCard key={p.id} T={T} project={p} onSelect={onSelectProject} index={i}
@@ -2903,6 +2909,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
               <th style={th}>Segment</th>
               <th style={{ ...th, textAlign:"right" }}>BAC</th>
               {tab === "budgeting" && activeCard === "df_recommended" && <th style={{ ...th, textAlign:"right" }}>DF Recommended</th>}
+              {activeCard === "budget_released" && <th style={{ ...th, textAlign:"right" }}>Released</th>}
               <th style={th}>Stage</th>
               {tab === "execution" && <th style={th}>Schedule</th>}
               {tab === "execution" && <th style={th}>Budget</th>}
@@ -2910,7 +2917,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
             </tr>
           </thead>
           <tbody>
-            {sortRealCodeFirst(projects).map((p, i) => (
+            {ordered.map((p, i) => (
               <tr key={p.id}
                 onClick={() => onSelectProject && onSelectProject(p.id)}
                 style={{ cursor:"pointer", transition:"background .12s" }}
@@ -2927,6 +2934,9 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
                 <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600 }}>{fmtM(p.bac)}</td>
                 {tab === "budgeting" && activeCard === "df_recommended" && (
                   <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600 }}>{fmtM(p.df_recommended_amount)}</td>
+                )}
+                {activeCard === "budget_released" && (
+                  <td style={{ ...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:T.textOf(EMERALD), fontWeight:600 }}>{fmtM(p.amount_released)}</td>
                 )}
                 <td style={td}><StageBadge T={T} stage={p.workflow_stage}/></td>
                 {tab === "execution" && (
@@ -3141,6 +3151,10 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
     if (activeTab === "financials" && activeCard === "payments_pending") {
       return dashProjects.filter(p => p.payments_pending);
     }
+    // Same set the card sums: CAPEX projects with money released (29 Sep 2026: 25).
+    if (activeTab === "financials" && activeCard === "budget_released") {
+      return dashProjects.filter(p => (Number(p.amount_released)||0) > 0);
+    }
     if (activeTab === "budgeting") {
       if (activeCard === "df_recommended")     return dashProjects.filter(p => (p.df_recommended_amount||0) > 0);
       if (activeCard === "approved_projects")  return dashProjects.filter(isApprovedStage);
@@ -3152,10 +3166,15 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
     return [];
   })());
 
+  // Largest release first for the Budget Released list; others keep the activity order.
+  const listProjects = activeCard === "budget_released"
+    ? [...filteredProjects].sort((a, b) => (Number(b.amount_released)||0) - (Number(a.amount_released)||0))
+    : filteredProjects;
+
   const showList = activeCard !== null && (
     activeTab === "pipeline" ||
     activeTab === "execution" ||
-    (activeTab === "financials" && activeCard === "payments_pending") ||
+    (activeTab === "financials" && (activeCard === "payments_pending" || activeCard === "budget_released")) ||
     activeTab === "budgeting"
   );
 
@@ -3414,7 +3433,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       {activeTab === "financials" && (
         <div data-tour="payments-flow" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
-          <EditableKCard dashData={d} Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
+          <EditableKCard dashData={d} Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} onCardClick={() => toggleCard("budget_released")} isSelected={activeCard==="budget_released"} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
           <EditableKCard dashData={d} Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
           <EditableKCard dashData={d} Icon={Clock} index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
@@ -3439,7 +3458,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           <CarryForwardList T={T} session={session} />
         )}
         {showList && !(activeTab === "budgeting" && activeCard === "carry_forward") && (
-          <DashProjectList T={T} projects={filteredProjects} tab={activeTab} activeCard={activeCard} onSelectProject={onSelectProject} />
+          <DashProjectList T={T} projects={listProjects} tab={activeTab} activeCard={activeCard} onSelectProject={onSelectProject} />
         )}
       </div>
 
