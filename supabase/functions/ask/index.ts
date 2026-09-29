@@ -1,5 +1,10 @@
 // ask — the Riphah PMO portal assistant
 //
+// v41 (29 Sep 2026): open to every role again at the PMO's instruction
+// (PMO_ONLY = false), after the v38/v40 audits. Access is still RLS: a project
+// manager's plan runs over their own projects only, with no cash flow, risk
+// register or published KPIs.
+//
 // v38 (29 Sep 2026, after a 300-question audit): the code now answers risks,
 // cash flow, the overview, published KPIs and approved-vs-released gaps too;
 // the model only writes free text for greetings and how-to questions, and a
@@ -17,10 +22,10 @@
 // overview, gaps, charters) keep the v34 path below, now narrated by Gemini
 // with Groq as the fallback when Gemini is unavailable or over its quota.
 //
-// PMO ONLY again since 28 Sep 2026 (PMO_ONLY below is true), at the PMO's
-// instruction, after wrong answers about MT Review projects. Guests and
-// project managers see the launcher but get UNDER_TEST_MESSAGE. It was open
-// to everyone from 23 to 28 Sep. The audit dry-run route stays PMO-only.
+// It was PMO ONLY from 28 to 29 Sep 2026, at the PMO's instruction, after
+// wrong answers about MT Review projects; guests and project managers got
+// UNDER_TEST_MESSAGE. Open to everyone from 23 to 28 Sep and again from v41.
+// The audit dry-run route stays PMO-only.
 //
 // Rules that shape this function:
 //
@@ -73,7 +78,7 @@ const MAX_QUESTION = 1000;
 const CHARS_PER_TOKEN = 2.0;
 const BUDGET_TOKENS = 4200;
 
-const PMO_ONLY = true;          // true limits the assistant to PMO accounts
+const PMO_ONLY = false;         // true limits the assistant to PMO accounts
 const UNDER_TEST_MESSAGE =
   "The assistant is in its testing phase and is limited to the PMO for now. "
   + "Please try again after 48 hours, or contact the PMO if you need something in the meantime.";
@@ -649,7 +654,13 @@ Deno.serve(async (req) => {
       default: res = execute(plan, allRows, pkToday, question);
     }
     let answer = res.answer;
-    if (ownProjectsOnly) answer = answer.replace("Read as: ", "Read as: your assigned projects · ");
+    if (ownProjectsOnly) {
+      answer = answer.replace("Read as: ", "Read as: your assigned projects · ");
+      // An empty or not-found answer for a manager says nothing about the rest
+      // of the portfolio, which they cannot see.
+      if (/I couldn't find|No projects match|No recorded risks match/.test(answer))
+        answer += `\n\nYou can only see the ${allRows.length === 1 ? "project" : allRows.length + " projects"} assigned to you; the PMO can answer about the rest of the portfolio.`;
+    }
     const used = { role, engine: "planner", model: planModel, ...res.meta,
                    ...(historyDropped ? { history_dropped: historyDropped } : {}) };
     if (dryRun) return json({ dryRun: true, plan, answer, headline: res.headline, used });

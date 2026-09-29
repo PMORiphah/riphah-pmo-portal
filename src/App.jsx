@@ -2186,10 +2186,11 @@ function BreakdownSection({ T, session, onSelectProject }) {
 
   // Aggregate
   // The same definition the Approved Projects KPI uses, so this section and
-  // that card cannot drift apart: a project counts as approved once it has
-  // reached the approved stage or has had money released against it.
+  // that card cannot drift apart. PMO decision 29 Sep 2026: approved means the
+  // Approved or Closed stage only; money released while a project is still at
+  // DF / ED / MT review does not make it approved.
   const isApproved = (p) =>
-    p.workflow_stage === "approved" || (parseFloat(p.amount_released) || 0) > 0;
+    p.workflow_stage === "approved" || p.workflow_stage === "closed";
 
   const agg = (key) => {
     const m = {};
@@ -3023,16 +3024,18 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   // Approved / Budgeted / Non-Budgeted figures for the Overview tab. Computed
   // client-side from dashProjects since these aren't in the portfolio_dashboard
   // view. Placed here (before any early return below) since it's a hook.
-  const isApprovedOrReleased = useCallback((p) => p.workflow_stage === "approved" || (p.amount_released||0) > 0, []);
+  // PMO decision 29 Sep 2026: Approved or Closed stage only (it used to also
+  // count any project with money released, which pulled in MT Review projects).
+  const isApprovedStage = useCallback((p) => p.workflow_stage === "approved" || p.workflow_stage === "closed", []);
 
   const overviewKpis = useMemo(() => {
-    const approved = dashProjects.filter(isApprovedOrReleased);
+    const approved = dashProjects.filter(isApprovedStage);
     // "Budgeted" / "Non-Budgeted" is the project_type field (a real category on
     // each project, distinct from whether it has a budget figure), further
-    // restricted to only projects that are approved or have released funds —
+    // restricted to approved projects (Approved or Closed stage) —
     // matching the same condition as the Approved Projects card above.
-    const budgeted = dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedOrReleased(p));
-    const nonBudgeted = dashProjects.filter(p => p.project_type !== "Budgeted" && isApprovedOrReleased(p));
+    const budgeted = dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedStage(p));
+    const nonBudgeted = dashProjects.filter(p => p.project_type !== "Budgeted" && isApprovedStage(p));
     // These three cards report APPROVED BUDGET (bac), not money released and
     // not what Finance recommended.
     //
@@ -3050,7 +3053,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       budgetedAmt: sum(budgeted), budgetedCount: budgeted.length,
       nonBudgetedAmt: sum(nonBudgeted), nonBudgetedCount: nonBudgeted.length,
     };
-  }, [dashProjects, isApprovedOrReleased]);
+  }, [dashProjects, isApprovedStage]);
 
   const canEdit = session?.role === "pmo";
 
@@ -3138,9 +3141,9 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
     }
     if (activeTab === "budgeting") {
       if (activeCard === "df_recommended")     return dashProjects.filter(p => (p.df_recommended_amount||0) > 0);
-      if (activeCard === "approved_projects")  return dashProjects.filter(isApprovedOrReleased);
-      if (activeCard === "budgeted_projects")  return dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedOrReleased(p));
-      if (activeCard === "non_budgeted_projects") return dashProjects.filter(p => p.project_type !== "Budgeted" && isApprovedOrReleased(p));
+      if (activeCard === "approved_projects")  return dashProjects.filter(isApprovedStage);
+      if (activeCard === "budgeted_projects")  return dashProjects.filter(p => p.project_type === "Budgeted" && isApprovedStage(p));
+      if (activeCard === "non_budgeted_projects") return dashProjects.filter(p => p.project_type !== "Budgeted" && isApprovedStage(p));
       if (activeCard === "carry_forward")      return dashProjects.filter(p => p.is_carry_forward);
       if (activeCard === "pcds_received")      return dashProjects.filter(p => p.workflow_stage === "closed");
     }

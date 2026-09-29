@@ -859,6 +859,7 @@ export function executeOverview(plan: Plan, rows: Row[], today: string, kpis: Kp
   ] as const;
   const worried = /unusual|worr|concern|attention|risk|problem|issue|flag|anything/i.test(question);
   lines.push("", "**Needs attention**");
+  if (!watch.some(([rs]) => rs.length)) lines.push("- Nothing is overdue, due within 20 days, missing a project manager or waiting on a release.");
   for (const [rs, what] of watch) if (rs.length) lines.push(`- ${plural(rs.length, "project")} ${what}` + (rs.length <= 3 || worried ? `: ${rs.slice(0, 8).map((r) => cell(r.name)).join("; ")}${rs.length > 8 ? "; …" : ""}` : "") + ".");
   if (/one line|one-line|single line|briefly|in short/i.test(question))
     return { answer: `${who} holds ${plural(capex.length, "project")} worth ${money(df)} (DF recommended); ${money(rel)} released (${pct(rel, df)}), ${approvedN} approved, ${overdue.length} overdue.`,
@@ -892,6 +893,9 @@ export function executeGap(plan: Plan, all: Row[], today: string, question: stri
   const diff = capex.filter((r) => Math.abs(r.approved - r.released) >= 0.5)
     .sort((a, b) => Math.abs(b.approved - b.released) - Math.abs(a.approved - a.released));
   const A = capex.reduce((a, r) => a + r.approved, 0), R = capex.reduce((a, r) => a + r.released, 0);
+  if (!diff.length)
+    return { answer: `${readLine}\n\nCAPEX approved is ${money(A)} and released is ${money(R)}. They are equal on every project, so there is no gap to explain.`,
+      headline: null, meta };
   return { answer: `${readLine}\n\nCAPEX approved is ${money(A)} and released is ${money(R)}, a net difference of **${money(A - R)}**. `
       + `It comes from these ${plural(diff.length, "project")}; every other project has approved equal to released.\n\n`
       + "| Project | Stage | Approved | Released | Approved − released |\n|---|---|---|---|---|\n"
