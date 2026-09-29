@@ -26,6 +26,11 @@
 //   7. (v38, PMO decision 29 Sep) "Approved projects" means stages Approved
 //      and Closed only. Money released before approval does not make a
 //      project approved.
+//   8. (v39, after the v38 re-run) "top N projects" is a project ranking even
+//      when the plan says group_by project; a keyword with nothing usable left
+//      ("G-8") is reported as not found; "both at X and Y" / "at the same
+//      time" is worked out by code; has_pm filter; share column; notes on
+//      "over budget" (no actual-cost data) and earlier fiscal years.
 
 export type Row = {
   code: string; name: string; portfolio: string; campus: string | null; stage: string;
@@ -79,7 +84,7 @@ export type Plan = {
   stages: string[]; campuses: string[]; pms: string[]; cost_centers: string[]; priorities: string[];
   portfolio: "capex" | "investment" | "both";
   name_keywords: string;
-  no_pm: boolean; overdue: boolean; due_within_days: number;
+  no_pm: boolean; has_pm: boolean; overdue: boolean; due_within_days: number;
   measure: typeof MEASURES[number];
   sort_by: typeof SORTS[number];
   group_by: typeof GROUPS[number];
@@ -136,7 +141,7 @@ export function planSchema(v: Vocab) {
       cost_centers: e(v.cost_centers), priorities: e(v.priorities),
       portfolio: s(["capex", "investment", "both"]),
       name_keywords: { type: "STRING" },
-      no_pm: { type: "BOOLEAN" }, overdue: { type: "BOOLEAN" }, due_within_days: { type: "INTEGER" },
+      no_pm: { type: "BOOLEAN" }, has_pm: { type: "BOOLEAN" }, overdue: { type: "BOOLEAN" }, due_within_days: { type: "INTEGER" },
       measure: s(MEASURES), sort_by: s(SORTS), group_by: s(GROUPS), order: s(["desc", "asc"]),
       limit: { type: "INTEGER" },
       conditions: { type: "ARRAY", items: { type: "OBJECT", properties: {
@@ -151,7 +156,7 @@ export function planSchema(v: Vocab) {
       cannot_express: { type: "STRING" },
     },
     required: ["intent", "op", "stages", "campuses", "pms", "cost_centers", "priorities", "portfolio",
-      "name_keywords", "no_pm", "overdue", "due_within_days", "measure", "sort_by", "group_by", "order",
+      "name_keywords", "no_pm", "has_pm", "overdue", "due_within_days", "measure", "sort_by", "group_by", "order",
       "limit", "conditions", "having", "has_charter", "has_code", "risk_levels", "risk_categories",
       "risk_owner", "months", "kpi", "unmatched_terms", "cannot_express"],
   };
@@ -180,6 +185,12 @@ export function plannerPrompt(v: Vocab, today: string, todayIso: string): string
     "'Which campus (or PM, or stage) has the most / largest / least …' = op group with group_by",
     "  that dimension, measure count (number of projects) or df / approved / released, and limit 1.",
     "'Campuses (or PMs) with nothing released' = op group, having [{released eq 0}].",
+    "'What share / percentage / proportion of projects …' = op count with that filter (the answer",
+    "  shows the share of all projects).",
+    "'BOTH X and Y' / 'X and Y at the same time' with two stages or two campuses: list both values.",
+    "  Code works out what is in both (a project has only one stage and one campus). Never use",
+    "  cannot_express or intent other for this. 'Who has projects at both G-7 and I-14' = intent",
+    "  projects, op group, group_by pm, campuses [G-7, I-14].",
     "",
     "STAGES:", ...STAGES.map(([k, l]) => `  ${k} = ${l}`),
     "  'with the MT' / 'Managing Trustee' = mt_review; 'with DF' / 'Director Finance' = df_review;",
@@ -196,7 +207,10 @@ export function plannerPrompt(v: Vocab, today: string, todayIso: string): string
     "  describes a project or a group of projects (e.g. 'Ferozpur', 'SAN', 'QIE', 'Swat', 'PMDC',",
     "  'RCRAHS', 'labs', 'kitchen RIHCA'). Matched against project name, code and cost centre.",
     "  Never put stage words here.",
-    "no_pm: projects with no project manager. overdue: past planned end date, not closed.",
+    "no_pm: projects with no project manager. has_pm: projects that have a project manager",
+    "  ('do any Hostels projects have a PM?' = op count, campus Hostels, has_pm true).",
+    "  A yes/no question ('do any …', 'is there any …', 'are there …') is op count.",
+    "overdue: past planned end date, not closed.",
     "due_within_days: 'due in the next 20 days' = 20; else 0.",
     "measure: df (DF recommended, the default), approved, released, count (groups only),",
     "  end_date / start_date (for 'due first', 'finishing last', 'starting earliest'), pct_complete.",
@@ -299,6 +313,7 @@ export function validatePlan(raw: unknown, v: Vocab): Plan | null {
     portfolio: pick(r.portfolio, ["capex", "investment", "both"] as const, "both"),
     name_keywords: String(r.name_keywords ?? "").slice(0, 120),
     no_pm: r.no_pm === true,
+    has_pm: r.has_pm === true && r.no_pm !== true,
     overdue: r.overdue === true,
     due_within_days: int(r.due_within_days, 0, 400),
     measure: pick(r.measure, MEASURES, "df"),
@@ -344,6 +359,11 @@ const daysBetween = (a: string, b: string) =>
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
 const joinAnd = (xs: string[]) =>
   xs.length <= 1 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1];
+// "Both at G-7 and I-14" / "at the same time" ask for an intersection; "total for both G-7 and
+// I-14" asks for the two together, so a bare "both" is not enough.
+const BOTH_RE = /\bat both\b|\bboth (at|in the stages?|stages?)\b|\bat the same time\b|\bsimultaneous(ly)?\b/i;
+const SHARE_RE = /\b(share|percentage|percent|proportion)\b|%/i;
+const PAST_RE = /\b(last|previous|prior|past) (fiscal |financial )?years?\b|\bFY ?(20)?2[0-5]\b|\b20(1\d|2[0-5])\b/i;
 const PLURALS: Record<string, string> = { campus: "campuses", priority: "priorities", "cost centre": "cost centres",
   "project manager": "project managers", stage: "stages", portfolio: "portfolios", project: "projects", risk: "risks" };
 const plural = (n: number, one: string, many = PLURALS[one] ?? one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -406,6 +426,10 @@ function nameMatch<T extends { name: string; code?: string; cost_center?: string
 // A "not found" word that is actually part of a project's name, code or cost
 // centre ("Swat", "QIE", "RIHCA") becomes a name keyword instead (v38).
 export function rescueTerms(plan: Plan, rows: Row[]): Plan {
+  // "G-8" normalises to "g 8": nothing usable is left, and matching nothing
+  // once kept every project (v38 audit #258). Report it as not found instead.
+  if (plan.name_keywords.trim() && !norm(plan.name_keywords).split(" ").some((w) => w.length >= 2))
+    plan = { ...plan, name_keywords: "", unmatched_terms: uniq([...plan.unmatched_terms, plan.name_keywords.trim()]) };
   if (!plan.unmatched_terms.length) return plan;
   const keep: string[] = [], add: string[] = [];
   for (const t of plan.unmatched_terms) {
@@ -466,6 +490,7 @@ export function applyFilters(plan: Plan, all: Row[], today: string, question: st
     readAs.push(joinAnd(plan.priorities.map(priorityLabel)).toLowerCase());
   }
   if (plan.no_pm) { rows = rows.filter((r) => !r.pm); readAs.push("no project manager"); }
+  if (plan.has_pm) { rows = rows.filter((r) => !!r.pm); readAs.push("has a project manager"); }
   for (const c of plan.conditions) { rows = rows.filter((r) => testCond(r, c)); readAs.push(condText(c)); }
   if (plan.has_charter !== "any") {
     rows = rows.filter((r) => r.has_charter === (plan.has_charter === "yes"));
@@ -498,6 +523,12 @@ const GROUP_LABEL: Record<string, string> = { stage: "Stage", campus: "Campus", 
 
 export function execute(planIn: Plan, all: Row[], today: string, question: string): Answer {
   let plan = rescueTerms(planIn, all);
+  // "Top 10 projects by DF" sometimes comes back as group_by project; that is a
+  // ranking of projects, never a table of campuses (v38 audit #142, #273).
+  if (plan.group_by === "project") plan = { ...plan, group_by: "none", op: plan.op === "group" ? "rank" : plan.op };
+  // "Both X and Y": code handles the intersection, so a refusal about it is dropped.
+  const both = BOTH_RE.test(question) && (plan.stages.length > 1 || plan.campuses.length > 1);
+  if (both && /both|same time|simultan|multiple|intersect|at once|spanning|and/i.test(plan.cannot_express)) plan = { ...plan, cannot_express: "" };
   // "Which campus / which PM has the most …" is a question about campuses or
   // PMs, never about a single project (v38: it once answered with a project).
   if (plan.op !== "group" && !plan.name_keywords.trim()) {
@@ -515,6 +546,21 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
       having: moved.map((c) => ({ field: c.field as Having["field"], op: "eq", value: 0 })) };
   }
   const meta: Record<string, unknown> = { plan };
+  // A project has one stage and one campus, so "in both" is empty unless the
+  // question groups by something else (e.g. PMs with projects at both campuses).
+  const bothDim: "stage" | "campus" | null = !both ? null : plan.campuses.length > 1 ? "campus" : "stage";
+  // "Which projects are both at …" is about projects even if the plan groups by PM (v39 check #254).
+  const bothGroup = both && plan.op === "group" && plan.group_by !== "none" && plan.group_by !== bothDim
+    && !/\b(which|what|list|show|any)\s+projects?\b/i.test(question);
+  if (both && !bothGroup) {
+    // Approved + Closed is the PMO's one "approved" group, so it is named once.
+    const st = plan.stages.includes("approved") && plan.stages.includes("closed")
+      ? [...plan.stages.filter((x) => x !== "approved" && x !== "closed").map(stageLabel), "Approved"] : plan.stages.map(stageLabel);
+    const vals = bothDim === "campus" ? plan.campuses : st;
+    return { answer: `Read as: ${bothDim} ${joinAnd(vals)}, at the same time.\n\nNone. A project has only one ${bothDim}, `
+      + `so no project is in ${vals.length > 2 ? "all of " : "both "}${joinAnd(vals)}.`,
+      headline: { value: "0", label: "Matching projects", kind: "count" }, meta: { ...meta, matched: 0, projects: 0 } };
+  }
   const { rows, readAs, approx } = applyFilters(plan, all, today, question);
   const scopeText = readAs.length ? readAs.join(" · ") : "all projects";
   meta.matched = rows.length; meta.projects = rows.length;
@@ -524,8 +570,14 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
   const charterNote = plan.has_charter !== "any"
     ? "\n\nA charter here means an attached file whose name starts with PDD or EPDD; a few charters saved under other names may be missed." : "";
 
+  // The portal has no actual-cost data; say how "over budget" was read (v38 audit #123).
+  const overNote = /over ?budget|overspen|over-?run|exceed/i.test(question)
+    && plan.conditions.some((c) => c.field === "released" && c.other === "approved" && (c.op === "gt" || c.op === "gte"))
+    ? "The portal has no actual-cost figures, so “over budget” is read as money released above the approved amount.\n\n" : "";
+  // This data is FY 2026-27 only; earlier years live on Past Projects (v38 audit #249).
+  const pastNote = PAST_RE.test(question) ? " This data covers FY 2026-27 projects only; earlier projects are on the Past Projects page." : "";
   if (!rows.length) {
-    return { answer: `${readLine}\n\nNo projects match that.` + (plan.stages.length || plan.conditions.length || readAs.length ? "" : " Try widening the question.") + charterNote,
+    return { answer: `${readLine}\n\n${overNote}No projects match that.${pastNote}` + (plan.stages.length || plan.conditions.length || readAs.length ? "" : " Try widening the question.") + charterNote,
       headline: { value: "0", label: "Matching projects", kind: "count" }, meta };
   }
 
@@ -629,10 +681,11 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
       : gb === "cost_center" ? [r.cost_center ?? "Unspecified"]
       : gb === "priority" ? [priorityLabel(r.priority) || "Unspecified"]
       : [r.portfolio === "capex" ? "CAPEX" : "Investment"];
-    type Agg = { n: number; df: number; approved: number; released: number; inv: number };
+    type Agg = { n: number; df: number; approved: number; released: number; inv: number; seen: Set<string> };
     const acc = new Map<string, Agg>();
     for (const r of rows) for (const k of key(r)) {
-      const a = acc.get(k) ?? { n: 0, df: 0, approved: 0, released: 0, inv: 0 };
+      const a = acc.get(k) ?? { n: 0, df: 0, approved: 0, released: 0, inv: 0, seen: new Set<string>() };
+      a.seen.add(bothDim === "campus" ? r.campus ?? "" : r.stage);
       a.n++; a.df += r.df_recommended; a.approved += r.approved; a.released += r.released;
       if (r.portfolio !== "capex") a.inv++;
       acc.set(k, a);
@@ -640,6 +693,11 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
     const gv = (a: Agg, f: string) => f === "count" ? a.n : f === "approved" ? a.approved : f === "released" ? a.released : a.df;
     let ents = [...acc.entries()];
     const havingText: string[] = [];
+    if (bothGroup) {
+      const need = bothDim === "campus" ? plan.campuses : plan.stages;
+      ents = ents.filter(([, a]) => need.every((x) => a.seen.has(x)));
+      havingText.push(`projects at ${need.length > 2 ? "all of" : "both"} ${joinAnd(bothDim === "campus" ? need : need.map(stageLabel))}`);
+    }
     for (const h of plan.having) {
       ents = ents.filter(([, a]) => cmp(gv(a, h.field), h.op, h.value));
       havingText.push(h.field === "count" ? `${OP_TEXT[h.op]} ${h.value} projects`
@@ -651,9 +709,11 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
     const label = GROUP_LABEL[gb];
     const lower = label.toLowerCase();
     const showInv = inv.length > 0 && capex.length > 0 && gb !== "portfolio";
-    const tableG = (es: [string, Agg][]) => `| ${label} | Projects | ${showInv ? "Investment | " : ""}DF recommended | Approved | Released |\n`
-      + `|---|---|${showInv ? "---|" : ""}---|---|---|\n`
-      + es.map(([k, a]) => `| ${cell(k)} | ${a.n} | ${showInv ? a.inv + " | " : ""}${money(a.df)} | ${money(a.approved)} | ${money(a.released)} |`).join("\n");
+    // "What share of projects …" answered as a breakdown gets a share column (v38 audit #291).
+    const showShare = SHARE_RE.test(question);
+    const tableG = (es: [string, Agg][]) => `| ${label} | Projects | ${showShare ? "Share | " : ""}${showInv ? "Investment | " : ""}DF recommended | Approved | Released |\n`
+      + `|---|---|${showShare ? "---|" : ""}${showInv ? "---|" : ""}---|---|---|\n`
+      + es.map(([k, a]) => `| ${cell(k)} | ${a.n} | ${showShare ? pct(a.n, rows.length) + " | " : ""}${showInv ? a.inv + " | " : ""}${money(a.df)} | ${money(a.approved)} | ${money(a.released)} |`).join("\n");
     const hv = havingText.length ? ` with ${joinAnd(havingText)}` : "";
     if (!ents.length) {
       body = `No ${PLURALS[lower] ?? lower + "s"}${hv} among these ${projCount(rows)}.`;
@@ -678,7 +738,7 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
     body += `\n\n${table(sorted)}`;
     headline = countHead;
   }
-  return { answer: `${readLine}\n\n${body}${charterNote}`, headline, meta };
+  return { answer: `${readLine}\n\n${overNote}${body}${pastNote}${charterNote}`, headline, meta };
 }
 
 // ── risks ────────────────────────────────────────────────────────────────────
