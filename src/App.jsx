@@ -2976,6 +2976,10 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   useEffect(() => { if (initialTab) setActiveTab(initialTab); }, [initialTab]);
   const [activeCard,   setActiveCard]   = useState(null);
   const [dashProjects, setDashProjects] = useState([]);
+  // Carry Forward card: the live value is the carry_forward_projects list
+  // (Finance's pending payments), not projects flagged is_carry_forward,
+  // which are none — "Live" on the card once reset it to 0 (29 Sep 2026).
+  const [cfList, setCfList] = useState({ total: 0, count: 0 });
 
   // Real cumulative series by project start month — the only genuine time
   // dimension this data has. 11 months, built from `start_date`, so every KPI's
@@ -3044,6 +3048,9 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
+      supa("/rest/v1/carry_forward_projects?select=amount", {}, session.access_token)
+        .then(cf => setCfList({ total: (cf||[]).reduce((s,r) => s + (Number(r.amount)||0), 0), count: (cf||[]).length }))
+        .catch(() => {});
       const [rows, settings, projs, metrics] = await Promise.all([
         supa("/rest/v1/portfolio_dashboard?select=*", {}, session.access_token),
         supa("/rest/v1/settings?key=eq.dashboard_kpis&select=value", {}, session.access_token),
@@ -3067,7 +3074,18 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   // `insight` joins value/sub in the same JSON blob — no schema change, and it
   // is saved and cleared through exactly the same path the PMO already knows.
   const saveKPI = useCallback(async (key, { value, sub, insight }) => {
-    const updated = { ...kpiOverrides, [key]: { value, sub, insight } };
+    // Merge into the LATEST stored figures, not this page's copy: a page left
+    // open would otherwise write every other card's old value back (e.g. the
+    // Carry Forward figure the database keeps in sync with its list).
+    let latest = kpiOverrides;
+    try {
+      const cur = await supa("/rest/v1/settings?key=eq.dashboard_kpis&select=value", {}, session.access_token);
+      if (cur?.[0]?.value) latest = cur[0].value;
+    } catch { /* fall back to the page's copy */ }
+    // Fields left undefined (an insight-only edit) keep their stored value.
+    const entry = { ...(latest[key] || {}) };
+    for (const [f, v] of Object.entries({ value, sub, insight })) if (v !== undefined) entry[f] = v;
+    const updated = { ...latest, [key]: entry };
     await supa("/rest/v1/settings", {
       method: "POST",
       body: JSON.stringify({ key: "dashboard_kpis", value: updated }),
@@ -3333,7 +3351,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           <EditableKCard dashData={d} Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard dashData={d} Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard dashData={d} Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
-          <EditableKCard dashData={d} Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(d.carry_forward_amount), (d.carry_forward_count||0)+" projects from prior FY")} />
+          <EditableKCard dashData={d} Icon={Layers} index={5} T={T} label="Carry Forward"  featured accent={GOLD} canEdit={canEdit} kpiKey="carry_forward"   onSave={saveKPI} onCardClick={() => toggleCard("carry_forward")} isSelected={activeCard==="carry_forward"} {...kv("carry_forward",   "PKR "+fmtM(cfList.total), cfList.count+" projects from prior FY")} />
           <EditableKCard dashData={d} Icon={ClipboardList} index={6} T={T} label="PCDs Received" featured          canEdit={canEdit} kpiKey="pcds_received" trendPoints={trends.pcds_received}  onSave={saveKPI} onCardClick={() => toggleCard("pcds_received")} isSelected={activeCard==="pcds_received"} {...kv("pcds_received",  String(d.closed_count ?? 0), `${d.closed_count ?? 0} of ${d.total_projects ?? 0} projects`)} />
         </div>
       )}
