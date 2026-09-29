@@ -1,5 +1,9 @@
 // ask — the Riphah PMO portal assistant
 //
+// v37 (29 Sep 2026): amount conditions (e.g. released > 0), a cannot_express
+// guard so no part of a question is dropped silently, risk questions answered
+// by code, and narrated answers that are empty or paste raw rows are rejected.
+//
 // v35 (29 Sep 2026): project questions are PLANNED by a model and ANSWERED by
 // code (planner.ts). Gemini 3.5 Flash-Lite reads the question into a query
 // plan; code applies it to every row the user can see and writes the whole
@@ -50,7 +54,7 @@
 //  15. Pronouns follow the conversation.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { execute, planSchema, plannerPrompt, validatePlan, vocabOf, type Plan, type Row } from "./planner.ts";
+import { execute, executeRisks, planSchema, plannerPrompt, validatePlan, vocabOf, type Plan, type Risk, type Row } from "./planner.ts";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL    = "openai/gpt-oss-120b";
@@ -613,7 +617,18 @@ Deno.serve(async (req) => {
     if (dryRun) return json({ dryRun: true, plan, answer, headline: res.headline, used });
     return json({ answer, headline: res.headline, used });
   }
-  // Not a project question (or no plan): the v34 path below.
+  if (plan && plan.intent === "risks" && seesRisks) {
+    const { data: riskData, error: riskErr } = await supa.rpc("assistant_risks", { q: null });
+    if (riskErr) console.error("assistant_risks", riskErr.message);
+    if (!riskErr) {
+      const res = executeRisks(plan, (riskData ?? []) as Risk[], question);
+      const used = { role, engine: "planner", model: planModel, ...res.meta,
+                     ...(historyDropped ? { history_dropped: historyDropped } : {}) };
+      if (dryRun) return json({ dryRun: true, plan, answer: res.answer, headline: res.headline, used });
+      return json({ answer: res.answer, headline: res.headline, used });
+    }
+  }
+  // Not a project or risk question (or no plan): the v34 path below.
 
   const recentUser = history.filter((m) => m.role === "user").slice(-2)
     .map((m) => m.content).join(" ");
@@ -1088,6 +1103,12 @@ Deno.serve(async (req) => {
   const askedRestricted = !seesDashboard && RESTRICTED_KPI.test(question);
   const checkAnswer = (prose: string): string[] => {
     const faults: string[] = [];
+    // An answer that is a data-block marker, next to empty, or pasted raw rows
+    // is not an answer (29 Sep: "NOT AVAILABLE" alone, and risk rows verbatim).
+    if (prose.replace(/[^a-z]/gi, "").length < 25 || /^\s*(NOT AVAILABLE|COMPLETE)\b/.test(prose))
+      faults.push("the answer is empty; answer the question in full sentences");
+    if (/\|\s*probability\s+\w+\s*\|/i.test(prose))
+      faults.push("raw data rows were pasted; write the answer as prose or a markdown table");
     const bad = ungroundedFigures(prose, [context, askedText]);
     if (bad.length) faults.push(`these figures do not appear in the data: ${bad.join(", ")}`);
     if (gapTopName && !prose.toLowerCase().includes(gapTopName.toLowerCase().slice(0, 12))) {

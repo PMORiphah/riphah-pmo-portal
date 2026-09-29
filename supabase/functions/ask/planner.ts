@@ -16,6 +16,13 @@
 //      never silently dropped (dropping "Karachi" would answer for all campuses).
 //   4. Every answer states how the question was read, so a misreading is
 //      visible at once.
+//   5. (v37) If part of a question cannot be expressed in the plan, the model
+//      says so in cannot_express and code refuses to give a partial answer.
+//      On 29 Sep "which projects are not approved but have budget released?"
+//      had no way to say "released > 0", so that half was silently dropped
+//      and 83 projects came back instead of 7. Amount conditions now exist.
+//   6. (v37) Risk questions are answered by code too: the model once pasted
+//      the raw risk rows back as its answer.
 
 export type Row = {
   code: string; name: string; portfolio: string; campus: string | null; stage: string;
@@ -54,7 +61,19 @@ export type Plan = {
   order: "desc" | "asc";
   limit: number;
   unmatched_terms: string[];
+  conditions: Cond[];
+  risk_levels: string[];
+  cannot_express: string;
 };
+export type Cond = { field: "df" | "approved" | "released"; op: "gt" | "gte" | "lt" | "lte" | "eq" | "ne"; value: number };
+export type Risk = {
+  project: string; campus: string | null; title: string; category: string | null;
+  probability: string | null; impact: string | null; description: string | null;
+  mitigation: string | null; owner: string | null;
+};
+export const RISK_LEVELS = ["critical", "high", "medium", "low"] as const;
+const COND_FIELDS = ["df", "approved", "released"] as const;
+const COND_OPS = ["gt", "gte", "lt", "lte", "eq", "ne"] as const;
 
 export type Vocab = {
   campuses: string[]; pms: string[]; cost_centers: string[]; priorities: string[];
@@ -95,10 +114,16 @@ export function planSchema(v: Vocab) {
       order: { type: "STRING", enum: ["desc", "asc"] },
       limit: { type: "INTEGER" },
       unmatched_terms: { type: "ARRAY", items: { type: "STRING" } },
+      conditions: { type: "ARRAY", items: { type: "OBJECT", properties: {
+        field: { type: "STRING", enum: [...COND_FIELDS] },
+        op: { type: "STRING", enum: [...COND_OPS] },
+        value: { type: "NUMBER" } }, required: ["field", "op", "value"] } },
+      risk_levels: { type: "ARRAY", items: { type: "STRING", enum: [...RISK_LEVELS] } },
+      cannot_express: { type: "STRING" },
     },
     required: ["intent", "op", "stages", "campuses", "pms", "cost_centers", "priorities", "portfolio",
       "name_keywords", "no_pm", "overdue", "due_within_days", "measure", "group_by", "order", "limit",
-      "unmatched_terms"],
+      "unmatched_terms", "conditions", "risk_levels", "cannot_express"],
   };
 }
 
@@ -143,12 +168,29 @@ export function plannerPrompt(v: Vocab, today: string): string {
     "measure: df (DF recommended, the default budget figure), approved, released (disbursed).",
     "group_by: only for op group. order: desc unless smallest/lowest. limit: N for 'top N',",
     "  10 for rank without a number, 0 otherwise.",
+    "conditions: amount tests, each {field, op, value} with value in PKR. field df = DF recommended,",
+    "  approved = approved budget, released = amount released. op gt, gte, lt, lte, eq, ne.",
+    "  'has budget released' / 'money released' / 'received funds' = released gt 0;",
+    "  'nothing released' = released eq 0; 'no approved budget' = approved eq 0;",
+    "  'over 10 million' = gt 10000000; 'released more than approved' cannot be a condition",
+    "  (it compares two fields): put that in cannot_express.",
+    "  'Not approved' / 'not yet approved' = stages pdd_not_submitted, identified, df_review,",
+    "  ed_review, mt_review. Never include closed: closed projects were approved and finished.",
+    "risk_levels (intent risks only): impact levels asked for, e.g. 'high risks' = [high].",
+    "  For risks, name_keywords and campuses narrow to projects; empty means all risks.",
+    "cannot_express: if ANY part of the question cannot be expressed with these fields, describe",
+    "  that part in a few words here. Never drop part of a question silently. Empty otherwise.",
     "unmatched_terms: any campus, person, stage, cost centre or other filter the user named",
     "  that is NOT in the allowed lists (e.g. a campus 'Karachi'). Empty when all matched.",
     "",
     "FOLLOW-UPS. 'list them', 'show those', 'how many of them', 'only G-7', 'and approved?'",
     "refer to the previous question: carry its filters over and apply the change. The previous",
     "answers start with a line saying how they were read; use it.",
+    "PUSHBACK. If the user says the answer was wrong, or restates what they meant, the previous",
+    "plan missed something: re-read their earlier question and include EVERY condition from it.",
+    "Never return the same plan they just said was wrong.",
+    "'Which projects have X but Y' is intent projects (with conditions), not gap. gap is only",
+    "for WHY two figures differ.",
     "",
     "Allowed campuses: " + v.campuses.join("; "),
     "Allowed project managers: " + v.pms.join("; "),
@@ -172,6 +214,18 @@ export function validatePlan(raw: unknown, v: Vocab): Plan | null {
     return isFinite(n) ? Math.min(Math.max(n, lo), hi) : lo;
   };
   if (!INTENTS.includes(r.intent as never)) return null;
+  // Amount conditions only make sense for a project list; a pushback such as
+  // "wrong answer" once came back as intent gap with the right filters.
+  const hasCond = Array.isArray(r.conditions) && r.conditions.length > 0;
+  if (hasCond && (r.intent === "gap" || r.intent === "other")) r.intent = "projects";
+  const conditions: Cond[] = Array.isArray(r.conditions)
+    ? r.conditions.flatMap((c: unknown) => {
+        const o = (c ?? {}) as Record<string, unknown>;
+        const v = Number(o.value);
+        return COND_FIELDS.includes(o.field as never) && COND_OPS.includes(o.op as never) && isFinite(v)
+          ? [{ field: o.field as Cond["field"], op: o.op as Cond["op"], value: v }] : [];
+      }).slice(0, 4)
+    : [];
   return {
     intent: r.intent as Plan["intent"],
     op: pick(r.op, OPS, "list"),
@@ -191,6 +245,9 @@ export function validatePlan(raw: unknown, v: Vocab): Plan | null {
     limit: int(r.limit, 0, 200),
     unmatched_terms: Array.isArray(r.unmatched_terms)
       ? uniq(r.unmatched_terms.map((s) => String(s).slice(0, 60))).slice(0, 5) : [],
+    conditions,
+    risk_levels: list(r.risk_levels, [...RISK_LEVELS]),
+    cannot_express: String(r.cannot_express ?? "").trim().slice(0, 160),
   };
 }
 
@@ -234,6 +291,68 @@ export type Answer = {
   meta: Record<string, unknown>;
 };
 
+const OP_TEXT = { gt: "above", gte: "at least", lt: "below", lte: "at most", eq: "exactly", ne: "not" };
+const FIELD_TEXT = { df: "DF recommended", approved: "approved", released: "released" };
+function test(v: number, c: Cond): boolean {
+  const x = Number(v) || 0;
+  switch (c.op) {
+    case "gt": return x > c.value; case "gte": return x >= c.value;
+    case "lt": return x < c.value; case "lte": return x <= c.value;
+    case "eq": return Math.abs(x - c.value) < 0.5; default: return Math.abs(x - c.value) >= 0.5;
+  }
+}
+const clip = (s: string, n: number) => s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
+function condText(c: Cond): string {
+  if (c.value === 0 && c.op === "gt") return `${FIELD_TEXT[c.field]} above zero`;
+  if (c.value === 0 && c.op === "eq") return `nothing ${FIELD_TEXT[c.field]}`;
+  return `${FIELD_TEXT[c.field]} ${OP_TEXT[c.op]} ${money(c.value)}`;
+}
+
+// Risk questions, answered from the risk register by code.
+export function executeRisks(plan: Plan, risks: Risk[], question: string): Answer {
+  const readAs: string[] = [];
+  let rs = risks;
+  if (plan.campuses.length) {
+    rs = rs.filter((r) => r.campus && plan.campuses.includes(r.campus));
+    readAs.push("campus " + joinAnd(plan.campuses));
+  }
+  let approx = false;
+  if (plan.name_keywords.trim()) {
+    const names = [...new Set(rs.map((r) => r.project))];
+    const fake = names.map((n) => ({ name: n, code: "" }) as unknown as Row);
+    const m = nameMatch(fake, plan.name_keywords);
+    const keep = new Set(m.rows.map((r) => r.name));
+    rs = rs.filter((r) => keep.has(r.project)); approx = !m.exact;
+    readAs.push(`project matching “${plan.name_keywords.trim()}”` + (approx ? " (closest matches)" : ""));
+  }
+  if (plan.risk_levels.length) {
+    rs = rs.filter((r) => plan.risk_levels.includes(String(r.impact ?? "").toLowerCase()));
+    readAs.push(joinAnd(plan.risk_levels) + " impact");
+  }
+  const scopeText = readAs.length ? readAs.join(" · ") : "all recorded risks";
+  const readLine = `Read as: risk register · ${scopeText}.`;
+  const meta: Record<string, unknown> = { plan, risks: rs.length, matched: rs.length };
+  if (plan.cannot_express)
+    return { answer: `${readLine}\n\nI can't answer the part about “${plan.cannot_express}” reliably yet, so I haven't given a partial answer.`, headline: null, meta };
+  if (plan.unmatched_terms.length)
+    return { answer: `${readLine}\n\nI couldn't find ${joinAnd(plan.unmatched_terms.map((t) => `“${t}”`))} in the portfolio, so I haven't answered for it rather than guess.`, headline: null, meta };
+  if (!rs.length)
+    return { answer: `${readLine}\n\nNo recorded risks match that.`, headline: { value: "0", label: "Matching risks", kind: "risk" }, meta };
+  const cap = (s: string | null) => s ? s[0].toUpperCase() + s.slice(1) : "—";
+  const byLevel = RISK_LEVELS.map((l) => [l, rs.filter((r) => String(r.impact).toLowerCase() === l).length] as const)
+    .filter(([, n]) => n > 0).map(([l, n]) => `${n} ${l}`);
+  const oneProject = new Set(rs.map((r) => r.project)).size === 1;
+  let body = `**${plural(rs.length, "risk")}**${oneProject ? ` on ${cell(rs[0].project)}` : ""}`
+    + (byLevel.length > 1 ? ` (${byLevel.join(", ")} impact)` : "") + ".";
+  if (plan.op !== "count" || rs.length <= 40) {
+    body += "\n\n| " + (oneProject ? "" : "Project | ") + "Risk | Probability | Impact | Owner | Mitigation |\n|"
+      + (oneProject ? "" : "---|") + "---|---|---|---|---|\n"
+      + rs.map((r) => "| " + (oneProject ? "" : cell(r.project) + " | ") + [cell(r.title), cap(r.probability),
+          cap(r.impact), cell(r.owner || "—"), clip(cell(r.mitigation || "—"), 140)].join(" | ") + " |").join("\n");
+  }
+  return { answer: `${readLine}\n\n${body}`, headline: { value: String(rs.length), label: `Risks: ${scopeText}`, kind: "risk" }, meta };
+}
+
 export function execute(plan: Plan, all: Row[], today: string, question: string): Answer {
   const meta: Record<string, unknown> = { plan };
   // Rankings mean CAPEX unless investment is named (the RMC basements alone
@@ -268,6 +387,10 @@ export function execute(plan: Plan, all: Row[], today: string, question: string)
     readAs.push(joinAnd(plan.priorities.map(priorityLabel)).toLowerCase());
   }
   if (plan.no_pm) { rows = rows.filter((r) => !r.pm); readAs.push("no project manager"); }
+  for (const c of plan.conditions) {
+    rows = rows.filter((r) => test(val(r, c.field), c));
+    readAs.push(condText(c));
+  }
   if (plan.overdue) {
     rows = rows.filter((r) => r.end_date && r.end_date < today && r.stage !== "closed");
     readAs.push("past planned end date, not closed");
@@ -289,6 +412,13 @@ export function execute(plan: Plan, all: Row[], today: string, question: string)
 
   // Plain text: the portal's answer renderer does bold and tables, not italics.
   const readLine = `Read as: ${scopeText}.`;
+  if (plan.cannot_express) {
+    return {
+      answer: `${readLine}\n\nI can't answer the part about “${plan.cannot_express}” reliably yet, so I `
+        + `haven't given a partial answer. Please rephrase it, or ask the PMO.`,
+      headline: null, meta: { ...meta, cannot_express: plan.cannot_express },
+    };
+  }
   if (plan.unmatched_terms.length) {
     return {
       answer: `${readLine}\n\nI couldn't find ${joinAnd(plan.unmatched_terms.map((t) => `“${t}”`))} in the `
