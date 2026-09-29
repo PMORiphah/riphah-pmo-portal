@@ -2776,13 +2776,13 @@ function CarryForwardList({ T, session }) {
   if (loading) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>Loading…</div>;
   if (rows.length === 0) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No carry-forward projects on record.</div>;
 
-  const total = rows.reduce((s,r) => s + (r.amount||0), 0);
-  // Fixed inputs from Finance's FY2026 carry-forward reconciliation — not
-  // derived from the project list itself, so kept as named constants here.
-  const SAVINGS = 106839048;
-  const PAYMENTS = 285011804;
-  const afterSavings = total - SAVINGS;
-  const carryForward2026 = afterSavings - PAYMENTS;
+  // amount = pending payments from Finance's carry-forward list (29 Sep 2026
+  // update). Negative values are credits and are kept as Finance gave them.
+  const total = rows.reduce((s,r) => s + (Number(r.amount)||0), 0);
+  const statusColor = (st) => /not to be closed/i.test(st||"") ? T.violet
+    : /closed|pcd/i.test(st||"") ? EMERALD
+    : /progress/i.test(st||"") ? AMBER
+    : /open/i.test(st||"") ? T.blue : T.muted;
 
   return (
     <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, overflow:"hidden" }}>
@@ -2796,7 +2796,7 @@ function CarryForwardList({ T, session }) {
             {rows.length} projects
           </span>
         </div>
-        <span style={{ fontSize:11, color:(T.goldText || GOLD), fontWeight:700 }}>PKR {fmtM(total)} total</span>
+        <span style={{ fontSize:11, color:(T.goldText || GOLD), fontWeight:700 }}>PKR {fmtM(total)} pending</span>
       </div>
       <div style={{ overflowX:"auto", maxHeight:480, overflowY:"auto" }}>
         <table style={tableStyles(T).table}>
@@ -2806,7 +2806,8 @@ function CarryForwardList({ T, session }) {
               <th style={th}>Project ID</th>
               <th style={th}>Project Name</th>
               <th style={th}>Region</th>
-              <th style={{...th, textAlign:"right"}}>Carry F Amount</th>
+              <th style={th}>Status</th>
+              <th style={{...th, textAlign:"right"}}>Pending Payments</th>
             </tr>
           </thead>
           <tbody>
@@ -2816,31 +2817,14 @@ function CarryForwardList({ T, session }) {
                 <td style={{...td, fontFamily:"'JetBrains Mono',monospace", fontSize:11.5, color:T.muted}}>{r.code || "-"}</td>
                 <td data-peek={r.name} style={{...td, fontWeight:500, maxWidth:300, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.name}</td>
                 <td style={{...td, color:T.muted}}>{r.region || "—"}</td>
-                <td style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(T.goldText || GOLD), fontWeight:600}}>{fmtM(r.amount)}</td>
+                <td style={td}>{r.status ? <Badge T={T} color={statusColor(r.status)} size="sm">{r.status}</Badge> : "—"}</td>
+                <td data-peek={"PKR " + Math.round(Number(r.amount)||0).toLocaleString()} style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", color:(Number(r.amount) < 0 ? T.danger : (T.goldText || GOLD)), fontWeight:600}}>{fmtM(Number(r.amount))}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* Reconciliation footer — how the 572M figure on the KPI card is derived */}
-      <div style={{ padding:"16px 18px", borderTop:"2px solid "+T.border, background:T.card2 }}>
-        {[
-          { label:"Total Projects", value:total },
-          { label:"Savings", value:SAVINGS },
-          { label:"After Subtracting Savings", value:afterSavings },
-          { label:"Payments", value:PAYMENTS },
-        ].map(row => (
-          <div key={row.label} style={{ display:"flex", justifyContent:"space-between", padding:"5px 0", fontSize:12.5 }}>
-            <span style={{ color:T.muted }}>{row.label}</span>
-            <span style={{ color:T.text, fontVariantNumeric:"tabular-nums", fontWeight:500 }}>{Math.round(row.value).toLocaleString()}</span>
-          </div>
-        ))}
-        <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0 2px", marginTop:6, borderTop:"1px solid "+T.border, fontSize:14.5 }}>
-          <span style={{ color:T.text, fontWeight:700 }}>Carry Forward 2026</span>
-          <span style={{ color:(T.goldText || GOLD), fontWeight:800, fontVariantNumeric:"tabular-nums" }}>{Math.round(carryForward2026).toLocaleString()}</span>
-        </div>
-      </div>
     </div>
   );
 }
