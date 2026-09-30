@@ -11089,7 +11089,10 @@ function GlobalSearch({ T, session, open, onClose, onSelect, onQuick }) {
 export default function App() {
   const [dark, setDark] = useState(true);
   const [session, setSession] = useState(null);
-  const [page, setPage] = useState("cmd");
+  // ?review=<id> (the PDD push notification and email link) opens that PDD
+  // on PMO Review. Read once; PmoReviewPage removes it from the address bar.
+  const deepReviewId = useRef(Number(new URLSearchParams(window.location.search).get("review")) || null);
+  const [page, setPage] = useState(() => deepReviewId.current ? "review" : "cmd");
   const [restoring, setRestoring] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
 
@@ -11765,6 +11768,7 @@ export default function App() {
         {effectivePage === "schedule" && <div data-tour="schedule-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><SchedulePage T={T} session={session} onSelectProject={openProject} /></div>}
         {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
         {effectivePage === "review" && <PmoReviewPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
+          initialOpenId={deepReviewId.current} onInitialOpened={() => { deepReviewId.current = null; }}
           onSeenChange={() => setReviewTick(t => t + 1)} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}

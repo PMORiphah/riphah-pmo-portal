@@ -16,8 +16,8 @@
    Calibrated on the 47 PDDs present at launch (ai-2, 30 Sep 2026). The PMO's own
    send-back reasons there are about quotations, budget, attachments, item
    specifications, expert contacts and dates, never about how measurable the
-   objectives are. So "partly measurable" and "weak risks" are notes, not points
-   to send back, and item specifications are asked about (PDD-16/26/42/47 were
+   objectives are. So objectives / success criteria (ai-3: at any verdict, the PMO's
+   decision) and "weak risks" are notes, not points to send back, and item specifications are asked about (PDD-16/26/42/47 were
    sent back for them).
 
    One request per PDD: the text plus up to three quotation files (PDF or image)
@@ -26,7 +26,7 @@
 
 import type { Check } from "./review.ts";
 
-export const AI_VERSION = "ai-2";
+export const AI_VERSION = "ai-3";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 export const GEMINI_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 const MAX_QUOTE_FILES = 3;
@@ -224,7 +224,10 @@ export function aiChecks(row: Row, data: Row, files: AiFile[]): { checks: Check[
       dropped.push(`${label}: the model quoted "${quote.slice(0, 80)}", which is not in the PDD, so its reading was ignored`);
       continue;
     }
-    const status = PASS.has(verdict) ? "pass" : NOTE.has(verdict) ? "info" : "warn";
+    // Objectives and success criteria are only ever notes (PMO, 30 Sep 2026): the PMO
+    // has never sent a PDD back for them, and they are required fields in code anyway.
+    const status = PASS.has(verdict) ? "pass"
+      : NOTE.has(verdict) || k === "objectives" || k === "success_criteria" ? "info" : "warn";
     const suggested = k === "risks" ? ((a.suggested_risks as string[]) || []).map(norm).filter(Boolean).slice(0, 3) : [];
     checks.push({
       id: `ai_${k}`, group: "AI reading", label, status, verdict,

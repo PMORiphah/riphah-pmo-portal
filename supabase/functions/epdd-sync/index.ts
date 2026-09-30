@@ -2,6 +2,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { DOMParser } from "jsr:@b-fuze/deno-dom";
 import { reviewPdd, RULES_VERSION } from "./review.ts";
 import { AI_VERSION, callGemini, aiChecks, type AiFile } from "./ai.ts";
+import { pmoRecipients, push, mail, log, newPddEmail, healthEmail, toAscii,
+         type PddNote, type Ctx } from "./notify.ts";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    E-PDD SYNC — copies PDDs from the E-PDD portal (pmo.riphah.edu.pk) into the
@@ -28,8 +30,8 @@ import { AI_VERSION, callGemini, aiChecks, type AiFile } from "./ai.ts";
    portal (used after the PMO links a plan project on the page).
 
    AI READING (phase 4). After the code checks, up to MAX_AI_PER_RUN PDDs a run
-   get one Gemini request each (ai.ts): four judgement questions plus reading the
-   quotation files. Stored in epdd_reviews with model "ai-1:<model>", apart from
+   get one Gemini request each (ai.ts): five judgement questions plus reading the
+   quotation files. Stored in epdd_reviews with model "ai-N:<model>", apart from
    the code review ("rules-N"), and never changes the result. Redone only when
    the PDD or its quotation files change. { "ai": <id>, "dry": true } previews
    one PDD without saving; { "ai_run": n } works through up to n now (PMO).
@@ -40,6 +42,14 @@ import { AI_VERSION, callGemini, aiChecks, type AiFile } from "./ai.ts";
    its print page (/pdd-dataprint/{id}, scripts stripped) as "charter_html", so
    the portal can always print it. The 47 PDDs present at launch were printed to
    PDF once, from the same print page.
+
+   NOTIFY (phase 5, notify.ts). A new or resubmitted PDD in Manage PMO Form is
+   pushed and emailed to the PMO once its code review is ready (and its AI
+   reading, or 15 minutes have passed); epdd_state 'notified' remembers which
+   version of each PDD was announced. Three failed runs in a row send one alert
+   (epdd_state 'alert'), the next good run one "working again". PMO-only test
+   options: { notify_preview: <id> } (no sending), { notify_test: <id> } (push
+   and email to the PMO only, no copies, marked [Test]).
 
    Auth: x-cron-secret (pg_cron) or a signed-in PMO (the "Check now" button).
    ───────────────────────────────────────────────────────────────────────────── */
@@ -57,6 +67,10 @@ const MAX_AI_PER_RUN = 3;           // Gemini free tier: 15 requests/min, 500/da
 const AI_GAP_MS = 4_500;
 const AI_RETRY_MS = 30 * 60_000;    // a failed AI reading is retried after this
 const CHARTER = new Set(["charter", "charter_html"]);
+const NOTIFY_AI_WAIT_MS = 15 * 60_000;  // a new PDD's notice waits this long for its AI reading
+const FAILS_BEFORE_ALERT = 3;           // runs in a row (15 minutes)
+const pkt = (d: unknown) => new Date(String(d)).toLocaleString("en-GB", { timeZone: "Asia/Karachi",
+  day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -468,10 +482,114 @@ Deno.serve(async (req: Request) => {
     return out;
   };
 
+  // ── Telling the PMO (phase 5) ────────────────────────────────────────────
+  const ctx: Ctx = { SUPA, SVC, rest };
+  const buildNotes = async (rows: Row[]): Promise<PddNote[]> => {
+    if (!rows.length) return [];
+    const ids = rows.map(r => r.id).join(",");
+    const code = new Map<number, Row>(), ai = new Map<number, Row>();
+    for (const r of await (await rest(`epdd_reviews?select=pdd_id,model,verdict,summary,checks,created_at&status=eq.done&pdd_id=in.(${ids})&order=created_at.desc`)).json() as Row[]) {
+      const m = /^ai-/.test(String(r.model)) ? ai : code;
+      if (!m.has(Number(r.pdd_id))) m.set(Number(r.pdd_id), r);
+    }
+    return rows.map(p => {
+      const c = code.get(Number(p.id)), a = ai.get(Number(p.id));
+      const cc = (c?.checks as Row[]) || [], ac = (a?.checks as Row[]) || [];
+      return {
+        id: Number(p.id), pdd_number: String(p.pdd_number ?? p.id), project_name: String(p.project_name ?? ""),
+        campus: String(p.campus ?? "No campus"), project_type: String(p.project_type ?? "Type not given"),
+        currency: String(p.currency ?? "PKR"), grand_total: p.grand_total, initiated_by: String(p.initiated_by ?? "-"),
+        epdd_url: String(p.epdd_url ?? BASE), resubmitted: !!p.changed_at,
+        verdict: (c?.verdict as string) ?? null, summary: String(c?.summary ?? "The checks are still running."),
+        toFix: cc.filter(x => x.status === "fail").map(x => String(x.label)),
+        toLook: [...cc, ...ac].filter(x => x.status === "warn").map(x => String(x.label)),
+        ai: a ? String(a.summary ?? "") : null,
+      };
+    });
+  };
+  const PDD_COLS = "id,pdd_number,project_name,campus,project_type,currency,grand_total,initiated_by,epdd_url,content_hash,first_seen_at,changed_at,queue,is_history";
+
+  // test: send to the PMO only (no copies), never touches what was announced.
+  const runNotify = async (test?: { id: number; send: boolean }) => {
+    const notified = JSON.parse((await getState("notified"))?.value || "{}") as Record<string, string>;
+    const rows = await (await rest(test ? `epdd_pdds?select=${PDD_COLS}&id=eq.${test.id}`
+      : `epdd_pdds?select=${PDD_COLS}&queue=eq.manage&is_history=eq.false`)).json() as Row[];
+    const aiOn = (await getState("ai_enabled"))?.value === "on";
+    const due: Row[] = [];
+    for (const p of rows) {
+      if (!test && notified[String(p.id)] === p.content_hash) continue;
+      const fs = await (await rest(`epdd_files?select=status,attempts,category&pdd_id=eq.${p.id}`)).json() as Row[];
+      const copying = fs.some(f => !CHARTER.has(String(f.category)) && (f.status === "pending" || (f.status === "failed" && Number(f.attempts) < MAX_FILE_ATTEMPTS)));
+      if (!test && copying) continue;                                     // files still coming: the review isn't final
+      const arrived = Date.parse(String(p.changed_at ?? p.first_seen_at));
+      if (!test && aiOn && Date.now() - arrived < NOTIFY_AI_WAIT_MS) {
+        const ai = await (await rest(`epdd_reviews?select=created_at&pdd_id=eq.${p.id}&model=like.ai-*&status=eq.done&order=created_at.desc&limit=1`)).json() as Row[];
+        if (!ai[0] || Date.parse(String(ai[0].created_at)) < arrived) continue;   // wait for the AI reading
+      }
+      const code = await (await rest(`epdd_reviews?select=id&pdd_id=eq.${p.id}&model=like.rules-*&limit=1`)).json() as Row[];
+      if (!test && !code.length) continue;
+      due.push(p);
+    }
+    if (!due.length) return { notified: 0 };
+    const notes = await buildNotes(due);
+    const to = await pmoRecipients(ctx);
+    if (test && !test.send) return { preview: newPddEmail(to[0]?.name ?? "PMO", notes), recipients: to.map(r => r.email) };
+    const logs: Row[] = [];
+    for (const n of notes) {
+      const pr = await push(ctx, to.map(r => r.id), {
+        title: `${test ? "[Test] " : ""}${n.resubmitted ? "Resubmitted" : "New"} PDD: ${n.pdd_number}`,
+        body: `${n.project_name} - ${n.verdict === "needs_changes" ? "needs changes" : n.verdict === "ready" ? "ready for decision" : "checking"}`,
+        tag: `epdd-${n.id}`, url: `./?review=${n.id}` });
+      logs.push({ channel: "epdd-push", status: (pr as Row)?.sent ? "sent" : "skipped", detail: `${n.pdd_number}${test ? " test" : ""}; ${JSON.stringify(pr).slice(0, 200)}` });
+    }
+    for (const r of to) {
+      const m = newPddEmail(r.name, notes);
+      const [res] = await mail([r], `${test ? "[Test] " : ""}${m.subject}`, m.text, m.html, !test);
+      logs.push({ recipient_id: r.id, recipient_address: r.email, channel: "epdd-email", status: res.ok ? "sent" : "failed",
+        detail: res.ok ? `${notes.map(n => n.pdd_number).join(",")}${test ? " test" : ""}; cc=${res.cc}` : res.error });
+    }
+    if (!to.length) logs.push({ channel: "epdd-email", status: "skipped", detail: "no active PMO users with email notifications on" });
+    await log(ctx, logs);
+    if (!test) {
+      for (const p of due) notified[String(p.id)] = String(p.content_hash);
+      await setState("notified", JSON.stringify(notified));
+    }
+    return { notified: notes.length, logs: logs.map(l => `${l.channel}:${l.status}`) };
+  };
+
+  const runHealth = async (ok: boolean, error: string | null) => {
+    const alert = await getState("alert");
+    let down: boolean | null = null, since = "", detail = error ?? "";
+    if (ok && alert?.value) { down = false; since = pkt(new Date()); }
+    if (!ok && !alert?.value) {
+      const runs = await (await rest(`epdd_sync_runs?select=ok,error,started_at&finished_at=not.is.null&order=started_at.desc&limit=${FAILS_BEFORE_ALERT}`)).json() as Row[];
+      if (runs.length === FAILS_BEFORE_ALERT && runs.every(r => r.ok === false)) {
+        down = true; since = pkt(runs[runs.length - 1].started_at); detail = String(runs[0].error ?? detail);
+      }
+    }
+    if (down === null) return;
+    const to = await pmoRecipients(ctx);
+    const logs: Row[] = [];
+    const pr = await push(ctx, to.map(r => r.id), { title: down ? "E-PDD check failing" : "E-PDD check working again",
+      body: down ? `New PDDs are not reaching PMO Review since ${since}.` : "PMO Review is up to date again.", tag: "epdd-health", url: "./" });
+    logs.push({ channel: "epdd-health-push", status: (pr as Row)?.sent ? "sent" : "skipped", detail: JSON.stringify(pr).slice(0, 200) });
+    for (const r of to) {
+      const m = healthEmail(r.name, down, toAscii(detail).slice(0, 300), since);
+      const [res] = await mail([r], m.subject, m.text, m.html);
+      logs.push({ recipient_id: r.id, recipient_address: r.email, channel: "epdd-health-email", status: res.ok ? "sent" : "failed",
+        detail: res.ok ? `${down ? "down" : "up"}; cc=${res.cc}` : res.error });
+    }
+    await log(ctx, logs);
+    await setState("alert", down ? new Date().toISOString() : null);
+  };
+
   // Manual one-offs for the PMO: redo one review, preview/run the AI reading.
-  const body = await req.json().catch(() => ({})) as { review?: number; ai?: number; dry?: boolean; ai_run?: number };
-  if (trigger === "manual" && (body?.review || body?.ai || body?.ai_run)) {
+  const body = await req.json().catch(() => ({})) as { review?: number; ai?: number; dry?: boolean; ai_run?: number;
+    notify_preview?: number; notify_test?: number };
+  if (trigger === "manual" && (body?.review || body?.ai || body?.ai_run || body?.notify_preview || body?.notify_test)) {
     try {
+      if (body.notify_preview) return json({ ok: true, ...(await runNotify({ id: Number(body.notify_preview), send: false })) });
+      if (body.notify_test) return json({ ok: true, ...(await runNotify({ id: Number(body.notify_test), send: true })) });
       if (body.review) return json({ ok: true, reviewed: await runReviews(Number(body.review), Date.now() + 60_000) });
       if (body.ai) return json({ ok: true, ai: await runAi({ onlyId: Number(body.ai), max: 1, deadline: Date.now() + 60_000, dry: !!body.dry, force: true }) });
       return json({ ok: true, ai: await runAi({ max: Math.min(8, Number(body.ai_run) || 1), deadline: Date.now() + 75_000 }) });
@@ -671,11 +789,16 @@ Deno.serve(async (req: Request) => {
     const aiOn = (await getState("ai_enabled"))?.value === "on";
     const ai = aiOn ? await runAi({ max: MAX_AI_PER_RUN, deadline: t0 + 70_000 }).catch(e => [{ error: String(e) }]) : [];
 
+    // Then tell the PMO about anything new. A failure here never fails the run.
+    const note = await runNotify().catch(e => ({ error: String((e as Error)?.message ?? e).slice(0, 200) }));
+
     await finish(true, null);
-    return json({ ok: true, trigger, ...stats, reviewed, ai: ai.length, ms: Date.now() - t0 });
+    await runHealth(true, null).catch(() => null);
+    return json({ ok: true, trigger, ...stats, reviewed, ai: ai.length, notify: note, ms: Date.now() - t0 });
   } catch (e) {
     const msg = String((e as Error)?.message ?? e).slice(0, 500);
     await finish(false, msg);
+    await runHealth(false, msg).catch(() => null);
     return json({ ok: false, error: msg, ...stats }, 500);
   }
 });

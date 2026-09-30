@@ -824,7 +824,7 @@ const LIST_COLS = "id,pdd_number,project_name,campus,initiated_by,initiated_by_d
   + "cost_center,grand_total,estimated_total,currency,start_date,finish_date,received_at,epdd_status,queue,epdd_url,"
   + "is_history,seen_at,changed_at,first_seen_at,detail_needed,approvals,pdd";
 
-export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange }) {
+export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange, initialOpenId, onInitialOpened }) {
   useReviewStyles();
   const [rows, setRows]   = useState(null);
   const [files, setFiles] = useState([]);
@@ -877,6 +877,16 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange }) {
     if (!rows || view) return;
     setView(rows.some(r => r.queue === "manage") ? "waiting" : "all");
   }, [rows, view]);
+
+  // Opened from a notification link (?review=<id>): go straight to that PDD once.
+  useEffect(() => {
+    if (!rows || !initialOpenId) return;
+    const r = rows.find(x => x.id === initialOpenId);
+    if (r) open(r);
+    onInitialOpened?.();
+    const u = new URL(window.location.href);
+    if (u.searchParams.has("review")) { u.searchParams.delete("review"); window.history.replaceState({}, "", u.pathname + u.search + u.hash); }
+  }, [rows, initialOpenId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const openRow = useMemo(() => (rows || []).find(r => r.id === openId) || null, [rows, openId]);
   useEffect(() => { pageRef.current?.scrollTo?.({ top:0 }); }, [openId]);
