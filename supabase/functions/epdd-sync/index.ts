@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { DOMParser } from "jsr:@b-fuze/deno-dom";
+import { reviewPdd, RULES_VERSION } from "./review.ts";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    E-PDD SYNC — copies PDDs from the E-PDD portal (pmo.riphah.edu.pk) into the
@@ -19,7 +20,13 @@ import { DOMParser } from "jsr:@b-fuze/deno-dom";
    date, family names, address). Only name, designation, email and unit are
    kept. Approval tokens are dropped.
 
-   Auth: x-cron-secret (pg_cron) or a signed-in PMO (the "Sync now" button).
+   REVIEW (phase 3). After copying, every new or changed PDD gets the code
+   checks in review.ts, stored in epdd_reviews. A review is redone when the PDD,
+   its files, its linked plan project, the plan's figures or the rules change.
+   { "review": <id> } in the body redoes one PDD without touching the E-PDD
+   portal (used after the PMO links a plan project on the page).
+
+   Auth: x-cron-secret (pg_cron) or a signed-in PMO (the "Check now" button).
    ───────────────────────────────────────────────────────────────────────────── */
 
 const BASE = "https://pmo.riphah.edu.pk";
@@ -97,6 +104,11 @@ const FILE_GROUPS = [
   { key: "construction", folder: "construction", label: "New Construction" },
   { key: "renovation", folder: "renovation", label: "Renovation/Maintenance" },
 ];
+
+// JSON with keys in a fixed order: jsonb hands stored objects back reordered.
+const canon = (v: unknown): string => JSON.stringify(v, (_k, x) =>
+  x && typeof x === "object" && !Array.isArray(x)
+    ? Object.fromEntries(Object.keys(x).sort().map(k => [k, (x as Record<string, unknown>)[k]])) : x);
 
 async function sha256(data: string | Uint8Array) {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
@@ -321,6 +333,65 @@ Deno.serve(async (req: Request) => {
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify({ key, value, updated_at: new Date().toISOString() }) });
 
+  // ── Code review of PDDs (phase 3) ────────────────────────────────────────
+  const runReviews = async (onlyId: number | null, deadline: number) => {
+    const projects = await (await rest("projects?select=id,code,name,campus,df_recommended_amount,workflow_stage,portfolio,fiscal_year,cost_centers(name)")).json() as Row[];
+    const projSig = await sha256(JSON.stringify(projects.map(p => [p.id, p.name, p.df_recommended_amount, p.workflow_stage, p.campus, (p.cost_centers as Row | null)?.name]).sort()));
+    const pdds = await (await rest(`epdd_pdds?select=id,project_name,project_type,campus,cost_center,grand_total,estimated_total,received_at,source_created_at,submitted_on,start_date,finish_date,pdd,content_hash,linked_project_id,link_source&queue=neq.removed${onlyId ? `&id=eq.${onlyId}` : ""}`)).json() as Row[];
+    const files = await (await rest(`epdd_files?select=pdd_id,category,title,file_name,status,attempts,sha256,error${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[];
+    const latest = new Map<number, Row>();
+    for (const r of await (await rest(`epdd_reviews?select=id,pdd_id,content_hash,verdict,summary,model,checks&order=created_at.desc${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[])
+      if (!latest.has(Number(r.pdd_id))) latest.set(Number(r.pdd_id), r);
+    let done = 0;
+    for (const row of pdds) {
+      if (Date.now() > deadline) break;
+      const fs = files.filter(f => f.pdd_id === row.id);
+      // Wait for the attachments: a file still being copied would read as missing.
+      if (fs.some(f => f.status === "pending" || (f.status === "failed" && Number(f.attempts) < MAX_FILE_ATTEMPTS))) continue;
+      const fileSig = fs.map(f => [f.category, f.title, f.file_name, f.status, f.sha256]).sort();
+      const keyFor = (lid: unknown, ls: unknown) =>
+        sha256(JSON.stringify([RULES_VERSION, row.content_hash, lid ?? null, ls ?? null, fileSig, projSig]));
+      const prev = latest.get(Number(row.id));
+      if (prev?.content_hash === await keyFor(row.linked_project_id, row.link_source)) continue;
+      const rv = reviewPdd(row, fs, projects);
+      // Keep the automatic link on the row (never over the PMO's own choice),
+      // and key the review on the link as it now stands.
+      let lid = row.linked_project_id ?? null, ls = row.link_source ?? null;
+      if (row.link_source !== "pmo") {
+        const auto = rv.linkSource === "auto" ? rv.linked?.id ?? null : null;
+        if (auto !== lid || (auto ? "auto" : null) !== ls) {
+          lid = auto; ls = auto ? "auto" : null;
+          await rest(`epdd_pdds?id=eq.${row.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ linked_project_id: lid, link_source: ls }) });
+        }
+      }
+      const key = await keyFor(lid, ls);
+      const same = prev && prev.verdict === rv.verdict && prev.summary === rv.summary &&
+        prev.model === RULES_VERSION && canon(prev.checks) === canon(rv.checks);
+      if (same) {
+        await rest(`epdd_reviews?id=eq.${prev!.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ content_hash: key }) });
+      } else {
+        const r = await rest("epdd_reviews", { method: "POST", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ pdd_id: row.id, content_hash: key, status: "done", verdict: rv.verdict,
+            summary: rv.summary, checks: rv.checks, model: RULES_VERSION, requests_used: 0,
+            finished_at: new Date().toISOString() }) });
+        if (!r.ok) throw new Error(`save review ${row.id}: ${r.status} ${(await r.text()).slice(0, 200)}`);
+        done++;
+      }
+    }
+    return done;
+  };
+
+  // Redo one PDD's review only (after the PMO links a plan project).
+  const body = await req.json().catch(() => ({})) as { review?: number };
+  if (body?.review && trigger === "manual") {
+    try {
+      const n = await runReviews(Number(body.review), Date.now() + 60_000);
+      return json({ ok: true, reviewed: n });
+    } catch (e) { return json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, 500); }
+  }
+
   // One run at a time.
   const lock = await getState("lock");
   if (lock?.value && Date.now() - Date.parse(lock.value) < LOCK_MS)
@@ -331,6 +402,7 @@ Deno.serve(async (req: Request) => {
     body: JSON.stringify({ trigger }) });
   const runId = (await runRes.json().catch(() => [{}]))?.[0]?.id;
   const stats = { listed: 0, new_count: 0, updated_count: 0, details_read: 0, files_stored: 0, files_failed: 0 };
+  let reviewed = 0;
   const finish = async (ok: boolean, error: string | null) => {
     if (runId) await rest(`epdd_sync_runs?id=eq.${runId}`, { method: "PATCH",
       body: JSON.stringify({ ...stats, ok, error, finished_at: new Date().toISOString() }) });
@@ -480,8 +552,11 @@ Deno.serve(async (req: Request) => {
       await rest(`epdd_files?id=eq.${f.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
     }
 
+    // Reviews last: they need the details and files copied above.
+    reviewed = await runReviews(null, t0 + TIME_BUDGET_MS + 20_000);
+
     await finish(true, null);
-    return json({ ok: true, trigger, ...stats, ms: Date.now() - t0 });
+    return json({ ok: true, trigger, ...stats, reviewed, ms: Date.now() - t0 });
   } catch (e) {
     const msg = String((e as Error)?.message ?? e).slice(0, 500);
     await finish(false, msg);
