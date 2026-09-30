@@ -647,7 +647,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, onC
 // to change with it.
 const MOBILE_TAB_PRIORITY = ["cmd", "proj", "upd", "photowall", "camp", "perf", "risks", "cashflow", "team"];
 
-function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0 }) {
+function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, reviewCount = 0 }) {
   const filtered = NAV.filter(n => {
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule")) return false;
@@ -659,6 +659,9 @@ function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0 }) {
   });
   const primary = ordered.slice(0, 4);
   const overflowCount = ordered.length - primary.length;
+  // PMO Review lives in the More drawer on phones, so its unread count rides on
+  // the More tab; otherwise a new PDD would only show once the drawer is opened.
+  const reviewInMore = reviewCount > 0 && !primary.some(n => n.id === "review") && filtered.some(n => n.id === "review");
 
   const Tab = ({ id, Icon, label, onClick, active }) => (
     <button onClick={onClick} className={`pmo-focusable${active ? " pmo-hot" : ""}`} style={{
@@ -681,6 +684,14 @@ function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0 }) {
             borderRadius: R.pill, background: DATA.danger, color: "#fff", fontSize: 9, fontWeight: 700,
             display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
             {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+        {((id === "review" && reviewCount > 0) || (id === "more" && reviewInMore)) && (
+          <span aria-label={`${reviewCount} new PDD${reviewCount === 1 ? "" : "s"}`} style={{ position: "absolute", top: -4, right: -7, minWidth: 15, height: 15, padding: "0 3px",
+            borderRadius: R.pill, background: BRAND.gold, color: "#1A1206", fontSize: 9, fontWeight: 700,
+            display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+            boxShadow: `0 2px 8px -1px ${BRAND.gold}99` }}>
+            {reviewCount > 99 ? "99+" : reviewCount}
           </span>
         )}
       </div>
@@ -11205,7 +11216,10 @@ export default function App() {
     };
     fetchCount();
     const iv = setInterval(fetchCount, 60000);
-    return () => { alive = false; clearInterval(iv); };
+    // Phones suspend timers in the background: recount as soon as the app is back.
+    const onVisible = () => { if (document.visibilityState === "visible") fetchCount(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { alive = false; clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
   }, [session?.access_token, session?.role, reviewTick]);
 
   // Global unread-comment count (for sidebar badge) — polls every 45s.
@@ -11716,7 +11730,7 @@ export default function App() {
       />
       {vp.isCompact && (
         <BottomTabBar T={T} page={effectivePage} setPage={navigateToPage} session={session}
-          unreadCount={unreadCount} onMore={() => setNavMobileOpen(true)} />
+          unreadCount={unreadCount} reviewCount={reviewCount} onMore={() => setNavMobileOpen(true)} />
       )}
       {/* §14 — this column is the "world" that pulls back behind an overlay. */}
       <div className="pmo-world" style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden",

@@ -711,6 +711,13 @@ Deno.serve(async (req: Request) => {
           await rest(`epdd_files?pdd_id=eq.${id}&category=eq.charter&source_url=like.*pdd-dataprint*`,
             { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ title: "PDD charter (PDF, earlier version)" }) });
         }
+        // Back in Manage PMO Form with new content (a resubmission), or returned there from
+        // another queue: it is new work for the PMO, so it counts as unread again (badge,
+        // push and email), even if it was one of the PDDs present at launch.
+        if (queue === "manage" && (changed || ex.queue !== "manage")) {
+          patch.seen_at = null; patch.seen_by = null; patch.is_history = false;
+          if (!changed) patch.changed_at = now;
+        }
         stats.updated_count++;
         const r = await rest(`epdd_pdds?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
         if (!r.ok) throw new Error(`update PDD ${id}: ${r.status} ${(await r.text()).slice(0, 200)}`);
