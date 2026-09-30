@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { ClipboardCheck, Search, ArrowLeft, ExternalLink, RefreshCw, FileText, Paperclip,
          History, Download, Inbox, Clock, CheckCircle2, XCircle, PenLine,
          ListTree, Banknote, CalendarRange, AlertTriangle, Info, Copy, Link2, Ban, Undo2,
-         ShieldCheck } from "lucide-react";
+         ShieldCheck, Sparkles, Printer } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 
@@ -198,11 +198,12 @@ function BudgetMatch({ T, session, supa, row, check, onRelink, busy }) {
   );
 }
 
-function ReviewPanel({ T, session, supa, row, review, isCompact, onChanged }) {
+function ReviewPanel({ T, session, supa, row, review, ai, isCompact, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [copied, setCopied] = useState(false);
   const [showPassed, setShowPassed] = useState(false);
+  const [useAi, setUseAi] = useState(true);
   const replyRef = useRef(null);
 
   if (!review) return (
@@ -217,9 +218,12 @@ function ReviewPanel({ T, session, supa, row, review, isCompact, onChanged }) {
   const checks = Array.isArray(review.checks) ? review.checks : [];
   const n = (st) => checks.filter(c => c.status === st).length;
   const vm = verdictMeta(review.verdict);
-  const reply = checks.filter(c => (c.status === "fail" || c.status === "warn") && c.comment)
+  const aiChecks = ai?.status === "done" && Array.isArray(ai.checks) ? ai.checks : [];
+  const codeReply = checks.filter(c => (c.status === "fail" || c.status === "warn") && c.comment)
     .sort((a, b) => (a.status === "fail" ? 0 : 1) - (b.status === "fail" ? 0 : 1))
-    .map(c => c.comment).join("\n");
+    .map(c => c.comment);
+  const aiReply = aiChecks.filter(c => c.status === "warn" && c.comment).map(c => c.comment);
+  const reply = [...codeReply, ...(useAi ? aiReply : [])].join("\n");
 
   const relink = async (projectId, source) => {
     setBusy(true); setMsg(null);
@@ -253,7 +257,7 @@ function ReviewPanel({ T, session, supa, row, review, isCompact, onChanged }) {
             <div style={{ ...TYPE.h3, fontSize:17, color:T.textOf(vm.c) }}>{vm.label}</div>
             <div style={{ fontSize:13, color:T.text, marginTop:3, lineHeight:1.55 }}>{review.summary}</div>
             <div style={{ ...TYPE.caption, color:T.dim, marginTop:4 }}>
-              Code checks · {ago(review.created_at)} · the model's checks follow in the next phase
+              Code checks · {ago(review.created_at)} · these alone set the result
             </div>
           </div>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
@@ -313,6 +317,8 @@ function ReviewPanel({ T, session, supa, row, review, isCompact, onChanged }) {
         {busy && !msg && <span style={{ ...TYPE.caption, color:T.muted }}>Saving and re-checking…</span>}
       </div>
 
+      <AiReading T={T} ai={ai} isCompact={isCompact} />
+
       <Surface T={T} pad={isCompact ? SP.md : SP.lg}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, flexWrap:"wrap" }}>
           <span style={{ ...TYPE.label, color:T.text }}>Suggested reply to the submitter</span>
@@ -325,20 +331,113 @@ function ReviewPanel({ T, session, supa, row, review, isCompact, onChanged }) {
           <div style={{ ...TYPE.caption, color:T.dim, marginBottom:8 }}>
             If you send it back, paste this into the reason box in the E-PDD portal and edit it as you like.
           </div>
+          {aiReply.length > 0 && (
+            <label style={{ display:"flex", alignItems:"center", gap:6, ...TYPE.caption, color:T.muted,
+              marginBottom:8, cursor:"pointer" }}>
+              <input type="checkbox" checked={useAi} onChange={e => setUseAi(e.target.checked)} />
+              Include the AI reading's {aiReply.length} point{aiReply.length === 1 ? "" : "s"} (after the code checks)
+            </label>
+          )}
           <textarea ref={replyRef} readOnly value={reply} rows={Math.min(10, reply.split("\n").length + 2)}
             style={{ width:"100%", boxSizing:"border-box", resize:"vertical", padding:SP.md, borderRadius:R.md,
               border:`1px solid ${T.border}`, background:T.card2, color:T.text, fontSize:12.5, lineHeight:1.6,
               fontFamily:"inherit" }} />
         </>) : (
-          <div style={{ fontSize:12.5, color:T.muted }}>Nothing to send back from the code checks.</div>
+          <div style={{ fontSize:12.5, color:T.muted }}>
+            Nothing to send back from the code checks.
+            {aiReply.length > 0 && !useAi && (
+              <label style={{ display:"flex", alignItems:"center", gap:6, ...TYPE.caption, marginTop:6, cursor:"pointer" }}>
+                <input type="checkbox" checked={useAi} onChange={e => setUseAi(e.target.checked)} />
+                Include the AI reading's points
+              </label>
+            )}
+          </div>
         )}
       </Surface>
     </div>
   );
 }
 
+
+/* ── AI reading (phase 4) ───────────────────────────────────────────────────
+   Gemini's reading of the PDD text and quotations (epdd-sync/ai.ts). Guidance
+   only: it never changes the result above. Every judgement quotes the PDD and
+   the quote is checked in code; quotation totals are compared by code. */
+function AiReading({ T, ai, isCompact }) {
+  const [open, setOpen] = useState(true);
+  const tone = DATA.info;
+  const head = (
+    <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+      <Sparkles size={14} color={T.textOf(tone)} />
+      <span style={{ ...TYPE.label, color:T.text }}>AI reading</span>
+      <span style={{ ...TYPE.caption, color:T.dim }}>guidance only · never changes the result</span>
+    </div>
+  );
+  if (!ai) return (
+    <Surface T={T} pad={isCompact ? SP.md : SP.lg}>
+      {head}
+      <div style={{ fontSize:12.5, color:T.muted, marginTop:6 }}>
+        Not read yet. The model reads each PDD within a few runs of it arriving.
+      </div>
+    </Surface>
+  );
+  if (ai.status !== "done") return (
+    <Surface T={T} pad={isCompact ? SP.md : SP.lg}>
+      {head}
+      <div style={{ fontSize:12.5, color:T.muted, marginTop:6 }}>
+        {ai.summary || "The AI reading could not be done this time; it will be retried."}
+      </div>
+    </Surface>
+  );
+  const checks = Array.isArray(ai.checks) ? ai.checks : [];
+  const warns = checks.filter(c => c.status === "warn").length;
+  const model = String(ai.model || "").split(":")[1] || "Gemini";
+  return (
+    <Surface T={T} pad={0}>
+      <button className="pmo-focusable" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        style={{ width:"100%", textAlign:"left", background:"none", border:"none", cursor:"pointer",
+          padding:`${SP.sm + 2}px ${SP.lg}px`, borderBottom: open ? `1px solid ${T.border}` : "none",
+          display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", color:"inherit", font:"inherit" }}>
+        {head}
+        <span style={{ marginLeft:"auto", display:"flex", gap:6, alignItems:"center" }}>
+          {warns > 0 ? <Pill T={T} color={DATA.warning}>{warns} to look at</Pill>
+                     : <Pill T={T} color={DATA.positive}><CheckCircle2 size={10} /> nothing further</Pill>}
+          <span style={{ ...TYPE.caption, color:T.dim }}>{open ? "Hide" : "Show"}</span>
+        </span>
+      </button>
+      {open && (<>
+        {checks.map((c, i) => {
+          const m = CHECK_META[c.status] || CHECK_META.info;
+          return (
+            <div key={c.id + i} className="rev-row" style={{ animationDelay:`${i * 35}ms`, display:"flex", gap:SP.md,
+              padding:`${SP.sm + 2}px ${SP.lg}px`, borderTop: i ? `1px solid ${T.border}` : "none" }}>
+              <m.Icon size={15} color={T.textOf(m.c)} style={{ flexShrink:0, marginTop:2 }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ display:"flex", gap:8, alignItems:"baseline", flexWrap:"wrap" }}>
+                  <span style={{ fontSize:13, fontWeight:600, color:T.text }}>{c.label}</span>
+                  {c.status !== "pass" && <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(m.c) }}>{m.word}</span>}
+                </div>
+                <div style={{ fontSize:12.5, color:T.textSoft, marginTop:2, lineHeight:1.55, overflowWrap:"anywhere" }}>{c.detail}</div>
+                {Array.isArray(c.items) && c.items.length > 0 && (
+                  <ul style={{ margin:"6px 0 0", paddingLeft:18, fontSize:12.5, color:T.text, lineHeight:1.6 }}>
+                    {c.items.map((it, k) => <li key={k} style={{ overflowWrap:"anywhere" }}>{it}</li>)}
+                  </ul>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <div style={{ ...TYPE.caption, color:T.dim, padding:`${SP.sm}px ${SP.lg}px ${SP.md}px`,
+          borderTop:`1px solid ${T.border}` }}>
+          Read by {model} · {ago(ai.created_at)}. Quotes are checked against the PDD; quotation totals are compared by code.
+        </div>
+      </>)}
+    </Surface>
+  );
+}
+
 /* ── Detail ─────────────────────────────────────────────────────────────── */
-function PddDetail({ T, session, supa, row, files, review, isCompact, onBack, onChanged }) {
+function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack, onChanged }) {
   const [tab, setTab] = useState("review");
   const [fileErr, setFileErr] = useState(null);
   const p = row.pdd || {};
@@ -379,6 +478,33 @@ function PddDetail({ T, session, supa, row, files, review, isCompact, onBack, on
     } catch (e) { if (w) w.close(); setFileErr(e.message); }
   };
 
+  // The charter (the PDD as the E-PDD portal prints it). A PDF when there is one:
+  // the E-PDD's own, or one printed from its print page (the 47 at launch). A PDD
+  // that arrives later always has the print page, which is printed from here.
+  const charters = files.filter(f => (f.category === "charter" || f.category === "charter_html") && f.status === "stored");
+  const charterPdf = charters.find(f => f.category === "charter" && !/earlier/i.test(f.title || ""));
+  const charterHtml = charters.find(f => f.category === "charter_html");
+  const charterMain = charterPdf || charterHtml || charters[0] || null;
+
+  const printCharter = async (f) => {
+    setFileErr(null);
+    const w = window.open("", "_blank");
+    try {
+      const res = await supa(`/storage/v1/object/sign/epdd-files/${encodeStoragePath(f.storage_path)}`,
+        { method:"POST", body: JSON.stringify({ expiresIn: 120 }) }, session.access_token);
+      if (!res.signedURL) throw new Error("Could not create a link for the charter");
+      const html = await (await fetch(SUPA_URL + "/storage/v1" + res.signedURL)).text();
+      if (!w) throw new Error("Allow pop-ups to print the charter");
+      // Its images and styles live on the E-PDD portal; the base tag points them there.
+      w.document.open();
+      w.document.write(html.replace(/<head([^>]*)>/i, `<head$1><base href="https://pmo.riphah.edu.pk/">`));
+      w.document.close();
+      w.onload = () => { w.focus(); w.print(); };
+      setTimeout(() => { try { w.focus(); w.print(); } catch { /* closed */ } }, 1500);
+    } catch (e) { if (w) w.close(); setFileErr(e.message); }
+  };
+  const openCharter = (f) => f.category === "charter_html" ? printCharter(f) : openFile(f, false);
+
   const lineSum = items.reduce((s, it) => s + (parseFloat(it.total) || 0), 0);
 
   return (
@@ -407,12 +533,20 @@ function PddDetail({ T, session, supa, row, files, review, isCompact, onBack, on
               {row.su_head ? ` · SU head ${row.su_head}` : ""} · received {fmtDateTime(row.received_at)}
             </div>
           </div>
-          <a href={row.epdd_url} target="_blank" rel="noopener noreferrer" className="pmo-focusable"
-            style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:R.sm,
-              background:T.blue, color:"#fff", textDecoration:"none", fontSize:12.5, fontWeight:600,
-              boxShadow:`0 2px 10px ${T.blue}44`, flexShrink:0 }}>
-            Open in E-PDD portal <ExternalLink size={13} />
-          </a>
+          <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", flexShrink:0 }}>
+            {charterMain && (
+              <Button T={T} size="sm" variant="ghost" icon={charterMain.category === "charter_html" ? Printer : FileText}
+                onClick={() => openCharter(charterMain)}>
+                {charterMain.category === "charter_html" ? "Print charter" : "Charter (PDF)"}
+              </Button>
+            )}
+            <a href={row.epdd_url} target="_blank" rel="noopener noreferrer" className="pmo-focusable"
+              style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:R.sm,
+                background:T.blue, color:"#fff", textDecoration:"none", fontSize:12.5, fontWeight:600,
+                boxShadow:`0 2px 10px ${T.blue}44` }}>
+              Open in E-PDD portal <ExternalLink size={13} />
+            </a>
+          </div>
         </div>
         <div style={{ display:"flex", gap:SP.sm, marginTop:SP.md, flexWrap:"wrap" }}>
           {[["Grand total", `${p.currency || "PKR"} ${fmtFull(row.grand_total)}`],
@@ -429,6 +563,9 @@ function PddDetail({ T, session, supa, row, files, review, isCompact, onBack, on
         </div>
       </Surface>
 
+      {fileErr && tab !== "files" && (
+        <div style={{ fontSize:12.5, color:T.textOf(DATA.danger), marginBottom:SP.sm }}>{fileErr}</div>
+      )}
       <div style={{ ...TYPE.caption, color:T.muted, display:"flex", alignItems:"center", gap:6,
         marginBottom:SP.md, padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.md,
         background:`${BRAND.blue}${T.wash}`, border:`1px solid ${T.border}` }}>
@@ -448,7 +585,7 @@ function PddDetail({ T, session, supa, row, files, review, isCompact, onBack, on
       </div>
 
       {tab === "review" && (
-        <ReviewPanel T={T} session={session} supa={supa} row={row} review={review} isCompact={isCompact}
+        <ReviewPanel T={T} session={session} supa={supa} row={row} review={review} ai={ai} isCompact={isCompact}
           onChanged={onChanged} />
       )}
 
@@ -553,6 +690,36 @@ function PddDetail({ T, session, supa, row, files, review, isCompact, onBack, on
       {tab === "files" && (
         <div style={{ display:"flex", flexDirection:"column", gap:SP.md }}>
           {fileErr && <div style={{ fontSize:12.5, color:T.textOf(DATA.danger) }}>{fileErr}</div>}
+          {charters.length > 0 && (
+            <Surface T={T} pad={0}>
+              <div style={{ padding:`${SP.sm + 2}px ${SP.lg}px`, display:"flex", alignItems:"center", gap:8,
+                borderBottom:`1px solid ${T.border}` }}>
+                <span style={{ ...TYPE.label, color:T.text }}>Charter</span>
+                <span style={{ ...TYPE.caption, color:T.dim }}>the PDD as the E-PDD portal prints it</span>
+              </div>
+              {charters.map((f, i) => (
+                <div key={f.id} style={{ display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap",
+                  padding:`${SP.sm + 2}px ${SP.lg}px`, borderTop: i ? `1px solid ${T.border}` : "none" }}>
+                  <FileText size={14} color={T.muted} style={{ flexShrink:0 }} />
+                  <div style={{ flex:"1 1 220px", minWidth:0 }}>
+                    <div style={{ fontSize:12.5, fontWeight:600, color:T.text }}>{f.title}</div>
+                    <div style={{ ...TYPE.caption, color:T.muted, overflowWrap:"anywhere" }}>
+                      {f.category === "charter_html" ? "Print page from the E-PDD portal" : f.file_name}
+                      {f.size_bytes ? ` · ${fmtBytes(f.size_bytes)}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", gap:6 }}>
+                    {f.category === "charter_html"
+                      ? <Button T={T} size="sm" variant="ghost" icon={Printer} onClick={() => printCharter(f)}>Print</Button>
+                      : <>
+                          <Button T={T} size="sm" variant="ghost" icon={ExternalLink} onClick={() => openFile(f, false)}>Open</Button>
+                          <Button T={T} size="sm" variant="ghost" icon={Download} onClick={() => openFile(f, true)}>Save</Button>
+                        </>}
+                  </div>
+                </div>
+              ))}
+            </Surface>
+          )}
           {groups.length === 0 && (
             <Surface T={T}><div style={{ color:T.textOf(DATA.warning), fontSize:13 }}>No supporting documents were attached.</div></Surface>
           )}
@@ -661,7 +828,8 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange }) {
   useReviewStyles();
   const [rows, setRows]   = useState(null);
   const [files, setFiles] = useState([]);
-  const [reviews, setReviews] = useState({});      // pdd_id -> latest review
+  const [reviews, setReviews] = useState({});      // pdd_id -> latest code review
+  const [aiReviews, setAiReviews] = useState({});  // pdd_id -> latest AI reading
   const [lastRun, setLastRun] = useState(null);
   const [err, setErr]     = useState(null);
   const [q, setQ]         = useState("");
@@ -681,12 +849,18 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange }) {
              {}, session.access_token),
         supa("/rest/v1/epdd_sync_runs?select=started_at,finished_at,ok,error&order=started_at.desc&limit=1",
              {}, session.access_token),
-        supa("/rest/v1/epdd_reviews?select=pdd_id,verdict,summary,checks,created_at,model&status=eq.done&order=created_at.desc",
+        supa("/rest/v1/epdd_reviews?select=pdd_id,status,verdict,summary,checks,created_at,model&status=in.(done,failed)&order=created_at.desc",
              {}, session.access_token).catch(() => []),
       ]);
-      const latest = {};
-      for (const x of (Array.isArray(rv) ? rv : [])) if (!latest[x.pdd_id]) latest[x.pdd_id] = x;
+      // Two kinds of row: the code review ("rules-N", sets the result) and the
+      // model's reading ("ai-N:<model>", guidance only). The latest of each.
+      const latest = {}, latestAi = {};
+      for (const x of (Array.isArray(rv) ? rv : [])) {
+        if (/^ai-/.test(x.model || "")) { if (!latestAi[x.pdd_id]) latestAi[x.pdd_id] = x; }
+        else if (x.status === "done" && !latest[x.pdd_id]) latest[x.pdd_id] = x;
+      }
       setReviews(latest);
+      setAiReviews(latestAi);
       setRows(Array.isArray(r) ? r : []);
       setFiles(Array.isArray(f) ? f : []);
       setLastRun(Array.isArray(runs) ? runs[0] || null : null);
@@ -784,7 +958,8 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange }) {
         <div style={{ position:"relative", zIndex:1 }}>
           {openRow ? (
             <PddDetail T={T} session={session} supa={supa} row={openRow} files={filesFor(openRow.id)}
-              review={reviews[openRow.id] || null} isCompact={isCompact} onBack={() => setOpenId(null)}
+              review={reviews[openRow.id] || null} ai={aiReviews[openRow.id] || null}
+              isCompact={isCompact} onBack={() => setOpenId(null)}
               onChanged={load} />
           ) : (<>
             <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,

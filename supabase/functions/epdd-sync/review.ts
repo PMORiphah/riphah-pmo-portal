@@ -18,7 +18,7 @@ export type Status = "pass" | "fail" | "warn" | "info";
 export interface Check {
   id: string; group: string; label: string; status: Status; detail: string;
   items?: string[]; comment?: string; internal?: boolean; candidates?: Candidate[]; linked?: Candidate | null;
-  link_source?: string | null;
+  link_source?: string | null; verdict?: string;   // verdict: the model's own answer (AI checks)
 }
 export interface Candidate { id: string; name: string; code: string | null; campus: string | null;
   df: number | null; stage: string | null; score: number; name_sim: number; why: string[] }

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { DOMParser } from "jsr:@b-fuze/deno-dom";
 import { reviewPdd, RULES_VERSION } from "./review.ts";
+import { AI_VERSION, callGemini, aiChecks, type AiFile } from "./ai.ts";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    E-PDD SYNC — copies PDDs from the E-PDD portal (pmo.riphah.edu.pk) into the
@@ -26,6 +27,20 @@ import { reviewPdd, RULES_VERSION } from "./review.ts";
    { "review": <id> } in the body redoes one PDD without touching the E-PDD
    portal (used after the PMO links a plan project on the page).
 
+   AI READING (phase 4). After the code checks, up to MAX_AI_PER_RUN PDDs a run
+   get one Gemini request each (ai.ts): four judgement questions plus reading the
+   quotation files. Stored in epdd_reviews with model "ai-1:<model>", apart from
+   the code review ("rules-N"), and never changes the result. Redone only when
+   the PDD or its quotation files change. { "ai": <id>, "dry": true } previews
+   one PDD without saving; { "ai_run": n } works through up to n now (PMO).
+   The scheduled runs do this only while epdd_state 'ai_enabled' is 'on'.
+
+   CHARTER. A PDD waiting in Manage PMO Form carries the E-PDD's own PDF link in
+   its row; that PDF is stored as category "charter". Every waiting PDD also gets
+   its print page (/pdd-dataprint/{id}, scripts stripped) as "charter_html", so
+   the portal can always print it. The 47 PDDs present at launch were printed to
+   PDF once, from the same print page.
+
    Auth: x-cron-secret (pg_cron) or a signed-in PMO (the "Check now" button).
    ───────────────────────────────────────────────────────────────────────────── */
 
@@ -38,6 +53,10 @@ const MAX_FILE_BYTES = 45 * 1024 * 1024;
 const MAX_FILE_ATTEMPTS = 3;
 const TIME_BUDGET_MS = 110_000;     // stop starting new work after this
 const LOCK_MS = 4 * 60_000;         // a run younger than this blocks the next
+const MAX_AI_PER_RUN = 3;           // Gemini free tier: 15 requests/min, 500/day, shared with the assistant
+const AI_GAP_MS = 4_500;
+const AI_RETRY_MS = 30 * 60_000;    // a failed AI reading is retried after this
+const CHARTER = new Set(["charter", "charter_html"]);
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -338,9 +357,11 @@ Deno.serve(async (req: Request) => {
     const projects = await (await rest("projects?select=id,code,name,campus,df_recommended_amount,workflow_stage,portfolio,fiscal_year,cost_centers(name)")).json() as Row[];
     const projSig = await sha256(JSON.stringify(projects.map(p => [p.id, p.name, p.df_recommended_amount, p.workflow_stage, p.campus, (p.cost_centers as Row | null)?.name]).sort()));
     const pdds = await (await rest(`epdd_pdds?select=id,project_name,project_type,campus,cost_center,grand_total,estimated_total,received_at,source_created_at,submitted_on,start_date,finish_date,pdd,content_hash,linked_project_id,link_source&queue=neq.removed${onlyId ? `&id=eq.${onlyId}` : ""}`)).json() as Row[];
-    const files = await (await rest(`epdd_files?select=pdd_id,category,title,file_name,status,attempts,sha256,error${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[];
+    // Charters are the PDD itself, not a submitted attachment: the checks ignore them.
+    const files = (await (await rest(`epdd_files?select=pdd_id,category,title,file_name,status,attempts,sha256,error${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[])
+      .filter(f => !CHARTER.has(String(f.category)));
     const latest = new Map<number, Row>();
-    for (const r of await (await rest(`epdd_reviews?select=id,pdd_id,content_hash,verdict,summary,model,checks&order=created_at.desc${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[])
+    for (const r of await (await rest(`epdd_reviews?select=id,pdd_id,content_hash,verdict,summary,model,checks&model=like.rules-*&order=created_at.desc${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[])
       if (!latest.has(Number(r.pdd_id))) latest.set(Number(r.pdd_id), r);
     let done = 0;
     for (const row of pdds) {
@@ -383,12 +404,77 @@ Deno.serve(async (req: Request) => {
     return done;
   };
 
-  // Redo one PDD's review only (after the PMO links a plan project).
-  const body = await req.json().catch(() => ({})) as { review?: number };
-  if (body?.review && trigger === "manual") {
+  // ── AI reading of PDDs (phase 4) ─────────────────────────────────────────
+  const QUOTE_RE = /quot|offer|proforma|estimate/i;
+  const runAi = async (opts: { onlyId?: number | null; max: number; deadline: number; dry?: boolean; force?: boolean }) => {
+    const out: Row[] = [];
+    const kr = await rest("rpc/get_gemini_key", { method: "POST", body: "{}" });
+    const key = await kr.json().catch(() => null) as string | null;
+    if (!key) return [{ error: "Gemini key missing (get_gemini_key)" }];
+    const pdds = await (await rest(`epdd_pdds?select=id,pdd_number,project_name,project_type,campus,cost_center,grand_total,currency,pdd,content_hash,queue,is_history,first_seen_at&queue=neq.removed${opts.onlyId ? `&id=eq.${opts.onlyId}` : ""}&order=queue.asc,is_history.asc,first_seen_at.desc`)).json() as Row[];
+    const files = (await (await rest(`epdd_files?select=pdd_id,category,title,file_name,status,storage_path,mime,sha256,size_bytes${opts.onlyId ? `&pdd_id=eq.${opts.onlyId}` : ""}`)).json() as Row[])
+      .filter(f => !CHARTER.has(String(f.category)));
+    const latest = new Map<number, Row>();
+    for (const r of await (await rest(`epdd_reviews?select=pdd_id,content_hash,status,created_at&model=like.ai-*&order=created_at.desc${opts.onlyId ? `&pdd_id=eq.${opts.onlyId}` : ""}`)).json() as Row[])
+      if (!latest.has(Number(r.pdd_id))) latest.set(Number(r.pdd_id), r);
+    let calls = 0;
+    // Files named in the PDD's own slots are read, quotations first, up to three.
+    for (const row of pdds) {
+      if (calls >= opts.max || Date.now() > opts.deadline) break;
+      const fs = files.filter(f => f.pdd_id === row.id);
+      if (fs.some(f => f.status === "pending")) continue;
+      const readable = fs.filter(f => f.status === "stored" && /^(application\/pdf|image\/(png|jpe?g|webp))/.test(String(f.mime)));
+      const quoteFiles = readable.filter(f => QUOTE_RE.test(String(f.title)) || QUOTE_RE.test(String(f.file_name)))
+        .sort((a, b) => Number(QUOTE_RE.test(String(b.title))) - Number(QUOTE_RE.test(String(a.title))));
+      const picked: Row[] = []; let bytes = 0;
+      for (const f of quoteFiles) {
+        if (picked.length >= 3 || picked.some(x => x.sha256 && x.sha256 === f.sha256)) continue;
+        if (bytes + Number(f.size_bytes ?? 0) > 14 * 1024 * 1024) continue;
+        picked.push(f); bytes += Number(f.size_bytes ?? 0);
+      }
+      const aiKey = await sha256(JSON.stringify([AI_VERSION, row.content_hash, picked.map(f => f.sha256)]));
+      const prev = latest.get(Number(row.id));
+      if (!opts.force && prev?.content_hash === aiKey &&
+          (prev.status === "done" || Date.now() - Date.parse(String(prev.created_at)) < AI_RETRY_MS)) continue;
+      const aiFiles: AiFile[] = [];
+      for (const f of picked) {
+        const r = await fetch(`${SUPA}/storage/v1/object/${BUCKET}/${f.storage_path}`, { headers: { apikey: SVC, Authorization: `Bearer ${SVC}` } });
+        if (r.ok) aiFiles.push({ title: String(f.title), file_name: String(f.file_name).replace(/^\d+_/, ""), mime: String(f.mime),
+                                 bytes: new Uint8Array(await r.arrayBuffer()) });
+      }
+      if (calls > 0) await new Promise(res => setTimeout(res, AI_GAP_MS));
+      calls++;
+      const res = await callGemini(key, row, aiFiles);
+      let record: Row;
+      if (res.ok) {
+        const { checks, dropped } = aiChecks(row, res.data, aiFiles);
+        if (dropped.length) checks.push({ id: "ai_dropped", group: "AI reading", label: "Readings ignored", status: "info",
+          detail: "Some of the model's answers quoted text that is not in the PDD, so they were not used.", items: dropped });
+        const warns = checks.filter(c => c.status === "warn").length;
+        record = { pdd_id: row.id, content_hash: aiKey, status: "done", verdict: null, model: `${AI_VERSION}:${res.model}`,
+          summary: warns ? `The AI reading raises ${warns} point${warns === 1 ? "" : "s"} to look at.` : "The AI reading raises nothing further.",
+          checks, requests_used: 1, finished_at: new Date().toISOString() };
+      } else {
+        record = { pdd_id: row.id, content_hash: aiKey, status: "failed", verdict: null, model: AI_VERSION,
+          summary: "The AI reading could not be done this time; it will be retried.", checks: [], requests_used: 1,
+          error: res.error, finished_at: new Date().toISOString() };
+      }
+      out.push({ id: row.id, pdd: row.pdd_number, files: aiFiles.map(f => f.title), ...(opts.dry ? { record, raw: res.ok ? res.data : null } : { status: record.status, summary: record.summary, error: record.error }) });
+      if (!opts.dry) {
+        const w = await rest("epdd_reviews", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(record) });
+        if (!w.ok) throw new Error(`save AI reading ${row.id}: ${w.status} ${(await w.text()).slice(0, 200)}`);
+      }
+    }
+    return out;
+  };
+
+  // Manual one-offs for the PMO: redo one review, preview/run the AI reading.
+  const body = await req.json().catch(() => ({})) as { review?: number; ai?: number; dry?: boolean; ai_run?: number };
+  if (trigger === "manual" && (body?.review || body?.ai || body?.ai_run)) {
     try {
-      const n = await runReviews(Number(body.review), Date.now() + 60_000);
-      return json({ ok: true, reviewed: n });
+      if (body.review) return json({ ok: true, reviewed: await runReviews(Number(body.review), Date.now() + 60_000) });
+      if (body.ai) return json({ ok: true, ai: await runAi({ onlyId: Number(body.ai), max: 1, deadline: Date.now() + 60_000, dry: !!body.dry, force: true }) });
+      return json({ ok: true, ai: await runAi({ max: Math.min(8, Number(body.ai_run) || 1), deadline: Date.now() + 75_000 }) });
     } catch (e) { return json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, 500); }
   }
 
@@ -476,6 +562,17 @@ Deno.serve(async (req: Request) => {
         fileRows.push({ pdd_id: id, category: s.category, title: s.title, file_name: s.file,
                         source_url: `${BASE}/public/files/${g.folder}/${encodeURIComponent(s.file)}` });
       }
+      // The charter: the E-PDD's own PDF (its Print/Download link, only on rows
+      // waiting in Manage PMO Form) and, always for those rows, the print page.
+      if (queue === "manage") {
+        const links = [...String(row.action ?? "").matchAll(/href=\\?"([^"\\]+)/g)].map(m => m[1].trim());
+        const pdfLink = links.find(h => /downloadpdfpdd|\.pdf(\?|$)/i.test(h));
+        const name = String(base.pdd_number || id);
+        if (pdfLink) fileRows.push({ pdd_id: id, category: "charter", title: "PDD charter (PDF)", file_name: `${name}.pdf`,
+                                     source_url: pdfLink.startsWith("http") ? pdfLink : BASE + pdfLink });
+        fileRows.push({ pdd_id: id, category: "charter_html", title: "PDD print page", file_name: `${name}.html`,
+                        source_url: `${BASE}/pdd-dataprint/${id}` });
+      }
       const ex = existing.get(id);
       if (!ex) {
         inserts.push({ id, ...base, is_history: firstLoad, detail_needed: true, first_seen_at: now });
@@ -487,7 +584,15 @@ Deno.serve(async (req: Request) => {
         const moved = !sameTime || ex.epdd_status !== base.epdd_status || ex.queue !== queue;
         if (!changed && !moved) continue;          // nothing new: leave the row alone
         const patch: Row = { ...base, detail_needed: true };
-        if (changed) patch.changed_at = now;
+        if (changed) {
+          patch.changed_at = now;
+          // A resubmission changes the charter: fetch the E-PDD's PDF and print page again,
+          // and label a PDF printed from the old version as such.
+          await rest(`epdd_files?pdd_id=eq.${id}&or=(category.eq.charter_html,and(category.eq.charter,source_url.like.*downloadpdfpdd*))`,
+            { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "pending", attempts: 0 }) });
+          await rest(`epdd_files?pdd_id=eq.${id}&category=eq.charter&source_url=like.*pdd-dataprint*`,
+            { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ title: "PDD charter (PDF, earlier version)" }) });
+        }
         stats.updated_count++;
         const r = await rest(`epdd_pdds?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
         if (!r.ok) throw new Error(`update PDD ${id}: ${r.status} ${(await r.text()).slice(0, 200)}`);
@@ -525,7 +630,7 @@ Deno.serve(async (req: Request) => {
     await setState("session", jar.dump());
 
     // Attachments into the private bucket.
-    const fRes = await rest(`epdd_files?status=neq.stored&attempts=lt.${MAX_FILE_ATTEMPTS}&select=id,pdd_id,category,file_name,source_url,attempts&order=id.desc&limit=${MAX_FILES_PER_RUN}`);
+    const fRes = await rest(`epdd_files?status=neq.stored&attempts=lt.${MAX_FILE_ATTEMPTS}&select=id,pdd_id,category,title,file_name,source_url,attempts&order=id.desc&limit=${MAX_FILES_PER_RUN}`);
     for (const f of (await fRes.json()) as Row[]) {
       if (Date.now() - t0 > TIME_BUDGET_MS) break;
       const patch: Row = { attempts: Number(f.attempts) + 1, fetched_at: new Date().toISOString() };
@@ -533,14 +638,20 @@ Deno.serve(async (req: Request) => {
         const res = await epddGet(jar, String(f.source_url), false, 60_000);
         const ct = (res.headers.get("content-type") ?? "application/octet-stream").split(";")[0].trim();
         if (res.status !== 200) { await res.body?.cancel(); throw new Error(`HTTP ${res.status}`); }
-        if (ct === "text/html") { await res.body?.cancel(); throw new Error("the E-PDD portal returned a web page, not the file"); }
+        const isPrint = f.category === "charter_html";
+        if (ct === "text/html" && !isPrint) { await res.body?.cancel(); throw new Error("the E-PDD portal returned a web page, not the file"); }
+        if (isPrint && ct !== "text/html") { await res.body?.cancel(); throw new Error(`print page came back as ${ct}`); }
         const len = Number(res.headers.get("content-length") ?? 0);
         if (len > MAX_FILE_BYTES) { await res.body?.cancel(); throw new Error(`file too large (${Math.round(len / 1048576)} MB)`); }
-        const bytes = new Uint8Array(await res.arrayBuffer());
+        // The print page prints itself on load; keep the page, drop its scripts.
+        const bytes = isPrint
+          ? new TextEncoder().encode((await res.text()).replace(/<script[\s\S]*?<\/script>/gi, ""))
+          : new Uint8Array(await res.arrayBuffer());
+        if (isPrint && !/PROJECT DESCRIPTION DOCUMENT/i.test(new TextDecoder().decode(bytes))) throw new Error("print page did not contain the PDD (signed out?)");
         const safe = String(f.file_name).replace(/[^A-Za-z0-9._()-]+/g, "_").slice(-150);
         const path = `${f.pdd_id}/${f.category}/${f.id}_${safe}`;
         const up = await fetch(`${SUPA}/storage/v1/object/${BUCKET}/${path}`, { method: "POST",
-          headers: { apikey: SVC, Authorization: `Bearer ${SVC}`, "Content-Type": ct, "x-upsert": "true" }, body: bytes });
+          headers: { apikey: SVC, Authorization: `Bearer ${SVC}`, "Content-Type": isPrint ? "text/html; charset=utf-8" : ct, "x-upsert": "true" }, body: bytes });
         if (!up.ok) throw new Error(`storage ${up.status}: ${(await up.text()).slice(0, 200)}`);
         Object.assign(patch, { status: "stored", storage_path: path, size_bytes: bytes.length, mime: ct,
                                sha256: await sha256(bytes), error: null });
@@ -554,9 +665,14 @@ Deno.serve(async (req: Request) => {
 
     // Reviews last: they need the details and files copied above.
     reviewed = await runReviews(null, t0 + TIME_BUDGET_MS + 20_000);
+    // Then the AI reading, a few PDDs a run, waiting PDDs first.
+    // A run is cut off at 150 s, so no new AI request starts after 70 s (each is capped at 55 s).
+    // Switched on and off by epdd_state 'ai_enabled' ('on'), so it can be paused without a deploy.
+    const aiOn = (await getState("ai_enabled"))?.value === "on";
+    const ai = aiOn ? await runAi({ max: MAX_AI_PER_RUN, deadline: t0 + 70_000 }).catch(e => [{ error: String(e) }]) : [];
 
     await finish(true, null);
-    return json({ ok: true, trigger, ...stats, reviewed, ms: Date.now() - t0 });
+    return json({ ok: true, trigger, ...stats, reviewed, ai: ai.length, ms: Date.now() - t0 });
   } catch (e) {
     const msg = String((e as Error)?.message ?? e).slice(0, 500);
     await finish(false, msg);
