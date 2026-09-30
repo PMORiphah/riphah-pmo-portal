@@ -422,9 +422,9 @@ Deno.serve(async (req: Request) => {
   const QUOTE_RE = /quot|offer|proforma|estimate/i;
   const runAi = async (opts: { onlyId?: number | null; max: number; deadline: number; dry?: boolean; force?: boolean }) => {
     const out: Row[] = [];
-    const kr = await rest("rpc/get_gemini_key", { method: "POST", body: "{}" });
-    const key = await kr.json().catch(() => null) as string | null;
-    if (!key) return [{ error: "Gemini key missing (get_gemini_key)" }];
+    const kr = await rest("rpc/get_gemini_keys", { method: "POST", body: "{}" });
+    const keys = ((await kr.json().catch(() => null)) as string[] | null ?? []).filter(Boolean);
+    if (!keys.length) return [{ error: "Gemini key missing (get_gemini_keys)" }];
     const pdds = await (await rest(`epdd_pdds?select=id,pdd_number,project_name,project_type,campus,cost_center,grand_total,currency,pdd,content_hash,queue,is_history,first_seen_at&queue=neq.removed${opts.onlyId ? `&id=eq.${opts.onlyId}` : ""}&order=queue.asc,is_history.asc,first_seen_at.desc`)).json() as Row[];
     const files = (await (await rest(`epdd_files?select=pdd_id,category,title,file_name,status,storage_path,mime,sha256,size_bytes${opts.onlyId ? `&pdd_id=eq.${opts.onlyId}` : ""}`)).json() as Row[])
       .filter(f => !CHARTER.has(String(f.category)));
@@ -458,7 +458,7 @@ Deno.serve(async (req: Request) => {
       }
       if (calls > 0) await new Promise(res => setTimeout(res, AI_GAP_MS));
       calls++;
-      const res = await callGemini(key, row, aiFiles);
+      const res = await callGemini(keys, row, aiFiles);
       let record: Row;
       if (res.ok) {
         const { checks, dropped } = aiChecks(row, res.data, aiFiles);

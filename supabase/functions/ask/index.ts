@@ -523,15 +523,15 @@ async function groqCall(key: string, messages: Msg[], jsonMode = false): Promise
   }
 }
 
-// Gemini first, then the second Gemini model, then Groq. Only availability
-// problems (quota, overload, timeout, empty) move down the chain.
-async function llm(keys: { gemini: string | null; groq: string | null }, messages: Msg[],
+// 3.5 Flash Lite on every Gemini key first (two AI Studio projects, each with its
+// own free quota; PMO, 30 Sep 2026), then 3.1 Flash Lite on every key, then Groq.
+async function llm(keys: { gemini: string[]; groq: string | null }, messages: Msg[],
                    opts: { schema?: unknown; groqJson?: boolean } = {}): Promise<LlmResult> {
   let last: LlmResult = { ok: false, status: 500, detail: "no model configured" };
-  if (keys.gemini) for (const m of GEMINI_MODELS) {
-    last = await geminiCall(m, keys.gemini, messages, opts.schema);
+  for (const m of GEMINI_MODELS) for (const [i, k] of keys.gemini.entries()) {
+    last = await geminiCall(m, k, messages, opts.schema);
     if (last.ok) return last;
-    console.error("gemini", m, last.status, last.detail);
+    console.error("gemini", m, `key ${i + 1}`, last.status, last.detail);
   }
   if (keys.groq) {
     last = await groqCall(keys.groq, messages, opts.groqJson);
@@ -588,10 +588,11 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const [{ data: geminiKey }, { data: groqKey }] = await Promise.all([
-    admin.rpc("get_gemini_key"), admin.rpc("get_assistant_key")]);
-  const keys = { gemini: (geminiKey as string) || null, groq: (groqKey as string) || null };
-  if (!keys.gemini && !keys.groq) {
+  const [{ data: geminiKeys }, { data: groqKey }] = await Promise.all([
+    admin.rpc("get_gemini_keys"), admin.rpc("get_assistant_key")]);
+  const keys = { gemini: (Array.isArray(geminiKeys) ? geminiKeys as string[] : []).filter(Boolean),
+                 groq: (groqKey as string) || null };
+  if (!keys.gemini.length && !keys.groq) {
     console.error("no assistant key configured");
     return json({ error: "The assistant is not configured." }, 500);
   }
