@@ -8,6 +8,7 @@ import { ProjectRaciCard } from "./RaciCard.jsx";
 import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
 import { PastProjectsPage } from "./PastProjects.jsx";
+import { PmoReviewPage } from "./PmoReview.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
 import { AskPanel } from "./AskPanel.jsx";
 import { AssistantAvatar } from "./AssistantAvatar.jsx";
@@ -33,7 +34,7 @@ import {
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
-  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History
+  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -286,6 +287,7 @@ const NAV = [
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows", pmoOnly:true },
   { id:"schedule", Icon:CalendarRange, label:"Timeline & Schedule" },
   { id:"past",     Icon:History,       label:"Past Projects", pmoOnly:true },
+  { id:"review",   Icon:ClipboardCheck, label:"PMO Review",   pmoOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
   { id:"photowall", Icon:Camera,     label:"Gallery" },
   { id:"team", Icon:Users,           label:"Team & About" },
@@ -376,7 +378,7 @@ function SidebarTourButton({ T }) {
   );
 }
 
-function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
+function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, onChangePassword,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
                   fyLabel = "FY 2026-27", navStats = null }) {
   const roleFiltered = NAV.filter(n => {
@@ -448,6 +450,16 @@ function Sidebar({ page, setPage, session, unreadCount = 0, onChangePassword,
             style={{ transition:`color ${MOTION.fast}` }} />
         </div>
         {!mini && <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{label}</span>}
+        {/* New PDDs from the E-PDD portal that the PMO has not opened yet. */}
+        {id === "review" && reviewCount > 0 && (
+          <span style={{
+            position: mini ? "absolute" : "static", top: mini ? 4 : undefined, right: mini ? 8 : undefined,
+            minWidth:18, height:18, padding:"0 5px", borderRadius:R.pill,
+            background:BRAND.gold, color:"#1A1206",
+            fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center",
+            boxSizing:"border-box", boxShadow:`0 2px 8px -1px ${BRAND.gold}99`,
+          }}>{reviewCount > 99 ? "99+" : reviewCount}</span>
+        )}
         {id === "upd" && unreadCount > 0 && (
           <span style={{
             position: mini ? "absolute" : "static", top: mini ? 4 : undefined, right: mini ? 8 : undefined,
@@ -10552,6 +10564,7 @@ const PAGE_TITLES = {
   proj: { title:"Projects",        subtitle:"All capital projects across the portfolio" },
   camp: { title:"Campus / Sites",  subtitle:"Projects and approvals by campus" },
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
+  review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
   cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
   team: { title:"Team & About",    subtitle:"PMO team and portal information" },
@@ -11112,6 +11125,8 @@ export default function App() {
   const [discussionProjectId, setDiscussionProjectId] = useState(null); // {token, type}
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadTick, setUnreadTick] = useState(0); // bump to force an immediate refresh
+  const [reviewCount, setReviewCount] = useState(0); // PDDs from the E-PDD portal not yet opened (PMO)
+  const [reviewTick, setReviewTick] = useState(0);
 
   // ─── ONBOARDING TOUR (Guest, Project Manager only — never PMO) ──────────
   // tutorial_offered_at gates the invite card, not the tour itself: "Take the
@@ -11171,6 +11186,24 @@ export default function App() {
   // esbuild's static checks passed — the TDZ only fires when a step actually
   // runs. Deleted from here; the real declarations are below, once
   // openProject and setDashTab genuinely exist.
+
+  // PMO Review badge: PDDs copied from the E-PDD portal since intake began that
+  // the PMO has not opened. The copy runs every 5 minutes; checking every
+  // minute keeps the badge close behind it.
+  useEffect(() => {
+    if (!session?.access_token || session.role !== "pmo") { setReviewCount(0); return; }
+    let alive = true;
+    const fetchCount = async () => {
+      try {
+        const r = await supa("/rest/v1/epdd_pdds?select=id&is_history=eq.false&seen_at=is.null&queue=neq.removed",
+                             {}, session.access_token);
+        if (alive) setReviewCount(Array.isArray(r) ? r.length : 0);
+      } catch (_) {}
+    };
+    fetchCount();
+    const iv = setInterval(fetchCount, 60000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [session?.access_token, session?.role, reviewTick]);
 
   // Global unread-comment count (for sidebar badge) — polls every 45s.
   // "Unread for me" = a comment I can see, that I didn't write, and haven't opened yet.
@@ -11559,7 +11592,7 @@ export default function App() {
     // entry is not enough on its own: a restored session, a bookmark or a stale
     // page value can still land here, and Past Projects would have shown an
     // empty list rather than saying anything.
-    ((page === "cashflow" || page === "past") && session?.role !== "pmo") ? "proj" :
+    ((page === "cashflow" || page === "past" || page === "review") && session?.role !== "pmo") ? "proj" :
     page;
 
   // Every page the user lands on, recorded once per change rather than per
@@ -11673,7 +11706,7 @@ export default function App() {
       }} />
       <Sidebar
         T={T} page={effectivePage} setPage={navigateToPage} session={session}
-        unreadCount={unreadCount} onChangePassword={() => setShowChangePassword(true)}
+        unreadCount={unreadCount} reviewCount={reviewCount} onChangePassword={() => setShowChangePassword(true)}
         collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}
         isCompact={vp.isCompact} fyLabel={portal.fy} navStats={navStats}
@@ -11731,6 +11764,8 @@ export default function App() {
               onSelectProject={openProject} />}
         {effectivePage === "schedule" && <div data-tour="schedule-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><SchedulePage T={T} session={session} onSelectProject={openProject} /></div>}
         {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
+        {effectivePage === "review" && <PmoReviewPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
+          onSeenChange={() => setReviewTick(t => t + 1)} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} supa={supa} />}

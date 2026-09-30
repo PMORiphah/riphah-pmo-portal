@@ -557,6 +557,7 @@ export const NAV_INSIGHT = {
   camp:     "Projects and approvals by campus",
   perf:     "Monitor schedule and cost performance",
   cashflow: "Track financial and schedule movement",
+  review:   "New PDDs from the E-PDD portal, with their files",
   upd:      "Project comments and communications",
   team:     "PMO team and portal information",
   users:    "Accounts, roles and project assignments",
