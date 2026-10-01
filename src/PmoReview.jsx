@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { ClipboardCheck, Search, ArrowLeft, ExternalLink, RefreshCw, FileText, Paperclip,
          History, Download, Inbox, Clock, CheckCircle2, XCircle, PenLine,
          ListTree, Banknote, CalendarRange, AlertTriangle, Info, Copy, Link2, Ban, Undo2,
-         ShieldCheck, Sparkles, Printer } from "lucide-react";
+         ShieldCheck, Sparkles, Printer, FolderPlus, FolderKanban } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 
@@ -442,8 +442,26 @@ function AiReading({ T, ai, isCompact }) {
 }
 
 /* ── Detail ─────────────────────────────────────────────────────────────── */
-function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack, onChanged }) {
+function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack, onChanged, renderCreateProject }) {
   const [tab, setTab] = useState("review");
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState(null);
+  const budgetCheck = (Array.isArray(review?.checks) ? review.checks : []).find(c => c.id === "budget") || null;
+  const linkedName = budgetCheck?.linked?.name || null;
+
+  // The PMO created a CAPEX project from this PDD: link the two and redo the
+  // budget check, as choosing a plan project on the Review tab does.
+  const afterCreate = async (created) => {
+    setCreating(false);
+    if (!created?.id) { setCreateMsg("Project created. Link it to this PDD on the Review tab."); await onChanged?.(); return; }
+    try {
+      await supa(`/rest/v1/epdd_pdds?id=eq.${row.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" },
+        body: JSON.stringify({ linked_project_id: created.id, link_source: "pmo" }) }, session.access_token);
+      await supa(EPDD_SYNC, { method:"POST", body: JSON.stringify({ review: row.id }) }, session.access_token).catch(() => null);
+      setCreateMsg(`Created "${created.name}" in CAPEX projects and linked it to this PDD.`);
+    } catch (e) { setCreateMsg(`Project created, but linking it to the PDD failed (${e.message}). Link it on the Review tab.`); }
+    await onChanged?.();
+  };
   const [fileErr, setFileErr] = useState(null);
   const p = row.pdd || {};
   const items = p.items || [];
@@ -538,7 +556,16 @@ function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack
               {row.su_head ? ` · SU head ${row.su_head}` : ""} · received {fmtDateTime(row.received_at)}
             </div>
           </div>
-          <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", flexShrink:0 }}>
+          <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", alignItems:"center",
+            flex: isCompact ? "1 1 100%" : "0 1 auto", minWidth:0 }}>
+            {renderCreateProject && !row.linked_project_id && (
+              <Button T={T} size="sm" variant="ghost" icon={FolderPlus} onClick={() => { setCreateMsg(null); setCreating(true); }}>
+                Create CAPEX project
+              </Button>
+            )}
+            {row.linked_project_id && (
+              <Pill T={T} color={BRAND.blue}><FolderKanban size={10} /> In CAPEX projects{linkedName ? `: ${linkedName}` : ""}</Pill>
+            )}
             {charterMain && (
               <Button T={T} size="sm" variant="ghost" icon={charterMain.category === "charter_html" ? Printer : FileText}
                 onClick={() => openCharter(charterMain)}>
@@ -568,6 +595,12 @@ function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack
         </div>
       </Surface>
 
+      {createMsg && (
+        <div style={{ fontSize:12.5, color:T.text, marginBottom:SP.sm, padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.md,
+          background:`${BRAND.blue}14`, border:`1px solid ${BRAND.blue}33` }}>{createMsg}</div>
+      )}
+      {creating && renderCreateProject({ row, candidates: budgetCheck?.candidates || [],
+        onDone: afterCreate, onClose: () => setCreating(false) })}
       {fileErr && tab !== "files" && (
         <div style={{ fontSize:12.5, color:T.textOf(DATA.danger), marginBottom:SP.sm }}>{fileErr}</div>
       )}
@@ -827,9 +860,9 @@ function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack
 /* ── Page ───────────────────────────────────────────────────────────────── */
 const LIST_COLS = "id,pdd_number,project_name,campus,initiated_by,initiated_by_designation,su_head,project_type,"
   + "cost_center,grand_total,estimated_total,currency,start_date,finish_date,received_at,epdd_status,queue,epdd_url,"
-  + "is_history,seen_at,changed_at,first_seen_at,detail_needed,approvals,pdd";
+  + "is_history,seen_at,changed_at,first_seen_at,detail_needed,approvals,pdd,linked_project_id,link_source";
 
-export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange, initialOpenId, onInitialOpened }) {
+export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange, initialOpenId, onInitialOpened, renderCreateProject }) {
   useReviewStyles();
   const [rows, setRows]   = useState(null);
   const [files, setFiles] = useState([]);
@@ -975,7 +1008,7 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange, initi
             <PddDetail T={T} session={session} supa={supa} row={openRow} files={filesFor(openRow.id)}
               review={reviews[openRow.id] || null} ai={aiReviews[openRow.id] || null}
               isCompact={isCompact} onBack={() => setOpenId(null)}
-              onChanged={load} />
+              onChanged={load} renderCreateProject={renderCreateProject} />
           ) : (<>
             <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
               gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(4, minmax(0,1fr))" }}>

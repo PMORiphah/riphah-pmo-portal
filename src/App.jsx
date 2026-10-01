@@ -3544,29 +3544,32 @@ const Col = ({children,flex=1})=>{
   return <div style={{flex,minWidth:vpF.isCompact?150:0}}>{children}</div>;
 };
 
-function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
+function ProjectFormModal({ T, session, project, lookups, onSaved, onClose, prefill = null, notice = null, logNote = "" }) {
   const isEdit = !!project;
+  // A new project can start from a prefill (a PDD from the E-PDD portal); the
+  // PMO checks it and presses Create as usual.
+  const src = project || prefill;
   const initForm = () => ({
-    code:project?.code||"", name:project?.name||"",
-    fiscal_year:project?.fiscal_year||"",
-    strategic_priority:project?.strategic_priority||"",
-    sector_id:project?.sector_id||"", region_id:project?.region_id||"",
-    segment_id:project?.segment_id||"", cost_center_id:project?.cost_center_id||"",
-    campus_id:project?.campus_id||"",
-    project_type:project?.project_type||"", priority:project?.priority||"",
-    workflow_stage:project?.workflow_stage||"identified",
-    is_carry_forward:project?.is_carry_forward||false, payments_pending:project?.payments_pending||false,
-    scope_change:project?.scope_change||false,
-    su_requested_amount:project?.su_requested_amount||0, df_recommended_amount:project?.df_recommended_amount||0,
-    bac:project?.bac||0, amount_released:project?.amount_released||0, payments_made:project?.payments_made||0,
-    actual_cost:project?.actual_cost||0,
-    budget_release_date:project?.budget_release_date||"",
-    start_date:project?.start_date||"", end_date:project?.end_date||"",
-    actual_start_date:project?.actual_start_date||"", actual_end_date:project?.actual_end_date||"",
-    pcd_received_date:project?.pcd_received_date||"",
-    duration_months:project?.duration_months||"", pct_complete:project?.pct_complete||0,
-    manual_schedule_flag:project?.manual_schedule_flag||"", manual_budget_flag:project?.manual_budget_flag||"",
-    notes:project?.notes||"",
+    code:src?.code||"", name:src?.name||"",
+    fiscal_year:src?.fiscal_year||"",
+    strategic_priority:src?.strategic_priority||"",
+    sector_id:src?.sector_id||"", region_id:src?.region_id||"",
+    segment_id:src?.segment_id||"", cost_center_id:src?.cost_center_id||"",
+    campus_id:src?.campus_id||"",
+    project_type:src?.project_type||"", priority:src?.priority||"",
+    workflow_stage:src?.workflow_stage||"identified",
+    is_carry_forward:src?.is_carry_forward||false, payments_pending:src?.payments_pending||false,
+    scope_change:src?.scope_change||false,
+    su_requested_amount:src?.su_requested_amount||0, df_recommended_amount:src?.df_recommended_amount||0,
+    bac:src?.bac||0, amount_released:src?.amount_released||0, payments_made:src?.payments_made||0,
+    actual_cost:src?.actual_cost||0,
+    budget_release_date:src?.budget_release_date||"",
+    start_date:src?.start_date||"", end_date:src?.end_date||"",
+    actual_start_date:src?.actual_start_date||"", actual_end_date:src?.actual_end_date||"",
+    pcd_received_date:src?.pcd_received_date||"",
+    duration_months:src?.duration_months||"", pct_complete:src?.pct_complete||0,
+    manual_schedule_flag:src?.manual_schedule_flag||"", manual_budget_flag:src?.manual_budget_flag||"",
+    notes:src?.notes||"",
   });
   const [form, setForm] = useState(initForm());
   const [saving, setSaving] = useState(false);
@@ -3576,6 +3579,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
   const save = async () => {
     if (!form.name.trim()) return setErr("Project name is required.");
     setErr(null); setSaving(true);
+    let created = null;
     try {
       const payload = { ...form,
         fiscal_year:form.fiscal_year||null,
@@ -3601,14 +3605,15 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
       if (isEdit) {
         await supa(`/rest/v1/projects?id=eq.${project.id}`,{method:"PATCH",body:JSON.stringify(payload),headers:{"Prefer":"return=minimal"}},session.access_token);
       } else {
-        await supa("/rest/v1/projects",{method:"POST",body:JSON.stringify(payload),headers:{"Prefer":"return=minimal"}},session.access_token);
+        created = await supa("/rest/v1/projects",{method:"POST",body:JSON.stringify(payload),headers:{"Prefer":"return=representation"}},session.access_token);
+        created = Array.isArray(created) ? created[0] : created;
       }
       await supa("/rest/v1/activity_log",{method:"POST",body:JSON.stringify({
         actor_id:session.user_id,actor_name:session.full_name||session.username,actor_role:session.role,
-        action:isEdit?"updated":"created",entity_type:"projects",entity_id:isEdit?project.id:null,
-        summary:`${isEdit?"Updated":"Created"} project ${form.code}: ${form.name}`,
+        action:isEdit?"updated":"created",entity_type:"projects",entity_id:isEdit?project.id:(created?.id||null),
+        summary:`${isEdit?"Updated":"Created"} project ${form.code}: ${form.name}${logNote}`,
       }),headers:{"Prefer":"return=minimal"}},session.access_token);
-      onSaved();
+      await onSaved(created);
     } catch(e) { setErr(e.message); }
     setSaving(false);
   };
@@ -3630,7 +3635,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
   return (
     <Modal T={T} onClose={onClose} width={720} icon={FolderKanban}
       title={isEdit ? `Edit project${project.code && project.code !== "-" ? ` — ${project.code}` : ""}` : "New project"}
-      sub={isEdit ? project.name : "Add a capital project to the FY 2026-27 portfolio"}
+      sub={isEdit ? project.name : prefill ? "Filled in from the PDD. Check every field, then create." : "Add a capital project to the FY 2026-27 portfolio"}
       footer={<>
         <Button T={T} variant="ghost" onClick={onClose}>Cancel</Button>
         <Button T={T} variant="primary" onClick={save} loading={saving}>
@@ -3645,6 +3650,7 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
             <AlertCircle size={14} style={{marginTop:1, flexShrink:0}} />{err}
           </div>
         )}
+        {notice}
 
         <Sec T={T} title="Basic"/>
         <Row>
@@ -3724,6 +3730,116 @@ function ProjectFormModal({ T, session, project, lookups, onSaved, onClose }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ─── NEW PROJECT FROM A PDD (PMO Review) ─────────────────────────────────────
+// Opens the usual New project form filled in from a PDD copied from the E-PDD
+// portal. Nothing is saved until the PMO presses Create; the new project is then
+// linked to the PDD and that PDD's budget check is redone.
+const PDD_CAMPUS = { "rih sihala":"RIH", "g7 campus":"G-7", "university i-14":"I-14", "al-mizan campus":"Al-Mizan",
+  "gg campus":"GGC", "ferozepur road":"Lahore", "gg head office":"Central Secretariat" };
+const keyOf = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const ccCodeOf = (v) => String(v ?? "").match(/(\d{7})/)?.[1] || null;
+const modeOf = (list) => {
+  const n = {}; let best = null;
+  for (const v of list) if (v) { n[v] = (n[v] || 0) + 1; if (!best || n[v] > n[best]) best = v; }
+  return best;
+};
+
+function pddPrefill(row, lookups, projects) {
+  const p = row.pdd || {};
+  const notes = [];
+  // Campus: the E-PDD's names, mapped the same way as the budget check.
+  const campusName = PDD_CAMPUS[String(row.campus || "").trim().toLowerCase()] || row.campus || "";
+  const campus = (lookups.campuses || []).find(c => keyOf(c.name) === keyOf(campusName)) || null;
+  if (row.campus && !campus) notes.push(`campus "${row.campus}"`);
+  // Cost centre: the same SAP code, else the department it belongs to
+  // (1200013 Procurement-LHR sits under Lahore 1200000), preferring the campus.
+  const code = ccCodeOf(row.cost_center);
+  const ccs = (lookups.cost_centers || []).map(c => ({ ...c, code: ccCodeOf(c.name) })).filter(c => c.code);
+  let cc = code ? ccs.filter(c => c.code === code) : [];
+  if (!cc.length && code) cc = ccs.filter(c => c.code.slice(0, 4) === code.slice(0, 4) && c.code.endsWith("000"));
+  if (cc.length > 1 && campus) {
+    const k = keyOf(campus.name);
+    const onCampus = cc.filter(c => keyOf(c.name).includes(k));
+    if (onCampus.length) cc = onCampus;
+  }
+  const costCentre = cc.length === 1 || (cc.length > 1 && campus) ? cc[0] : null;
+  if (row.cost_center && !costCentre) notes.push(`cost centre "${row.cost_center}"`);
+  // Segment, organisation and region: what the plan already uses for that cost
+  // centre, else for that campus.
+  const same = projects.filter(pr => costCentre && pr.cost_center_id === costCentre.id);
+  const pool = same.length ? same : projects.filter(pr => campus && pr.campus_id === campus.id);
+  const pkr = !p.currency || p.currency === "PKR";
+  const amount = pkr ? (Number(row.grand_total) || 0) : 0;
+  if (!pkr) notes.push(`amounts (the PDD is in ${p.currency})`);
+  // Strategic priority in the plan's own spelling ("Teaching, Learning & Excellence").
+  const sp = (Array.isArray(p.strategic_priorities) && p.strategic_priorities[0]) || "";
+  const spPlan = projects.map(x => x.strategic_priority).find(v => v && keyOf(v) === keyOf(sp)) || sp;
+  const type = /non/i.test(row.project_type || "") ? "Non Budgeted" : /budget/i.test(row.project_type || "") ? "Budgeted" : "";
+  return {
+    prefill: {
+      code: "", name: row.project_name || "", fiscal_year: "FY 26-27",
+      strategic_priority: spPlan,
+      sector_id: modeOf(pool.map(x => x.sector_id)) || "", segment_id: modeOf(pool.map(x => x.segment_id)) || "",
+      region_id: modeOf(pool.map(x => x.region_id)) || "",
+      cost_center_id: costCentre?.id || "", campus_id: campus?.id || "", project_type: type,
+      // All approved in the E-PDD portal = with Finance next; otherwise the PDD is submitted.
+      workflow_stage: /all approved/i.test(row.epdd_status || "") ? "df_review" : "identified",
+      su_requested_amount: amount, df_recommended_amount: amount,
+      start_date: row.start_date || "", end_date: row.finish_date || "",
+      notes: `From E-PDD ${row.pdd_number}${row.initiated_by ? `, initiated by ${row.initiated_by}` : ""}.`,
+    },
+    unmatched: notes,
+  };
+}
+
+function PddProjectCreator({ T, session, row, candidates = [], onDone, onClose }) {
+  const [state, setState] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      supa("/rest/v1/sectors?select=id,name&order=name.asc", {}, session.access_token),
+      supa("/rest/v1/regions?select=id,name&order=name.asc", {}, session.access_token),
+      supa("/rest/v1/segments?select=id,name&order=name.asc", {}, session.access_token),
+      supa("/rest/v1/cost_centers?select=id,name&order=name.asc", {}, session.access_token),
+      supa("/rest/v1/campuses?select=id,name&order=name.asc", {}, session.access_token),
+      supa("/rest/v1/projects?select=id,cost_center_id,campus_id,sector_id,segment_id,region_id,strategic_priority", {}, session.access_token),
+    ]).then(([sectors, regions, segments, cost_centers, campuses, projects]) => {
+      if (!alive) return;
+      const lookups = { sectors, regions, segments, cost_centers, campuses };
+      setState({ lookups, ...pddPrefill(row, lookups, Array.isArray(projects) ? projects : []) });
+    }).catch(e => alive && setErr(e.message));
+    return () => { alive = false; };
+  }, [row, session]);
+
+  if (err) return (
+    <Modal T={T} onClose={onClose} width={480} icon={FolderKanban} title="New project from PDD"
+      footer={<Button T={T} variant="ghost" onClick={onClose}>Close</Button>}>
+      <div style={{ ...TYPE.bodySm, color:T.textOf(T.danger) }}>{err}</div>
+    </Modal>
+  );
+  if (!state) return null;
+
+  const close = candidates.filter(c => (c.name_sim || 0) >= 0.35).slice(0, 3);
+  const notice = (
+    <div style={{ marginBottom:SP.md, padding:`${SP.sm}px ${SP.md}px`, borderRadius:R.sm,
+      background:`${T.info}${T.wash}`, border:`1px solid ${T.info}33`, ...TYPE.bodySm, color:T.textSoft, lineHeight:1.6 }}>
+      <div style={{ fontWeight:600, color:T.text }}>From {row.pdd_number} · {row.epdd_status || "E-PDD"}</div>
+      Amounts are the PDD's grand total in PKR, entered as both SU Requested and DF Recommended. Add the project
+      code and priority; segment, organisation and region follow other projects with the same cost centre.
+      {state.unmatched.length > 0 && <div style={{ color:T.textOf(T.warning || DATA.warning), marginTop:4 }}>
+        Not filled in, please choose: {state.unmatched.join(", ")}.</div>}
+      {close.length > 0 && <div style={{ color:T.textOf(T.warning || DATA.warning), marginTop:4 }}>
+        Possibly already in the plan: {close.map(c => c.name).join("; ")}. If so, cancel and link it on the Review tab.</div>}
+    </div>
+  );
+  return (
+    <ProjectFormModal T={T} session={session} project={null} lookups={state.lookups} prefill={state.prefill}
+      notice={notice} logNote={` (from E-PDD ${row.pdd_number})`} onClose={onClose}
+      onSaved={async (created) => { await onDone(created); }} />
   );
 }
 
@@ -11783,7 +11899,8 @@ export default function App() {
         {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
         {effectivePage === "review" && <PmoReviewPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
           initialOpenId={deepReviewId.current} onInitialOpened={() => { deepReviewId.current = null; }}
-          onSeenChange={() => setReviewTick(t => t + 1)} />}
+          onSeenChange={() => setReviewTick(t => t + 1)}
+          renderCreateProject={(props) => <PddProjectCreator T={T} session={session} {...props} />} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} supa={supa} />}
