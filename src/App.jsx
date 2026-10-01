@@ -29,7 +29,7 @@ import {
   LayoutDashboard, FolderKanban, TrendingUp, MessageSquare,
   Users, Activity, Settings, LogOut, Search, Eye, EyeOff,
   RefreshCw, CheckCircle2, AlertCircle, Clock, ChevronRight,
-  ArrowUpRight, Minus, Bell, Edit2, X, Trash2, Plus, Upload, Download,
+  ArrowUpRight, Minus, Bell, Edit2, X, Trash2, Plus, Upload, Download, PenLine,
   Shield, BarChart3, Building2, Lock, Fingerprint,
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
@@ -1220,7 +1220,10 @@ function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlert
   );
 }
 
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false, trendPoints = null }) {
+// Figures the PMO publishes from outside the plan (all 272 SU proposals), so a
+// typed value there is the intended one, not drift from the data.
+const PUBLISHED_ONLY_KPIS = new Set(["su_requested", "budget_reduction"]);
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false, trendPoints = null, liveValue, liveSub }) {
   const vpK = useViewport();
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
@@ -1249,8 +1252,10 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
     await onSave(kpiKey, insightOnly
       ? { insight: eIns.trim() }
       : {
-          value: eVal,
-          sub: lockSub ? "" : eSub,
+          // Saving the figure or label as it was keeps it live; only a real
+          // change is stored as a manual value (PMO, 1 Oct 2026).
+          value: liveValue !== undefined && eVal.trim() === String(liveValue) ? "" : eVal,
+          sub: lockSub ? "" : (liveSub !== undefined && eSub.trim() === String(liveSub ?? "") ? "" : eSub),
           // Blank means "use the generated default" rather than "no hover text".
           insight: eIns.trim(),
         });
@@ -1393,8 +1398,8 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
             <div style={{ display:"flex", gap:5 }}>
               <Button T={T} variant="primary" size="sm" onClick={save} loading={saving} full>Save</Button>
               {!insightOnly && <Button T={T} variant="accent" tone={T.positive} size="sm"
-                onClick={async () => { setSaving(true); await onSave(kpiKey, { value:"", sub: lockSub ? "" : eSub, insight: eIns.trim() }); setSaving(false); setEditing(false); }}
-                title="Reset the number to the live calculated value — keeps your labels">Live</Button>}
+                onClick={async () => { setSaving(true); await onSave(kpiKey, { value:"", sub:"", insight: eIns.trim() }); setSaving(false); setEditing(false); }}
+                title={`Back to the live figure${liveValue !== undefined ? ` (${liveValue}${liveSub ? ` · ${liveSub}` : ""})` : ""}`}>Live</Button>}
               <Button T={T} variant="ghost" size="sm" onClick={cancel} title="Cancel">✕</Button>
             </div>
           </div>
@@ -1468,6 +1473,14 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
             {sub && (
               <div style={{ ...TYPE.caption, color: hover ? T.textSoft : T.muted,
                 marginTop:6, lineHeight:1.4, transition:`color ${MOTION.base}` }}>{sub}</div>
+            )}
+            {/* A typed figure does not follow the data; tell the PMO, with the live one. */}
+            {canEdit && valueOverridden && liveValue !== undefined && String(liveValue) !== String(value)
+              && !PUBLISHED_ONLY_KPIS.has(kpiKey) && (
+              <div title="Typed with the pencil. Press Live in the editor to follow the data again."
+                style={{ ...TYPE.caption, fontSize:10.5, color:T.textOf(T.warning), marginTop:4, display:"flex", alignItems:"center", gap:4 }}>
+                <PenLine size={10} /> Typed · live {liveValue}
+              </div>
             )}
 
             {/* A real cumulative series where one exists, otherwise the share
@@ -3134,6 +3147,9 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       value: valueOverridden ? ov.value : calcValue,
       sub:   (ov?.sub   != null && ov.sub   !== "") ? ov.sub   : calcSub,
       insightOverride: (ov?.insight != null && ov.insight !== "") ? ov.insight : null,
+      // The live figures, so the card can tell a real correction from a save
+      // that leaves them as they were (which must not freeze the card).
+      liveValue: calcValue, liveSub: calcSub,
       // When the PMO has overridden the headline figure, the auto-generated
       // insight can contradict it — the card showed "1166.33M from 272
       // proposals" while the insight said "across 106 proposals", because the
@@ -3389,7 +3405,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       {activeTab === "budgeting" && (
         <div data-tour="kpi-strip" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
           <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested" trendPoints={trends.su_requested}    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
-          <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended" trendPoints={trends.df_recommended}  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), "After Finance Director review")} />
+          <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended" trendPoints={trends.df_recommended}  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), `${dashProjects.filter(p => (+p.df_recommended_amount || 0) > 0).length} DF Rec Projects`)} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard dashData={d} Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard dashData={d} Icon={AlertTriangle} index={4} T={T} label="Non-Budgeted Projects" accent={warn} canEdit={canEdit} kpiKey="non_budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("non_budgeted_projects")} isSelected={activeCard==="non_budgeted_projects"} {...kv("non_budgeted_projects", fmtM(overviewKpis.nonBudgetedAmt), overviewKpis.nonBudgetedCount+" of "+d.total_projects+" projects")} />
