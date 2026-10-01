@@ -6,6 +6,11 @@ import { ClipboardCheck, Search, ArrowLeft, ExternalLink, RefreshCw, FileText, P
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 
+// Always run epdd-sync in Singapore, like the 5-minute pg_cron run. Called from the
+// browser it would run in the region nearest the PMO (Mumbai), where the E-PDD
+// portal refuses the session and its login page (1 Oct 2026).
+const EPDD_SYNC = "/functions/v1/epdd-sync?forceFunctionRegion=ap-southeast-1";
+
 /* ═══════════════════════════════════════════════════════════════════════════
    PMO REVIEW — PDDs from the E-PDD portal (pmo.riphah.edu.pk)
 
@@ -230,7 +235,7 @@ function ReviewPanel({ T, session, supa, row, review, ai, isCompact, onChanged }
     try {
       await supa(`/rest/v1/epdd_pdds?id=eq.${row.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" },
         body: JSON.stringify({ linked_project_id: projectId, link_source: source }) }, session.access_token);
-      const r = await supa("/functions/v1/epdd-sync", { method:"POST", body: JSON.stringify({ review: row.id }) },
+      const r = await supa(EPDD_SYNC, { method:"POST", body: JSON.stringify({ review: row.id }) },
         session.access_token);
       if (r && r.ok === false) throw new Error(r.error || "The review could not be redone");
       await onChanged?.();
@@ -906,7 +911,7 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange, initi
   const syncNow = async () => {
     setSyncing(true); setSyncMsg(null);
     try {
-      const res = await supa("/functions/v1/epdd-sync", { method:"POST", body:"{}" }, session.access_token);
+      const res = await supa(EPDD_SYNC, { method:"POST", body:"{}" }, session.access_token);
       setSyncMsg(res.skipped ? "A check is already running — it will finish in a moment."
         : res.ok ? (res.new_count ? `${res.new_count} new PDD${res.new_count === 1 ? "" : "s"} found.` : "Up to date. No new PDDs.")
         : res.error || "The check failed.");
