@@ -4538,7 +4538,8 @@ function ProjectsPage({ T, session, onSelectProject,
     for (const p of filtered) {
       df  += +p.df_recommended_amount || 0;
       bac += +p.bac || 0;
-      if (p.workflow_stage === "approved") approved++;
+      // Approved = Approved or Closed stage (PMO rule, 29 Sep / 2 Oct 2026).
+      if (p.workflow_stage === "approved" || p.workflow_stage === "closed") approved++;
       if (p.is_carry_forward) cf++;
       if ((+p.bac || 0) > maxBac) maxBac = +p.bac || 0;
     }
