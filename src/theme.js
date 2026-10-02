@@ -423,6 +423,10 @@ export const STAGE_ORDER = [
   "pdd_not_submitted","identified","df_review","ed_review","mt_review","approved",
 ];
 
+// Stage filters list every stage a project can be in, Closed included.
+// STAGE_ORDER stays the approval flow (which ends at Approved).
+export const STAGE_FILTER_ORDER = [...STAGE_ORDER, "closed"];
+
 export const PRIORITY_META = {
   top_priority:    { label:"1st Priority",  color:DATA.danger },
   first_priority:  { label:"First Priority",color:DATA.warning },

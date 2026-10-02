@@ -44,7 +44,7 @@ let _xlsxPromise = null;
 const loadXLSX = () => (_xlsxPromise ||= import("xlsx"));
 import {
   DK, LT, BRAND, DATA, TYPE, SP, R, MOTION, CATEGORICAL,
-  STAGE_META, STAGE_ORDER, PRIORITY_META, healthOf, perfStatus,
+  STAGE_META, STAGE_ORDER, STAGE_FILTER_ORDER, PRIORITY_META, healthOf, perfStatus,
   KPI_INSIGHT, KPI_INSIGHT_PLAIN, TAB_INSIGHT, NAV_INSIGHT, STAGE_HINT, PRIORITY_HINT,
   rampColor, RANK_RAMP, ALERT_RAMP, portfolioInsights,
 } from "./theme.js";
@@ -5080,7 +5080,7 @@ function ProjectsPage({ T, session, onSelectProject,
                     strategic:<Input T={T} size="sm" full value={fStrat} onChange={e=>setFStrat(e.target.value)} placeholder="Filter…" />,
                     stage:<Select T={T} size="sm" full active={!!fStage} value={fStage} onChange={e=>setFStage(e.target.value)}>
                       <option value="">All stages</option>
-                      {STAGE_ORDER.map(k=><option key={k} value={k}>{STAGE_META[k].label}</option>)}</Select>,
+                      {STAGE_FILTER_ORDER.map(k=><option key={k} value={k}>{STAGE_META[k].label}</option>)}</Select>,
                     cc:<Select T={T} size="sm" full active={!!fCC} value={fCC} onChange={e=>setFCC(e.target.value)}>
                       <option value="">All centres</option>
                       {lookups.cost_centers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</Select>,
@@ -5247,7 +5247,7 @@ function ProjectsPage({ T, session, onSelectProject,
               ["Organization", fOrg, setFOrg, [["", "All orgs"], ...distinctOrgs.map(v=>[v,v])]],
               ["Segment", fSeg, setFSeg, [["", "All segments"], ...distinctSegs.map(v=>[v,v])]],
               ["Priority", fPri, setFPri, [["", "All"], ...Object.entries(PRIORITY_META).filter(([k])=>k!=="first_priority").map(([k,v])=>[k,v.label])]],
-              ["Stage", fStage, setFStage, [["", "All stages"], ...STAGE_ORDER.map(k=>[k, STAGE_META[k].label])]],
+              ["Stage", fStage, setFStage, [["", "All stages"], ...STAGE_FILTER_ORDER.map(k=>[k, STAGE_META[k].label])]],
               ["Cost Centre", fCC, setFCC, [["", "All centres"], ...lookups.cost_centers.map(c=>[c.name,c.name])]],
             ].map(([label, val, setter, options]) => (
               <div key={label}>
@@ -5883,7 +5883,7 @@ function CampusPage({ T, session, onSelectProject,
                         <Select T={T} size="sm" full active={!!fStage} value={fStage}
                           onChange={e=>setFStage(e.target.value)}>
                           <option value="">All stages</option>
-                          {STAGE_ORDER.map(k => <option key={k} value={k}>{STAGE_META[k].label}</option>)}
+                          {STAGE_FILTER_ORDER.map(k => <option key={k} value={k}>{STAGE_META[k].label}</option>)}
                         </Select>
                       </td>
                     </>
