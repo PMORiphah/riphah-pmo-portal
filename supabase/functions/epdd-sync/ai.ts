@@ -332,7 +332,8 @@ export function aiChecks(row: Row, data: Row, files: AiFile[]): { checks: Check[
         // A lower quote is an alternative only when the cost follows one quotation for the
         // whole PDD and the lower one is not itself the quote for another line.
         const whole = /^the grand total/.test(hit(match) ?? "");
-        const cheaper = whole && lowest && lowest !== match && !hit(lowest) &&
+        const cheaper = whole && lowest && lowest !== match && !hit(lowest) && !!lowest.is_quotation && !!match.is_quotation
+          && norm(lowest.vendor).toLowerCase() !== norm(match.vendor).toLowerCase() &&
           Number(lowest.total) < Number(match.total) * (1 - MONEY_REL_TOL);
         checks.push(cheaper
           ? { id: "ai_quotes", group: "AI reading", label: "Quotations match the cost table", status: "warn",
@@ -359,11 +360,17 @@ export function aiChecks(row: Row, data: Row, files: AiFile[]): { checks: Check[
         // ai-4: name the cost-table lines no quoted price backs (a quoted line equal to the
         // line's unit cost or its total, within 1%), so the reply can say which line to fix.
         const words = (x: string) => new Set(norm(x).toLowerCase().split(/[^a-z0-9]+/).filter(w => /^\d{2,}$/.test(w) || (w.length >= 3 && !/^(the|and|for|with|each|set|nos?)$/.test(w))));
-        const qLines = same.flatMap(q => ((q.lines as Row[]) || []).map(l => ({ amt: Number(l.amount), w: words(String(l.description ?? "")) })))
-          .filter(l => l.amt > 0);
+        const qLines = same.flatMap(q => ((q.lines as Row[]) || []).map(l => ({ amt: Number(l.amount), qty: Number(l.qty) || 0,
+          w: words(String(l.description ?? "")) }))).filter(l => l.amt > 0);
         const shares = (a: Set<string>, b: Set<string>) => [...a].some(w => b.has(w));
+        // Same item at the same unit price but a different quantity (2 TVs quoted, 1 costed).
+        const qtyDiffs = items.flatMap(it => {
+          const l = qLines.find(l => shares(l.w, words(it.d)) && l.qty > 1 && close(l.amt / l.qty, it.u) && !close(l.amt, it.t));
+          return l && it.q > 0 && l.qty !== it.q ? [{ it, l }] : [];
+        });
         const unbacked = items.filter(it => !/contingen|tax|transport|install/i.test(it.d) && it.t > 0
-          && !qLines.some(l => shares(l.w, words(it.d)) && (close(l.amt, it.u) || close(l.amt, it.t)))
+          && !qtyDiffs.some(x => x.it === it)
+          && !qLines.some(l => shares(l.w, words(it.d)) && (close(l.amt, it.u) || close(l.amt, it.t) || (l.qty > 0 && close(l.amt / l.qty, it.u))))
           && !same.some(q => close(Number(q.total), it.t)));
         const shown = unbacked.slice(0, 6);
         // A quotation above the cost table by exactly one of its own lines: that item is
@@ -372,15 +379,17 @@ export function aiChecks(row: Row, data: Row, files: AiFile[]): { checks: Check[
         const extra = single ? Number(single.total) - grand : 0;
         const extraLine = single && extra > 0 ? ((single.lines as Row[]) || []).find(l => close(Number(l.amount), extra)) : null;
         const extraNote = extraLine ? ` The quotation is ${cur} ${fmt(extra)} above the cost table, exactly its line “${clipD(norm(extraLine.description))}”; that item may be missing from the cost table or counted twice in the quotation.` : "";
+        const qtyNote = qtyDiffs.map(({ it, l }) => ` Line ${it.n} (${clipD(it.d)}): the quotation is for ${fmt(l.qty)} × ${cur} ${fmt(it.u)} = ${fmt(l.amt)}; the cost table has ${fmt(it.q)}.`).join("");
         const unbackedNote = extraNote ? "" : qLines.length && unbacked.length
           ? ` No quoted price matches cost line${unbacked.length === 1 ? "" : "s"} ${shown.map(it => `${it.n} (${clipD(it.d)}, ${cur} ${fmt(it.u)} each)`).join("; ")}${unbacked.length > 6 ? ` and ${unbacked.length - 6} more` : ""}.` : "";
         checks.push({ id: "ai_quotes", group: "AI reading", label: "Quotations match the cost table", status: "warn",
           detail: `No quotation total matches the grand total ${cur} ${fmt(grand)}${contingency > 0 ? `, the total less contingency (${fmt(grand - contingency)})` : ""} or any cost line (within 1%)`
-            + (same.length >= 2 ? `; together the quotations come to ${cur} ${fmt(together)}.` : ".") + unbackedNote + extraNote,
+            + (same.length >= 2 ? `; together the quotations come to ${cur} ${fmt(together)}.` : ".") + qtyNote + unbackedNote + extraNote,
           items: quotes.map(desc),
           comment: same.length >= 2
             ? `Quotations: The attached quotations add up to ${cur} ${fmt(together)}, whereas the cost table totals ${cur} ${fmt(grand)}. Please align the amounts in the cost table with the quotations or explain the difference.`
             : `Quotations: The quoted total (${quotes.map(q => `${norm(q.currency) || cur} ${fmt(q.total)}`).join(", ")}) does not match the cost table (${cur} ${fmt(grand)}). Please align the cost table with the quotation or explain the difference.`
+              + (qtyDiffs.length ? ` The quantities differ on line${qtyDiffs.length === 1 ? "" : "s"} ${qtyDiffs.map(x => x.it.n).join(", ")}.` : "")
               + (unbacked.length && unbackedNote ? ` The unit costs of ${unbacked.length === items.length ? "the cost lines" : `line${unbacked.length === 1 ? "" : "s"} ${shown.map(it => it.n).join(", ")}${unbacked.length > 6 ? " and others" : ""}`} do not match the quoted rates.` : "") });
         }
       }
