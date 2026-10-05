@@ -6,6 +6,8 @@
 --    optionally tagged to one of their projects.
 -- 4. Read markers (past_chat_reads) for the unread badges.
 -- Emails are sent by the edge function notify-past after each message.
+-- Applied 5 Oct 2026 with ALTER POLICY / added policies rather than DROP + CREATE
+-- (the SQL tool holds statements containing DROP for a confirmation).
 
 -- 1. Visibility ---------------------------------------------------------------
 create or replace function public.can_view_past(p_id uuid)
@@ -13,22 +15,17 @@ returns boolean language sql stable security definer
 set search_path to 'public', 'pg_temp'
 as $$ select is_pmo() or is_past_pm(p_id); $$;
 
-drop policy if exists past_select on public.past_projects;
-create policy past_select on public.past_projects for select to authenticated
+alter policy past_select on public.past_projects
   using (is_pmo() or pm_user_id = auth.uid());
 -- past_write (ALL, is_pmo()) is unchanged: only the PMO edits a past project.
 
 -- 2. Per-project thread ---------------------------------------------------------
-drop policy if exists past_updates_all on public.past_project_updates;
-create policy past_updates_select on public.past_project_updates for select to authenticated
-  using (can_view_past(past_project_id));
-create policy past_updates_insert on public.past_project_updates for insert to authenticated
-  with check (author_id = auth.uid() and author_role = current_user_role()
-              and (is_pmo() or is_past_pm(past_project_id)));
-create policy past_updates_update on public.past_project_updates for update to authenticated
-  using (is_pmo()) with check (is_pmo());
-create policy past_updates_delete on public.past_project_updates for delete to authenticated
-  using (is_pmo());
+-- past_updates_all (ALL, is_pmo()) stays: the PMO reads, posts, edits and deletes.
+-- The project's own manager may read the thread and post as themselves.
+create policy past_updates_pm_select on public.past_project_updates for select to authenticated
+  using (is_past_pm(past_project_id));
+create policy past_updates_pm_insert on public.past_project_updates for insert to authenticated
+  with check (author_id = auth.uid() and author_role = current_user_role() and is_past_pm(past_project_id));
 
 -- 3. Chat per project manager -----------------------------------------------------
 create table public.past_pm_messages (
@@ -82,3 +79,4 @@ create policy past_reads_own on public.past_chat_reads for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 grant select on public.past_chat_reads to anon;
 grant select, insert, update, delete on public.past_chat_reads to authenticated, service_role;
+revoke execute on function public.touch_past_followup_pm() from public, anon, authenticated;
