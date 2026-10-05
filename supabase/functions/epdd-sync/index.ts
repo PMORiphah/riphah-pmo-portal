@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { DOMParser } from "jsr:@b-fuze/deno-dom";
 import { reviewPdd, RULES_VERSION } from "./review.ts";
-import { AI_VERSION, callGemini, aiChecks, type AiFile } from "./ai.ts";
+import { AI_VERSION, callGemini, aiChecks, docxText, type AiFile } from "./ai.ts";
+const DOCX_RE = /wordprocessingml\.document|msword/i;
 import { pmoRecipients, push, mail, log, newPddEmail, healthEmail, toAscii,
          type PddNote, type Ctx } from "./notify.ts";
 
@@ -437,7 +438,8 @@ Deno.serve(async (req: Request) => {
       if (calls >= opts.max || Date.now() > opts.deadline) break;
       const fs = files.filter(f => f.pdd_id === row.id);
       if (fs.some(f => f.status === "pending")) continue;
-      const readable = fs.filter(f => f.status === "stored" && /^(application\/pdf|image\/(png|jpe?g|webp))/.test(String(f.mime)));
+      // ai-4: Word quotations too (sent as their text).
+      const readable = fs.filter(f => f.status === "stored" && (/^(application\/pdf|image\/(png|jpe?g|webp))/.test(String(f.mime)) || DOCX_RE.test(String(f.mime)) || /\.docx$/i.test(String(f.file_name))));
       const quoteFiles = readable.filter(f => QUOTE_RE.test(String(f.title)) || QUOTE_RE.test(String(f.file_name)))
         .sort((a, b) => Number(QUOTE_RE.test(String(b.title))) - Number(QUOTE_RE.test(String(a.title))));
       const picked: Row[] = []; let bytes = 0;
@@ -453,8 +455,12 @@ Deno.serve(async (req: Request) => {
       const aiFiles: AiFile[] = [];
       for (const f of picked) {
         const r = await fetch(`${SUPA}/storage/v1/object/${BUCKET}/${f.storage_path}`, { headers: { apikey: SVC, Authorization: `Bearer ${SVC}` } });
-        if (r.ok) aiFiles.push({ title: String(f.title), file_name: String(f.file_name).replace(/^\d+_/, ""), mime: String(f.mime),
-                                 bytes: new Uint8Array(await r.arrayBuffer()) });
+        if (!r.ok) continue;
+        const bytes = new Uint8Array(await r.arrayBuffer());
+        const isDocx = DOCX_RE.test(String(f.mime)) || /\.docx$/i.test(String(f.file_name));
+        const text = isDocx ? docxText(bytes) : undefined;
+        if (isDocx && !text) continue;
+        aiFiles.push({ title: String(f.title), file_name: String(f.file_name).replace(/^\d+_/, ""), mime: String(f.mime), bytes, text });
       }
       if (calls > 0) await new Promise(res => setTimeout(res, AI_GAP_MS));
       calls++;
