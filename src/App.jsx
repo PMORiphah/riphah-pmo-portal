@@ -12008,9 +12008,11 @@ export default function App() {
   // Close the mobile drawer whenever the viewport grows back to desktop.
   useEffect(() => { if (!vp.isCompact) setNavMobileOpen(false); }, [vp.isCompact]);
 
-  // PMs cannot see Capex Dashboard — redirect to Projects
+  // Pages hidden from PMs in the nav redirect to Projects as well, so a stale
+  // page value or an old link can't open them (same list as the nav filter).
+  const PM_HIDDEN = ["cmd", "camp", "perf", "risks", "lessons", "schedule"];
   const effectivePage =
-    (session?.role === "project_manager" && (page === "cmd" || page === "camp")) ? "proj" :
+    (session?.role === "project_manager" && PM_HIDDEN.includes(page)) ? "proj" :
     // Both PMO-only pages redirect rather than rendering empty. Hiding the nav
     // entry is not enough on its own: a restored session, a bookmark or a stale
     // page value can still land here, and Past Projects would have shown an
@@ -12041,7 +12043,8 @@ export default function App() {
     if (effectivePage === "cmd") {
       acts.push({ label:"View projects", icon:FolderKanban, onClick:() => navigateToPage("proj") });
       acts.push({ label:"Performance",   icon:TrendingUp,   onClick:() => navigateToPage("perf") });
-    } else if (effectivePage === "proj" || effectivePage === "camp") {
+    } else if ((effectivePage === "proj" || effectivePage === "camp") && session?.role !== "project_manager") {
+      // Opens the Capex Dashboard, which PMs don't have.
       acts.push({ label:"Pending approvals", icon:ClipboardList, onClick:() => navigateToPage("cmd") });
     } else if (effectivePage === "upd") {
       acts.push({ label:"View projects", icon:FolderKanban, onClick:() => navigateToPage("proj") });
