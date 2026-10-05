@@ -543,7 +543,7 @@ function PmChat({ T, session, supa, pm, projects, isPMO, isCompact, onOpenProjec
         <button className="pmo-focusable pmo-btn" onClick={onBack}
           style={{ display:"inline-flex", alignItems:"center", gap:6, background:"none", border:"none",
             cursor:"pointer", color:T.muted, padding:"2px 0", marginBottom:SP.md, ...TYPE.caption, fontSize:12.5 }}>
-          <ArrowLeft size={14} /> Project managers
+          <ArrowLeft size={14} /> {isPMO ? "Project managers" : "Past projects"}
         </button>
       )}
       <Surface T={T} tone={BRAND.blue} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.md }}>
