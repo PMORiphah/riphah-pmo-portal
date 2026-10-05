@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Component, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment, lazy, Suspense } from "react";
 import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
 import { PhotoWallPage } from "./PhotoWall.jsx";
 import { RiskRegisterPage, ProjectRisksPanel } from "./RiskRegister.jsx";
@@ -9,6 +9,7 @@ import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
 import { PastProjectsPage, loadPastUnread } from "./PastProjects.jsx";
 import { PmoReviewPage } from "./PmoReview.jsx";
+import { ActivityDetails, BurstList, groupBursts, burstSummary, notificationEntries } from "./ActivityDetail.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
 import { AskPanel } from "./AskPanel.jsx";
 import { AssistantAvatar } from "./AssistantAvatar.jsx";
@@ -8694,12 +8695,22 @@ function ActivityLogPage({ T, session, supa }) {
     type:   e => (e.entity_type || "").toLowerCase(),
   }), []);
   const { sorted: sortedEntries, sort: lsort, toggle: ltoggle } = useTableSort(entries, LOG_SORT);
+  // Bursts (an import, a bulk edit) fold into one row while the list is in time order.
+  const logRows = useMemo(() => lsort?.key && lsort.key !== "when" ? sortedEntries : groupBursts(sortedEntries),
+    [sortedEntries, lsort]);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
   const [actionFilter, setActionFilter] = useState("");
   const [entityFilter, setEntityFilter] = useState("");
   const [dateFrom,     setDateFrom]     = useState("");
   const [dateTo,       setDateTo]       = useState("");
+  // Pages of 500, newest first; "Load older" asks for the next 500.
+  const PAGE = 500;
+  const [limit,        setLimit]        = useState(PAGE);
+  const [more,         setMore]         = useState(false);
+  const [openRow,      setOpenRow]      = useState(null);
+  const [names,        setNames]        = useState(() => new Map());
+  useEffect(() => { setLimit(PAGE); }, [actionFilter, entityFilter, dateFrom, dateTo]);
 
   // Tour activity lives in its own table (writing it to user_profiles is what
   // used to fill this log with "User X updated"). It is folded into the same
@@ -8711,7 +8722,7 @@ function ActivityLogPage({ T, session, supa }) {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      let q = "/rest/v1/activity_log?select=id,actor_name,actor_role,action,entity_type,entity_id,summary,details,created_at&order=created_at.desc&limit=500";
+      let q = `/rest/v1/activity_log?select=id,actor_name,actor_role,action,entity_type,entity_id,summary,details,created_at&order=created_at.desc&limit=${limit}`;
       if (actionFilter) q += `&action=eq.${actionFilter}`;
       if (entityFilter) q += `&entity_type=eq.${entityFilter}`;
       if (dateFrom)     q += `&created_at=gte.${dateFrom}T00:00:00`;
@@ -8722,12 +8733,31 @@ function ActivityLogPage({ T, session, supa }) {
       if (dateFrom) tq += `&created_at=gte.${dateFrom}T00:00:00`;
       if (dateTo)   tq += `&created_at=lte.${dateTo}T23:59:59`;
 
-      const [data, tour, people] = await Promise.all([
-        supa(q, {}, session.access_token),
+      // Emails and pushes sent by the portal, from their own log.
+      const wantNotif = (!entityFilter || entityFilter === "notification")
+        && (!actionFilter || actionFilter.startsWith("notify_"));
+      let nq = `/rest/v1/notifications_log?select=id,channel,status,recipient_id,recipient_address,project_code,detail,created_at&order=created_at.desc&limit=${limit}`;
+      if (actionFilter.startsWith("notify_")) nq += `&status=eq.${actionFilter.slice(7)}`;
+      if (dateFrom) nq += `&created_at=gte.${dateFrom}T00:00:00`;
+      if (dateTo)   nq += `&created_at=lte.${dateTo}T23:59:59`;
+      const wantLog = !entityFilter || entityFilter !== "notification";
+
+      const [data, tour, people, notif, projs, past] = await Promise.all([
+        wantLog ? supa(q, {}, session.access_token) : [],
         supa(tq, {}, session.access_token).catch(() => []),
         supa("/rest/v1/user_profiles?select=id,username,full_name,role", {}, session.access_token).catch(() => []),
+        wantNotif ? supa(nq, {}, session.access_token).catch(() => []) : [],
+        supa("/rest/v1/projects?select=id,code,name", {}, session.access_token).catch(() => []),
+        supa("/rest/v1/past_projects?select=id,name", {}, session.access_token).catch(() => []),
       ]);
       const who = new Map((people || []).map(u => [u.id, u]));
+      // Ids in a change (a project manager, a linked project) read as names.
+      const nm = new Map();
+      (people || []).forEach(u => nm.set(u.id, u.full_name || u.username));
+      (projs || []).forEach(p => nm.set(p.id, `${p.code && /\w/.test(p.code) ? p.code + " " : ""}${p.name}`));
+      (past || []).forEach(p => nm.set(p.id, p.name));
+      setNames(nm);
+      setMore((data || []).length >= limit || (notif || []).length >= limit);
       const steps = (tour || []).filter(t => t.event === "step");
       setTourSteps(steps);
 
@@ -8760,14 +8790,14 @@ function ActivityLogPage({ T, session, supa }) {
           };
         });
 
-      const merged = [...data, ...tourEntries]
+      const merged = [...data, ...tourEntries, ...notificationEntries(notif, who)]
         .filter(e => !actionFilter || e.action === actionFilter)
         .filter(e => !entityFilter || e.entity_type === entityFilter)
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
       setEntries(merged);
     } catch(e) { setErr(e.message); }
     setLoading(false);
-  }, [session.access_token, actionFilter, entityFilter, dateFrom, dateTo]);
+  }, [session.access_token, actionFilter, entityFilter, dateFrom, dateTo, limit]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -8797,6 +8827,17 @@ function ActivityLogPage({ T, session, supa }) {
     tour_started:      A(DATA.cyan,    "Tour Started"),
     tour_completed:    A(EMERALD,   "Tour Finished"),
     tour_abandoned:    A(AMBER,     "Tour Left"),
+    uploaded:          A(EMERALD,   "Uploaded"),
+    task_date_changed: A(GOLD,      "Dates Moved"),
+    task_progress:     A(DATA.info, "Progress"),
+    pdd_received:      A(GOLD,      "PDD Arrived"),
+    pdd_status:        A(GOLD,      "PDD Status"),
+    pdd_opened:        A(DATA.neutral, "PDD Opened"),
+    pdd_linked:        A(EMERALD,   "PDD Linked"),
+    pdd_changed:       A(DATA.info, "PDD Changed"),
+    notify_sent:       A(DATA.cyan,  "Sent"),
+    notify_failed:     A(ROSE,       "Not Sent"),
+    notify_skipped:    A(DATA.neutral, "Skipped"),
   };
   const ROLE_CFG = {
     pmo:             { label:"Admin",   c:T.textOf(GOLD) },
@@ -8812,6 +8853,26 @@ function ActivityLogPage({ T, session, supa }) {
     auth:                "Auth",
     session:             "Session",
     tour:                "Tour",
+    project_tasks:       "WBS Task",
+    past_project_tasks:  "Past WBS Task",
+    past_projects:       "Past Project",
+    past_project_updates:"Past Follow-up",
+    past_pm_messages:    "PM Chat",
+    project_cashflows:   "Cash Flow",
+    project_risks:       "Risk",
+    project_attachments: "File",
+    project_raci:        "RACI",
+    carry_forward_projects:"Carry Forward",
+    lessons_learned:     "Lesson",
+    benefits_realized:   "Benefit",
+    campuses:            "Campus",
+    cost_centers:        "Cost Centre",
+    sectors:             "Sector",
+    segments:            "Organisation",
+    regions:             "Region",
+    epdd_pdds:           "PDD",
+    user_webauthn_credentials:"Passkey",
+    notification:        "Email / Push",
   };
   const ACTION_OPTIONS = [
     { value:"",               label:"All Actions" },
@@ -8822,6 +8883,19 @@ function ActivityLogPage({ T, session, supa }) {
     { value:"assigned",       label:"Assigned" },
     { value:"deleted",        label:"Deleted" },
     { value:"import",         label:"Import" },
+    { value:"uploaded",       label:"Uploaded" },
+    { value:"unassigned",     label:"Unassigned" },
+    { value:"assignment_updated", label:"Reassigned" },
+    { value:"comment_edited", label:"Comment Edited" },
+    { value:"comment_deleted",label:"Comment Deleted" },
+    { value:"task_date_changed", label:"Task Dates Moved" },
+    { value:"task_progress",  label:"Task Progress" },
+    { value:"pdd_received",   label:"PDD Arrived" },
+    { value:"pdd_status",     label:"PDD Status" },
+    { value:"pdd_opened",     label:"PDD Opened" },
+    { value:"pdd_linked",     label:"PDD Linked" },
+    { value:"notify_sent",    label:"Email / Push Sent" },
+    { value:"notify_failed",  label:"Email / Push Not Sent" },
     { value:"login",          label:"Signed In" },
     { value:"tour_started",   label:"Tour Started" },
     { value:"tour_completed", label:"Tour Finished" },
@@ -8835,6 +8909,26 @@ function ActivityLogPage({ T, session, supa }) {
     { value:"comments",            label:"Comments" },
     { value:"user_profiles",       label:"Users" },
     { value:"project_assignments", label:"Assignments" },
+    { value:"project_cashflows",   label:"Cash Flows" },
+    { value:"project_risks",       label:"Risks" },
+    { value:"project_attachments", label:"Files" },
+    { value:"project_raci",        label:"RACI" },
+    { value:"project_tasks",       label:"WBS Tasks" },
+    { value:"lessons_learned",     label:"Lessons Learned" },
+    { value:"benefits_realized",   label:"Benefits" },
+    { value:"past_projects",       label:"Past Projects" },
+    { value:"past_project_updates",label:"Past Follow-ups" },
+    { value:"past_pm_messages",    label:"PM Chats" },
+    { value:"past_project_tasks",  label:"Past WBS Tasks" },
+    { value:"carry_forward_projects", label:"Carry Forward" },
+    { value:"settings",            label:"Settings & KPI Cards" },
+    { value:"epdd_pdds",           label:"PMO Review (PDDs)" },
+    { value:"campuses",            label:"Campuses" },
+    { value:"cost_centers",        label:"Cost Centres" },
+    { value:"user_webauthn_credentials", label:"Passkeys" },
+    { value:"notification",        label:"Emails & Pushes" },
+    { value:"auth",                label:"Passwords" },
+    { value:"session",             label:"Sign-ins" },
     { value:"tour",                label:"Tour" },
   ];
 
@@ -8885,12 +8979,12 @@ function ActivityLogPage({ T, session, supa }) {
 
         <div style={{ marginLeft:"auto", fontSize:11, color:T.dim }}>
           {loading ? "Loading…" : `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`}
-          {entries.length === 500 && <span style={{ color:(T.goldText || GOLD) }}> · showing latest 500</span>}
+          {more && <span style={{ color:(T.goldText || GOLD) }}> · latest {limit.toLocaleString("en-US")} loaded</span>}
         </div>
       </div>
 
       {/* ── Log table ── */}
-      {loading ? (
+      {loading && !entries.length ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.muted, fontSize:13 }}>Loading activity log…</div>
       ) : err ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
@@ -8928,7 +9022,7 @@ function ActivityLogPage({ T, session, supa }) {
               </tr>
             </thead>
             <tbody>
-              {sortedEntries.map((e, i) => {
+              {logRows.map((e, i) => {
                 const { date, time } = fmtDT(e.created_at);
                 const ac  = ACTION_CFG[e.action] || { c:T.muted, bg:`${T.border}40`, label:e.action };
                 const rc  = ROLE_CFG[e.actor_role] || { label:e.actor_role||"—", c:T.dim };
@@ -8938,12 +9032,16 @@ function ActivityLogPage({ T, session, supa }) {
                 // describes a change that is already fully summarised here.
                 const sid = e.action === "login" ? (e.details?.session_id || e.entity_id) : null;
                 const tourUser = e.entity_type === "tour" ? e._tourUser : null;
-                const clickable = sid || tourUser;
+                // Every other row expands in place to show what changed.
+                const isOpen = openRow === e.id;
+                const toggleRow = () => setOpenRow(o => o === e.id ? null : e.id);
                 return (
-                  <tr key={e.id} style={{ background:rowBg, cursor: clickable ? "pointer" : "default" }}
+                  <Fragment key={e.id}>
+                  <tr style={{ background: isOpen ? T.card2 : rowBg, cursor:"pointer" }}
                     onClick={sid ? () => setOpenSession(sid)
-                           : tourUser ? () => setOpenTour({ userId: tourUser, name: e.actor_name }) : undefined}
-                    title={sid ? "Open this session" : tourUser ? "See how far they got" : undefined}>
+                           : tourUser ? () => setOpenTour({ userId: tourUser, name: e.actor_name }) : toggleRow}
+                    aria-expanded={sid || tourUser ? undefined : isOpen}
+                    title={sid ? "Open this session" : tourUser ? "See how far they got" : isOpen ? "Hide details" : "Show details"}>
                     {/* Timestamp, on a continuous rail. The connector runs
                         between rows so the log reads as a sequence of events
                         rather than a grid of cells (§47). */}
@@ -8960,7 +9058,7 @@ function ActivityLogPage({ T, session, supa }) {
                             position:"absolute", top:13, bottom:-30, width:2,
                             borderRadius:2,
                             background:`linear-gradient(180deg, ${(ac.dot || ac.c)}55, ${T.borderStrong} 55%)`,
-                            display: i === sortedEntries.length - 1 ? "none" : "block",
+                            display: i === logRows.length - 1 || isOpen ? "none" : "block",
                           }} />
                         </div>
                         <div>
@@ -8986,16 +9084,53 @@ function ActivityLogPage({ T, session, supa }) {
                     </td>
                     {/* Summary + Restore for import entries */}
                     <td style={{ padding:"10px 14px", borderBottom:`1px solid ${T.border}`, verticalAlign:"middle", fontSize:12.5, color:T.text, maxWidth:400 }}>
-                      {e.summary || <span style={{ color:T.dim }}>—</span>}
+                      <div style={{ display:"flex", alignItems:"flex-start", gap:6 }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          {e._burst ? (<>
+                            <div style={{ fontWeight:600 }}>{burstSummary(e)}</div>
+                            <div style={{ ...TYPE.caption, color:T.dim, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                              {e._burst[0].summary}{e._burst.length > 1 ? ` and ${e._burst.length - 1} more` : ""}
+                            </div>
+                          </>) : (e.summary || <span style={{ color:T.dim }}>—</span>)}
+                        </div>
+                        {!sid && !tourUser && (
+                          <ChevronRight size={14} color={T.dim} aria-hidden="true"
+                            style={{ flexShrink:0, marginTop:2, transition:"transform .18s ease", transform: isOpen ? "rotate(90deg)" : "none" }} />
+                        )}
+                      </div>
                       {e.action === "import" && e.details?.snapshot_id && (
                         <RestoreSnapshotButton T={T} session={session} entry={e} />
                       )}
                     </td>
                   </tr>
+                  {isOpen && (
+                    <tr style={{ background:T.card2 }}>
+                      <td colSpan={5} style={{ padding:"4px 12px 14px", borderBottom:`1px solid ${T.border}` }}>
+                        {/* Sticky so it stays in view while the table scrolls sideways on a phone. */}
+                        <div className="pmo-in" style={{ position:"sticky", left:12, padding:"10px 14px", borderRadius:R.md,
+                          background:T.surface, border:`1px solid ${T.border}`, boxSizing:"border-box",
+                          width:"min(900px, calc(100vw - 24px))", maxWidth:"100%" }}>
+                          {e._burst
+                            ? <BurstList T={T} entry={e} fmtTime={d => { const f = fmtDT(d); return `${f.date} ${f.time}`; }} />
+                            : <ActivityDetails T={T} entry={e} names={names} />}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
+          {more && (
+            <div style={{ display:"flex", justifyContent:"center", padding:"16px 0 24px" }}>
+              <button className="pmo-focusable pmo-btn" disabled={loading} onClick={() => setLimit(l => l + PAGE)}
+                style={{ padding:"8px 18px", background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm,
+                  cursor: loading ? "wait" : "pointer", fontSize:12, color:T.text, fontFamily:TYPE.body.fontFamily }}>
+                {loading ? "Loading…" : "Load older entries"}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {openSession && (

@@ -1363,6 +1363,16 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
           { method:"POST", body:JSON.stringify(body.slice(i, i+50)),
             headers:{ Prefer:"return=minimal" } }, session.access_token);
       }
+      // One summary line in the Activity Log; each row is also logged by trigger.
+      await supa("/rest/v1/activity_log", { method:"POST", headers:{ Prefer:"return=minimal" },
+        body: JSON.stringify({
+          actor_id: session.user_id, actor_name: session.full_name || session.username, actor_role: session.role,
+          action: "import", entity_type: "past_projects", entity_id: null,
+          summary: `Imported ${body.length} past projects from ${parsed.fileName || "Excel"}`
+            + (mode === "replace" ? " (replaced the existing list)" : " (added to the list)"),
+          details: { imported: body.length, mode, filename: parsed.fileName || null,
+                     without_pm: body.filter(r => !r.pm_user_id).length },
+        }) }, session.access_token).catch(() => {});
       setDone({ count: body.length });
       onDone();
     } catch (e) { setErr(e.message || "The import could not be saved."); }
