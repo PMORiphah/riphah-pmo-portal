@@ -5,11 +5,13 @@
 //   { kind: "pm",      id: <past_pm_messages.id> }       — the chat with one manager.
 // The PMO writes → the project manager is emailed (team copied, MAIL_CC).
 // The manager writes → the PMO is emailed (active PMO users with email on, team copied).
-// Only the message's own author can trigger it, once per message.
+// Only the message's own author can trigger it, once per message; {preview: true}
+// returns the email without sending. The email names the manager's campus/site
+// and lists their past projects (project ID + name), see email.ts.
+import { composeEmail, type Row } from "./email.ts";
 import { mail, push, log, pmoRecipients, toAscii, PORTAL_URL, type Ctx, type Recipient }
   from "../epdd-sync/notify.ts";
 
-type Row = Record<string, unknown>;
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -17,8 +19,6 @@ const CORS = {
 };
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
-  .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -35,7 +35,7 @@ Deno.serve(async (req: Request) => {
     .then(r => r.ok ? r.json() : null).catch(() => null);
   if (!u?.id) return json({ error: "Unauthorized" }, 401);
 
-  const body = await req.json().catch(() => ({})) as { kind?: string; id?: string };
+  const body = await req.json().catch(() => ({})) as { kind?: string; id?: string; preview?: boolean };
   const kind = body.kind === "pm" ? "pm" : body.kind === "project" ? "project" : null;
   const id = String(body.id ?? "");
   if (!kind || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: "kind and id required" }, 400);
@@ -45,9 +45,9 @@ Deno.serve(async (req: Request) => {
   if (!msg) return json({ error: "Message not found" }, 404);
   if (msg.author_id !== u.id) return json({ error: "Only the author can send this notification" }, 403);
 
-  // Once per message.
+  // Once per message ({preview: true} only returns the email and sends nothing).
   const channel = `past-${kind}-email`;
-  const done = await (await rest(`notifications_log?channel=eq.${channel}&detail=like.${encodeURIComponent(`msg ${id}%`)}&select=id&limit=1`)).json();
+  const done = body.preview ? [] : await (await rest(`notifications_log?channel=eq.${channel}&detail=like.${encodeURIComponent(`msg ${id}%`)}&select=id&limit=1`)).json();
   if (Array.isArray(done) && done.length) return json({ ok: true, skipped: "already sent" });
 
   // The project (if any) and its manager.
@@ -59,6 +59,15 @@ Deno.serve(async (req: Request) => {
   const pm = pmId
     ? ((await (await rest(`user_profiles?id=eq.${pmId}&select=id,email,full_name,username,is_active`)).json()) as Row[])?.[0] ?? null
     : null;
+
+  // The manager's past projects: their campus/site and the list the email names,
+  // so they know exactly which projects the PMO is asking about.
+  const theirs = pmId
+    ? ((await (await rest(`past_projects?pm_user_id=eq.${pmId}&select=id,code,name,fiscal_year,campus,status&order=campus,code,name`)).json()) as Row[]) ?? []
+    : [];
+  const listed = kind === "pm" ? theirs : (project ? [project] : []);
+  const sites = [...new Set((listed.length ? listed : theirs).map(r => String(r.campus ?? "").trim()).filter(Boolean))];
+  const site = sites.join(", ") || "—";
 
   const fromPmo = msg.author_role === "pmo";
   let to: Recipient[] = [];
@@ -76,30 +85,12 @@ Deno.serve(async (req: Request) => {
   const author = String(msg.author_name || (fromPmo ? "PMO" : "Project manager"));
   const pmName = String(pm?.full_name || pm?.username || "the project manager");
   const link = kind === "pm" ? `${PORTAL_URL}?pastpm=${pmId}` : `${PORTAL_URL}?past=${projectId}`;
-  const about = project
-    ? `${project.code ? `${project.code} ` : ""}${project.name} (${project.fiscal_year}${project.campus ? `, ${project.campus}` : ""})`
-    : `all past projects of ${pmName}`;
-  const subject = fromPmo
-    ? `PMO follow-up: ${project ? project.name : "your past projects"}`
-    : `Reply from ${author}: ${project ? project.name : "past projects"}`;
-  const text = [
-    fromPmo ? `Dear ${to[0].name},` : "Dear PMO,",
-    "",
-    fromPmo ? `The PMO has asked for an update on ${about}:` : `${author} replied about ${about}:`,
-    "",
-    String(msg.body ?? ""),
-    "",
-    fromPmo ? `Please reply in the portal: ${link}` : `Open the conversation: ${link}`,
-    "",
-    "Project Management Office",
-  ].join("\n");
-  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937;line-height:1.6">
-<p>${fromPmo ? `Dear ${esc(to[0].name)},` : "Dear PMO,"}</p>
-<p>${fromPmo ? `The PMO has asked for an update on <b>${esc(about)}</b>:` : `<b>${esc(author)}</b> replied about <b>${esc(about)}</b>:`}</p>
-<blockquote style="margin:12px 0;padding:10px 14px;border-left:3px solid #c9a227;background:#f6f8fb;white-space:pre-wrap">${esc(msg.body)}</blockquote>
-<p><a href="${link}" style="display:inline-block;padding:9px 16px;background:#1f4e8c;color:#fff;text-decoration:none;border-radius:6px">${fromPmo ? "Reply in the portal" : "Open the conversation"}</a></p>
-<p style="color:#6b7280;font-size:12px">Project Management Office, Riphah International University</p></div>`;
+  const { subject, text, html } = composeEmail({
+    kind, fromPmo, toName: to[0].name, author, pmName, site, body: String(msg.body ?? ""),
+    project, listed, projectId, link,
+  });
 
+  if (body.preview) return json({ ok: true, preview: true, to: to.map(r => r.email), subject, text, html });
   const sent = await mail(to, subject, text, html, true);
   const pushRes = await push(ctx, to.map(r => r.id), {
     title: fromPmo ? "PMO follow-up" : `Reply from ${author}`,
