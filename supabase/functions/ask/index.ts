@@ -716,7 +716,9 @@ Deno.serve(async (req) => {
       answer = answer.replace("Read as: ", "Read as: your assigned projects · ");
       // An empty or not-found answer for a manager says nothing about the rest
       // of the portfolio, which they cannot see.
-      if (/I couldn't find|No projects match|No recorded risks match/.test(answer))
+      if (/No past projects match/.test(answer))
+        answer += "\n\nYou can only see the past projects you manage; the PMO can answer about the others.";
+      else if (/I couldn't find|No projects match|No recorded risks match/.test(answer))
         answer += `\n\nYou can only see the ${allRows.length === 1 ? "project" : allRows.length + " projects"} assigned to you; the PMO can answer about the rest of the portfolio.`;
     }
     const used = { role, engine: "planner", model: planModel, ...res.meta,

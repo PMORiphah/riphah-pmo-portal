@@ -1007,10 +1007,16 @@ export function executePast(plan: Plan, past: PastRow[], today: string): Answer 
   if (plan.name_keywords.trim()) { read.push(`name matching “${plan.name_keywords.trim()}”`); rows = rows.filter((r) => kwMatch(`${r.code ?? ""} ${r.name}`, plan.name_keywords)); }
   const finish = (r: PastRow) => r.revised_end_date || r.end_date;
   const overdue = (r: PastRow) => !r.actual_end_date && !!finish(r) && String(finish(r)) < today;
-  if (plan.overdue) { read.push("overdue (finish date passed, no actual finish)"); rows = rows.filter(overdue); }
+  let undated = 0;
+  if (plan.overdue) {
+    read.push("overdue (finish date passed, no actual finish)");
+    undated = rows.filter((r) => !r.actual_end_date && !finish(r)).length;
+    rows = rows.filter(overdue);
+  }
+  const undatedNote = undated ? ` ${plural(undated, "past project")} ${undated === 1 ? "has" : "have"} no finish date recorded, so ${undated === 1 ? "it" : "they"} can't be checked; the PMO can add dates on the Past Projects page.` : "";
   meta.matched = rows.length;
   const readLine = `Read as: Past Projects (earlier fiscal years)${read.length ? " · " + read.join(" · ") : ""}.`;
-  if (!rows.length) return { answer: `${readLine}\n\nNo past projects match that.`, headline: { value: "0", label: "Past projects", kind: "count" }, meta };
+  if (!rows.length) return { answer: `${readLine}\n\nNo past projects match that.${undatedNote}`, headline: { value: "0", label: "Past projects", kind: "count" }, meta };
   rows = [...rows].sort((a, b) => String(a.fiscal_year ?? "").localeCompare(String(b.fiscal_year ?? "")) || a.name.localeCompare(b.name));
   const showPm = plan.pms.length !== 1, showCampus = plan.campuses.length !== 1;
   const cols = ["Code", "Project", "FY", ...(showCampus ? ["Campus"] : []), ...(showPm ? ["PM"] : []), "Status"];
@@ -1020,6 +1026,6 @@ export function executePast(plan: Plan, past: PastRow[], today: string): Answer 
   const body = `**${plural(rows.length, "past project")}**${nOver && !plan.overdue ? `, ${nOver} overdue` : ""}.`
     + (plan.op === "count" && rows.length > 15 ? "" : `\n\n| ${cols.join(" | ")} |\n|${cols.map(() => "---").join("|")}|\n${lines.join("\n")}`
       + (rows.length > 60 ? `\n\n…and ${rows.length - 60} more.` : ""))
-    + "\n\nFollow-ups with each manager are on the Past Projects page.";
+    + (undatedNote ? `\n\n${undatedNote.trim()}` : "") + "\n\nFollow-ups with each manager are on the Past Projects page.";
   return { answer: `${readLine}\n\n${body}`, headline: { value: String(rows.length), label: "Past projects", kind: "count" }, meta };
 }
