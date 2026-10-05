@@ -314,6 +314,396 @@ function ScheduleModal({ T, session, supa, row, isCompact, onClose, onSaved }) {
 }
 
 
+/* ── Follow-up chats: unread state and notifications ───────────────────────
+   Two kinds of conversation, both readable by the PMO and by the project's own
+   manager only (RLS): a thread per past project (past_project_updates) and a
+   chat per project manager about all their past projects (past_pm_messages).
+   A message from the PMO emails the manager; a reply emails the PMO
+   (edge function notify-past, PMO decision 5 Oct 2026).
+   Read markers live in past_chat_reads, keyed 'pm:<id>' or 'project:<id>'. */
+export async function loadPastUnread(supa, session) {
+  const me = session?.user_id;
+  if (!me) return { total: 0, byThread: {} };
+  const [reads, pmMsgs, projMsgs] = await Promise.all([
+    supa("/rest/v1/past_chat_reads?select=thread,read_at", {}, session.access_token).catch(() => []),
+    supa("/rest/v1/past_pm_messages?select=pm_user_id,author_id,created_at", {}, session.access_token).catch(() => []),
+    supa("/rest/v1/past_project_updates?select=past_project_id,author_id,created_at", {}, session.access_token).catch(() => []),
+  ]);
+  const seen = Object.fromEntries((Array.isArray(reads) ? reads : []).map(r => [r.thread, r.read_at]));
+  const byThread = {};
+  const add = (thread, m) => {
+    if (m.author_id === me) return;
+    if (seen[thread] && new Date(m.created_at) <= new Date(seen[thread])) return;
+    byThread[thread] = (byThread[thread] || 0) + 1;
+  };
+  (Array.isArray(pmMsgs) ? pmMsgs : []).forEach(m => add(`pm:${m.pm_user_id}`, m));
+  (Array.isArray(projMsgs) ? projMsgs : []).forEach(m => add(`project:${m.past_project_id}`, m));
+  return { total: Object.values(byThread).reduce((s, n) => s + n, 0), byThread };
+}
+async function markPastRead(supa, session, thread) {
+  try {
+    await supa("/rest/v1/past_chat_reads?on_conflict=user_id,thread", {
+      method:"POST", headers:{ Prefer:"resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ user_id: session.user_id, thread, read_at: new Date().toISOString() }),
+    }, session.access_token);
+  } catch { /* a missed marker only leaves a badge on */ }
+}
+// Best-effort: the message is already saved; a mail problem must not look like a failed post.
+const notifyPast = (supa, session, kind, id) => {
+  if (!id) return;
+  supa("/functions/v1/notify-past", { method:"POST", body: JSON.stringify({ kind, id }) },
+       session.access_token).catch(() => {});
+};
+const UnreadDot = ({ T, n }) => n > 0 ? (
+  <span className="past-dot" style={{ minWidth:18, height:18, padding:"0 5px", borderRadius:R.pill,
+    background:BRAND.gold, color:"#1A1206", fontSize:10, fontWeight:800, display:"inline-flex",
+    alignItems:"center", justifyContent:"center", boxSizing:"border-box",
+    boxShadow:`0 2px 8px -1px ${BRAND.gold}99` }}>{n > 99 ? "99+" : n}</span>
+) : null;
+
+
+/* ── Edit a past project (PMO) — every field, including the manager ─────── */
+const EDIT_FIELDS = [
+  ["code", "Project ID", "text"], ["name", "Project name", "text"],
+  ["campus", "Campus", "text"], ["fiscal_year", "Fiscal year", "text"],
+  ["approved_amount", "Approved amount (PKR)", "number"], ["released_amount", "Released amount (PKR)", "number"],
+];
+function EditPastModal({ T, session, supa, row, pms, isCompact, onClose, onSaved }) {
+  const [f, setF] = useState(() => ({
+    ...Object.fromEntries(EDIT_FIELDS.map(([k]) => [k, row[k] ?? ""])),
+    ...Object.fromEntries(DATE_FIELDS.map(([k]) => [k, row[k] || ""])),
+    pm_user_id: row.pm_user_id || "", status: row.status || "open",
+    reason_open: row.reason_open || "", notes: row.notes || "",
+  }));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+  const set = (k, v) => setF(s => k === "budget_release_date" && v
+    ? { ...s, budget_release_date:v, actual_start_date:v } : { ...s, [k]:v });
+  const save = async () => {
+    setErr(null);
+    if (!String(f.name).trim()) return setErr("The project name is required.");
+    if (!String(f.fiscal_year).trim()) return setErr("The fiscal year is required.");
+    for (const k of ["approved_amount","released_amount"])
+      if (f[k] !== "" && !isFinite(Number(f[k]))) return setErr("Amounts must be numbers.");
+    if (f.start_date && f.end_date && f.end_date < f.start_date)
+      return setErr("The planned finish can't be before the planned start.");
+    if (f.actual_start_date && f.actual_end_date && f.actual_end_date < f.actual_start_date)
+      return setErr("The actual finish can't be before the actual start.");
+    setBusy(true);
+    try {
+      await supa(`/rest/v1/past_projects?id=eq.${row.id}`, {
+        method:"PATCH", headers:{ Prefer:"return=minimal" },
+        body: JSON.stringify({
+          code: String(f.code).trim() || null, name: String(f.name).trim(),
+          campus: String(f.campus).trim() || null, fiscal_year: String(f.fiscal_year).trim(),
+          approved_amount: f.approved_amount === "" ? 0 : Number(f.approved_amount),
+          released_amount: f.released_amount === "" ? 0 : Number(f.released_amount),
+          pm_user_id: f.pm_user_id || null, status: f.status,
+          reason_open: String(f.reason_open).trim() || null, notes: String(f.notes).trim() || null,
+          ...Object.fromEntries(DATE_FIELDS.map(([k]) => [k, f[k] || null])),
+        }),
+      }, session.access_token);
+      onSaved();
+    } catch (e) { setErr(e.message || "Could not save."); }
+    setBusy(false);
+  };
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+    padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
+    outline:"none", width:"100%", boxSizing:"border-box" };
+  const lab = (t) => <div style={{ fontSize:11.5, color:T.muted, marginBottom:4 }}>{t}</div>;
+  const grid = (cols) => ({ display:"grid", gap:SP.sm, marginBottom:SP.md,
+    gridTemplateColumns: isCompact ? "1fr" : `repeat(${cols}, minmax(0,1fr))` });
+  const pmChanged = (f.pm_user_id || "") !== (row.pm_user_id || "");
+  return createPortal(
+    <div onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position:"fixed", inset:0, zIndex:1350, background:"rgba(3,8,16,0.74)",
+        backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", display:"flex",
+        alignItems: isCompact ? "flex-end" : "center", justifyContent:"center",
+        padding: isCompact ? 0 : SP.xl, animation:"pmoFade .18s ease" }}>
+      <div className="pmo-scale pmo-scroll" role="dialog" aria-modal="true" aria-label="Edit past project"
+        style={{ width:720, maxWidth:"100%", maxHeight:"92vh", overflow:"auto", background:T.surface,
+          border:`1px solid ${T.border}`, borderRadius: isCompact ? `${R.xl}px ${R.xl}px 0 0` : R.xl,
+          boxShadow:T.shadowLg, padding: isCompact ? SP.lg : SP.xxl }}>
+        <div style={{ ...TYPE.display, fontSize:17, color:T.text, marginBottom:4 }}>Edit past project</div>
+        <div style={{ fontSize:12.5, color:T.muted, marginBottom:SP.lg, lineHeight:1.6 }}>{row.name}</div>
+
+        <div style={grid(2)}>
+          {EDIT_FIELDS.map(([k, t, type]) => (
+            <label key={k} style={{ display:"block", gridColumn: k === "name" && !isCompact ? "1 / -1" : undefined }}>
+              {lab(t)}
+              <input type={type} value={f[k]} onChange={e => set(k, e.target.value)} style={inp} />
+            </label>
+          ))}
+        </div>
+        <div style={grid(2)}>
+          <label style={{ display:"block" }}>
+            {lab("Project manager")}
+            <select value={f.pm_user_id} onChange={e => set("pm_user_id", e.target.value)} style={inp}>
+              <option value="">— No project manager —</option>
+              {pms.map(p => <option key={p.id} value={p.id}>{p.full_name || p.username}</option>)}
+            </select>
+          </label>
+          <label style={{ display:"block" }}>
+            {lab("Status")}
+            <select value={f.status} onChange={e => set("status", e.target.value)} style={inp}>
+              {Object.entries(STATUS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </label>
+        </div>
+        {pmChanged && (
+          <div style={{ marginTop:-SP.sm, marginBottom:SP.md, fontSize:11.5, color:T.textOf(DATA.warning), lineHeight:1.55 }}>
+            The new manager will see this project and its follow-up thread; the previous one will no longer see it.
+          </div>
+        )}
+        <label style={{ display:"block", marginBottom:SP.md }}>
+          {lab("Why it is still open")}
+          <textarea value={f.reason_open} onChange={e => set("reason_open", e.target.value)} rows={3}
+            style={{ ...inp, resize:"vertical", lineHeight:1.55 }} />
+        </label>
+        <label style={{ display:"block", marginBottom:SP.md }}>
+          {lab("Notes")}
+          <textarea value={f.notes} onChange={e => set("notes", e.target.value)} rows={2}
+            style={{ ...inp, resize:"vertical", lineHeight:1.55 }} />
+        </label>
+        <div style={grid(3)}>
+          {DATE_FIELDS.map(([k, t]) => (
+            <label key={k} style={{ display:"block" }}>
+              {lab(t)}
+              <input type="date" value={f[k]} onChange={e => set(k, e.target.value)} style={inp} />
+            </label>
+          ))}
+        </div>
+        <div style={{ fontSize:11.5, color:T.dim, marginBottom:SP.md, lineHeight:1.55 }}>
+          Setting the budget release date also sets the actual start, as on current projects.
+        </div>
+
+        {err && (
+          <div style={{ marginBottom:SP.md, padding:"9px 12px", borderRadius:R.sm,
+            background:`${DATA.danger}14`, border:`1px solid ${DATA.danger}3D`,
+            fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>
+        )}
+        <div style={{ display:"flex", justifyContent:"flex-end", gap:SP.sm }}>
+          <Button T={T} variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button T={T} variant="primary" onClick={save} loading={busy}>Save changes</Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+
+/* ── Chat with one project manager about all their past projects ─────────── */
+function PmChat({ T, session, supa, pm, projects, isPMO, isCompact, onOpenProject, onBack, onRead }) {
+  const [msgs, setMsgs] = useState(null);
+  const [body, setBody] = useState("");
+  const [tag, setTag]   = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+  const endRef = useRef(null);
+  const byId = useMemo(() => Object.fromEntries(projects.map(p => [p.id, p])), [projects]);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await supa(`/rest/v1/past_pm_messages?pm_user_id=eq.${pm.id}&select=*&order=created_at.asc`,
+                           {}, session.access_token);
+      setMsgs(Array.isArray(r) ? r : []);
+    } catch (e) { setErr(e.message); setMsgs([]); }
+    await markPastRead(supa, session, `pm:${pm.id}`); onRead?.();
+  }, [pm.id, supa, session]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (msgs?.length) endRef.current?.scrollIntoView({ block:"nearest" }); }, [msgs]);
+  // New replies show up while the chat is open.
+  useEffect(() => { const iv = setInterval(load, 45000); return () => clearInterval(iv); }, [load]);
+
+  const post = async () => {
+    if (!body.trim()) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await supa("/rest/v1/past_pm_messages", {
+        method:"POST", headers:{ Prefer:"return=representation" },
+        body: JSON.stringify({ pm_user_id: pm.id, past_project_id: tag || null, body: body.trim(),
+          author_id: session.user_id, author_name: session.full_name || session.username,
+          author_role: session.role }),
+      }, session.access_token);
+      notifyPast(supa, session, "pm", Array.isArray(r) ? r[0]?.id : r?.id);
+      setBody(""); setTag(""); await load();
+    } catch (e) { setErr(e.message || "Could not send that."); }
+    setBusy(false);
+  };
+
+  const open = projects.filter(p => p.status !== "closed");
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
+    padding:"9px 11px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
+    outline:"none", width:"100%", boxSizing:"border-box" };
+
+  return (
+    <div className="past-row">
+      {onBack && (
+        <button className="pmo-focusable pmo-btn" onClick={onBack}
+          style={{ display:"inline-flex", alignItems:"center", gap:6, background:"none", border:"none",
+            cursor:"pointer", color:T.muted, padding:"2px 0", marginBottom:SP.md, ...TYPE.caption, fontSize:12.5 }}>
+          <ArrowLeft size={14} /> Project managers
+        </button>
+      )}
+      <Surface T={T} tone={BRAND.blue} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.md }}>
+        <div style={{ ...TYPE.label, color:T.dim }}>{isPMO ? "Follow-up chat with" : "Follow-up chat with the PMO"}</div>
+        <div style={{ ...TYPE.display, fontSize: isCompact ? 17 : 20, color:T.text, lineHeight:1.3 }}>
+          {isPMO ? (pm.full_name || pm.username) : "Your past projects"}
+        </div>
+        <div style={{ ...TYPE.caption, color:T.muted, marginTop:4 }}>
+          {projects.length} past project{projects.length===1?"":"s"} · {open.length} still open ·
+          PKR {fmtM(open.reduce((s,p) => s + (parseFloat(p.approved_amount)||0), 0))} approved on open items
+        </div>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:SP.md }}>
+          {projects.map(p => {
+            const st = STATUS[p.status] || STATUS.open;
+            return (
+              <button key={p.id} className="pmo-focusable pmo-btn" onClick={() => onOpenProject(p.id)}
+                title={`${p.name} — ${st.label}`}
+                style={{ display:"inline-flex", alignItems:"center", gap:6, maxWidth:"100%", padding:"4px 10px",
+                  borderRadius:R.pill, border:`1px solid ${T.border}`, background:T.card2, cursor:"pointer",
+                  fontSize:11.5, color:T.text }}>
+                <span style={{ width:6, height:6, borderRadius:3, background:st.color, flexShrink:0 }} />
+                <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Surface>
+
+      <div style={{ maxWidth:860 }}>
+        {msgs === null ? (
+          <div style={{ fontSize:12.5, color:T.dim }}>Loading…</div>
+        ) : msgs.length === 0 ? (
+          <div style={{ padding:SP.lg, textAlign:"center", borderRadius:R.md,
+            border:`1px dashed ${T.borderStrong}`, color:T.dim, fontSize:12.5, lineHeight:1.6 }}>
+            {isPMO ? "Nothing asked yet. Ask for an update on all their projects, or tag one below."
+                   : "No questions from the PMO yet. You can also write first."}
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:SP.sm }}>
+            {msgs.map(m => {
+              const mine = m.author_id === session.user_id;
+              const pmo  = m.author_role === "pmo";
+              const p = m.past_project_id ? byId[m.past_project_id] : null;
+              return (
+                <div key={m.id} style={{ display:"flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
+                  <div style={{ maxWidth: isCompact ? "92%" : "80%", padding:"10px 13px", borderRadius:R.md,
+                    background: pmo ? `${BRAND.blue}1A` : T.card2,
+                    border:`1px solid ${pmo ? `${BRAND.blue}3D` : T.border}` }}>
+                    <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:4, flexWrap:"wrap" }}>
+                      <span style={{ fontSize:11.5, fontWeight:700, color: pmo ? T.textOf(BRAND.blue) : T.text }}>
+                        {m.author_name || "Unknown"}
+                      </span>
+                      <span style={{ ...TYPE.caption, color:T.dim }}>{when(m.created_at)}</span>
+                    </div>
+                    {p && (
+                      <button className="pmo-focusable pmo-btn" onClick={() => onOpenProject(p.id)}
+                        style={{ display:"inline-flex", alignItems:"center", gap:5, marginBottom:5, padding:"1px 8px",
+                          borderRadius:R.pill, border:`1px solid ${BRAND.gold}55`, background:`${BRAND.gold}14`,
+                          color:T.textOf(BRAND.gold), fontSize:10.5, fontWeight:700, cursor:"pointer", maxWidth:"100%" }}>
+                        <History size={10} />
+                        <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</span>
+                      </button>
+                    )}
+                    <div style={{ fontSize:13, color:T.textSoft, lineHeight:1.6, whiteSpace:"pre-wrap",
+                      overflowWrap:"anywhere" }}>{m.body}</div>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={endRef} />
+          </div>
+        )}
+
+        {err && <div style={{ marginTop:SP.sm, fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>}
+
+        <div style={{ marginTop:SP.lg, padding:SP.md, borderRadius:R.md, background:T.surface,
+          border:`1px solid ${T.border}` }}>
+          <div style={{ display:"flex", gap:SP.sm, alignItems:"center", marginBottom:SP.sm, flexWrap:"wrap" }}>
+            <span style={{ ...TYPE.caption, color:T.muted }}>About</span>
+            <Select T={T} size="sm" value={tag} onChange={e => setTag(e.target.value)} style={{ flex:"1 1 220px", minWidth:0 }}>
+              <option value="">All {isPMO ? "their" : "my"} projects</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </div>
+          <div style={{ display:"flex", gap:SP.sm, alignItems:"flex-end" }}>
+            <textarea value={body} onChange={e => setBody(e.target.value)} rows={2}
+              placeholder={isPMO ? "Ask where things stand…" : "Reply with the current position…"}
+              onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) post(); }}
+              style={{ ...inp, resize:"vertical", lineHeight:1.55 }} />
+            <Button T={T} variant="primary" icon={Send} onClick={post} loading={busy} disabled={!body.trim()}>
+              Send
+            </Button>
+          </div>
+          <div style={{ ...TYPE.caption, color:T.dim, marginTop:6, display:"flex", alignItems:"center", gap:5 }}>
+            <Mail size={11} /> {isPMO ? `${pm.full_name || pm.username} is emailed when you send.` : "The PMO is emailed when you send."}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ── Project managers at a glance (PMO) ──────────────────────────────────── */
+function PmsView({ T, rows, unread, lastByPm, isCompact, onOpen }) {
+  const groups = useMemo(() => {
+    const m = {};
+    (rows || []).filter(r => r.pm_user_id).forEach(r => {
+      (m[r.pm_user_id] ||= { id:r.pm_user_id, name:r.pm_name || "Unknown", list:[] }).list.push(r);
+    });
+    return Object.values(m).map(g => ({ ...g,
+      open: g.list.filter(r => r.status !== "closed"),
+      unread: g.list.reduce((s, r) => s + (unread[`project:${r.id}`] || 0), 0) + (unread[`pm:${g.id}`] || 0),
+      last: lastByPm[g.id] || null,
+    })).sort((a, b) => b.unread - a.unread || b.open.length - a.open.length || a.name.localeCompare(b.name));
+  }, [rows, unread, lastByPm]);
+  const noPm = (rows || []).filter(r => !r.pm_user_id).length;
+  if (!groups.length) return (
+    <div style={{ padding:SP.xxl, textAlign:"center", background:T.surface, border:`1px solid ${T.border}`,
+      borderRadius:R.lg, color:T.muted, fontSize:13 }}>No past project has a project manager yet.</div>
+  );
+  return (
+    <div>
+      <div style={{ display:"grid", gap:SP.md, gridTemplateColumns: isCompact ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))" }}>
+        {groups.map((g, i) => {
+          const value = g.open.reduce((s, r) => s + (parseFloat(r.approved_amount)||0), 0);
+          const stale = g.open.filter(r => (r.days_since_followup ?? 9999) > 30).length;
+          return (
+            <button key={g.id} onClick={() => onOpen(g.id)} className="pmo-focusable pmo-btn past-row"
+              style={{ animationDelay:`${Math.min(i,10)*40}ms`, textAlign:"left", cursor:"pointer",
+                padding:`${SP.md}px ${SP.lg}px`, background:T.surface, border:`1px solid ${g.unread ? `${BRAND.gold}88` : T.border}`,
+                borderRadius:R.lg, boxShadow: g.unread ? T.glowSoft(BRAND.gold) : T.shadow, color:T.text }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <MessageSquare size={14} color={T.textOf(BRAND.blue)} />
+                <span style={{ fontSize:14, fontWeight:700, flex:1, minWidth:0, overflow:"hidden",
+                  textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{g.name}</span>
+                <UnreadDot T={T} n={g.unread} />
+              </div>
+              <div style={{ ...TYPE.caption, color:T.muted, marginTop:6 }}>
+                {g.list.length} project{g.list.length===1?"":"s"} · {g.open.length} open · PKR {fmtM(value)}
+                {stale ? ` · ${stale} not chased in 30 days` : ""}
+              </div>
+              <div style={{ fontSize:12, color: g.last ? T.textSoft : T.dim, marginTop:8, lineHeight:1.5,
+                display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
+                {g.last ? `${g.last.author_role === "pmo" ? "You" : g.name.split(" ")[0]}: ${g.last.body}` : "No chat yet."}
+              </div>
+              {g.last && <div style={{ ...TYPE.caption, color:T.dim, marginTop:4 }}>{when(g.last.created_at)}</div>}
+            </button>
+          );
+        })}
+      </div>
+      {noPm > 0 && (
+        <div style={{ ...TYPE.caption, color:T.dim, marginTop:SP.md }}>
+          {noPm} past project{noPm===1?"":"s"} without a project manager {noPm===1?"is":"are"} not shown here.
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Timeline tab ────────────────────────────────────────────────────────── */
 function ScheduleTab({ T, session, supa, row, roll, isPMO, isCompact, onChanged }) {
   const [editing, setEditing] = useState(false);
@@ -482,7 +872,7 @@ function ScheduleTab({ T, session, supa, row, roll, isPMO, isCompact, onChanged 
 
 
 /* ── Follow-up tab: the reason it is still open, and the thread ─────────── */
-function FollowUpPanel({ T, session, supa, row, isPMO, onChanged }) {
+function FollowUpPanel({ T, session, supa, row, isPMO, onChanged, onRead }) {
   const [msgs, setMsgs]   = useState(null);
   const [body, setBody]   = useState("");
   const [busy, setBusy]   = useState(false);
@@ -499,7 +889,8 @@ function FollowUpPanel({ T, session, supa, row, isPMO, onChanged }) {
         {}, session.access_token);
       setMsgs(Array.isArray(r) ? r : []);
     } catch (e) { setErr(e.message); setMsgs([]); }
-  }, [row.id, supa, session]);
+    await markPastRead(supa, session, `project:${row.id}`); onRead?.();
+  }, [row.id, supa, session]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (msgs?.length) endRef.current?.scrollIntoView({ block:"nearest" }); }, [msgs]);
 
@@ -507,8 +898,8 @@ function FollowUpPanel({ T, session, supa, row, isPMO, onChanged }) {
     if (!body.trim()) return;
     setBusy(true); setErr(null);
     try {
-      await supa("/rest/v1/past_project_updates", {
-        method:"POST", headers:{ Prefer:"return=minimal" },
+      const created = await supa("/rest/v1/past_project_updates", {
+        method:"POST", headers:{ Prefer:"return=representation" },
         body: JSON.stringify({
           past_project_id: row.id, body: body.trim(),
           author_id: session.user_id,
@@ -516,6 +907,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, onChanged }) {
           author_role: session.role,
         }),
       }, session.access_token);
+      notifyPast(supa, session, "project", Array.isArray(created) ? created[0]?.id : created?.id);
       setBody(""); await load(); onChanged?.();
     } catch (e) { setErr(e.message || "Could not post that."); }
     setBusy(false);
@@ -624,14 +1016,20 @@ function FollowUpPanel({ T, session, supa, row, isPMO, onChanged }) {
         <Button T={T} variant="primary" icon={Send} onClick={post}
           loading={busy} disabled={!body.trim()}>Post</Button>
       </div>
+      <div style={{ ...TYPE.caption, color:T.dim, marginTop:6, display:"flex", alignItems:"center", gap:5 }}>
+        <Mail size={11} />
+        {isPMO ? (row.pm_name ? `${row.pm_name} is emailed when you post.` : "This project has no manager, so nobody is emailed.")
+               : "The PMO is emailed when you post."}
+      </div>
     </div>
   );
 }
 
 
 /* ── One past project, full page ─────────────────────────────────────────── */
-function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBack, onChanged }) {
+function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm }) {
   const [tab, setTab] = useState("followup");
+  const [editing, setEditing] = useState(false);
   const st = STATUS[row.status] || STATUS.open;
   const s  = scheduleOf(row);
   const sm = SCHED[s.key];
@@ -649,8 +1047,22 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBa
       </button>
 
       <Surface T={T} tone={st.color} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.md }}>
-        {row.code && <div style={{ ...TYPE.mono, fontSize:10, color:T.dim }}>{row.code}</div>}
-        <div style={{ ...TYPE.display, fontSize: isCompact ? 17 : 20, color:T.text, lineHeight:1.3 }}>{row.name}</div>
+        <div style={{ display:"flex", gap:SP.sm, alignItems:"flex-start", flexWrap:"wrap" }}>
+          <div style={{ flex:"1 1 260px", minWidth:0 }}>
+            {row.code && <div style={{ ...TYPE.mono, fontSize:10, color:T.dim }}>{row.code}</div>}
+            <div style={{ ...TYPE.display, fontSize: isCompact ? 17 : 20, color:T.text, lineHeight:1.3 }}>{row.name}</div>
+          </div>
+          <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap" }}>
+            {row.pm_user_id && onOpenPm && (
+              <Button T={T} size="sm" variant="ghost" icon={MessageSquare} onClick={() => onOpenPm(row.pm_user_id)}>
+                {isPMO ? `Chat with ${String(row.pm_name || "PM").split(" ")[0]}` : "Chat with PMO"}
+              </Button>
+            )}
+            {isPMO && (
+              <Button T={T} size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Edit project</Button>
+            )}
+          </div>
+        </div>
         <div style={{ ...TYPE.caption, color:T.muted, marginTop:4 }}>
           {row.fiscal_year} · {row.campus || "No campus"} · {row.pm_name || "No project manager"}
         </div>
@@ -679,7 +1091,7 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBa
 
       {tab === "followup" && (
         <FollowUpPanel key={row.id + row.updated_at} T={T} session={session} supa={supa}
-          row={row} isPMO={isPMO} onChanged={onChanged} />
+          row={row} isPMO={isPMO} onChanged={onChanged} onRead={onRead} />
       )}
       {tab === "timeline" && (
         <ScheduleTab T={T} session={session} supa={supa} row={row} roll={roll}
@@ -688,6 +1100,10 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBa
       {tab === "wbs" && (
         <ProjectTasks kind="past" T={T} session={session} supa={supa} projectId={row.id}
           canWrite={canWriteTasks} isPMO={isPMO} isCompact={isCompact} onChanged={onChanged} />
+      )}
+      {editing && (
+        <EditPastModal T={T} session={session} supa={supa} row={row} pms={pms} isCompact={isCompact}
+          onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged?.(); }} />
       )}
     </div>
   );
@@ -1090,7 +1506,7 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
 }
 
 /* ── The page ────────────────────────────────────────────────────────────── */
-export function PastProjectsPage({ T, session, supa, isCompact }) {
+export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = null, onInitialOpened, onUnreadChange }) {
   usePastStyles();
   const [rows, setRows]   = useState(null);
   const [err, setErr]     = useState(null);
@@ -1106,8 +1522,35 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
   const [importing, setImporting] = useState(false);
   const [pmAccounts, setPmAccounts] = useState([]);   // every active account — used to match a name on import
   const [pmSuggest,  setPmSuggest]  = useState([]);   // managers and anyone running a project — the template dropdown
+  const [chatPm, setChatPm] = useState(null);           // project manager whose chat is open
+  const [unread, setUnread] = useState({});             // 'pm:<id>' / 'project:<id>' -> count
+  const [lastByPm, setLastByPm] = useState({});         // latest chat message per manager (PMO)
 
   const isPMO = session?.role === "pmo";
+
+  // Unread counts for the badges here and in the menu.
+  const refreshUnread = useCallback(async () => {
+    const u = await loadPastUnread(supa, session);
+    setUnread(u.byThread); onUnreadChange?.(u.total);
+    if (isPMO) {
+      try {
+        const m = await supa("/rest/v1/past_pm_messages?select=pm_user_id,author_role,body,created_at&order=created_at.desc&limit=500",
+                             {}, session.access_token);
+        const last = {};
+        (Array.isArray(m) ? m : []).forEach(x => { if (!last[x.pm_user_id]) last[x.pm_user_id] = x; });
+        setLastByPm(last);
+      } catch { /* the preview line is optional */ }
+    }
+  }, [supa, session, isPMO]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { refreshUnread(); }, [refreshUnread]);
+
+  // A link from an email: ?past=<project> or ?pastpm=<manager>.
+  useEffect(() => {
+    if (!initialOpen || rows === null) return;
+    if (initialOpen.kind === "project" && rows.some(r => r.id === initialOpen.id)) setOpenId(initialOpen.id);
+    if (initialOpen.kind === "pm") { setOpenId(null); setChatPm(isPMO ? initialOpen.id : session.user_id); }
+    onInitialOpened?.();
+  }, [initialOpen, rows]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     try {
@@ -1148,6 +1591,10 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
         !/audit test/i.test(u.full_name || "")));
     }).catch(() => {});
   }, [isPMO, supa, session]);
+
+  // The edit form's manager list: every active account except the PMO's own,
+  // since a guest (Waleed Jamshed) also runs projects.
+  const pmChoices = useMemo(() => pmAccounts.filter(u => u.role !== "pmo"), [pmAccounts]);
 
   const years = useMemo(() => [...new Set((rows||[]).map(r => r.fiscal_year))].sort().reverse(), [rows]);
   const pms   = useMemo(() => [...new Set((rows||[]).map(r => r.pm_name).filter(Boolean))].sort(), [rows]);
@@ -1322,10 +1769,20 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
           {openRow ? (
             <PastProjectDetail T={T} session={session} supa={supa} row={openRow}
               roll={rollup[openRow.id]} isPMO={isPMO} isCompact={isCompact}
+              pms={pmChoices} onRead={refreshUnread}
+              onOpenPm={(id) => { setOpenId(null); setChatPm(id); }}
               onBack={() => setOpenId(null)} onChanged={load} />
+          ) : chatPm ? (
+            <PmChat key={chatPm} T={T} session={session} supa={supa} isPMO={isPMO} isCompact={isCompact}
+              pm={{ id: chatPm, full_name: (rows.find(r => r.pm_user_id === chatPm) || {}).pm_name
+                     || (chatPm === session.user_id ? (session.full_name || session.username) : "Project manager") }}
+              projects={rows.filter(r => r.pm_user_id === chatPm)}
+              onOpenProject={(id) => { setChatPm(null); setOpenId(id); }}
+              onBack={() => { setChatPm(null); if (isPMO) setView("pms"); }}
+              onRead={refreshUnread} />
           ) : (<>
-          {/* Summary strip */}
-          <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
+          {/* Summary strip — PMO only; a project manager sees just their own projects. */}
+          {isPMO && <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
             gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(5, minmax(0,1fr))" }}>
             {[
               { k:"Still open",      v:totals.openCount, sub:"from prior years", c:DATA.danger,  Icon:History },
@@ -1352,7 +1809,14 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
                 <div style={{ position:"relative", ...TYPE.caption, color:T.dim, marginTop:2 }}>{sub}</div>
               </div>
             ))}
-          </div>
+          </div>}
+          {!isPMO && (
+            <div style={{ marginBottom:SP.lg, padding:`${SP.md}px ${SP.lg}px`, borderRadius:R.lg, background:T.surface,
+              border:`1px solid ${T.border}`, fontSize:13, color:T.textSoft, lineHeight:1.6 }}>
+              Your projects from earlier fiscal years that are still being followed up. Reply to the PMO on a project's
+              Follow-up tab, or use <b>Chat with PMO</b> for all of them at once.
+            </div>
+          )}
 
           {/* Controls */}
           <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", alignItems:"center",
@@ -1371,23 +1835,29 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
               <option value="closed">Closed only</option>
               <option value="all">Everything</option>
             </Select>
-            <Select T={T} value={pm} onChange={e => setPm(e.target.value)}>
-              <option value="">All project managers</option>
-              {pms.map(n => <option key={n} value={n}>{n}</option>)}
-            </Select>
+            {isPMO && (
+              <Select T={T} value={pm} onChange={e => setPm(e.target.value)}>
+                <option value="">All project managers</option>
+                {pms.map(n => <option key={n} value={n}>{n}</option>)}
+              </Select>
+            )}
             <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:SP.sm,
               flexWrap:"wrap" }}>
               <div role="tablist" aria-label="View" style={{ display:"flex", padding:2, borderRadius:R.pill,
                 border:`1px solid ${T.border}`, background:T.surface }}>
-                {[["list","List",List],["timeline","Timeline",CalendarRange]].map(([v,l,Ic]) => (
+                {[["list","List",List],["timeline","Timeline",CalendarRange],
+                  ["pms", isPMO ? "By PM" : "Chat with PMO", MessageSquare]].map(([v,l,Ic]) => (
                   <button key={v} role="tab" aria-selected={view === v}
-                    className="pmo-focusable pmo-btn" onClick={() => setView(v)}
+                    className="pmo-focusable pmo-btn"
+                    onClick={() => { if (v === "pms" && !isPMO) { setChatPm(session.user_id); return; } setView(v); }}
                     style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 11px",
                       borderRadius:R.pill, border:"none", cursor:"pointer", fontSize:12,
                       background: view === v ? `${BRAND.blue}22` : "transparent",
                       color: view === v ? T.textOf(BRAND.blue) : T.muted,
                       fontWeight: view === v ? 700 : 500 }}>
                     <Ic size={12} /> {l}
+                    {v === "pms" && (() => { const n = Object.entries(unread).filter(([k]) => k.startsWith("pm:"))
+                      .reduce((a, [, x]) => a + x, 0); return n ? <UnreadDot T={T} n={n} /> : null; })()}
                   </button>
                 ))}
               </div>
@@ -1407,7 +1877,10 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
 
           {err && <div style={{ fontSize:12.5, color:T.textOf(DATA.danger), marginBottom:SP.md }}>{err}</div>}
 
-          {view === "timeline" ? (
+          {view === "pms" && isPMO ? (
+            <PmsView T={T} rows={rows} unread={unread} lastByPm={lastByPm} isCompact={isCompact}
+              onOpen={(id) => setChatPm(id)} />
+          ) : view === "timeline" ? (
             <PastGantt T={T} list={list} rollup={rollup} isCompact={isCompact}
               onOpen={(r) => setOpenId(r.id)} />
           ) : groups.length === 0 ? (
@@ -1491,9 +1964,12 @@ export function PastProjectsPage({ T, session, supa, isCompact }) {
 
                           <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end",
                             justifyContent:"space-between", flexShrink:0, gap:6 }}>
-                            <span style={{ ...TYPE.caption, fontWeight:700, padding:"2px 9px",
-                              borderRadius:R.pill, background:`${st.color}${T.badge}`,
-                              color:T.textOf(st.color), whiteSpace:"nowrap" }}>{st.label}</span>
+                            <span style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
+                              <UnreadDot T={T} n={unread[`project:${r.id}`] || 0} />
+                              <span style={{ ...TYPE.caption, fontWeight:700, padding:"2px 9px",
+                                borderRadius:R.pill, background:`${st.color}${T.badge}`,
+                                color:T.textOf(st.color), whiteSpace:"nowrap" }}>{st.label}</span>
+                            </span>
                             <div style={{ textAlign:"right" }}>
                               <div style={{ fontSize:12.5, fontWeight:700, color:T.text }}>
                                 {fmtM(r.approved_amount)}

@@ -7,7 +7,7 @@ import { ProjectBenefitsPanel } from "./BenefitsRealized.jsx";
 import { ProjectRaciCard } from "./RaciCard.jsx";
 import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
-import { PastProjectsPage } from "./PastProjects.jsx";
+import { PastProjectsPage, loadPastUnread } from "./PastProjects.jsx";
 import { PmoReviewPage } from "./PmoReview.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
 import { AskPanel } from "./AskPanel.jsx";
@@ -286,7 +286,8 @@ const NAV = [
   { id:"risks", Icon:ShieldAlert,    label:"Risk Register" },
   { id:"cashflow", Icon:Wallet,      label:"Project Cashflows", pmoOnly:true },
   { id:"schedule", Icon:CalendarRange, label:"Timeline & Schedule" },
-  { id:"past",     Icon:History,       label:"Past Projects", pmoOnly:true },
+  // PMO, and anyone who manages a past project (they see only their own).
+  { id:"past",     Icon:History,       label:"Past Projects", pastOnly:true },
   { id:"review",   Icon:ClipboardCheck, label:"PMO Review",   pmoOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
   { id:"photowall", Icon:Camera,     label:"Gallery" },
@@ -378,11 +379,12 @@ function SidebarTourButton({ T }) {
   );
 }
 
-function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, onChangePassword,
+function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, onChangePassword,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
                   fyLabel = "FY 2026-27", navStats = null }) {
   const roleFiltered = NAV.filter(n => {
     if (n.pmoOnly && session?.role !== "pmo") return false;
+    if (n.pastOnly && !(session?.role === "pmo" || pastAllowed)) return false;
     if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule")) return false;
     return true;
   });
@@ -459,6 +461,16 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, onC
             fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center",
             boxSizing:"border-box", boxShadow:`0 2px 8px -1px ${BRAND.gold}99`,
           }}>{reviewCount > 99 ? "99+" : reviewCount}</span>
+        )}
+        {/* Unread follow-up messages on past projects. */}
+        {id === "past" && pastCount > 0 && (
+          <span style={{
+            position: mini ? "absolute" : "static", top: mini ? 4 : undefined, right: mini ? 8 : undefined,
+            minWidth:18, height:18, padding:"0 5px", borderRadius:R.pill,
+            background:BRAND.gold, color:"#1A1206",
+            fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center",
+            boxSizing:"border-box", boxShadow:`0 2px 8px -1px ${BRAND.gold}99`,
+          }}>{pastCount > 99 ? "99+" : pastCount}</span>
         )}
         {id === "upd" && unreadCount > 0 && (
           <span style={{
@@ -647,9 +659,10 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, onC
 // to change with it.
 const MOBILE_TAB_PRIORITY = ["cmd", "proj", "upd", "photowall", "camp", "perf", "risks", "cashflow", "team"];
 
-function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, reviewCount = 0 }) {
+function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false }) {
   const filtered = NAV.filter(n => {
     if (n.pmoOnly && session?.role !== "pmo") return false;
+    if (n.pastOnly && !(session?.role === "pmo" || pastAllowed)) return false;
     if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule")) return false;
     return true;
   });
@@ -662,6 +675,8 @@ function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, revi
   // PMO Review lives in the More drawer on phones, so its unread count rides on
   // the More tab; otherwise a new PDD would only show once the drawer is opened.
   const reviewInMore = reviewCount > 0 && !primary.some(n => n.id === "review") && filtered.some(n => n.id === "review");
+  const pastInMore = pastCount > 0 && !primary.some(n => n.id === "past") && filtered.some(n => n.id === "past");
+  const moreCount = (reviewInMore ? reviewCount : 0) + (pastInMore ? pastCount : 0);
 
   const Tab = ({ id, Icon, label, onClick, active }) => (
     <button onClick={onClick} className={`pmo-focusable${active ? " pmo-hot" : ""}`} style={{
@@ -686,14 +701,17 @@ function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, revi
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
-        {((id === "review" && reviewCount > 0) || (id === "more" && reviewInMore)) && (
-          <span aria-label={`${reviewCount} new PDD${reviewCount === 1 ? "" : "s"}`} style={{ position: "absolute", top: -4, right: -7, minWidth: 15, height: 15, padding: "0 3px",
-            borderRadius: R.pill, background: BRAND.gold, color: "#1A1206", fontSize: 9, fontWeight: 700,
-            display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
-            boxShadow: `0 2px 8px -1px ${BRAND.gold}99` }}>
-            {reviewCount > 99 ? "99+" : reviewCount}
-          </span>
-        )}
+        {(() => {
+          const n = id === "review" ? reviewCount : id === "past" ? pastCount : id === "more" ? moreCount : 0;
+          return n > 0 && (
+            <span aria-label={`${n} new`} style={{ position: "absolute", top: -4, right: -7, minWidth: 15, height: 15, padding: "0 3px",
+              borderRadius: R.pill, background: BRAND.gold, color: "#1A1206", fontSize: 9, fontWeight: 700,
+              display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+              boxShadow: `0 2px 8px -1px ${BRAND.gold}99` }}>
+              {n > 99 ? "99+" : n}
+            </span>
+          );
+        })()}
       </div>
       <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, fontFamily: TYPE.body.fontFamily,
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
@@ -11322,7 +11340,12 @@ export default function App() {
   // ?review=<id> (the PDD push notification and email link) opens that PDD
   // on PMO Review. Read once; PmoReviewPage removes it from the address bar.
   const deepReviewId = useRef(Number(new URLSearchParams(window.location.search).get("review")) || null);
-  const [page, setPage] = useState(() => deepReviewId.current ? "review" : "cmd");
+  // Links in the Past Projects follow-up emails: ?past=<project> or ?pastpm=<manager>.
+  const deepPast = useRef((() => {
+    const q = new URLSearchParams(window.location.search), ok = (v) => /^[0-9a-f-]{36}$/i.test(v || "");
+    return ok(q.get("past")) ? { kind:"project", id:q.get("past") } : ok(q.get("pastpm")) ? { kind:"pm", id:q.get("pastpm") } : null;
+  })());
+  const [page, setPage] = useState(() => deepReviewId.current ? "review" : deepPast.current ? "past" : "cmd");
   const [restoring, setRestoring] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
 
@@ -11359,6 +11382,8 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadTick, setUnreadTick] = useState(0); // bump to force an immediate refresh
   const [reviewCount, setReviewCount] = useState(0); // PDDs from the E-PDD portal not yet opened (PMO)
+  const [pastAllowed, setPastAllowed] = useState(false); // PMO, or manages at least one past project
+  const [pastCount, setPastCount] = useState(0);         // unread past-project follow-up messages
   const [reviewTick, setReviewTick] = useState(0);
 
   // ─── ONBOARDING TOUR (Guest, Project Manager only — never PMO) ──────────
@@ -11419,6 +11444,33 @@ export default function App() {
   // esbuild's static checks passed — the TDZ only fires when a step actually
   // runs. Deleted from here; the real declarations are below, once
   // openProject and setDashTab genuinely exist.
+
+  // Past Projects: who may open it (PMO, or a manager of at least one past
+  // project — the database returns only their own) and the unread follow-ups.
+  useEffect(() => {
+    if (!session?.access_token) { setPastAllowed(false); setPastCount(0); return; }
+    let alive = true;
+    const run = async () => {
+      let allowed = session.role === "pmo";
+      if (!allowed) {
+        try {
+          const r = await supa("/rest/v1/past_projects?select=id&limit=1", {}, session.access_token);
+          allowed = Array.isArray(r) && r.length > 0;
+        } catch (_) { allowed = false; }
+      }
+      if (!alive) return;
+      setPastAllowed(allowed);
+      if (allowed) {
+        const u = await loadPastUnread(supa, session).catch(() => ({ total:0 }));
+        if (alive) setPastCount(u.total);
+      } else setPastCount(0);
+    };
+    run();
+    const iv = setInterval(run, 60000);
+    const onVisible = () => { if (document.visibilityState === "visible") run(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { alive = false; clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
+  }, [session?.access_token, session?.role]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // PMO Review badge: PDDs copied from the E-PDD portal since intake began that
   // the PMO has not opened. The copy runs every 5 minutes; checking every
@@ -11828,7 +11880,8 @@ export default function App() {
     // entry is not enough on its own: a restored session, a bookmark or a stale
     // page value can still land here, and Past Projects would have shown an
     // empty list rather than saying anything.
-    ((page === "cashflow" || page === "past" || page === "review") && session?.role !== "pmo") ? "proj" :
+    ((page === "cashflow" || page === "review") && session?.role !== "pmo") ? "proj" :
+    (page === "past" && session?.role !== "pmo" && !pastAllowed) ? "proj" :
     page;
 
   // Every page the user lands on, recorded once per change rather than per
@@ -11942,14 +11995,14 @@ export default function App() {
       }} />
       <Sidebar
         T={T} page={effectivePage} setPage={navigateToPage} session={session}
-        unreadCount={unreadCount} reviewCount={reviewCount} onChangePassword={() => setShowChangePassword(true)}
+        unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} onChangePassword={() => setShowChangePassword(true)}
         collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}
         isCompact={vp.isCompact} fyLabel={portal.fy} navStats={navStats}
       />
       {vp.isCompact && (
         <BottomTabBar T={T} page={effectivePage} setPage={navigateToPage} session={session}
-          unreadCount={unreadCount} reviewCount={reviewCount} onMore={() => setNavMobileOpen(true)} />
+          unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} onMore={() => setNavMobileOpen(true)} />
       )}
       {/* §14 — this column is the "world" that pulls back behind an overlay. */}
       <div className="pmo-world" style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden",
@@ -11999,7 +12052,13 @@ export default function App() {
             {effectivePage === "cashflow" && <CashflowsPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
               onSelectProject={openProject} />}
         {effectivePage === "schedule" && <div data-tour="schedule-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><SchedulePage T={T} session={session} onSelectProject={openProject} /></div>}
-        {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact} />}
+        {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
+          initialOpen={deepPast.current} onUnreadChange={setPastCount}
+          onInitialOpened={() => {
+            deepPast.current = null;
+            const u = new URL(window.location.href); u.searchParams.delete("past"); u.searchParams.delete("pastpm");
+            window.history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
+          }} />}
         {effectivePage === "review" && <PmoReviewPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
           initialOpenId={deepReviewId.current} onInitialOpened={() => { deepReviewId.current = null; }}
           onSeenChange={() => setReviewTick(t => t + 1)}
