@@ -2927,7 +2927,7 @@ function SuRequestedList({ T, rows = [], meta = {} }) {
           <thead>
             <tr>
               <th style={th}>#</th>
-              <th style={th}>Proposal</th>
+              <th style={th}>Project Name</th>
               <th style={{...th, textAlign:"right"}}>SU Requested</th>
             </tr>
           </thead>
