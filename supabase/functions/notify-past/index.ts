@@ -94,7 +94,7 @@ Deno.serve(async (req: Request) => {
   const sent = await mail(to, subject, text, html, true);
   const pushRes = await push(ctx, to.map(r => r.id), {
     title: fromPmo ? "PMO follow-up" : `Reply from ${author}`,
-    body: `${project ? project.name : "Past projects"}: ${toAscii(String(msg.body ?? "")).slice(0, 120)}`,
+    body: `${project ? project.name : "Update requested"}: ${toAscii(String(msg.body ?? "")).slice(0, 120)}`,
     tag: kind === "pm" ? `pastpm-${pmId}` : `past-${projectId}`, url: link.replace(PORTAL_URL, "./"),
   });
   await log(ctx, sent.map(s => ({

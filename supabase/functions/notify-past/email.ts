@@ -20,11 +20,11 @@ export function composeEmail(a: {
 
   const about = project
     ? `${project.code ? `${project.code} ` : ""}${project.name} (${project.fiscal_year}${project.campus ? `, ${project.campus}` : ""})`
-    : `all past projects of ${pmName}`;
+    : `the ${listed.length === 1 ? "project" : `${listed.length} projects`} listed below`;
   const subject = fromPmo
-    ? `PMO follow-up (${site}): ${project ? project.name : "your past projects"}`
-    : `Reply from ${author} (${site}): ${project ? project.name : "past projects"}`;
-  const heading = kind === "pm" ? `Past projects of ${pmName} (${listed.length})` : "Project";
+    ? `PMO follow-up (${site}): ${project ? project.name : `Update requested on ${listed.length} ${listed.length === 1 ? "project" : "projects"}`}`
+    : `Reply from ${author} (${site}): ${project ? project.name : `Update on ${listed.length} ${listed.length === 1 ? "project" : "projects"}`}`;
+  const heading = kind === "pm" ? `Projects of ${pmName} (${listed.length})` : "Project";
 
   const listText = listed.map((r, i) =>
     `${i + 1}. ${pid(r)}  ${r.name} (${r.fiscal_year ?? "—"}${r.campus ? `, ${r.campus}` : ""})`
