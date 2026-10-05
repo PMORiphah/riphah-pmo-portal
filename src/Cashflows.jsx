@@ -52,8 +52,10 @@ const ShareDonut         = lazyChart("ShareDonut");
    same one.
 
    Reads project_cashflows: one row per project per month, tagged capex, pmdc
-   or investment. PMDC counts inside the CAPEX total (676,243,011) and is also
-   broken out on its own; investment is reported separately throughout, as it
+   or investment. The CAPEX total tile shows the live portfolio total
+   (portfolio_dashboard.total_capex, the same figure as the dashboard), not the
+   sum of the monthly plan, which only changes when the plan is re-imported.
+   PMDC counts inside the CAPEX total and is also broken out on its own; investment is reported separately throughout, as it
    is everywhere else in the portal.
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -138,6 +140,8 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
   const [rows, setRows]   = useState(null);
   const [rel, setRel]     = useState([]);
   const [err, setErr]     = useState(null);
+  // Live portfolio total, refreshed every minute and on return to the tab.
+  const [port, setPort]   = useState(null);
   const [q, setQ]         = useState("");
   const [campus, setCampus] = useState("");
   const [ptype, setPtype]   = useState("");
@@ -158,6 +162,23 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
       setRel(Array.isArray(r) ? r : []);
     }).catch(e => { if (alive) { setErr(e.message); setRows([]); } });
     return () => { alive = false; };
+  }, [supa, session]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => Promise.all([
+      supa("/rest/v1/portfolio_dashboard?select=total_capex", {}, session.access_token),
+      supa("/rest/v1/projects?portfolio=eq.capex&select=id", {}, session.access_token),
+    ]).then(([d, p]) => {
+      if (!alive) return;
+      const total = Number((Array.isArray(d) ? d[0] : d)?.total_capex);
+      if (Number.isFinite(total)) setPort({ total, projects: Array.isArray(p) ? p.length : null });
+    }).catch(() => {});
+    load();
+    const t = setInterval(load, 60000);
+    const vis = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { alive = false; clearInterval(t); document.removeEventListener("visibilitychange", vis); };
   }, [supa, session]);
 
   const opts = useMemo(() => {
@@ -275,7 +296,14 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
              invProjects:countProjects(inv) };
   }, [cap, inv, monthly, rel]);
 
-  const pctDrawn = totals.capexTotal ? (totals.drawn/totals.capexTotal*100) : 0;
+  const filtered = !!(q || campus || ptype || prio);
+  // Headline: the live portfolio total, unless a filter narrows the page to part
+  // of the plan (the portfolio figure can't be cut by plan fields).
+  const headTotal = !filtered && port ? port.total : totals.capexTotal;
+  const unphased  = !filtered && port ? port.total - totals.capexTotal : 0;
+  const pctDrawn = headTotal ? (totals.drawn/headTotal*100) : 0;
+  // The cumulative chart compares releases with the monthly plan itself.
+  const pctPlan  = totals.capexTotal ? (totals.drawn/totals.capexTotal*100) : 0;
   const pctPmdc  = totals.capexTotal ? (totals.pmdc/totals.capexTotal*100) : 0;
 
   const axis = axisStyle(T);
@@ -310,10 +338,18 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
         {/* ── Headline ─────────────────────────────────────────────────── */}
         <div style={{ display:"grid", gap:SP.sm,
           gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(5, minmax(0,1fr))" }}>
-          <StatTile T={T} index={0} label="CAPEX total" value={`PKR ${fmtM(totals.capexTotal)}`}
-            sub={`${totals.projects} projects · incl. PMDC`} colour={BRAND.blue} Icon={Wallet}
-            iconAnim="pmo-ico-up"
-            insight={`The full FY 26-27 capex plan, PMDC included. ${totals.projects} projects carry a monthly figure.`} />
+          <StatTile T={T} index={0} label={filtered ? "CAPEX total (filtered plan)" : "CAPEX total"}
+            value={`PKR ${fmtM(headTotal)}`}
+            sub={filtered || !port ? `${totals.projects} projects · incl. PMDC`
+              : `${port.projects ?? totals.projects} projects · incl. PMDC`}
+            colour={BRAND.blue} Icon={Wallet} iconAnim="pmo-ico-up"
+            insight={filtered || !port
+              ? `The filtered part of the FY 26-27 monthly plan, PMDC included. ${totals.projects} projects carry a monthly figure.`
+              : `Total CAPEX portfolio on DF Recommended, the same live figure as the dashboard. `
+                + `The monthly plan below phases PKR ${fmtM(totals.capexTotal)} across ${totals.projects} projects`
+                + (Math.abs(unphased) >= 50000
+                    ? `; PKR ${fmtM(Math.abs(unphased))} ${unphased > 0 ? "is not yet phased into months" : "more is phased than the portfolio total"}.`
+                    : ".")} />
           <StatTile T={T} index={1} label="of which PMDC" value={`PKR ${fmtM(totals.pmdc)}`}
             sub={`${pctPmdc.toFixed(1)}% of CAPEX`} colour={DATA.warning} Icon={Layers}
             iconAnim="pmo-ico-shift"
@@ -321,7 +357,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
           <StatTile T={T} index={2} label="Released to date" value={`PKR ${fmtM(totals.drawn)}`}
             sub={`${pctDrawn.toFixed(1)}% drawn`} colour={DATA.positive} Icon={TrendingUp}
             iconAnim="pmo-ico-tick"
-            insight={`${fmtM(totals.drawn)} released against ${fmtM(totals.capexTotal)} planned — from recorded budget release dates.`} />
+            insight={`${fmtM(totals.drawn)} released against ${fmtM(headTotal)} ${filtered || !port ? "planned" : "total CAPEX"} — from recorded budget release dates.`} />
           <StatTile T={T} index={3} label="Peak month" value={totals.peak ? totals.peak.label : "—"}
             sub={totals.peak ? `PKR ${fmtM(totals.peak.total)}` : ""} colour={BRAND.gold} Icon={CalendarRange}
             iconAnim="pmo-ico-glow"
@@ -424,15 +460,15 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
                 <div style={{ ...TYPE.metricSm, color:T.textOf(T.positive) }}>{fmtM(totals.drawn)}</div>
               </div>
               <WithInsight T={T} side="bottom" align="right" width={264}
-                tone={pctDrawn < 25 ? T.danger : T.positive}
+                tone={pctPlan < 25 ? T.danger : T.positive}
                 title="Portfolio release progress"
                 line={`${fmtM(totals.drawn)} released against ${fmtM(totals.capexTotal)} planned.`}
-                stat={`${pctDrawn.toFixed(1)}% of the recommended portfolio`}>
+                stat={`${pctPlan.toFixed(1)}% of the monthly plan`}>
                 <div style={{ cursor:"help" }}>
                   <div style={{ ...TYPE.label, color:T.muted, marginBottom:3 }}>Of plan</div>
                   <div style={{ ...TYPE.metricSm,
-                    color:T.textOf(pctDrawn < 25 ? T.danger : pctDrawn < 60 ? T.warning : T.positive) }}>
-                    {pctDrawn.toFixed(1)}%
+                    color:T.textOf(pctPlan < 25 ? T.danger : pctPlan < 60 ? T.warning : T.positive) }}>
+                    {pctPlan.toFixed(1)}%
                   </div>
                 </div>
               </WithInsight>
@@ -441,10 +477,10 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
           <PlannedActualChart T={T} data={released} height={isCompact ? 220 : 280}
             isMobile={isCompact} fmt={fmtM} />
           <InsightNote T={T} style={{ marginTop:SP.md }} insight={{
-            tone: pctDrawn < 10 ? "attention" : pctDrawn < 50 ? "watch" : "good",
-            title: pctDrawn < 10 ? "Release is well behind plan" : "Portfolio release progress",
+            tone: pctPlan < 10 ? "attention" : pctPlan < 50 ? "watch" : "good",
+            title: pctPlan < 10 ? "Release is well behind plan" : "Portfolio release progress",
             body: `${fmtM(totals.drawn)} released against ${fmtM(totals.capexTotal)} planned — `
-                + `${pctDrawn.toFixed(1)}% of the recommended portfolio. Release dates are recorded `
+                + `${pctPlan.toFixed(1)}% of the monthly plan. Release dates are recorded `
                 + `against ${rel.length} project${rel.length===1?"":"s"}, so the actual line reflects only those.`,
           }} />
         </Section>
@@ -475,7 +511,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
           <Section T={T} tone={T.info} pad={SP.lg} style={{ flex:1 }}>
             <SectionTitle T={T} icon={PieIcon} title="Share of CAPEX" sub="Hover a slice for its detail" />
             <ShareDonut T={T} data={byCut} total={`PKR ${fmtM(totals.capexTotal)}`}
-              totalLabel="CAPEX total" fmt={fmtM} height={isCompact ? 230 : 270}
+              totalLabel={Math.abs(unphased) >= 50000 ? "Phased in plan" : "CAPEX total"} fmt={fmtM} height={isCompact ? 230 : 270}
               onPick={onCutPick} activeKey={cutActive} />
           </Section>
           </Reveal>
