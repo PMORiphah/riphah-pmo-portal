@@ -33,6 +33,7 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 // Keys come from get_gemini_keys() (Vault gemini_api_key, gemini_api_key_2).
 export const GEMINI_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 const MAX_QUOTE_FILES = 3;
+const BOQ_RE = /\bBOQ\b|bill of quantit/i;
 const MAX_INLINE_BYTES = 14 * 1024 * 1024;   // request limit is 20 MB after base64
 const MONEY_REL_TOL = 0.01;                   // 1% between a quotation and the cost table
 
@@ -89,7 +90,7 @@ Answer five questions about the PDD text, each with a verdict, a short reason (o
 "quote" MUST be copied exactly, character for character, from the field being judged (at most 200 characters). If the field is empty, use "".
 Be fair: a short but specific answer can be clear or measurable. Judge the content, not the grammar.
 
-Then read each attached file (numbered in the order given). For each file return: whether it is readable, whether it is a quotation/offer from a vendor, the vendor name, date, currency (PKR, USD...), the final total as printed (the grand total if there is one; say in total_label which label it had, and whether tax is included), and up to 30 priced lines (description, quantity, amount). Copy numbers exactly as printed; do not add anything up yourself. If a file holds several vendors' quotations, return one entry per vendor with the same file_number.`;
+Then read each attached file (numbered in the order given). For each file return: whether it is readable, whether it is a quotation/offer from a vendor, the vendor name, date, currency (PKR, USD...), the final total as printed (the grand total if there is one; say in total_label which label it had, and whether tax is included), and up to 30 priced lines (description, quantity, amount). Copy numbers exactly as printed; do not add anything up yourself. If a file holds several vendors' quotations, return one entry per vendor with the same file_number. A BOQ (bill of quantities) or cost estimate is read the same way (its total and priced lines), with is_quotation false. If a quotation gives only unit rates and no total, return total 0 and list each item with its rate as amount and qty 1.`;
 
 // PDD fields as the requester wrote them, labelled the way the E-PDD form labels them.
 export function pddText(row: Row): { text: string; fields: Record<string, string> } {
@@ -283,7 +284,10 @@ export function aiChecks(row: Row, data: Row, files: AiFile[]): { checks: Check[
   // (the model is told never to add up). Its label says so.
   const clipD = (x: string) => (x.length > 50 ? x.slice(0, 50).replace(/\s+\S*$/, "") + "…" : x);
   const lineSum = (q: Row) => ((q.lines as Row[]) || []).reduce((a, l) => a + (Number(l.amount) > 0 ? Number(l.amount) : 0), 0);
-  const quotes = ((data.quotations as Row[]) || []).filter(q => q.readable && q.is_quotation)
+  // ai-4: a BOQ (construction / renovation) is compared like a quotation, labelled BOQ.
+  const isBoq = (q: Row) => BOQ_RE.test(String(files[Number(q.file_number) - 1]?.title ?? ""));
+  const quotes = ((data.quotations as Row[]) || []).filter(q => q.readable && (q.is_quotation || isBoq(q)))
+    .map(q => isBoq(q) && !q.is_quotation ? { ...q, vendor: q.vendor || "BOQ" } : q)
     .map(q => Number(q.total) > 0 ? q : (lineSum(q) > 0 ? { ...q, total: lineSum(q), total_label: "sum of its priced lines", summed: true } : q))
     .filter(q => Number(q.total) > 0);
   const unreadable = ((data.quotations as Row[]) || []).filter(q => !q.readable).map(q => files[Number(q.file_number) - 1]?.title ?? `file ${q.file_number}`);
@@ -313,7 +317,10 @@ export function aiChecks(row: Row, data: Row, files: AiFile[]): { checks: Check[
     const vendor = (q: Row) => { const v = norm(q.vendor); return v.length > 60 ? v.slice(0, 60).replace(/\s+\S*$/, "") + "…" : v; };
     const sameCur = (q: Row) => !norm(q.currency) || norm(q.currency).toUpperCase().replace("RS", "PKR") === cur || (cur === "PKR" && /^(RS\.?|PKR|RUPEES?)$/i.test(norm(q.currency)));
     const desc = (q: Row) => `${vendor(q) || "unnamed vendor"}: ${norm(q.currency) || cur} ${fmt(q.total)}${q.total_label ? ` (${norm(q.total_label).replace(/[:\s]+$/, "")})` : ""}`;
-    if (!quotes.length) {
+    if (!quotes.length && files.every(f => BOQ_RE.test(f.title))) {
+      checks.push({ id: "ai_quotes", group: "AI reading", label: "Quotations match the cost table", status: "info",
+        detail: "Only a BOQ is attached and no total could be read from it; compare it with the cost table by hand." });
+    } else if (!quotes.length) {
       checks.push({ id: "ai_quotes", group: "AI reading", label: "Quotations match the cost table", status: "warn",
         detail: unreadable.length ? `The attached quotation file could not be read (${unreadable.join(", ")}).`
                                   : "No vendor quotation with a total was found in the attached files.",
@@ -351,7 +358,7 @@ export function aiChecks(row: Row, data: Row, files: AiFile[]): { checks: Check[
         } else {
         // ai-4: name the cost-table lines no quoted price backs (a quoted line equal to the
         // line's unit cost or its total, within 1%), so the reply can say which line to fix.
-        const words = (x: string) => new Set(norm(x).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4));
+        const words = (x: string) => new Set(norm(x).toLowerCase().split(/[^a-z0-9]+/).filter(w => /^\d{2,}$/.test(w) || (w.length >= 3 && !/^(the|and|for|with|each|set|nos?)$/.test(w))));
         const qLines = same.flatMap(q => ((q.lines as Row[]) || []).map(l => ({ amt: Number(l.amount), w: words(String(l.description ?? "")) })))
           .filter(l => l.amt > 0);
         const shares = (a: Set<string>, b: Set<string>) => [...a].some(w => b.has(w));
@@ -359,11 +366,17 @@ export function aiChecks(row: Row, data: Row, files: AiFile[]): { checks: Check[
           && !qLines.some(l => shares(l.w, words(it.d)) && (close(l.amt, it.u) || close(l.amt, it.t)))
           && !same.some(q => close(Number(q.total), it.t)));
         const shown = unbacked.slice(0, 6);
-        const unbackedNote = qLines.length && unbacked.length
+        // A quotation above the cost table by exactly one of its own lines: that item is
+        // quoted but not costed, or costed twice in the quotation.
+        const single = same.length === 1 ? same[0] : null;
+        const extra = single ? Number(single.total) - grand : 0;
+        const extraLine = single && extra > 0 ? ((single.lines as Row[]) || []).find(l => close(Number(l.amount), extra)) : null;
+        const extraNote = extraLine ? ` The quotation is ${cur} ${fmt(extra)} above the cost table, exactly its line “${clipD(norm(extraLine.description))}”; that item may be missing from the cost table or counted twice in the quotation.` : "";
+        const unbackedNote = extraNote ? "" : qLines.length && unbacked.length
           ? ` No quoted price matches cost line${unbacked.length === 1 ? "" : "s"} ${shown.map(it => `${it.n} (${clipD(it.d)}, ${cur} ${fmt(it.u)} each)`).join("; ")}${unbacked.length > 6 ? ` and ${unbacked.length - 6} more` : ""}.` : "";
         checks.push({ id: "ai_quotes", group: "AI reading", label: "Quotations match the cost table", status: "warn",
           detail: `No quotation total matches the grand total ${cur} ${fmt(grand)}${contingency > 0 ? `, the total less contingency (${fmt(grand - contingency)})` : ""} or any cost line (within 1%)`
-            + (same.length >= 2 ? `; together the quotations come to ${cur} ${fmt(together)}.` : ".") + unbackedNote,
+            + (same.length >= 2 ? `; together the quotations come to ${cur} ${fmt(together)}.` : ".") + unbackedNote + extraNote,
           items: quotes.map(desc),
           comment: same.length >= 2
             ? `Quotations: The attached quotations add up to ${cur} ${fmt(together)}, whereas the cost table totals ${cur} ${fmt(grand)}. Please align the amounts in the cost table with the quotations or explain the difference.`
