@@ -878,13 +878,15 @@ export function executeOverview(plan: Plan, rows: Row[], today: string, kpis: Kp
     ...(kpis?.length ? [`- Published on the dashboard: ${kpis.map((k) => `${k.label} ${k.value}${k.note ? ` (${k.note})` : ""}`).join(" · ")}.`] : []),
   ];
   const watch = [
-    [overdue, "past their planned end date"], [early, "have money released before approval"],
-    [soon, "are due within 20 days"], [noPm, "have no project manager"], [idle, "are approved with nothing released"],
+    [overdue, "past their planned end date", "is past its planned end date"],
+    [early, "have money released before approval", "has money released before approval"],
+    [soon, "are due within 20 days", "is due within 20 days"], [noPm, "have no project manager", "has no project manager"],
+    [idle, "are approved with nothing released", "is approved with nothing released"],
   ] as const;
   const worried = /unusual|worr|concern|attention|risk|problem|issue|flag|anything/i.test(question);
   lines.push("", "**Needs attention**");
   if (!watch.some(([rs]) => rs.length)) lines.push("- Nothing is overdue, due within 20 days, missing a project manager or waiting on a release.");
-  for (const [rs, what] of watch) if (rs.length) lines.push(`- ${plural(rs.length, "project")} ${what}` + (rs.length <= 3 || worried ? `: ${rs.slice(0, 8).map((r) => cell(r.name)).join("; ")}${rs.length > 8 ? "; …" : ""}` : "") + ".");
+  for (const [rs, many, one] of watch) if (rs.length) lines.push(`- ${plural(rs.length, "project")} ${rs.length === 1 ? one : many}` + (rs.length <= 3 || worried ? `: ${rs.slice(0, 8).map((r) => cell(r.name)).join("; ")}${rs.length > 8 ? "; …" : ""}` : "") + ".");
   if (/one line|one-line|single line|briefly|in short/i.test(question))
     return { answer: `${who} holds ${plural(capex.length, "project")} worth ${money(df)} (DF recommended); ${money(rel)} released (${pct(rel, df)}), ${approvedN} approved, ${overdue.length} overdue.`,
       headline: { value: money(rel), label: "Released to date (CAPEX)", kind: "money" }, meta };
@@ -977,7 +979,12 @@ export function executePdds(plan: Plan, pdds: PddRow[], isPmo: boolean): Answer 
   if (plan.name_keywords.trim()) { read.push(`name matching “${plan.name_keywords.trim()}”`); rows = rows.filter((p) => kwMatch(`${p.pdd_number} ${p.project_name}`, plan.name_keywords)); }
   meta.matched = rows.length;
   const readLine = `Read as: PMO Review (E-PDD PDDs)${read.length ? " · " + read.join(" · ") : ""}.`;
-  if (!rows.length) return { answer: `${readLine}\n\nNo PDDs match that.`, headline: { value: "0", label: "PDDs", kind: "count" }, meta };
+  if (!rows.length) {
+    // An empty month is clearer with the date of the latest PMO approval.
+    const last = pdds.map((p) => p.pmo_decided).filter(Boolean).sort().pop();
+    const note = plan.months.length && (f === "pmo_approved" || f === "all_approved") && last ? ` The latest PMO approval on record is ${last}.` : "";
+    return { answer: `${readLine}\n\nNo PDDs match that.${note}`, headline: { value: "0", label: "PDDs", kind: "count" }, meta };
+  }
   rows.sort((a, b) => String(b.pmo_decided ?? b.received ?? "").localeCompare(String(a.pmo_decided ?? a.received ?? "")));
   const showDecided = f === "pmo_approved" || f === "all_approved";
   const head = `| PDD | Project | Campus | E-PDD status | Grand total |${showDecided ? " PMO approved on |" : " Received |"} In CAPEX plan as |\n|---|---|---|---|---|---|---|`;
