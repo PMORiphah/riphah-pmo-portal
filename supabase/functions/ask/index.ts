@@ -65,8 +65,10 @@
 //  15. Pronouns follow the conversation.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { execute, executeCashflow, executeGap, executeKpi, executeOverview, executeRisks, planSchema, plannerPrompt,
-  validatePlan, vocabOf, type CashRow, type Kpi, type Plan, type Risk, type Row } from "./planner.ts";
+import { execute, executeCashflow, executeGap, executeKpi, executeOverview, executePast, executePdds, executeRisks,
+  planSchema, plannerPrompt, validatePlan, vocabOf, type CashRow, type Kpi, type PastRow, type PddRow, type Plan,
+  type Risk, type Row } from "./planner.ts";
+import { quickReply } from "./quick.ts";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL    = "openai/gpt-oss-120b";
@@ -540,6 +542,43 @@ async function llm(keys: { gemini: string[]; groq: string | null }, messages: Ms
   return last;
 }
 
+// v43: E-PDD PDDs (PMO only by RLS) with the date the Manager PMO approved them.
+const EPDD_WHEN = /^(\d{1,2}) (\w{3}) (\d{4})/;
+const MON3: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07",
+  aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
+const epddDate = (s: unknown) => {
+  const m = EPDD_WHEN.exec(String(s ?? "").trim());
+  return m && MON3[m[2].toLowerCase()] ? `${m[3]}-${MON3[m[2].toLowerCase()]}-${m[1].padStart(2, "0")}` : null;
+};
+// deno-lint-ignore no-explicit-any
+async function loadPdds(supa: any, projById: Map<string, string>): Promise<PddRow[]> {
+  const { data } = await supa.from("epdd_pdds")
+    .select("pdd_number, project_name, campus, queue, epdd_status, grand_total, currency, received_at, approvals, linked_project_id");
+  return ((data ?? []) as Record<string, unknown>[]).map((p) => {
+    const dec = (Array.isArray(p.approvals) ? p.approvals as Record<string, unknown>[] : [])
+      .filter((a) => a.kind === "decision" && /manager pmo/i.test(String(a.role ?? "")) && /recommend|approv/i.test(String(a.status ?? "")))
+      .map((a) => epddDate(a.when)).filter(Boolean).sort() as string[];
+    return { pdd_number: String(p.pdd_number ?? ""), project_name: String(p.project_name ?? ""), campus: (p.campus as string) ?? null,
+      queue: String(p.queue ?? ""), epdd_status: (p.epdd_status as string) ?? null,
+      grand_total: p.grand_total == null ? null : Number(p.grand_total), currency: (p.currency as string) ?? null,
+      received: p.received_at ? String(p.received_at).slice(0, 10) : null, pmo_decided: dec.length ? dec[dec.length - 1] : null,
+      linked: p.linked_project_id ? projById.get(String(p.linked_project_id)) ?? null : null };
+  });
+}
+// deno-lint-ignore no-explicit-any
+async function loadPast(supa: any): Promise<PastRow[]> {
+  const [{ data }, { data: people }] = await Promise.all([
+    supa.from("past_projects").select("code, name, fiscal_year, campus, status, approved_amount, released_amount, end_date, revised_end_date, actual_end_date, pm_user_id"),
+    supa.from("user_profiles").select("id, full_name, username")]);
+  const who = new Map(((people ?? []) as { id: string; full_name: string | null; username: string }[]).map((u) => [u.id, u.full_name || u.username]));
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ code: (r.code as string) ?? null, name: String(r.name ?? ""),
+    fiscal_year: (r.fiscal_year as string) ?? null, campus: (r.campus as string) ?? null,
+    pm: r.pm_user_id ? who.get(String(r.pm_user_id)) ?? null : null, status: (r.status as string) ?? null,
+    approved: Number(r.approved_amount ?? 0), released: Number(r.released_amount ?? 0),
+    end_date: (r.end_date as string) ?? null, revised_end_date: (r.revised_end_date as string) ?? null,
+    actual_end_date: (r.actual_end_date as string) ?? null }));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST")    return json({ error: "POST only" }, 405);
@@ -584,6 +623,13 @@ Deno.serve(async (req) => {
   const seesRisks = RISK_ROLES.has(role);
   const ownProjectsOnly = role === "project_manager";
 
+  // v43: acknowledgements, requests to send or change something, and attempts to
+  // change the rules are answered here, in code, before any model is called. The
+  // model used to repeat its last answer to "okay", print its own instruction
+  // ("Decline in one line…") and switch to Roman Urdu for an English request.
+  const quick = quickReply(question, role);
+  if (quick) return json({ answer: quick.answer, headline: null, used: { role, engine: "quick", kind: quick.kind } });
+
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -610,6 +656,15 @@ Deno.serve(async (req) => {
     released: Number(r.released ?? 0), risks: Number(r.risks ?? 0),
   }));
   const cashRows = ((cfData ?? []) as CashRow[]);
+  // v43: budget release dates (not in assistant_rows; same RLS through the caller's client).
+  const { data: relData } = await supa.from("projects").select("id, code, name, budget_release_date");
+  const projById = new Map<string, string>();
+  const relByKey = new Map<string, string>();
+  for (const p of (relData ?? []) as { id: string; code: string | null; name: string; budget_release_date: string | null }[]) {
+    projById.set(p.id, p.name);
+    if (p.budget_release_date) relByKey.set(`${p.code ?? ""}|${p.name}`, p.budget_release_date);
+  }
+  for (const r of allRows) (r as Row).release_date = relByKey.get(`${r.code ?? ""}|${r.name}`) ?? null;
   const riskRows = ((riskData ?? []) as Risk[]);
   // Published dashboard KPIs, only for roles that can open the dashboard.
   let kpis: Kpi[] | null = null;
@@ -652,6 +707,8 @@ Deno.serve(async (req) => {
       case "overview": res = executeOverview(plan, allRows, pkToday, kpis, question, ownProjectsOnly); break;
       case "kpi": res = executeKpi(plan, kpis); break;
       case "gap": res = executeGap(plan, allRows, pkToday, question); break;
+      case "pdds": res = executePdds(plan, role === "pmo" ? await loadPdds(supa, projById) : [], role === "pmo"); break;
+      case "past": res = executePast(plan, await loadPast(supa), pkToday); break;
       default: res = execute(plan, allRows, pkToday, question);
     }
     let answer = res.answer;

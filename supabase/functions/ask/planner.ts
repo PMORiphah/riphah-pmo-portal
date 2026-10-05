@@ -38,6 +38,7 @@ export type Row = {
   df_recommended: number; approved: number; released: number;
   start_date: string | null; end_date: string | null; actual_end_date: string | null;
   pct_complete: number | null; pm: string | null; risks: number; has_charter: boolean;
+  release_date?: string | null;   // v43, merged in index.ts from projects.budget_release_date
 };
 export type Risk = {
   project: string; campus: string | null; title: string; category: string | null;
@@ -65,9 +66,11 @@ export const OPS = ["list", "count", "total", "rank", "group", "detail"] as cons
 export const MEASURES = ["df", "approved", "released", "count", "end_date", "start_date", "pct_complete"] as const;
 export const SORTS = ["none", "df", "approved", "released", "end_date", "start_date", "pct_complete", "name"] as const;
 export const GROUPS = ["none", "stage", "campus", "pm", "cost_center", "portfolio", "priority", "project"] as const;
-export const INTENTS = ["projects", "cashflow", "risks", "overview", "gap", "charters", "kpi", "other"] as const;
+export const INTENTS = ["projects", "cashflow", "risks", "overview", "gap", "charters", "kpi", "pdds", "past", "other"] as const;
 export const RISK_LEVELS = ["critical", "high", "medium", "low"] as const;
-const COND_FIELDS = ["df", "approved", "released", "pct_complete", "risks", "start_date", "end_date"] as const;
+const COND_FIELDS = ["df", "approved", "released", "pct_complete", "risks", "start_date", "end_date", "release_date"] as const;
+// v43: PMO Review (E-PDD) filter.
+export const PDD_FILTERS = ["any", "waiting", "pmo_approved", "all_approved", "not_approved", "in_review"] as const;
 const COND_OPS = ["gt", "gte", "lt", "lte", "eq", "ne"] as const;
 const OTHER_FIELDS = ["none", "df", "approved", "released"] as const;
 const HAVING_FIELDS = ["count", "df", "approved", "released"] as const;
@@ -97,6 +100,7 @@ export type Plan = {
   risk_levels: string[]; risk_categories: string[]; risk_owner: string;
   months: string[];
   kpi: typeof KPIS[number];
+  pdd_filter: typeof PDD_FILTERS[number];
   unmatched_terms: string[];
   cannot_express: string;
 };
@@ -151,14 +155,14 @@ export function planSchema(v: Vocab) {
         field: s(HAVING_FIELDS), op: s(COND_OPS), value: { type: "NUMBER" } }, required: ["field", "op", "value"] } },
       has_charter: s(TRI), has_code: s(TRI),
       risk_levels: e(RISK_LEVELS), risk_categories: e(v.risk_categories), risk_owner: { type: "STRING" },
-      months: e(v.months), kpi: s(KPIS),
+      months: e(v.months), kpi: s(KPIS), pdd_filter: s(PDD_FILTERS),
       unmatched_terms: { type: "ARRAY", items: { type: "STRING" } },
       cannot_express: { type: "STRING" },
     },
     required: ["intent", "op", "stages", "campuses", "pms", "cost_centers", "priorities", "portfolio",
       "name_keywords", "no_pm", "has_pm", "overdue", "due_within_days", "measure", "sort_by", "group_by", "order",
       "limit", "conditions", "having", "has_charter", "has_code", "risk_levels", "risk_categories",
-      "risk_owner", "months", "kpi", "unmatched_terms", "cannot_express"],
+      "risk_owner", "months", "kpi", "pdd_filter", "unmatched_terms", "cannot_express"],
   };
 }
 
@@ -177,6 +181,11 @@ export function plannerPrompt(v: Vocab, today: string, todayIso: string): string
     "- gap: WHY approved and released differ, or why a project has not received money.",
     "- charters: charters / PDD documents on file (use has_charter).",
     "- kpi: SU requested, carry forward, or the SU-to-DF budget reduction (set kpi).",
+    "- pdds: PDDs on the E-PDD portal / PMO Review: PDDs waiting for the PMO, PDDs the PMO approved,",
+    "  sent back / rejected PDDs (set pdd_filter; months = the month of the PMO's decision).",
+    "  A PDD is NOT a project stage: 'PDDs waiting in PMO review' is never mt_review.",
+    "- past: past projects from earlier fiscal years (the Past Projects page): 'past projects of",
+    "  Najam', 'old projects at GGC'. Use pms / campuses / name_keywords; never stages.",
     "- other: greetings, how to use the portal, anything unrelated.",
     "",
     "OP: list = show projects; count = how many; total = sum of money; rank = top / largest /",
@@ -239,6 +248,14 @@ export function plannerPrompt(v: Vocab, today: string, todayIso: string): string
     "months (intent cashflow): the months asked about as YYYY-MM. 'Q2' / 'Oct-Dec' = three months;",
     "  'this month' = the current month; empty = the whole year. 'Which month is highest' = op rank.",
     "kpi: for intent kpi only.",
+    "pdd_filter (intent pdds): waiting = waiting for the PMO in Manage PMO Form; pmo_approved = approved",
+    "  by the PMO (also further along); all_approved = fully approved on E-PDD; not_approved = sent back",
+    "  or rejected; in_review = with the PMO reviewer; any otherwise.",
+    "release_date: the date the budget was released (conditions field release_date with a date, e.g.",
+    "  'released on 1 October 2026' = release_date eq 2026-10-01; 'released in September' = release_date",
+    "  gte 2026-09-01 AND lte 2026-09-30).",
+    "'Difference between DF recommended and approved for X' = intent projects, op detail, name_keywords X",
+    "  (the detail shows both and the difference). Intent gap is only approved versus released.",
     "cannot_express: if ANY part of the question cannot be expressed with these fields, describe",
     "  it in a few words. Never drop part of a question silently. Empty otherwise.",
     "unmatched_terms: a campus, person or other filter the user named that is NOT in the allowed",
@@ -282,7 +299,7 @@ export function validatePlan(raw: unknown, v: Vocab): Plan | null {
         if (!COND_FIELDS.includes(o.field as never) || !COND_OPS.includes(o.op as never)) return [];
         const field = o.field as Cond["field"];
         const other = pick(o.other, OTHER_FIELDS, "none");
-        const dateField = field === "start_date" || field === "end_date";
+        const dateField = field === "start_date" || field === "end_date" || field === "release_date";
         if (dateField && !isDate(o.date)) return [];
         const value = Number(o.value);
         if (!dateField && other === "none" && !isFinite(value)) return [];
@@ -329,6 +346,7 @@ export function validatePlan(raw: unknown, v: Vocab): Plan | null {
     risk_owner: String(r.risk_owner ?? "").trim().slice(0, 60),
     months: list(r.months, v.months),
     kpi: pick(r.kpi, KPIS, "none"),
+    pdd_filter: pick(r.pdd_filter, PDD_FILTERS, "any"),
     unmatched_terms: Array.isArray(r.unmatched_terms)
       ? uniq(r.unmatched_terms.map((s) => String(s).slice(0, 60))).slice(0, 5) : [],
     cannot_express: String(r.cannot_express ?? "").trim().slice(0, 160),
@@ -344,12 +362,12 @@ const MEASURE_LABEL: Record<string, string> = { df: "DF recommended", approved: 
   released: "amount released", count: "number of projects", end_date: "planned end date",
   start_date: "planned start date", pct_complete: "progress" };
 const MEASURE_COL: Record<string, string> = { df: "DF recommended", approved: "Approved", released: "Released",
-  end_date: "Planned end", start_date: "Planned start", pct_complete: "Progress" };
+  end_date: "Planned end", start_date: "Planned start", pct_complete: "Progress", release_date: "Released on" };
 const num = (r: Row, f: string): number =>
   f === "df" ? r.df_recommended : f === "approved" ? r.approved : f === "released" ? r.released
   : f === "pct_complete" ? Number(r.pct_complete ?? 0) : f === "risks" ? Number(r.risks ?? 0) : 0;
-const dateOf = (r: Row, f: string) => (f === "start_date" ? r.start_date : r.end_date) ?? "";
-const isDateF = (f: string) => f === "start_date" || f === "end_date";
+const dateOf = (r: Row, f: string) => (f === "start_date" ? r.start_date : f === "release_date" ? r.release_date : r.end_date) ?? "";
+const isDateF = (f: string) => f === "start_date" || f === "end_date" || f === "release_date";
 const fmtVal = (r: Row, f: string) => isDateF(f) ? (dateOf(r, f) || "—")
   : f === "pct_complete" ? `${num(r, f)}%` : money(num(r, f));
 const cell = (s: unknown) => String(s ?? "").replace(/\|/g, "/").replace(/\s+/g, " ").trim();
@@ -386,7 +404,8 @@ function cmp(x: number | string, op: Cond["op"], y: number | string): boolean {
 const OP_TEXT = { gt: "above", gte: "at least", lt: "below", lte: "at most", eq: "exactly", ne: "not" };
 const DATE_OP = { gt: "after", gte: "on or after", lt: "before", lte: "on or before", eq: "on", ne: "not on" };
 const FIELD_TEXT: Record<string, string> = { df: "DF recommended", approved: "approved", released: "released",
-  pct_complete: "progress", risks: "recorded risks", start_date: "planned start", end_date: "planned end" };
+  pct_complete: "progress", risks: "recorded risks", start_date: "planned start", end_date: "planned end",
+  release_date: "budget released" };
 function condText(c: Cond): string {
   if (isDateF(c.field)) return `${FIELD_TEXT[c.field]} ${DATE_OP[c.op]} ${c.date}`;
   if (c.other !== "none") return `${FIELD_TEXT[c.field]} ${OP_TEXT[c.op]} ${FIELD_TEXT[c.other]}`;
@@ -577,7 +596,9 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
   // This data is FY 2026-27 only; earlier years live on Past Projects (v38 audit #249).
   const pastNote = PAST_RE.test(question) ? " This data covers FY 2026-27 projects only; earlier projects are on the Past Projects page." : "";
   if (!rows.length) {
-    return { answer: `${readLine}\n\n${overNote}No projects match that.${pastNote}` + (plan.stages.length || plan.conditions.length || readAs.length ? "" : " Try widening the question.") + charterNote,
+    const onlyStages = plan.stages.length > 0 && readAs.length === 1;
+    const none = onlyStages ? `No projects are at ${joinAnd(plan.stages.map(stageLabel))} right now.` : "No projects match that.";
+    return { answer: `${readLine}\n\n${overNote}${none}${pastNote}` + (plan.stages.length || plan.conditions.length || readAs.length ? "" : " Try widening the question.") + charterNote,
       headline: { value: "0", label: "Matching projects", kind: "count" }, meta };
   }
 
@@ -598,7 +619,7 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
   };
   // Extra columns for whatever the question filtered or sorted on.
   const extraCols = uniq([...plan.conditions.map((c) => c.field), plan.sort_by, plan.measure])
-    .filter((f) => ["end_date", "start_date", "pct_complete"].includes(f));
+    .filter((f) => ["end_date", "start_date", "pct_complete", "release_date"].includes(f));
   const table = (rs: Row[], withPos = false, only?: string) => {
     type Col = [string, (r: Row, i: number) => unknown];
     const cols: Col[] = [
@@ -645,7 +666,10 @@ export function execute(planIn: Plan, all: Row[], today: string, question: strin
         ["Stage", stageLabel(r.stage)], ["Project manager", r.pm || "not assigned"],
         ["Priority", priorityLabel(r.priority) || "—"],
         ["DF recommended", money(r.df_recommended)], ["Approved", money(r.approved)],
+        ...(Math.round(r.df_recommended - r.approved) !== 0 && r.approved > 0
+          ? [["DF recommended − approved", money(r.df_recommended - r.approved)]] : []),
         ["Released", money(r.released)],
+        ...(r.release_date ? [["Budget released on", r.release_date]] : []),
         ["Planned start – end", `${r.start_date ?? "—"} – ${r.end_date ?? "—"}`],
         ...(r.actual_end_date ? [["Actual end", r.actual_end_date]] : []),
         ["Progress", r.pct_complete == null ? "—" : `${r.pct_complete}%`],
@@ -901,4 +925,94 @@ export function executeGap(plan: Plan, all: Row[], today: string, question: stri
       + "| Project | Stage | Approved | Released | Approved − released |\n|---|---|---|---|---|\n"
       + diff.map((r) => `| ${cell(r.name)} | ${stageLabel(r.stage)} | ${money(r.approved)} | ${money(r.released)} | ${money(r.approved - r.released)} |`).join("\n"),
     headline: { value: money(A - R), label: "Approved minus released (CAPEX)", kind: "money" }, meta };
+}
+
+// ── v43: PMO Review (E-PDD) and Past Projects ────────────────────────────
+// Both are answered by code from rows the caller can see (RLS): PDDs are
+// PMO-only; past projects are the PMO's all, or a manager's own.
+
+export type PddRow = { pdd_number: string; project_name: string; campus: string | null; queue: string;
+  epdd_status: string | null; grand_total: number | null; currency: string | null; received: string | null;
+  pmo_decided: string | null; linked: string | null };
+export type PastRow = { code: string | null; name: string; fiscal_year: string | null; campus: string | null;
+  pm: string | null; status: string | null; approved: number; released: number; end_date: string | null;
+  revised_end_date: string | null; actual_end_date: string | null };
+
+const loose = (a: string | null | undefined, b: string) => {
+  const x = norm(a ?? "").replace(/\s+/g, ""), y = norm(b).replace(/\s+/g, "");
+  return !!x && !!y && (x.includes(y) || y.includes(x));
+};
+const kwMatch = (hay: string, kw: string) => {
+  const words = norm(kw).split(" ").filter((w) => w.length > 1);
+  const h = ` ${norm(hay)} `;
+  return words.length > 0 && words.every((w) => h.includes(` ${w}`));
+};
+const PDD_FILTER_TEXT: Record<string, string> = { waiting: "waiting for the PMO (Manage PMO Form)",
+  pmo_approved: "approved by the PMO", all_approved: "fully approved on E-PDD", not_approved: "sent back / not approved",
+  in_review: "with the PMO reviewer" };
+
+export function executePdds(plan: Plan, pdds: PddRow[], isPmo: boolean): Answer {
+  const meta: Record<string, unknown> = { plan };
+  if (!isPmo) return { answer: "PMO Review (the E-PDD intake) is visible to the PMO only, so I can't answer about PDDs for your account.", headline: null, meta };
+  const read: string[] = [];
+  let rows = pdds.filter((p) => p.queue !== "removed");
+  const f = plan.pdd_filter;
+  if (f !== "any") {
+    read.push(PDD_FILTER_TEXT[f]);
+    rows = rows.filter((p) => {
+      const st = (p.epdd_status ?? "").toLowerCase();
+      if (f === "waiting") return p.queue === "manage";
+      if (f === "pmo_approved") return st === "pmo approved" || st === "all approved";
+      if (f === "all_approved") return st === "all approved";
+      if (f === "not_approved") return st === "not approved";
+      return st === "pmo reviewer approved";
+    });
+  }
+  if (plan.months.length) {
+    const byDecision = f === "pmo_approved" || f === "all_approved";
+    read.push(`${byDecision ? "PMO decision" : "received"} in ${joinAnd(plan.months.map(monthName))}`);
+    rows = rows.filter((p) => plan.months.includes(String((byDecision ? p.pmo_decided : p.received) ?? "").slice(0, 7)));
+  }
+  if (plan.campuses.length) { read.push(`campus ${joinAnd(plan.campuses)}`); rows = rows.filter((p) => plan.campuses.some((c) => loose(p.campus, c))); }
+  if (plan.name_keywords.trim()) { read.push(`name matching “${plan.name_keywords.trim()}”`); rows = rows.filter((p) => kwMatch(`${p.pdd_number} ${p.project_name}`, plan.name_keywords)); }
+  meta.matched = rows.length;
+  const readLine = `Read as: PMO Review (E-PDD PDDs)${read.length ? " · " + read.join(" · ") : ""}.`;
+  if (!rows.length) return { answer: `${readLine}\n\nNo PDDs match that.`, headline: { value: "0", label: "PDDs", kind: "count" }, meta };
+  rows.sort((a, b) => String(b.pmo_decided ?? b.received ?? "").localeCompare(String(a.pmo_decided ?? a.received ?? "")));
+  const showDecided = f === "pmo_approved" || f === "all_approved";
+  const head = `| PDD | Project | Campus | E-PDD status | Grand total |${showDecided ? " PMO approved on |" : " Received |"} In CAPEX plan as |\n|---|---|---|---|---|---|---|`;
+  const lines = rows.slice(0, 40).map((p) => `| ${cell(p.pdd_number)} | ${cell(p.project_name)} | ${cell(p.campus ?? "—")} | ${cell(p.epdd_status ?? "—")} | `
+    + `${p.grand_total == null ? "—" : `${(p.currency || "PKR").toUpperCase()} ${Math.round(Number(p.grand_total)).toLocaleString("en-US")}`} | `
+    + `${cell((showDecided ? p.pmo_decided : p.received) ?? "—")} | ${cell(p.linked ?? "not linked")} |`);
+  const pkr = rows.filter((p) => !p.currency || /pkr/i.test(p.currency));
+  const total = pkr.reduce((a, p) => a + (Number(p.grand_total) || 0), 0);
+  const body = `**${plural(rows.length, "PDD")}**${pkr.length ? `, grand total ${money(total)}${pkr.length < rows.length ? ` for the ${pkr.length} in PKR` : ""}` : ""}.`
+    + (plan.op === "count" && rows.length > 15 ? "" : `\n\n${head}\n${lines.join("\n")}${rows.length > 40 ? `\n\n…and ${rows.length - 40} more.` : ""}`);
+  return { answer: `${readLine}\n\n${body}`, headline: { value: String(rows.length), label: "PDDs", kind: "count" }, meta };
+}
+
+export function executePast(plan: Plan, past: PastRow[], today: string): Answer {
+  const meta: Record<string, unknown> = { plan };
+  const read: string[] = [];
+  let rows = past;
+  if (plan.pms.length) { read.push(`project manager ${joinAnd(plan.pms)}`); rows = rows.filter((r) => plan.pms.some((p) => loose(r.pm, p))); }
+  if (plan.campuses.length) { read.push(`campus ${joinAnd(plan.campuses)}`); rows = rows.filter((r) => plan.campuses.some((c) => loose(r.campus, c))); }
+  if (plan.name_keywords.trim()) { read.push(`name matching “${plan.name_keywords.trim()}”`); rows = rows.filter((r) => kwMatch(`${r.code ?? ""} ${r.name}`, plan.name_keywords)); }
+  const finish = (r: PastRow) => r.revised_end_date || r.end_date;
+  const overdue = (r: PastRow) => !r.actual_end_date && !!finish(r) && String(finish(r)) < today;
+  if (plan.overdue) { read.push("overdue (finish date passed, no actual finish)"); rows = rows.filter(overdue); }
+  meta.matched = rows.length;
+  const readLine = `Read as: Past Projects (earlier fiscal years)${read.length ? " · " + read.join(" · ") : ""}.`;
+  if (!rows.length) return { answer: `${readLine}\n\nNo past projects match that.`, headline: { value: "0", label: "Past projects", kind: "count" }, meta };
+  rows = [...rows].sort((a, b) => String(a.fiscal_year ?? "").localeCompare(String(b.fiscal_year ?? "")) || a.name.localeCompare(b.name));
+  const showPm = plan.pms.length !== 1, showCampus = plan.campuses.length !== 1;
+  const cols = ["Code", "Project", "FY", ...(showCampus ? ["Campus"] : []), ...(showPm ? ["PM"] : []), "Status"];
+  const lines = rows.slice(0, 60).map((r) => "| " + [r.code || "—", r.name, r.fiscal_year || "—", ...(showCampus ? [r.campus || "—"] : []),
+    ...(showPm ? [r.pm || "—"] : []), overdue(r) ? "open, overdue" : (r.status || "—")].map(cell).join(" | ") + " |");
+  const nOver = rows.filter(overdue).length;
+  const body = `**${plural(rows.length, "past project")}**${nOver && !plan.overdue ? `, ${nOver} overdue` : ""}.`
+    + (plan.op === "count" && rows.length > 15 ? "" : `\n\n| ${cols.join(" | ")} |\n|${cols.map(() => "---").join("|")}|\n${lines.join("\n")}`
+      + (rows.length > 60 ? `\n\n…and ${rows.length - 60} more.` : ""))
+    + "\n\nFollow-ups with each manager are on the Past Projects page.";
+  return { answer: `${readLine}\n\n${body}`, headline: { value: String(rows.length), label: "Past projects", kind: "count" }, meta };
 }
