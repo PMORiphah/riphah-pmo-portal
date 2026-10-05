@@ -1254,8 +1254,8 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
       : {
           // Saving the figure or label as it was keeps it live; only a real
           // change is stored as a manual value (PMO, 1 Oct 2026).
-          value: liveValue !== undefined && eVal.trim() === String(liveValue) ? "" : eVal,
-          sub: lockSub ? "" : (liveSub !== undefined && eSub.trim() === String(liveSub ?? "") ? "" : eSub),
+          value: !PUBLISHED_ONLY_KPIS.has(kpiKey) && liveValue !== undefined && eVal.trim() === String(liveValue) ? "" : eVal,
+          sub: lockSub ? "" : (!PUBLISHED_ONLY_KPIS.has(kpiKey) && liveSub !== undefined && eSub.trim() === String(liveSub ?? "") ? "" : eSub),
           // Blank means "use the generated default" rather than "no hover text".
           insight: eIns.trim(),
         });
@@ -1398,7 +1398,11 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
             <div style={{ display:"flex", gap:5 }}>
               <Button T={T} variant="primary" size="sm" onClick={save} loading={saving} full>Save</Button>
               {!insightOnly && <Button T={T} variant="accent" tone={T.positive} size="sm"
-                onClick={async () => { setSaving(true); await onSave(kpiKey, { value:"", sub:"", insight: eIns.trim() }); setSaving(false); setEditing(false); }}
+                onClick={async () => { setSaving(true);
+                  // A published figure is stored as text (the assistant quotes it), so Live writes the live figure itself.
+                  const lit = PUBLISHED_ONLY_KPIS.has(kpiKey) && liveValue !== undefined;
+                  await onSave(kpiKey, { value: lit ? String(liveValue) : "", sub: lit ? String(liveSub ?? "") : "", insight: eIns.trim() });
+                  setSaving(false); setEditing(false); }}
                 title={`Back to the live figure${liveValue !== undefined ? ` (${liveValue}${liveSub ? ` · ${liveSub}` : ""})` : ""}`}>Live</Button>}
               <Button T={T} variant="ghost" size="sm" onClick={cancel} title="Cancel">✕</Button>
             </div>
@@ -2865,6 +2869,78 @@ function CarryForwardList({ T, session }) {
   );
 }
 
+// SU Requested card → the full list of proposals the SUs submitted for
+// FY 26-27 (IM_SU_DF_Project_List.xlsx, 5 Oct 2026). Stored with the card in
+// settings.dashboard_kpis.su_requested.list as [{ sr, name, amount }], so it is
+// readable wherever the card is; project SU amounts are not touched.
+function SuRequestedList({ T, rows = [], meta = {} }) {
+  const [q, setQ] = useState("");
+  const shown = q.trim()
+    ? rows.filter(r => String(r.name || "").toLowerCase().includes(q.trim().toLowerCase()))
+    : rows;
+  const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const shownTotal = shown.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const th = tableStyles(T).th;
+  const td = tableStyles(T).td;
+  if (!rows.length) return <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"32px 24px", textAlign:"center", color:T.dim, fontSize:13 }}>No SU proposal list on record.</div>;
+  return (
+    <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, overflow:"hidden" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", padding:"14px 18px", borderBottom:"1px solid "+T.border }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+          <div style={{ width:3, height:14, background:GOLD, borderRadius:2 }} />
+          <span style={{ fontSize:12, fontWeight:700, color:T.text, textTransform:"uppercase", letterSpacing:1 }}>
+            SU Requested — Proposals
+          </span>
+          <span style={{ fontSize:11, color:T.dim, background:T.border, padding:"2px 8px", borderRadius:R.pill }}>
+            {q.trim() ? `${shown.length} of ${rows.length}` : `${rows.length} proposals`}
+          </span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+          <Input T={T} size="sm" icon={Search} value={q} onChange={e => setQ(e.target.value)} onClear={() => setQ("")}
+            placeholder="Search proposals…" style={{ width:200 }} />
+          <span style={{ fontSize:11, color:(T.goldText || GOLD), fontWeight:700 }}>
+            PKR {fmtM(q.trim() ? shownTotal : total)}{q.trim() ? " shown" : " requested"}
+          </span>
+        </div>
+      </div>
+      <div style={{ overflowX:"auto", maxHeight:480, overflowY:"auto" }}>
+        <table style={tableStyles(T).table}>
+          <thead>
+            <tr>
+              <th style={th}>#</th>
+              <th style={th}>Proposal</th>
+              <th style={{...th, textAlign:"right"}}>SU Requested</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map(r => (
+              <tr key={r.sr}>
+                <td style={{...td, color:T.dim}}>{r.sr}</td>
+                <td style={{...td, fontWeight:500, whiteSpace:"normal", overflowWrap:"anywhere", minWidth:140}}>{r.name}</td>
+                <td data-peek={"PKR " + Math.round(Number(r.amount)||0).toLocaleString()} style={{...td, textAlign:"right", fontVariantNumeric:"tabular-nums", whiteSpace:"nowrap",
+                  color: Number(r.amount) ? (T.goldText || GOLD) : T.dim, fontWeight:600}}>
+                  {Number(r.amount) ? fmtFull(r.amount) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td style={{...td, fontWeight:700}} colSpan={2}>{q.trim() ? `Total of ${shown.length} shown` : `Total — ${rows.length} proposals`}</td>
+              <td style={{...td, textAlign:"right", fontWeight:700, fontVariantNumeric:"tabular-nums"}}>{fmtFull(q.trim() ? shownTotal : total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {meta.source && (
+        <div style={{ padding:"8px 18px", borderTop:"1px solid "+T.border, ...TYPE.caption, color:T.dim }}>
+          Source: {meta.source}{meta.imported ? ` · loaded ${meta.imported}` : ""}. Project SU amounts are separate and unchanged.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
   // Budget Released arrives sorted by amount released; every other list is
   // activity-ranked here.
@@ -2882,7 +2958,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
     pipeline: { pdd_not_submitted:"PDD Not Submitted", pdds_submitted:"PDD Submitted", in_df:"DF Review", in_ed:"ED Review", in_mt:"MT Review", approved:"Approved", closed:"Closed" },
     execution: { active_projects:"Active Projects", on_schedule:"On Schedule", delayed:"Delayed", over_budget:"Over Budget", scope_change:"Change in Scope", closed:"Closed" },
     financials: { payments_pending:"Payments Pending", budget_released:"Budget Released" },
-    budgeting: { df_recommended:"DF Recommended", approved_projects:"Approved Projects", budgeted_projects:"Budgeted Projects", non_budgeted_projects:"Non-Budgeted Projects", carry_forward:"Carry Forward", pcds_received:"PCDs Received" },
+    budgeting: { su_requested:"SU Requested", df_recommended:"DF Recommended", approved_projects:"Approved Projects", budgeted_projects:"Budgeted Projects", non_budgeted_projects:"Non-Budgeted Projects", carry_forward:"Carry Forward", pcds_received:"PCDs Received" },
   };
   const filterLabel = activeCard ? (cardLabels[tab]?.[activeCard] || "All") : "All";
 
@@ -3139,6 +3215,10 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
     }, session.access_token);
     setKpiOverrides(updated);
   }, [kpiOverrides, session.access_token]);
+
+  // SU Requested: the proposals list stored with the card (see SuRequestedList).
+  const suList = Array.isArray(kpiOverrides.su_requested?.list) ? kpiOverrides.su_requested.list : [];
+  const suTotal = suList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
   const kv = (key, calcValue, calcSub) => {
     const ov = kpiOverrides[key];
@@ -3404,7 +3484,10 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
 
       {activeTab === "budgeting" && (
         <div data-tour="kpi-strip" style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(min(148px, 100%), 1fr))" }}>
-          <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested" trendPoints={trends.su_requested}    onSave={saveKPI} {...kv("su_requested",   fmtM(d.su_requested_total),  "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
+          <EditableKCard dashData={d} Icon={FileText} index={0} T={T} label="SU Requested"   featured accent={GOLD} canEdit={canEdit} kpiKey="su_requested" trendPoints={trends.su_requested}    onSave={saveKPI}
+            onCardClick={suList.length ? () => toggleCard("su_requested") : undefined} isSelected={activeCard==="su_requested"}
+            {...kv("su_requested", suList.length ? (suTotal / 1e6).toFixed(2) + "M" : fmtM(d.su_requested_total),
+              suList.length ? `From ${suList.length} proposals` : "From "+(d.total_projects-(d.carry_forward_count||0))+" new proposals")} />
           <EditableKCard dashData={d} Icon={ClipboardList} index={1} T={T} label="DF Recommended"          canEdit={canEdit} kpiKey="df_recommended" trendPoints={trends.df_recommended}  onSave={saveKPI} onCardClick={() => toggleCard("df_recommended")} isSelected={activeCard==="df_recommended"} {...kv("df_recommended", fmtM(d.df_recommended_total), `${dashProjects.filter(p => (+p.df_recommended_amount || 0) > 0).length} DF Rec Projects`)} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={2} T={T} label="Approved Projects" accent={good} canEdit={canEdit} kpiKey="approved_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("approved_projects")} isSelected={activeCard==="approved_projects"} {...kv("approved_projects", fmtM(overviewKpis.approvedAmt), overviewKpis.approvedCount+" of "+d.total_projects+" projects")} />
           <EditableKCard dashData={d} Icon={Wallet} index={3} T={T} label="Budgeted Projects" canEdit={canEdit} kpiKey="budgeted_projects" onSave={saveKPI} lockSub onCardClick={() => toggleCard("budgeted_projects")} isSelected={activeCard==="budgeted_projects"} {...kv("budgeted_projects", fmtM(overviewKpis.budgetedAmt), overviewKpis.budgetedCount+" of "+d.total_projects+" projects")} />
@@ -3496,7 +3579,10 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
         {showList && activeTab === "budgeting" && activeCard === "carry_forward" && (
           <CarryForwardList T={T} session={session} />
         )}
-        {showList && !(activeTab === "budgeting" && activeCard === "carry_forward") && (
+        {showList && activeTab === "budgeting" && activeCard === "su_requested" && (
+          <SuRequestedList T={T} rows={suList} meta={kpiOverrides.su_requested || {}} />
+        )}
+        {showList && !(activeTab === "budgeting" && (activeCard === "carry_forward" || activeCard === "su_requested")) && (
           <DashProjectList T={T} projects={listProjects} tab={activeTab} activeCard={activeCard} onSelectProject={onSelectProject} />
         )}
       </div>
