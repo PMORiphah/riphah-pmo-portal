@@ -177,7 +177,7 @@ function parseSheet(aoa, pmByName) {
    The sheet has no finish dates, so nothing here can be "overdue". What it does
    have is when the money went out: the time since the budget was released is
    how long the project has been open on the books, and that is what the page
-   ranks by. Released against approved shows any money still to come.
+   ranks by. Released is shown against approved.
    ─────────────────────────────────────────────────────────────────────────── */
 const DAY = 86400000;
 const d0 = (s) => { if (!s) return null; const d = new Date(String(s).slice(0,10) + "T00:00:00"); return isNaN(d) ? null : d; };
@@ -206,7 +206,6 @@ const AGE = {
   closed:  { label:"Closed",         short:"closed",   color:DATA.positive },
   undated: { label:"No release date",short:"no date",  color:"#8FA3BF" },
 };
-const gapOf = (r) => Math.max(0, (parseFloat(r.approved_amount)||0) - (parseFloat(r.released_amount)||0));
 const relPct = (r) => { const a = parseFloat(r.approved_amount)||0; return a > 0 ? Math.min(100, (parseFloat(r.released_amount)||0) / a * 100) : null; };
 const progressOf = (r) => {
   const t = String(r.reason_open || "").trim();
@@ -637,7 +636,7 @@ function PmsView({ T, rows, unread, lastByPm, isCompact, onOpen }) {
 function DatesTab({ T, row, roll, isPMO, isCompact }) {
   const [hot, setHot] = useState(false);
   const a = ageOf(row), am = AGE[a.key];
-  const pct = relPct(row), gap = gapOf(row);
+  const pct = relPct(row);
   // One bar on a fixed two-year scale, so every project reads the same way:
   // the 6- and 12-month marks are where the colour changes.
   const SCALE = 730, w = a.days == null ? 0 : Math.min(a.days, SCALE) / SCALE * 100;
@@ -650,7 +649,6 @@ function DatesTab({ T, row, roll, isPMO, isCompact }) {
   const money = [
     ["Approved", `PKR ${fmtM(row.approved_amount)}`, null],
     ["Released", `PKR ${fmtM(row.released_amount)}${pct != null ? ` · ${Math.round(pct)}%` : ""}`, null],
-    ["Still to release", gap > 0 ? `PKR ${fmtM(gap)}` : "nothing", gap > 0 ? DATA.warning : DATA.positive],
   ];
   return (
     <div>
@@ -693,7 +691,7 @@ function DatesTab({ T, row, roll, isPMO, isCompact }) {
 
       <Surface T={T} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.lg }}>
         <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>Money</div>
-        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns: isCompact ? "1fr" : "repeat(3, minmax(0,1fr))" }}>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns: isCompact ? "1fr" : "repeat(2, minmax(0,1fr))" }}>
           {money.map(([k, v, c]) => (
             <div key={k}>
               <div style={{ ...TYPE.caption, color:T.dim }}>{k}</div>
@@ -890,7 +888,7 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
   const [tab, setTab] = useState("followup");
   const [editing, setEditing] = useState(false);
   const st = STATUS[row.status] || STATUS.open;
-  const ag = ageOf(row), am = AGE[ag.key], pg = progressOf(row), gap = gapOf(row), pct = relPct(row);
+  const ag = ageOf(row), am = AGE[ag.key], pg = progressOf(row), pct = relPct(row);
   // PMO always; the project's own manager once the page is opened to them.
   // The database decides either way.
   const canWriteTasks = isPMO || (row.pm_user_id && row.pm_user_id === session.user_id);
@@ -927,7 +925,6 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
         <div style={{ display:"flex", gap:SP.sm, marginTop:SP.md, flexWrap:"wrap" }}>
           {[["Approved", `PKR ${fmtM(row.approved_amount)}`, null],
             ["Released", `PKR ${fmtM(row.released_amount)}${pct != null ? ` · ${Math.round(pct)}%` : ""}`, null],
-            ...(gap > 0 ? [["Still to release", `PKR ${fmtM(gap)}`, DATA.warning]] : []),
             ["Open for", ag.days == null ? "no date" : span(ag.days), am.color],
             ["Progress", pg.label, pg.color],
             ["Status", st.label, st.color]].map(([k,v,c]) => (
@@ -1073,7 +1070,7 @@ function PastAging({ T, groups, isCompact, onOpen }) {
               <Fragment key={g}>
                 <div style={{ height:26, background:T.card2 }} />
                 {rows.map(r => {
-                  const a = r._age, c = AGE[a.key].color, on = hover === r.id, gap = gapOf(r);
+                  const a = r._age, c = AGE[a.key].color, on = hover === r.id;
                   const x0 = x(a.from), x1 = x(t);
                   return (
                     <div key={r.id} onClick={() => onOpen(r)}
@@ -1093,7 +1090,6 @@ function PastAging({ T, groups, isCompact, onOpen }) {
                           padding:"6px 10px", borderRadius:R.sm, background:T.surfaceRaised, border:`1px solid ${T.borderStrong}`,
                           boxShadow:T.shadowLg, fontSize:11.5, color:T.text, whiteSpace:"nowrap", pointerEvents:"none" }}>
                           Open {span(a.days)} · released PKR {fmtM(r.released_amount)} of {fmtM(r.approved_amount)}
-                          {gap > 0 ? ` · PKR ${fmtM(gap)} to release` : ""}
                         </div>
                       )}
                     </div>
@@ -1493,7 +1489,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
     return (rows||[]).filter(r =>
       (!fy || r.fiscal_year === fy) &&
       (!pm || r.pm_name === pm) && (!campus || r.campus === campus) &&
-      (!prog || (prog === "gap" ? gapOf(r) > 0 : progressOf(r).label === prog)) &&
+      (!prog || progressOf(r).label === prog) &&
       (status === "all" ? true : status === "open_all" ? r.status !== "closed" : r.status === status) &&
       (!needle || `${r.code||""} ${r.name||""} ${r.reason_open||""} ${r.campus||""} ${r.pm_name||""}`.toLowerCase().includes(needle))
     );
@@ -1513,11 +1509,9 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const totals = useMemo(() => {
     const src = (rows||[]).filter(r => r.status !== "closed");
     const sum = (k) => src.reduce((s,r) => s + (parseFloat(r[k])||0), 0);
-    const gaps = src.filter(r => gapOf(r) > 0);
     return {
       openCount: src.length,
       approved: sum("approved_amount"), released: sum("released_amount"),
-      gap: gaps.reduce((s,r) => s + gapOf(r), 0), gapCount: gaps.length,
       noProgress: src.filter(r => progressOf(r).label === "No progress").length,
       old: src.filter(r => ageOf(r).key === "old").length,
       stale: src.filter(r => (r.days_since_followup ?? 9999) > 30).length,
@@ -1566,7 +1560,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
       ["Campus","Al-Mizan, G-7, I-14, GGC, Lahore, Malakand, PRH, RIH, MHH. 'G7' and 'Al mizan' are read as G-7 and Al-Mizan."],
       ["Fiscal Year","Required. Pick from the dropdown, e.g. FY 25-26."],
       ["Approved Amount","Rupees, as a number. No commas or 'PKR'."],
-      ["Released Amount","Rupees, as a number. Less than approved means money is still to be released."],
+      ["Released Amount","Rupees, as a number."],
       ["Project Manager","Pick from the dropdown. A name with no portal account imports with no "
                        + "manager, and nobody can be chased about it."],
       ["Status","Open, Closing or Closed. Defaults to Open."],
@@ -1687,15 +1681,13 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
           ) : (<>
           {/* Summary strip — PMO only; a project manager sees just their own projects. */}
           {seeAll && <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
-            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(6, minmax(0,1fr))" }}>
+            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(5, minmax(0,1fr))" }}>
             {[
               { k:"Still open",       v:totals.openCount, sub:`${totals.old} open over a year`, c:DATA.danger, Icon:History },
               { k:"Approved",         v:`PKR ${fmtM(totals.approved)}`, sub:"on open projects", c:BRAND.gold, Icon:CheckCircle2 },
               { k:"Released",         v:`PKR ${fmtM(totals.released)}`,
                 sub: totals.approved ? `${Math.round(totals.released / totals.approved * 100)}% of approved` : "—", c:DATA.positive, Icon:Download,
                 bar: totals.approved ? totals.released / totals.approved : null },
-              { k:"Still to release", v:`PKR ${fmtM(totals.gap)}`, sub:`${totals.gapCount} project${totals.gapCount===1?"":"s"}`, c:DATA.warning, Icon:AlertTriangle,
-                onClick: totals.gapCount ? () => setProg(p => p === "gap" ? "" : "gap") : null, on: prog === "gap" },
               { k:"No progress",      v:totals.noProgress, sub:"marked in the sheet", c:DATA.danger, Icon:AlertTriangle,
                 onClick: totals.noProgress ? () => setProg(p => p === "No progress" ? "" : "No progress") : null, on: prog === "No progress" },
               { k:"Not chased",       v:totals.stale, sub:"over 30 days", c:T.muted, Icon:Clock },
@@ -1758,7 +1750,6 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
             <Select T={T} value={prog} onChange={e => setProg(e.target.value)}>
               <option value="">Any progress</option>
               {PROGRESS.map(x => <option key={x} value={x}>{x}</option>)}
-              <option value="gap">Money still to release</option>
             </Select>
             <Select T={T} value={fy} onChange={e => setFy(e.target.value)}>
               <option value="">All fiscal years</option>
@@ -1852,7 +1843,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                     {items.map((r, i) => {
                       const st = STATUS[r.status] || STATUS.open;
                       const ag = ageOf(r), am = AGE[ag.key], pg = progressOf(r);
-                      const gap = gapOf(r), pct = relPct(r);
+                      const pct = relPct(r);
                       const stale = (r.days_since_followup ?? 9999) > 30 && r.status !== "closed";
                       const hot = hover === r.id;
                       const on = CAN_HOVER ? { onMouseEnter:() => setHover(r.id),
@@ -1890,11 +1881,6 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                                 background:`${pg.color}${T.badge}`, color:T.textOf(pg.color) }}>{pg.label}</span>
                               {pg.text && <span style={{ fontSize:11.5, color:T.textSoft, overflow:"hidden", textOverflow:"ellipsis",
                                 whiteSpace:"nowrap", maxWidth:360 }}>{pg.text}</span>}
-                              {gap > 0 && (
-                                <span style={{ ...TYPE.caption, fontWeight:700, padding:"1px 8px", borderRadius:R.pill,
-                                  background:`${DATA.warning}${T.badge}`, color:T.textOf(DATA.warning) }}>
-                                  PKR {fmtM(gap)} still to release</span>
-                              )}
                               {r.status !== "open" && (
                                 <span style={{ ...TYPE.caption, fontWeight:700, padding:"1px 8px", borderRadius:R.pill,
                                   background:`${st.color}${T.badge}`, color:T.textOf(st.color) }}>{st.label}</span>
