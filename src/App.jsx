@@ -345,7 +345,7 @@ function TourInviteCard({ T, show, role, name, projectCount, onDismiss, onAccept
         {isPM
           ? <>I'm the portal assistant. {projectCount
               ? <>You manage <b style={{ color: T.text }}>{projectCount} project{projectCount === 1 ? "" : "s"}</b> here.</>
-              : <>You're set up as a Project Manager.</>} Shall I show you how to keep them up to date? It takes about three minutes.</>
+              : <>You're set up as a Project Manager.</>} Shall I show you how to keep them up to date? It takes about two minutes.</>
           : <>I'm the portal assistant. You're set up as a Guest — shall I show you around? It takes about two minutes.</>}
       </div>
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>

@@ -342,7 +342,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
       const answer = isCompact
         ? "The guided tour runs on a computer, where there's room to show each part of the portal. Sign in on a desktop or laptop and ask me again, or press **Take the tour** in the sidebar there."
         : isPM
-          ? "Happy to. I'll walk you through your projects, the work breakdown (WBS) where you record progress, how to reach the PMO and your account settings. It takes about three minutes."
+          ? "Happy to. I'll walk you through your projects, the work breakdown (WBS) where you record progress, how to reach the PMO and your account settings. It takes about two minutes."
           : "Happy to. I'll walk you through the dashboard, the registers and one project in full. It takes about two minutes.";
       setMsgs([...next, { role: "assistant", content: answer, tourOffer: !isCompact }]);
       track("chat", question, { answer, used: { tour_offer: true } });
