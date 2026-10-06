@@ -11564,7 +11564,12 @@ export default function App() {
         st = Array.isArray(rows) ? rows[0] : null;
       } catch (_) { return; }        // can't tell: say nothing rather than nag
       if (cancelled || !st) return;
-      if (st.tutorial_offered_at || st.tutorial_completed_at || st.tutorial_dismissed_at) return;
+      // Project Managers (PMO, 6 Oct 2026): the invite comes back at every
+      // sign-in until they press "Not now". Finishing the tour does not stop
+      // it, because the PMO checks each PM's tour from that PM's account first.
+      if (session.role === "project_manager"
+        ? st.tutorial_dismissed_at
+        : (st.tutorial_offered_at || st.tutorial_completed_at || st.tutorial_dismissed_at)) return;
       if (session.role === "project_manager") {
         // RLS returns only the PM's assigned projects, so this is their count.
         try {
