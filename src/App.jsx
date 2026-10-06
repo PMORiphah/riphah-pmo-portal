@@ -7,6 +7,7 @@ import { ProjectBenefitsPanel } from "./BenefitsRealized.jsx";
 import { ProjectRaciCard } from "./RaciCard.jsx";
 import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
+import { ProjectDeliverables, hasDeliverables } from "./Deliverables.jsx";
 import { PastProjectsPage, loadPastUnread } from "./PastProjects.jsx";
 import { PmoReviewPage } from "./PmoReview.jsx";
 import { ActivityDetails, BurstList, groupBursts, burstSummary, notificationEntries } from "./ActivityDetail.jsx";
@@ -35,7 +36,8 @@ import {
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
-  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck
+  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
+  PackageCheck,
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -7178,6 +7180,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const [selectedPM,   setSelectedPM]   = useState("");
   const [savingPM,     setSavingPM]     = useState(false);
   const [tab,          setTab]          = useState("overview");
+  // Deliverables: only projects with a PMO-approved E-PDD PDD or a charter (the database decides).
+  const [hasDeliv,     setHasDeliv]     = useState(false);
+  useEffect(() => { let on = true; setHasDeliv(false);
+    hasDeliverables(supa, session, projectId).then(v => { if (on) setHasDeliv(v); });
+    return () => { on = false; }; }, [projectId, session]);   // eslint-disable-line react-hooks/exhaustive-deps
   const vpD = useViewport();
 
   // PMO only manages risks now — enforced at the database (risks_write
@@ -7470,6 +7477,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             { id:"financials", label:"Financials", Icon:Wallet },
             { id:"timeline",   label:"Timeline",   Icon:Clock },
             { id:"wbs",        label:"WBS",        Icon:ListTree },
+            ...(hasDeliv ? [{ id:"deliverables", label:"Deliverables", Icon:PackageCheck }] : []),
             { id:"documents",  label:"Documents",  Icon:ClipboardList, "data-tour":"detail-tabs" },
             { id:"sitevisit",  label:"Site Visit", Icon:Camera },
             { id:"risks",      label:"Risks",      Icon:ShieldAlert },
@@ -7488,6 +7496,13 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           this is open to the assigned project manager — they maintain it, so
           they need it on the projects they own. Editing is gated on assignment
           and re-checked by RLS on every write. */}
+      {tab === "deliverables" && hasDeliv && (
+        <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
+          <ProjectDeliverables T={T} session={session} supa={supa} projectId={projectId}
+            canUpdate={session?.role === "pmo" || isAssignedPM} isCompact={vpD.isCompact} />
+        </div>
+      )}
+
       {tab === "wbs" && (() => {
         // A breakdown is normally built once a project is approved and the money
         // has been released — that is when the work is real. Saying so is more
