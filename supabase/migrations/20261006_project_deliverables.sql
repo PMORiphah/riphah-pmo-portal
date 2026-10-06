@@ -29,7 +29,7 @@ create table public.project_deliverables (
   id               uuid primary key default gen_random_uuid(),
   project_id       uuid not null,                    -- projects.id (no FK: the plan re-import recreates projects)
   source           text not null default 'pmo' check (source in ('pdd', 'charter', 'pmo')),
-  pdd_id           uuid,                             -- epdd_pdds.id the line came from
+  pdd_id           bigint,                           -- epdd_pdds.id the line came from
   line_no          integer,
   title            text not null,
   qty              numeric,
@@ -82,7 +82,8 @@ begin
   if p is null or not project_has_deliverables(p) then return 0; end if;
   select * into e from epdd_pdds
    where linked_project_id = p
-   order by (epdd_status in ('PMO Approved', 'All Approved')) desc, updated_at desc nulls last
+   order by (epdd_status in ('PMO Approved', 'All Approved')) desc,
+            coalesce(changed_at, source_updated_at, first_seen_at) desc nulls last
    limit 1;
   if e.id is null then return 0; end if;
 
@@ -92,7 +93,7 @@ begin
     insert into project_deliverables
       (project_id, source, pdd_id, line_no, title, qty, unit, unit_cost, total, currency, sort_order, updated_by)
     values (p, 'pdd', e.id, n, coalesce(nullif(trim(it ->> 'description'), ''), 'Line ' || n), q, it ->> 'unit',
-            uc, tot, coalesce(nullif(e.pdd ->> 'currency', ''), 'PKR'), n, null)
+            uc, tot, coalesce(nullif(e.pdd ->> 'currency', ''), nullif(e.currency, ''), 'PKR'), n, null)
     on conflict (project_id, source, line_no) do update set
       pdd_id    = excluded.pdd_id,
       title     = excluded.title,
@@ -200,3 +201,13 @@ create trigger trg_project_deliverables_activity
 
 -- First fill: PDD lines for every project that has the tab now.
 select sync_project_deliverables(p.id) from projects p where project_has_deliverables(p.id);
+
+-- Applied as project_deliverables_grants: nobody signed out can call these, and
+-- only the database (triggers) and the service role run the sync.
+revoke execute on function public.project_has_deliverables(uuid) from public, anon;
+grant execute on function public.project_has_deliverables(uuid) to authenticated, service_role;
+revoke execute on function public.sync_project_deliverables(uuid) from public, anon, authenticated;
+grant execute on function public.sync_project_deliverables(uuid) to service_role;
+revoke execute on function public.trg_deliverables_from_pdd() from public, anon, authenticated;
+revoke execute on function public.trg_deliverables_from_charter() from public, anon, authenticated;
+alter function public.try_num(text) set search_path to 'public', 'pg_temp';

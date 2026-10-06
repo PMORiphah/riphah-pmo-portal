@@ -137,11 +137,13 @@ Deno.serve(async (req: Request) => {
     if (!project) { results.push({ project_id: pid, skipped: "not found" }); continue; }
     const eligible = await (await rest("rpc/project_has_deliverables", { method: "POST", body: JSON.stringify({ p: pid }) })).json();
     if (eligible !== true) { results.push({ project: project.name, skipped: "no Deliverables tab (no approved PDD or charter)" }); continue; }
-    const lines = await (await rest(`project_deliverables?project_id=eq.${pid}&superseded=eq.false&select=source,confirmed`)).json() as Row[];
+    const linesRaw = await (await rest(`project_deliverables?project_id=eq.${pid}&superseded=eq.false&select=source,confirmed`)).json();
+    const lines = (Array.isArray(linesRaw) ? linesRaw : []) as Row[];
     if (lines.some(l => l.source === "pdd")) { results.push({ project: project.name, skipped: "has lines from its PDD" }); continue; }
     if (lines.some(l => l.source === "charter" && l.confirmed)) { results.push({ project: project.name, skipped: "charter list already confirmed" }); continue; }
 
-    const atts = await (await rest(`project_attachments?project_id=eq.${pid}&select=file_name,file_path,mime_type,created_at&order=created_at.desc`)).json() as Row[];
+    const attsRaw = await (await rest(`project_attachments?project_id=eq.${pid}&select=file_name,file_path,mime_type,uploaded_at&order=uploaded_at.desc`)).json();
+    const atts = (Array.isArray(attsRaw) ? attsRaw : []) as Row[];
     const charter = atts.find(a => CHARTER.test(String(a.file_name)) && /\.(pdf|docx)$/i.test(String(a.file_name)));
     if (!charter) { results.push({ project: project.name, skipped: "no readable charter (PDF or Word)" }); continue; }
     const dl = await fetch(`${SUPA}/storage/v1/object/project-attachments/${String(charter.file_path).split("/").map(encodeURIComponent).join("/")}`,
