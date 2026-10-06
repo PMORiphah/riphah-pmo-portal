@@ -80,15 +80,22 @@ function usePastStyles() {
    uses SheetJS, which is enough for that direction. Both are lazy imports, so
    neither reaches first load.
    ─────────────────────────────────────────────────────────────────────────── */
+// The sheet the PMO keeps (6 Oct 2026): thirteen columns, no end dates.
 const XL_COLS = ["Project ID","Project Name","Campus","Fiscal Year","Approved Amount",
-                 "Released Amount","Project Manager","Status","Why Still Open","Notes",
-                 "Last Followed Up","Planned Start","Planned Finish","Revised Finish",
-                 "Budget Release Date","Actual Start","Actual Finish"];
-// Date columns, in sheet order, and the field each one fills.
-const XL_DATES = [["Planned Start","start_date"],["Planned Finish","end_date"],
-                  ["Revised Finish","revised_end_date"],["Budget Release Date","budget_release_date"],
-                  ["Actual Start","actual_start_date"],["Actual Finish","actual_end_date"]];
+                 "Released Amount","Project Manager","Status","Why Still Open",
+                 "Budget Release Date","Project Start Date","Last Follow Up","Notes"];
+// Older sheets used these names for the same columns.
+const XL_ALIASES = { "project start date":["planned start"], "last follow up":["last followed up"] };
 const STATUS_IN = { "open":"open", "closing":"closing", "closed":"closed" };
+// "Why Still Open" is a short progress note; these two are the ones in use.
+export const PROGRESS = ["In Progress", "No progress"];
+// Campus names as the plan spells them; the sheet has "G7", "Al mizan ", "IIMC Al-Mizan".
+const CAMPUS_FIX = { "g7":"G-7", "g 7":"G-7", "al mizan":"Al-Mizan", "almizan":"Al-Mizan",
+                     "iimc al-mizan":"Al-Mizan", "iimc al mizan":"Al-Mizan", "i14":"I-14", "i 14":"I-14" };
+export const fixCampus = (v) => {
+  const t = String(v ?? "").replace(/\s+/g, " ").trim();
+  return t ? (CAMPUS_FIX[t.toLowerCase()] || t) : null;
+};
 
 const xlNum = (v) => {
   if (v == null || v === "") return null;
@@ -109,75 +116,68 @@ const xlDate = (v) => {
 function parseSheet(aoa, pmByName) {
   const errors = [], rows = [];
   const head = (aoa[0] || []).map(h => String(h ?? "").trim().toLowerCase());
-  const col = (n) => head.indexOf(n.toLowerCase());
+  const col = (n) => {
+    const k = n.toLowerCase(), i = head.indexOf(k);
+    return i >= 0 ? i : (XL_ALIASES[k] || []).map(x => head.indexOf(x)).find(x => x >= 0) ?? -1;
+  };
   const iName = col("Project Name");
   if (iName < 0) return { errors:["The sheet needs a 'Project Name' column."], rows:[] };
   const iId=col("Project ID"), iCam=col("Campus"), iFy=col("Fiscal Year"),
         iApp=col("Approved Amount"), iRel=col("Released Amount"), iPm=col("Project Manager"),
-        iSt=col("Status"), iWhy=col("Why Still Open"), iNo=col("Notes"), iFu=col("Last Followed Up");
+        iSt=col("Status"), iWhy=col("Why Still Open"), iNo=col("Notes"), iFu=col("Last Follow Up"),
+        iBr=col("Budget Release Date"), iSd=col("Project Start Date");
+  const cell = (row, i) => i >= 0 ? row[i] : null;
+  const seen = new Map();
 
   aoa.slice(1).forEach((row, n) => {
     const line = n + 2;
     if (!row || row.every(c => c == null || String(c).trim() === "")) return;
-    const name = String(row[iName] ?? "").trim();
+    const name = String(cell(row, iName) ?? "").replace(/\s+/g, " ").trim();
     if (!name) { errors.push(`Row ${line}: no project name.`); return; }
-    const fy = String(row[iFy] ?? "").trim();
+    const fy = String(cell(row, iFy) ?? "").trim();
     if (!fy) { errors.push(`Row ${line}: "${name.slice(0,34)}" has no fiscal year.`); return; }
+    const code = String(cell(row, iId) ?? "").trim() || null;
+    // The same project twice in one sheet is imported once.
+    const key = `${(code || "").toLowerCase()}|${name.toLowerCase()}`;
+    if (seen.has(key)) { errors.push(`Row ${line}: "${name.slice(0,34)}" repeats row ${seen.get(key)}, so it is imported once.`); return; }
+    seen.set(key, line);
 
-    const app = xlNum(row[iApp]), rel = xlNum(row[iRel]), fu = xlDate(row[iFu]);
-    if (app === undefined) { errors.push(`Row ${line}: approved amount "${row[iApp]}" not understood.`); return; }
-    if (rel === undefined) { errors.push(`Row ${line}: released amount "${row[iRel]}" not understood.`); return; }
-    if (fu  === undefined) { errors.push(`Row ${line}: last followed up "${row[iFu]}" not understood.`); return; }
+    const app = xlNum(cell(row, iApp)), rel = xlNum(cell(row, iRel));
+    const fu = xlDate(cell(row, iFu)), br = xlDate(cell(row, iBr)), sd = xlDate(cell(row, iSd));
+    if (app === undefined) { errors.push(`Row ${line}: approved amount "${cell(row, iApp)}" not understood.`); return; }
+    if (rel === undefined) { errors.push(`Row ${line}: released amount "${cell(row, iRel)}" not understood.`); return; }
+    for (const [v, i, lab] of [[fu, iFu, "last follow up"], [br, iBr, "budget release date"], [sd, iSd, "project start date"]])
+      if (v === undefined) { errors.push(`Row ${line}: ${lab} "${cell(row, i)}" not understood.`); return; }
+    if (app != null && rel != null && rel > app)
+      errors.push(`Row ${line}: "${name.slice(0,34)}" has more released than approved; imported as given.`);
 
-    const rawPm = String(row[iPm] ?? "").trim();
+    const rawPm = String(cell(row, iPm) ?? "").trim();
     let pm_user_id = null;
     if (rawPm) {
       pm_user_id = pmByName[rawPm.toLowerCase()] || null;
       if (!pm_user_id) errors.push(`Row ${line}: no portal account for "${rawPm}" — imported with no manager.`);
     }
-    // The six schedule dates. Any one that cannot be read stops the row, as the
-    // amounts do; a wrong date is worse than a missing one.
-    const dates = {};
-    for (const [h, key] of XL_DATES) {
-      const i = col(h);
-      const v = i >= 0 ? xlDate(row[i]) : null;
-      if (v === undefined) { errors.push(`Row ${line}: ${h.toLowerCase()} "${row[i]}" not understood.`); return; }
-      dates[key] = v;
-    }
-    if (dates.start_date && dates.end_date && dates.end_date < dates.start_date) {
-      errors.push(`Row ${line}: "${name.slice(0,34)}" finishes before it starts.`); return;
-    }
-    // A budget release date becomes the actual start, as on CAPEX projects.
-    // Say so when the sheet gives a different actual start, rather than let
-    // the database quietly overwrite it.
-    if (dates.budget_release_date) {
-      if (dates.actual_start_date && dates.actual_start_date !== dates.budget_release_date)
-        errors.push(`Row ${line}: actual start ${dates.actual_start_date} replaced by the budget `
-                  + `release date ${dates.budget_release_date}.`);
-      dates.actual_start_date = dates.budget_release_date;
-    }
-    if (dates.actual_start_date && dates.actual_end_date && dates.actual_end_date < dates.actual_start_date) {
-      errors.push(`Row ${line}: "${name.slice(0,34)}" actual finish is before its actual start.`); return;
-    }
-
-    const rawSt = String(row[iSt] ?? "").trim().toLowerCase();
+    const rawSt = String(cell(row, iSt) ?? "").trim().toLowerCase();
     const status = STATUS_IN[rawSt] || "open";
-    if (rawSt && !STATUS_IN[rawSt]) errors.push(`Row ${line}: status "${row[iSt]}" not recognised, using Open.`);
+    if (rawSt && !STATUS_IN[rawSt]) errors.push(`Row ${line}: status "${cell(row, iSt)}" not recognised, using Open.`);
+    const why = String(cell(row, iWhy) ?? "").trim();
+    const prog = PROGRESS.find(p => p.toLowerCase() === why.toLowerCase());
 
-    rows.push({ line, code: String(row[iId] ?? "").trim() || null, name,
-      campus: String(row[iCam] ?? "").trim() || null, fiscal_year: fy,
+    rows.push({ line, code, name, campus: fixCampus(cell(row, iCam)), fiscal_year: fy,
       approved_amount: app ?? 0, released_amount: rel ?? 0, pm_user_id, pm_label: rawPm,
-      status, reason_open: String(row[iWhy] ?? "").trim() || null,
-      notes: String(row[iNo] ?? "").trim() || null, last_followed_up: fu, ...dates });
+      status, reason_open: prog || why || null,
+      notes: String(cell(row, iNo) ?? "").trim() || null, last_followed_up: fu,
+      // A budget release date is also the actual start (the database sets it too).
+      budget_release_date: br, start_date: sd, actual_start_date: br });
   });
   return { errors, rows };
 }
 
-/* ── Schedule ────────────────────────────────────────────────────────────────
-   Six dates, all PMO-entered. The one that matters for chasing is the finish
-   the project is now held to: the revised finish when there is one, otherwise
-   the planned finish. A project is overdue when that date has passed and no
-   actual finish has been recorded.
+/* ── Age, money, progress ────────────────────────────────────────────────
+   The sheet has no finish dates, so nothing here can be "overdue". What it does
+   have is when the money went out: the time since the budget was released is
+   how long the project has been open on the books, and that is what the page
+   ranks by. Released against approved shows any money still to come.
    ─────────────────────────────────────────────────────────────────────────── */
 const DAY = 86400000;
 const d0 = (s) => { if (!s) return null; const d = new Date(String(s).slice(0,10) + "T00:00:00"); return isNaN(d) ? null : d; };
@@ -187,132 +187,38 @@ const fmtDate = (s) => { const d = d0(s); return d ? d.toLocaleDateString("en-GB
 const span = (n) => {
   if (n == null) return "—";
   const a = Math.abs(n);
-  if (a >= 60) { const m = Math.round(a / 30.44); return `${m} mo`; }
+  if (a >= 60) { const m = Math.round(a / 30.44); return m >= 24 ? `${(m/12).toFixed(1)} yrs` : `${m} mo`; }
   return `${a} day${a === 1 ? "" : "s"}`;
 };
 
-export function scheduleOf(r) {
-  const pe = d0(r.end_date), re = d0(r.revised_end_date), ae = d0(r.actual_end_date);
-  const due = re || pe;
-  if (ae) return { key:"finished", late: pe ? dayDiff(pe, ae) : null };
-  if (r.status === "closed") return { key:"closed" };
-  if (!due) return { key:"unscheduled" };
-  const t = today0();
-  if (due < t) return { key:"overdue", days: dayDiff(due, t), revised: !!re };
-  const slip = re && pe ? dayDiff(pe, re) : 0;
-  return { key: slip > 0 ? "revised" : "on_track", left: dayDiff(t, due), slip };
+// How long since the money was released (else since the project started).
+export function ageOf(r) {
+  const from = d0(r.budget_release_date) || d0(r.start_date) || d0(r.actual_start_date);
+  if (!from) return { key:"undated", days:null };
+  const days = Math.max(0, dayDiff(from, today0()));
+  if (r.status === "closed") return { key:"closed", days, from };
+  return { key: days > 365 ? "old" : days > 182 ? "mid" : "new", days, from };
 }
-const SCHED = {
-  overdue:     { label:"Overdue",      color:DATA.danger },
-  revised:     { label:"Revised",      color:DATA.warning },
-  on_track:    { label:"On schedule",  color:BRAND.blueBright },
-  finished:    { label:"Finished",     color:DATA.positive },
-  closed:      { label:"Closed",       color:DATA.positive },
-  unscheduled: { label:"No dates",     color:"#8FA3BF" },
+const AGE = {
+  new:     { label:"Under 6 months", short:"< 6 mo",   color:BRAND.blueBright },
+  mid:     { label:"6 to 12 months", short:"6–12 mo",  color:DATA.warning },
+  old:     { label:"Over a year",    short:"> 1 year", color:DATA.danger },
+  closed:  { label:"Closed",         short:"closed",   color:DATA.positive },
+  undated: { label:"No release date",short:"no date",  color:"#8FA3BF" },
 };
-const schedLine = (s) => {
-  switch (s.key) {
-    case "overdue":  return `${span(s.days)} past ${s.revised ? "revised" : "planned"} finish`;
-    case "revised":  return `moved ${span(s.slip)} · ${span(s.left)} left`;
-    case "on_track": return `${span(s.left)} left`;
-    case "finished": return s.late == null ? "finished" : s.late > 0 ? `finished ${span(s.late)} late` : "finished on time";
-    case "closed":   return "closed";
-    default:         return "no schedule recorded";
-  }
+const gapOf = (r) => Math.max(0, (parseFloat(r.approved_amount)||0) - (parseFloat(r.released_amount)||0));
+const relPct = (r) => { const a = parseFloat(r.approved_amount)||0; return a > 0 ? Math.min(100, (parseFloat(r.released_amount)||0) / a * 100) : null; };
+const progressOf = (r) => {
+  const t = String(r.reason_open || "").trim();
+  if (/^no progress$/i.test(t)) return { label:"No progress", color:DATA.danger };
+  if (/^in progress$/i.test(t)) return { label:"In Progress", color:BRAND.blueBright };
+  return t ? { label:"Note", color:"#8FA3BF", text:t } : { label:"Not stated", color:"#8FA3BF" };
 };
 
-
-/* ── Edit dates (PMO) ────────────────────────────────────────────────────── */
 const DATE_FIELDS = [
-  ["start_date",          "Planned start"],
-  ["end_date",            "Planned finish"],
-  ["revised_end_date",    "Revised expected finish"],
   ["budget_release_date", "Budget release date"],
-  ["actual_start_date",   "Actual start"],
-  ["actual_end_date",     "Actual finish (PCD received)"],
+  ["start_date",          "Project start date"],
 ];
-
-function ScheduleModal({ T, session, supa, row, isCompact, onClose, onSaved }) {
-  const [f, setF] = useState(() => Object.fromEntries(DATE_FIELDS.map(([k]) => [k, row[k] || ""])));
-  const [busy, setBusy] = useState(false);
-  const [err, setErr]   = useState(null);
-  // Same rule as the database: a release date becomes the actual start.
-  const set = (k, v) => setF(s => k === "budget_release_date" && v
-    ? { ...s, budget_release_date:v, actual_start_date:v } : { ...s, [k]:v });
-
-  const save = async () => {
-    setErr(null);
-    if (f.start_date && f.end_date && f.end_date < f.start_date)
-      return setErr("The planned finish can't be before the planned start.");
-    if (f.actual_start_date && f.actual_end_date && f.actual_end_date < f.actual_start_date)
-      return setErr("The actual finish can't be before the actual start.");
-    setBusy(true);
-    try {
-      await supa(`/rest/v1/past_projects?id=eq.${row.id}`, {
-        method:"PATCH", headers:{ Prefer:"return=minimal" },
-        body: JSON.stringify(Object.fromEntries(DATE_FIELDS.map(([k]) => [k, f[k] || null]))),
-      }, session.access_token);
-      onSaved();
-    } catch (e) { setErr(e.message || "Could not save the dates."); }
-    setBusy(false);
-  };
-
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
-    padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
-    outline:"none", width:"100%", boxSizing:"border-box" };
-  const group = (title, keys, note) => (
-    <div style={{ marginBottom:SP.md, padding:SP.md, borderRadius:R.md, background:T.card2,
-      border:`1px solid ${T.border}` }}>
-      <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>{title}</div>
-      <div style={{ display:"grid", gap:SP.sm,
-        gridTemplateColumns: isCompact ? "1fr" : `repeat(${keys.length}, minmax(0,1fr))` }}>
-        {keys.map(k => (
-          <label key={k} style={{ display:"block" }}>
-            <div style={{ fontSize:11.5, color:T.muted, marginBottom:4 }}>
-              {DATE_FIELDS.find(x => x[0] === k)[1]}
-            </div>
-            <input type="date" value={f[k]} onChange={e => set(k, e.target.value)} style={inp} />
-          </label>
-        ))}
-      </div>
-      {note && <div style={{ fontSize:11.5, color:T.dim, marginTop:SP.sm, lineHeight:1.55 }}>{note}</div>}
-    </div>
-  );
-
-  return createPortal(
-    <div onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
-      style={{ position:"fixed", inset:0, zIndex:1350, background:"rgba(3,8,16,0.74)",
-        backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", display:"flex",
-        alignItems: isCompact ? "flex-end" : "center", justifyContent:"center",
-        padding: isCompact ? 0 : SP.xl, animation:"pmoFade .18s ease" }}>
-      <div className="pmo-scale pmo-scroll" role="dialog" aria-modal="true" aria-label="Edit schedule"
-        style={{ width:640, maxWidth:"100%", maxHeight:"90vh", overflow:"auto", background:T.surface,
-          border:`1px solid ${T.border}`, borderRadius: isCompact ? `${R.xl}px ${R.xl}px 0 0` : R.xl,
-          boxShadow:T.shadowLg, padding:SP.xxl }}>
-        <div style={{ ...TYPE.display, fontSize:17, color:T.text, marginBottom:4 }}>Schedule dates</div>
-        <div style={{ fontSize:12.5, color:T.muted, marginBottom:SP.lg, lineHeight:1.6 }}>{row.name}</div>
-
-        {group("The plan", ["start_date","end_date","revised_end_date"],
-          "Revised expected finish is the date it is now held to. Leave it empty if the plan has not moved.")}
-        {group("What happened", ["budget_release_date","actual_start_date","actual_end_date"],
-          "Setting the budget release date also sets the actual start, as on current projects. "
-          + "Leave the actual finish empty while the project is still open.")}
-
-        {err && (
-          <div style={{ marginBottom:SP.md, padding:"9px 12px", borderRadius:R.sm,
-            background:`${DATA.danger}14`, border:`1px solid ${DATA.danger}3D`,
-            fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>
-        )}
-        <div style={{ display:"flex", justifyContent:"flex-end", gap:SP.sm }}>
-          <Button T={T} variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button T={T} variant="primary" onClick={save} loading={busy}>Save dates</Button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
 
 /* ── Follow-up chats: unread state and notifications ───────────────────────
    Two kinds of conversation, both readable by the PMO and by the project's own
@@ -405,17 +311,13 @@ function EditPastModal({ T, session, supa, row, pms, isCompact, onClose, onSaved
     if (!String(f.fiscal_year).trim()) return setErr("The fiscal year is required.");
     for (const k of ["approved_amount","released_amount"])
       if (f[k] !== "" && !isFinite(Number(f[k]))) return setErr("Amounts must be numbers.");
-    if (f.start_date && f.end_date && f.end_date < f.start_date)
-      return setErr("The planned finish can't be before the planned start.");
-    if (f.actual_start_date && f.actual_end_date && f.actual_end_date < f.actual_start_date)
-      return setErr("The actual finish can't be before the actual start.");
     setBusy(true);
     try {
       await supa(`/rest/v1/past_projects?id=eq.${row.id}`, {
         method:"PATCH", headers:{ Prefer:"return=minimal" },
         body: JSON.stringify({
           code: String(f.code).trim() || null, name: String(f.name).trim(),
-          campus: String(f.campus).trim() || null, fiscal_year: String(f.fiscal_year).trim(),
+          campus: fixCampus(f.campus), fiscal_year: String(f.fiscal_year).trim(),
           approved_amount: f.approved_amount === "" ? 0 : Number(f.approved_amount),
           released_amount: f.released_amount === "" ? 0 : Number(f.released_amount),
           pm_user_id: f.pm_user_id || null, status: f.status,
@@ -476,16 +378,17 @@ function EditPastModal({ T, session, supa, row, pms, isCompact, onClose, onSaved
           </div>
         )}
         <label style={{ display:"block", marginBottom:SP.md }}>
-          {lab("Why it is still open")}
-          <textarea value={f.reason_open} onChange={e => set("reason_open", e.target.value)} rows={3}
-            style={{ ...inp, resize:"vertical", lineHeight:1.55 }} />
+          {lab("Why still open")}
+          <input list="past-progress" value={f.reason_open} onChange={e => set("reason_open", e.target.value)}
+            placeholder="In Progress, No progress, or a short note" style={inp} />
+          <datalist id="past-progress">{PROGRESS.map(x => <option key={x} value={x} />)}</datalist>
         </label>
         <label style={{ display:"block", marginBottom:SP.md }}>
           {lab("Notes")}
           <textarea value={f.notes} onChange={e => set("notes", e.target.value)} rows={2}
             style={{ ...inp, resize:"vertical", lineHeight:1.55 }} />
         </label>
-        <div style={grid(3)}>
+        <div style={grid(2)}>
           {DATE_FIELDS.map(([k, t]) => (
             <label key={k} style={{ display:"block" }}>
               {lab(t)}
@@ -494,7 +397,8 @@ function EditPastModal({ T, session, supa, row, pms, isCompact, onClose, onSaved
           ))}
         </div>
         <div style={{ fontSize:11.5, color:T.dim, marginBottom:SP.md, lineHeight:1.55 }}>
-          Setting the budget release date also sets the actual start, as on current projects.
+          The budget release date also becomes the actual start, as on current projects; the time since
+          it is how long the project shows as open.
         </div>
 
         {err && (
@@ -729,167 +633,90 @@ function PmsView({ T, rows, unread, lastByPm, isCompact, onOpen }) {
   );
 }
 
-/* ── Timeline tab ────────────────────────────────────────────────────────── */
-function ScheduleTab({ T, session, supa, row, roll, isPMO, isCompact, onChanged }) {
-  const [editing, setEditing] = useState(false);
-  const [hot, setHot] = useState(null);
-  const s = scheduleOf(row);
-  const sm = SCHED[s.key];
-
-  const ps = d0(row.start_date), pe = d0(row.end_date), re = d0(row.revised_end_date);
-  const as = d0(row.actual_start_date), ae = d0(row.actual_end_date), br = d0(row.budget_release_date);
-  const ts = d0(roll?.tasks_start), te = d0(roll?.tasks_end);
-  const t = today0();
-
-  // Bars to draw, each only when both ends exist.
-  const bars = [
-    ps && pe && { key:"plan", label:"Planned", a:ps, b:pe, color:BRAND.blueBright,
-                  note:`${fmtDate(row.start_date)} → ${fmtDate(row.end_date)} · ${span(dayDiff(ps,pe))}` },
-    ps && re && { key:"rev", label:"Revised", a:ps, b:re, color:DATA.warning,
-                  note:`finish moved ${pe ? span(dayDiff(pe,re)) : ""} to ${fmtDate(row.revised_end_date)}` },
-    as && { key:"act", label:"Actual", a:as, b:ae || t, open:!ae, color:ae ? DATA.positive : sm.color,
-            note: ae ? `${fmtDate(row.actual_start_date)} → ${fmtDate(row.actual_end_date)} · ${span(dayDiff(as,ae))}`
-                     : `started ${fmtDate(row.actual_start_date)} · ${span(dayDiff(as,t))} so far, not finished` },
-    ts && te && { key:"wbs", label:"Work (WBS)", a:ts, b:te, color:"#8B7CF6", pct: roll?.weighted_pct,
-                  note:`${roll.task_count} task${roll.task_count === 1 ? "" : "s"} · ${Math.round(roll.weighted_pct || 0)}% complete` },
-  ].filter(Boolean);
-
-  const all = [ps, pe, re, as, ae, br, ts, te].filter(Boolean);
-  let axis = null;
-  if (bars.length) {
-    let lo = new Date(Math.min(...all, t)), hi = new Date(Math.max(...all, t));
-    lo = new Date(lo.getFullYear(), lo.getMonth(), 1);
-    hi = new Date(hi.getFullYear(), hi.getMonth() + 1, 1);
-    axis = { lo, hi, span: Math.max((hi - lo) / DAY, 1) };
-  }
-  const pct = (d) => axis ? ((d - axis.lo) / DAY) / axis.span * 100 : 0;
-  const ticks = [];
-  if (axis) {
-    // Few enough labels to never touch: about four on a phone, nine on a desk.
-    const months = Math.round(axis.span / 30.44);
-    const want = Math.max(1, Math.ceil(months / (isCompact ? 4 : 9)));
-    const step = [1, 2, 3, 6, 12, 24].find(n => n >= want) || 24;
-    for (let d = new Date(axis.lo); d <= axis.hi; d = new Date(d.getFullYear(), d.getMonth() + step, 1))
-      ticks.push(new Date(d));
-  }
-
+/* ── Dates tab: when the money went out, and how long it has been open ─── */
+function DatesTab({ T, row, roll, isPMO, isCompact }) {
+  const [hot, setHot] = useState(false);
+  const a = ageOf(row), am = AGE[a.key];
+  const pct = relPct(row), gap = gapOf(row);
+  // One bar on a fixed two-year scale, so every project reads the same way:
+  // the 6- and 12-month marks are where the colour changes.
+  const SCALE = 730, w = a.days == null ? 0 : Math.min(a.days, SCALE) / SCALE * 100;
   const tiles = [
-    ["Planned start", row.start_date], ["Planned finish", row.end_date],
-    ["Revised finish", row.revised_end_date], ["Budget released", row.budget_release_date],
-    ["Actual start", row.actual_start_date], ["Actual finish", row.actual_end_date],
+    ["Budget released", fmtDate(row.budget_release_date)],
+    ["Project start",   fmtDate(row.start_date)],
+    ["Open for",        a.days == null ? "—" : span(a.days)],
+    ["Last follow-up",  row.last_followed_up ? fmtDate(row.last_followed_up) : "never"],
   ];
-  const facts = [
-    ["Planned duration", ps && pe ? span(dayDiff(ps, pe)) : "—"],
-    ["Actual duration", as ? (ae ? span(dayDiff(as, ae)) : `${span(dayDiff(as, t))} so far`) : "—"],
-    ["Finish moved by", pe && re ? span(dayDiff(pe, re)) : "—"],
-    [s.key === "finished" ? "Finished" : "Against the plan", schedLine(s)],
+  const money = [
+    ["Approved", `PKR ${fmtM(row.approved_amount)}`, null],
+    ["Released", `PKR ${fmtM(row.released_amount)}${pct != null ? ` · ${Math.round(pct)}%` : ""}`, null],
+    ["Still to release", gap > 0 ? `PKR ${fmtM(gap)}` : "nothing", gap > 0 ? DATA.warning : DATA.positive],
   ];
-
   return (
     <div>
-      <Surface T={T} tone={sm.color} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.lg }}>
+      <Surface T={T} tone={am.color} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.lg }}>
         <div style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", marginBottom:SP.md }}>
-          <CalendarRange size={15} color={T.textOf(sm.color)} />
-          <span style={{ ...TYPE.label, color:T.text }}>Schedule</span>
+          <CalendarRange size={15} color={T.textOf(am.color)} />
+          <span style={{ ...TYPE.label, color:T.text }}>Open since the budget was released</span>
           <span style={{ ...TYPE.caption, fontWeight:700, padding:"2px 9px", borderRadius:R.pill,
-            background:`${sm.color}${T.badge}`, color:T.textOf(sm.color) }}>{sm.label}</span>
-          <span style={{ ...TYPE.caption, color:T.muted }}>{schedLine(s)}</span>
-          {isPMO && (
-            <div style={{ marginLeft:"auto" }}>
-              <Button T={T} variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Edit dates</Button>
-            </div>
-          )}
+            background:`${am.color}${T.badge}`, color:T.textOf(am.color) }}>{am.label}</span>
         </div>
-
-        <div style={{ display:"grid", gap:SP.sm, marginBottom:SP.md,
-          gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(6, minmax(0,1fr))" }}>
-          {tiles.map(([k, v]) => (
-            <div key={k} style={{ padding:"9px 11px", borderRadius:R.md, background:T.card2,
-              border:`1px solid ${T.border}` }}>
-              <div style={{ ...TYPE.label, color:T.dim, fontSize:8.5 }}>{k}</div>
-              <div style={{ fontSize:12.5, fontWeight:700, marginTop:3,
-                color: v ? T.text : T.dim }}>{fmtDate(v)}</div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ display:"grid", gap:SP.sm,
+        <div style={{ display:"grid", gap:SP.sm, marginBottom:SP.lg,
           gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(4, minmax(0,1fr))" }}>
-          {facts.map(([k, v]) => (
-            <div key={k}>
-              <div style={{ ...TYPE.caption, color:T.dim }}>{k}</div>
-              <div style={{ fontSize:13, color:T.textSoft, fontWeight:600, marginTop:2 }}>{v}</div>
+          {tiles.map(([k, v]) => (
+            <div key={k} style={{ padding:"9px 11px", borderRadius:R.md, background:T.card2, border:`1px solid ${T.border}` }}>
+              <div style={{ ...TYPE.label, color:T.dim, fontSize:8.5 }}>{k}</div>
+              <div style={{ fontSize:13, fontWeight:700, marginTop:3, color: v === "—" || v === "never" ? T.dim : T.text }}>{v}</div>
             </div>
           ))}
         </div>
-      </Surface>
-
-      {axis ? (
-        <Surface T={T} pad={isCompact ? SP.md : SP.lg}>
-          <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>Plan against reality</div>
-          <div style={{ display:"grid", gridTemplateColumns:`${isCompact ? 74 : 110}px 1fr`, rowGap:10,
-            alignItems:"center" }}>
-            <div />
-            <div style={{ position:"relative", height:16 }}>
-              {ticks.map(d => (
-                <span key={+d} style={{ position:"absolute", left:`${pct(d)}%`, ...TYPE.caption,
-                  color:T.dim, fontSize:10, transform:"translateX(-50%)", whiteSpace:"nowrap" }}>
-                  {d.toLocaleDateString("en-GB", { month:"short", year:"2-digit" })}
-                </span>
+        {a.days != null && (
+          <div onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}>
+            <div style={{ position:"relative", height:14, background:T.card2, borderRadius:R.pill, overflow:"visible" }}>
+              {[182, 365].map(m => (
+                <span key={m} aria-hidden="true" style={{ position:"absolute", top:-4, bottom:-4, left:`${m/SCALE*100}%`,
+                  borderLeft:`1px dashed ${T.borderStrong}` }} />
               ))}
+              <div style={{ position:"absolute", left:0, top:0, bottom:0, width:`${Math.max(w, 1.5)}%`, borderRadius:R.pill,
+                background:`linear-gradient(90deg, ${BRAND.blueBright}, ${a.days > 182 ? DATA.warning : BRAND.blueBright}${a.days > 365 ? `, ${DATA.danger}` : ""})`,
+                boxShadow: hot ? T.glowSoft(am.color) : "none", transition:`box-shadow ${MOTION.base}` }} />
             </div>
-            {bars.map(b => (
-              <Fragment key={b.key}>
-                <div style={{ fontSize:12, color:T.muted, fontWeight:600 }}>{b.label}</div>
-                <div style={{ position:"relative", height:22, background:T.card2, borderRadius:R.sm }}
-                  onMouseEnter={() => setHot(b.key)} onMouseLeave={() => setHot(null)}>
-                  <div aria-hidden="true" style={{ position:"absolute", top:-5, bottom:-5, left:`${pct(t)}%`,
-                    width:0, borderLeft:`1.5px dashed ${DATA.danger}AA`, zIndex:2, pointerEvents:"none" }} />
-                  <div style={{ position:"absolute", top:4, bottom:4, left:`${pct(b.a)}%`,
-                    width:`${Math.max(pct(b.b) - pct(b.a), 0.8)}%`, borderRadius:4,
-                    background: b.open
-                      ? `repeating-linear-gradient(135deg, ${b.color}66 0 6px, ${b.color}33 6px 12px)`
-                      : `${b.color}${hot === b.key ? "EE" : "BB"}`,
-                    border:`1px solid ${b.color}`, boxShadow: hot === b.key ? T.glowSoft(b.color) : "none",
-                    transition:`background ${MOTION.fast}, box-shadow ${MOTION.base}`, overflow:"hidden" }}>
-                    {b.pct != null && (
-                      <div style={{ width:`${Math.min(b.pct,100)}%`, height:"100%", background:`${b.color}` }} />
-                    )}
-                  </div>
-                  {hot === b.key && (
-                    <div style={{ position:"absolute", bottom:"calc(100% + 6px)",
-                      left:`${Math.min(Math.max(pct(b.a), 2), 60)}%`, zIndex:5, padding:"6px 10px",
-                      borderRadius:R.sm, background:T.surfaceRaised, border:`1px solid ${T.borderStrong}`,
-                      boxShadow:T.shadowLg, fontSize:11.5, color:T.text, whiteSpace:"nowrap",
-                      pointerEvents:"none" }}>{b.note}</div>
-                  )}
-                </div>
-              </Fragment>
-            ))}
-            <div />
-            <div style={{ position:"relative", height:14 }}>
-              <span style={{ position:"absolute", left:`${pct(t)}%`, transform:"translateX(-50%)",
-                ...TYPE.caption, fontSize:10, color:T.textOf(DATA.danger), fontWeight:700 }}>today</span>
+            <div style={{ position:"relative", height:16, marginTop:4, ...TYPE.caption, fontSize:10, color:T.dim }}>
+              <span style={{ position:"absolute", left:0 }}>released</span>
+              <span style={{ position:"absolute", left:`${182/SCALE*100}%`, transform:"translateX(-50%)" }}>6 mo</span>
+              <span style={{ position:"absolute", left:`${365/SCALE*100}%`, transform:"translateX(-50%)" }}>1 yr</span>
+              <span style={{ position:"absolute", right:0 }}>2 yrs+</span>
             </div>
           </div>
-          {br && (
-            <div style={{ ...TYPE.caption, color:T.dim, marginTop:SP.md }}>
-              Budget released {fmtDate(row.budget_release_date)}.
+        )}
+      </Surface>
+
+      <Surface T={T} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.lg }}>
+        <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.md }}>Money</div>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns: isCompact ? "1fr" : "repeat(3, minmax(0,1fr))" }}>
+          {money.map(([k, v, c]) => (
+            <div key={k}>
+              <div style={{ ...TYPE.caption, color:T.dim }}>{k}</div>
+              <div style={{ fontSize:14, fontWeight:700, marginTop:2, color: c ? T.textOf(c) : T.text }}>{v}</div>
             </div>
-          )}
-        </Surface>
-      ) : (
-        <div style={{ padding:SP.xl, textAlign:"center", borderRadius:R.md,
-          border:`1px dashed ${T.borderStrong}`, color:T.muted, fontSize:13, lineHeight:1.6 }}>
-          No schedule recorded yet.
-          {isPMO ? " Use Edit dates to add the planned and actual dates." : ""}
+          ))}
+        </div>
+        {pct != null && (
+          <div style={{ height:6, borderRadius:R.pill, background:T.card2, marginTop:SP.md, overflow:"hidden" }}>
+            <div style={{ width:`${pct}%`, height:"100%", background: pct >= 100 ? DATA.positive : DATA.warning }} />
+          </div>
+        )}
+      </Surface>
+
+      {roll?.task_count > 0 && (
+        <div style={{ ...TYPE.caption, color:T.muted }}>
+          Work breakdown: {roll.task_count} task{roll.task_count === 1 ? "" : "s"}, {Math.round(roll.weighted_pct || 0)}% complete.
         </div>
       )}
-
-      {editing && (
-        <ScheduleModal T={T} session={session} supa={supa} row={row} isCompact={isCompact}
-          onClose={() => setEditing(false)}
-          onSaved={() => { setEditing(false); onChanged?.(); }} />
+      {isPMO && (
+        <div style={{ ...TYPE.caption, color:T.dim, marginTop:SP.sm }}>
+          Dates and amounts are changed with Edit project.
+        </div>
       )}
     </div>
   );
@@ -950,7 +777,6 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
     setBusy(false);
   };
 
-  const st = STATUS[row.status] || STATUS.open;
   const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
     padding:"9px 11px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", width:"100%", boxSizing:"border-box" };
@@ -960,7 +786,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
       {/* Why it is still open — PMO's field. A PM reads it and answers below. */}
       <div style={{ marginBottom:SP.lg }}>
         <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:6 }}>
-          <span style={{ ...TYPE.label, color:T.muted }}>Why it is still open</span>
+          <span style={{ ...TYPE.label, color:T.muted }}>Why still open</span>
           {isPMO && !editing && (
             <button className="pmo-focusable pmo-btn" onClick={() => setEditing(true)}
               aria-label="Edit reason and status"
@@ -971,8 +797,10 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
         </div>
         {editing ? (
           <div>
-            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
-              style={{ ...inp, resize:"vertical", lineHeight:1.6, marginBottom:SP.sm }} />
+            <input list="past-progress-f" value={reason} onChange={e => setReason(e.target.value)}
+              placeholder="In Progress, No progress, or a short note"
+              style={{ ...inp, marginBottom:SP.sm }} />
+            <datalist id="past-progress-f">{PROGRESS.map(x => <option key={x} value={x} />)}</datalist>
             <div style={{ display:"flex", gap:SP.sm, alignItems:"center", flexWrap:"wrap" }}>
               <Select T={T} value={status} onChange={e => setStatus(e.target.value)}>
                 {Object.entries(STATUS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -987,11 +815,15 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
             </div>
           </div>
         ) : (
-          <div style={{ fontSize:13, color: row.reason_open ? T.textSoft : T.dim, lineHeight:1.65,
-            padding:"11px 13px", borderRadius:R.md, background:T.card2,
-            borderLeft:`3px solid ${st.color}` }}>
-            {row.reason_open || "No reason recorded yet."}
-          </div>
+          (() => { const pg = progressOf(row); return (
+            <div style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", fontSize:13,
+              color: row.reason_open ? T.textSoft : T.dim, lineHeight:1.65, padding:"10px 13px",
+              borderRadius:R.md, background:T.card2, borderLeft:`3px solid ${pg.color}` }}>
+              <span style={{ ...TYPE.caption, fontWeight:700, padding:"2px 9px", borderRadius:R.pill,
+                background:`${pg.color}${T.badge}`, color:T.textOf(pg.color) }}>{pg.label}</span>
+              {pg.text && <span>{pg.text}</span>}
+              {!row.reason_open && <span>Nothing recorded yet.</span>}
+            </div>); })()
         )}
       </div>
 
@@ -1058,8 +890,7 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
   const [tab, setTab] = useState("followup");
   const [editing, setEditing] = useState(false);
   const st = STATUS[row.status] || STATUS.open;
-  const s  = scheduleOf(row);
-  const sm = SCHED[s.key];
+  const ag = ageOf(row), am = AGE[ag.key], pg = progressOf(row), gap = gapOf(row), pct = relPct(row);
   // PMO always; the project's own manager once the page is opened to them.
   // The database decides either way.
   const canWriteTasks = isPMO || (row.pm_user_id && row.pm_user_id === session.user_id);
@@ -1095,9 +926,11 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
         </div>
         <div style={{ display:"flex", gap:SP.sm, marginTop:SP.md, flexWrap:"wrap" }}>
           {[["Approved", `PKR ${fmtM(row.approved_amount)}`, null],
-            ["Released", `PKR ${fmtM(row.released_amount)}`, null],
-            ["Status", st.label, st.color],
-            ["Schedule", s.key === "overdue" ? `Overdue ${span(s.days)}` : sm.label, sm.color]].map(([k,v,c]) => (
+            ["Released", `PKR ${fmtM(row.released_amount)}${pct != null ? ` · ${Math.round(pct)}%` : ""}`, null],
+            ...(gap > 0 ? [["Still to release", `PKR ${fmtM(gap)}`, DATA.warning]] : []),
+            ["Open for", ag.days == null ? "no date" : span(ag.days), am.color],
+            ["Progress", pg.label, pg.color],
+            ["Status", st.label, st.color]].map(([k,v,c]) => (
             <div key={k} style={{ padding:"6px 12px", borderRadius:R.sm, background:T.card2,
               border:`1px solid ${T.border}` }}>
               <div style={{ ...TYPE.label, color:T.dim, fontSize:8.5 }}>{k}</div>
@@ -1111,7 +944,7 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
         <Tabs T={T} active={tab} onChange={setTab} isMobile={isCompact}
           tabs={[
             { id:"followup", label:"Follow-up", Icon:MessageSquare },
-            { id:"timeline", label:"Timeline",  Icon:CalendarRange },
+            { id:"timeline", label:"Dates & money", Icon:CalendarRange },
             { id:"wbs",      label:"WBS",       Icon:ListTree },
           ]} />
       </div>
@@ -1121,8 +954,7 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
           row={row} isPMO={isPMO} viewer={viewer} onChanged={onChanged} onRead={onRead} />
       )}
       {tab === "timeline" && (
-        <ScheduleTab T={T} session={session} supa={supa} row={row} roll={roll}
-          isPMO={isPMO} isCompact={isCompact} onChanged={onChanged} />
+        <DatesTab T={T} row={row} roll={roll} isPMO={isPMO} isCompact={isCompact} />
       )}
       {tab === "wbs" && (
         <ProjectTasks kind="past" T={T} session={session} supa={supa} projectId={row.id}
@@ -1137,62 +969,64 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
 }
 
 
-/* ── Every past project on one time axis ─────────────────────────────────── */
-function PastGantt({ T, list, rollup, isCompact, onOpen }) {
+/* ── Every past project on one time axis: release date → today ──────────── */
+function PastAging({ T, groups, isCompact, onOpen }) {
   const [hover, setHover] = useState(null);
   const scroller = useRef(null);
   const centred = useRef(false);
   const t = today0();
 
-  const { groups, unscheduled, axis } = useMemo(() => {
-    const drawn = [], none = [];
-    list.forEach(r => {
-      const a = d0(r.start_date) || d0(r.actual_start_date);
-      const b = d0(r.revised_end_date) || d0(r.end_date) || d0(r.actual_end_date);
-      (a && b && b >= a) ? drawn.push({ ...r, _a:a, _b:b }) : none.push(r);
+  const { drawn, undated, axis } = useMemo(() => {
+    const drawn = [], undated = [];
+    groups.forEach(([g, rows]) => {
+      const rs = rows.map(r => ({ ...r, _age: ageOf(r) })).filter(r => r._age.from ? true : (undated.push(r), false))
+        .sort((x, y) => x._age.from - y._age.from);
+      if (rs.length) drawn.push([g, rs]);
     });
     let axis = null;
-    if (drawn.length) {
-      let lo = t, hi = t;
-      drawn.forEach(r => [r._a, r._b, d0(r.end_date), d0(r.actual_end_date), d0(r.actual_start_date)]
-        .forEach(d => { if (d) { if (d < lo) lo = d; if (d > hi) hi = d; } }));
-      const from = new Date(lo.getFullYear(), lo.getMonth() - 1, 1);
-      const to   = new Date(hi.getFullYear(), hi.getMonth() + 2, 1);
+    const all = drawn.flatMap(([, rs]) => rs.map(r => r._age.from));
+    if (all.length) {
+      const lo = new Date(Math.min(...all));
+      const from = new Date(lo.getFullYear(), lo.getMonth(), 1);
+      const to   = new Date(t.getFullYear(), t.getMonth() + 2, 1);
       const months = [];
       for (let d = new Date(from); d < to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) months.push(d);
       axis = { from, to, months, span:(to - from) / DAY };
     }
-    const m = {};
-    drawn.forEach(r => { (m[r.fiscal_year] ||= []).push(r); });
-    Object.values(m).forEach(g => g.sort((x, y) => x._a - y._a));
-    return { groups:Object.entries(m).sort((a, b) => b[0].localeCompare(a[0])), unscheduled:none, axis };
-  }, [list]);
+    return { drawn, undated, axis };
+  }, [groups]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const COLW = isCompact ? 40 : 54;
+  // Months share the width there is, so the whole span shows without scrolling;
+  // only a narrow screen falls back to a minimum width and scrolls.
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = scroller.current; if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setBoxW(el.clientWidth)); ro.observe(el); setBoxW(el.clientWidth);
+    return () => ro.disconnect();
+  }, [axis]);
+  const COLW = axis ? Math.max(isCompact ? 22 : 24, boxW ? (boxW - 2) / axis.months.length : 0) : 0;
   const W = axis ? axis.months.length * COLW : 0;
   const x = (d) => axis ? ((d - axis.from) / DAY) / axis.span * W : 0;
-  const NAMEW = isCompact ? 128 : 260, ROWH = isCompact ? 32 : 36;
+  const NAMEW = isCompact ? 128 : 270, ROWH = isCompact ? 32 : 36;
 
   useEffect(() => {
     if (!axis || centred.current || !scroller.current) return;
     centred.current = true;
-    scroller.current.scrollLeft = Math.max(0, x(t) - scroller.current.clientWidth * 0.45);
+    scroller.current.scrollLeft = Math.max(0, W - scroller.current.clientWidth);
   });
 
   if (!axis) return (
     <div style={{ padding:SP.xxl, textAlign:"center", background:T.surface, border:`1px solid ${T.border}`,
       borderRadius:R.lg, color:T.muted, fontSize:13, lineHeight:1.6 }}>
-      None of these past projects has dates yet, so there is nothing to draw.
-      Open a project and use Timeline → Edit dates, or add the date columns to the import sheet.
+      None of these past projects has a budget release date yet, so there is nothing to draw.
     </div>
   );
 
-  const legend = [["Planned", BRAND.blueBright], ["Moved by revision", DATA.warning],
-                  ["Actual", DATA.positive], ["Overdue", DATA.danger]];
-
+  const legend = ["new","mid","old"].map(k => [AGE[k].label, AGE[k].color]);
   return (
     <div>
-      <div style={{ display:"flex", gap:SP.md, flexWrap:"wrap", marginBottom:SP.sm }}>
+      <div style={{ display:"flex", gap:SP.md, flexWrap:"wrap", marginBottom:SP.sm, alignItems:"center" }}>
+        <span style={{ ...TYPE.caption, color:T.muted }}>Each bar runs from the budget release to today.</span>
         {legend.map(([k, c]) => (
           <span key={k} style={{ display:"inline-flex", alignItems:"center", gap:6, ...TYPE.caption, color:T.muted }}>
             <span style={{ width:14, height:8, borderRadius:2, background:`${c}BB`, border:`1px solid ${c}` }} />{k}
@@ -1201,36 +1035,28 @@ function PastGantt({ T, list, rollup, isCompact, onOpen }) {
       </div>
       <div style={{ display:"flex", background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg,
         overflow:"hidden", boxShadow:T.shadow }}>
-        {/* Names, fixed */}
         <div style={{ width:NAMEW, flexShrink:0, borderRight:`1px solid ${T.border}` }}>
           <div style={{ height:30, borderBottom:`1px solid ${T.borderStrong}` }} />
-          {groups.map(([fy, rows]) => (
-            <Fragment key={fy}>
+          {drawn.map(([g, rows]) => (
+            <Fragment key={g}>
               <div style={{ height:26, display:"flex", alignItems:"center", padding:"0 10px",
-                background:T.card2, ...TYPE.label, color:T.text, fontSize:10.5 }}>{fy}</div>
-              {rows.map(r => {
-                const s = scheduleOf(r);
-                return (
-                  <div key={r.id} onClick={() => onOpen(r)}
-                    onMouseEnter={() => setHover(r.id)} onMouseLeave={() => setHover(null)}
-                    style={{ height:ROWH, display:"flex", flexDirection:"column", justifyContent:"center",
-                      padding:"0 10px", cursor:"pointer", borderBottom:`1px solid ${T.border}`,
-                      background: hover === r.id ? T.surfaceRaised : "transparent" }}>
-                    <div style={{ fontSize:12, color:T.text, fontWeight:600, overflow:"hidden",
-                      textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
-                    <div style={{ ...TYPE.caption, fontSize:10.5, color: s.key === "overdue"
-                      ? T.textOf(DATA.danger) : T.dim, whiteSpace:"nowrap", overflow:"hidden",
-                      textOverflow:"ellipsis" }}>
-                      {s.key === "overdue" ? `Overdue ${span(s.days)}` : (r.campus || r.pm_name || SCHED[s.key].label)}
-                    </div>
-                  </div>
-                );
-              })}
+                background:T.card2, ...TYPE.label, color:T.text, fontSize:10.5 }}>{g} · {rows.length}</div>
+              {rows.map(r => (
+                <div key={r.id} onClick={() => onOpen(r)}
+                  onMouseEnter={() => setHover(r.id)} onMouseLeave={() => setHover(null)}
+                  style={{ height:ROWH, display:"flex", flexDirection:"column", justifyContent:"center",
+                    padding:"0 10px", cursor:"pointer", borderBottom:`1px solid ${T.border}`,
+                    background: hover === r.id ? T.surfaceRaised : "transparent" }}>
+                  <div style={{ fontSize:12, color:T.text, fontWeight:600, overflow:"hidden",
+                    textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
+                  <div style={{ ...TYPE.caption, fontSize:10.5, color:T.dim, whiteSpace:"nowrap", overflow:"hidden",
+                    textOverflow:"ellipsis" }}>{r.code || r.campus || ""} · {r.pm_name || "No manager"}</div>
+                </div>
+              ))}
             </Fragment>
           ))}
         </div>
 
-        {/* Bars, scrolling */}
         <div ref={scroller} className="pmo-scroll" style={{ overflowX:"auto", flex:1, position:"relative" }}>
           <div style={{ width:W, position:"relative" }}>
             <div style={{ height:30, display:"flex", borderBottom:`1px solid ${T.borderStrong}` }}>
@@ -1239,65 +1065,42 @@ function PastGantt({ T, list, rollup, isCompact, onOpen }) {
                   color: m.getMonth() === 0 ? T.text : T.dim, fontWeight: m.getMonth() === 0 ? 700 : 400,
                   display:"flex", alignItems:"center", justifyContent:"center",
                   borderLeft:`1px solid ${m.getMonth() === 0 ? T.borderStrong : T.border}` }}>
-                  {m.getMonth() === 0 ? m.getFullYear() : MONTHS[m.getMonth()]}
+                  {m.getMonth() === 0 ? m.getFullYear() : MONTHS[m.getMonth()].slice(0, COLW < 34 ? 1 : 3)}
                 </div>
               ))}
             </div>
-            {groups.map(([fy, rows]) => (
-              <Fragment key={fy}>
+            {drawn.map(([g, rows]) => (
+              <Fragment key={g}>
                 <div style={{ height:26, background:T.card2 }} />
                 {rows.map(r => {
-                  const s  = scheduleOf(r);
-                  const pa = d0(r.start_date), pe = d0(r.end_date), re = d0(r.revised_end_date);
-                  const as = d0(r.actual_start_date), ae = d0(r.actual_end_date);
-                  const planA = pa || r._a, planB = pe || r._b;
-                  const over = s.key === "overdue";
-                  const pctDone = rollup[r.id]?.weighted_pct;
+                  const a = r._age, c = AGE[a.key].color, on = hover === r.id, gap = gapOf(r);
+                  const x0 = x(a.from), x1 = x(t);
                   return (
                     <div key={r.id} onClick={() => onOpen(r)}
                       onMouseEnter={() => setHover(r.id)} onMouseLeave={() => setHover(null)}
-                      style={{ height:ROWH, position:"relative", cursor:"pointer",
-                        borderBottom:`1px solid ${T.border}`,
-                        background: hover === r.id ? T.surfaceRaised : "transparent" }}>
-                      {/* planned */}
-                      <div style={{ position:"absolute", top:ROWH/2 - 7, height:10, left:x(planA),
-                        width:Math.max(x(planB) - x(planA), 4), borderRadius:3,
-                        background:`${BRAND.blueBright}${hover === r.id ? "CC" : "88"}`,
-                        border:`1px solid ${over && !re ? DATA.danger : BRAND.blueBright}`,
-                        transition:`background ${MOTION.fast}` }} />
-                      {/* moved by revision */}
-                      {re && pe && re > pe && (
-                        <div style={{ position:"absolute", top:ROWH/2 - 7, height:10, left:x(pe),
-                          width:Math.max(x(re) - x(pe), 3), borderRadius:3,
-                          background:`repeating-linear-gradient(135deg, ${DATA.warning}99 0 5px, ${DATA.warning}44 5px 10px)`,
-                          border:`1px solid ${over ? DATA.danger : DATA.warning}` }} />
-                      )}
-                      {/* actual, under the plan */}
-                      {as && (
-                        <div style={{ position:"absolute", top:ROWH/2 + 5, height:4, left:x(as),
-                          width:Math.max(x(ae || t) - x(as), 3), borderRadius:2,
-                          background: ae ? DATA.positive : over ? DATA.danger : `${DATA.positive}88` }} />
-                      )}
-                      {ae && (
-                        <CheckCircle2 size={12} color={DATA.positive}
-                          style={{ position:"absolute", top:ROWH/2 - 8, left:x(ae) + 3 }} />
-                      )}
-                      {over && (
-                        <span style={{ position:"absolute", top:ROWH/2 - 9, left:x(re || pe) + 6,
-                          ...TYPE.caption, fontSize:10, fontWeight:700, color:T.textOf(DATA.danger),
-                          whiteSpace:"nowrap" }}>overdue {span(s.days)}</span>
-                      )}
-                      {pctDone != null && !over && (
-                        <span style={{ position:"absolute", top:ROWH/2 - 9, left:x(re || planB) + 6,
-                          ...TYPE.caption, fontSize:10, color:T.dim, whiteSpace:"nowrap" }}>
-                          {Math.round(pctDone)}% of tasks</span>
+                      style={{ height:ROWH, position:"relative", cursor:"pointer", borderBottom:`1px solid ${T.border}`,
+                        background: on ? T.surfaceRaised : "transparent" }}>
+                      <div style={{ position:"absolute", top:ROWH/2 - 6, height:12, left:x0, width:Math.max(x1 - x0, 4),
+                        borderRadius:3, background:`linear-gradient(90deg, ${c}55, ${c}${on ? "EE" : "BB"})`,
+                        border:`1px solid ${c}`, boxShadow: on ? T.glowSoft(c) : "none",
+                        transition:`background ${MOTION.fast}, box-shadow ${MOTION.base}` }} />
+                      {/* The release date sits before the bar, or inside it when there is no room. */}
+                      <span style={{ position:"absolute", top:ROWH/2 - 8, ...TYPE.caption, fontSize:10, whiteSpace:"nowrap",
+                        ...(x0 > 78 ? { right: W - x0 + 6, color:T.dim } : { left: x0 + 6, color:"#fff", fontWeight:700,
+                          textShadow:"0 1px 2px rgba(0,0,0,.6)" }) }}>{fmtDate(r.budget_release_date || r.start_date)}</span>
+                      {on && (
+                        <div style={{ position:"absolute", bottom:"calc(100% - 4px)", left:Math.max(x0, 4), zIndex:5,
+                          padding:"6px 10px", borderRadius:R.sm, background:T.surfaceRaised, border:`1px solid ${T.borderStrong}`,
+                          boxShadow:T.shadowLg, fontSize:11.5, color:T.text, whiteSpace:"nowrap", pointerEvents:"none" }}>
+                          Open {span(a.days)} · released PKR {fmtM(r.released_amount)} of {fmtM(r.approved_amount)}
+                          {gap > 0 ? ` · PKR ${fmtM(gap)} to release` : ""}
+                        </div>
                       )}
                     </div>
                   );
                 })}
               </Fragment>
             ))}
-            {/* today */}
             <div aria-hidden="true" style={{ position:"absolute", top:0, bottom:0, left:x(t), width:0,
               borderLeft:`1.5px dashed ${DATA.danger}AA`, pointerEvents:"none" }}>
               <span style={{ position:"absolute", top:36, left:4, ...TYPE.caption, fontSize:9.5,
@@ -1307,18 +1110,16 @@ function PastGantt({ T, list, rollup, isCompact, onOpen }) {
         </div>
       </div>
 
-      {unscheduled.length > 0 && (
+      {undated.length > 0 && (
         <div style={{ marginTop:SP.lg }}>
           <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>
-            Not on the chart · {unscheduled.length} without a start and finish date
+            Not on the chart · {undated.length} without a budget release date
           </div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {unscheduled.map(r => (
+            {undated.map(r => (
               <button key={r.id} className="pmo-focusable pmo-btn" onClick={() => onOpen(r)}
                 style={{ padding:"5px 11px", borderRadius:R.pill, border:`1px solid ${T.border}`,
-                  background:T.surface, color:T.textSoft, fontSize:12, cursor:"pointer" }}>
-                <span style={{ color:T.dim }}>{r.fiscal_year}</span> · {r.name}
-              </button>
+                  background:T.surface, color:T.textSoft, fontSize:12, cursor:"pointer" }}>{r.name}</button>
             ))}
           </div>
         </div>
@@ -1331,9 +1132,12 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 
 
 /* ── Import ─────────────────────────────────────────────────────────────── */
-function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose, onDone }) {
+function ImportModal({ T, session, supa, pms, existing = [], isCompact, onClose, onDone }) {
+  const existingCount = existing.length;
   const [parsed, setParsed] = useState(null);
-  const [mode, setMode]     = useState("append");
+  // update = change the projects already here (matched by Project ID and name) and add new ones;
+  // their follow-up threads and WBS stay. The default whenever there is a list already.
+  const [mode, setMode]     = useState(existing.length ? "update" : "append");
   const [busy, setBusy]     = useState(false);
   const [err, setErr]       = useState(null);
   const [done, setDone]     = useState(null);
@@ -1366,24 +1170,55 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
     } catch (e) { setErr(e.message || "That file could not be read."); }
   };
 
+  // Which existing project each sheet row is: Project ID + name, then a Project ID
+  // used only once, then a name used only once.
+  const matchOf = useMemo(() => {
+    const norm = (v) => String(v ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+    const byBoth = new Map(), byCode = new Map(), byName = new Map();
+    existing.forEach(e => {
+      byBoth.set(`${norm(e.code)}|${norm(e.name)}`, e);
+      if (e.code) byCode.set(norm(e.code), byCode.has(norm(e.code)) ? null : e);
+      byName.set(norm(e.name), byName.has(norm(e.name)) ? null : e);
+    });
+    return (r) => byBoth.get(`${norm(r.code)}|${norm(r.name)}`) || (r.code && byCode.get(norm(r.code))) || byName.get(norm(r.name)) || null;
+  }, [existing]);
+  const plan = useMemo(() => {
+    if (!parsed) return null;
+    const upd = [], add = [];
+    parsed.rows.forEach(r => { const m = mode === "update" ? matchOf(r) : null; m ? upd.push([m, r]) : add.push(r); });
+    return { upd, add };
+  }, [parsed, mode, matchOf]);
+
   const commit = async () => {
     if (!parsed?.rows.length) return;
     setBusy(true); setErr(null);
     try {
+      if (mode === "update") {
+        // The sheet decides every column it has; an empty optional cell (notes,
+        // dates, last follow-up) leaves what the portal already holds.
+        for (const [m, r] of plan.upd) {
+          const patch = { code:r.code, name:r.name, campus:r.campus, fiscal_year:r.fiscal_year,
+            approved_amount:r.approved_amount, released_amount:r.released_amount, pm_user_id:r.pm_user_id,
+            status:r.status, reason_open:r.reason_open };
+          for (const k of ["notes","last_followed_up","budget_release_date","start_date","actual_start_date"])
+            if (r[k] != null) patch[k] = r[k];
+          await supa(`/rest/v1/past_projects?id=eq.${m.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" },
+            body: JSON.stringify(patch) }, session.access_token);
+        }
+      }
       if (mode === "replace") {
         await supa("/rest/v1/past_projects?id=not.is.null",
           { method:"DELETE", headers:{ Prefer:"return=minimal" } }, session.access_token);
       }
       // One shape for every object: PostgREST rejects a bulk insert whose rows
       // have differing key sets (PGRST102).
-      const body = parsed.rows.map(r => ({
+      const body = (mode === "update" ? plan.add : parsed.rows).map(r => ({
         code:r.code, name:r.name, campus:r.campus, fiscal_year:r.fiscal_year,
         approved_amount:r.approved_amount, released_amount:r.released_amount,
         pm_user_id:r.pm_user_id, status:r.status, reason_open:r.reason_open,
         notes:r.notes, last_followed_up:r.last_followed_up, created_by:session.user_id,
-        start_date:r.start_date, end_date:r.end_date, revised_end_date:r.revised_end_date,
-        budget_release_date:r.budget_release_date, actual_start_date:r.actual_start_date,
-        actual_end_date:r.actual_end_date,
+        start_date:r.start_date, budget_release_date:r.budget_release_date,
+        actual_start_date:r.actual_start_date,
       }));
       for (let i = 0; i < body.length; i += 50) {
         await supa("/rest/v1/past_projects",
@@ -1395,12 +1230,14 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
         body: JSON.stringify({
           actor_id: session.user_id, actor_name: session.full_name || session.username, actor_role: session.role,
           action: "import", entity_type: "past_projects", entity_id: null,
-          summary: `Imported ${body.length} past projects from ${parsed.fileName || "Excel"}`
-            + (mode === "replace" ? " (replaced the existing list)" : " (added to the list)"),
-          details: { imported: body.length, mode, filename: parsed.fileName || null,
-                     without_pm: body.filter(r => !r.pm_user_id).length },
+          summary: mode === "update"
+            ? `Updated ${plan.upd.length} and added ${body.length} past projects from ${parsed.fileName || "Excel"}`
+            : `Imported ${body.length} past projects from ${parsed.fileName || "Excel"}`
+              + (mode === "replace" ? " (replaced the existing list)" : " (added to the list)"),
+          details: { imported: body.length, updated: mode === "update" ? plan.upd.length : 0, mode,
+                     filename: parsed.fileName || null, without_pm: parsed.rows.filter(r => !r.pm_user_id).length },
         }) }, session.access_token).catch(() => {});
-      setDone({ count: body.length });
+      setDone({ count: body.length + (mode === "update" ? plan.upd.length : 0), updated: mode === "update" ? plan.upd.length : 0 });
       onDone();
     } catch (e) { setErr(e.message || "The import could not be saved."); }
     setBusy(false);
@@ -1426,7 +1263,8 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
               <CheckCircle2 size={26} color={T.textOf(DATA.positive)} />
               <div>
                 <div style={{ fontSize:15, fontWeight:700, color:T.textOf(DATA.positive) }}>
-                  {done.count} past project{done.count === 1 ? "" : "s"} imported
+                  {done.updated ? `${done.updated} updated, ${done.count - done.updated} added`
+                    : `${done.count} past project${done.count === 1 ? "" : "s"} imported`}
                 </div>
                 <div style={{ fontSize:12.5, color:T.muted, marginTop:3 }}>Ready to follow up.</div>
               </div>
@@ -1501,7 +1339,7 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
                       There are already {existingCount} past project{existingCount === 1 ? "" : "s"}
                     </div>
                     <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                      {[["append","Add to what's there"],["replace","Replace them all"]].map(([v,l]) => (
+                      {[["update","Update them and add new ones"],["append","Add all as new"],["replace","Replace them all"]].map(([v,l]) => (
                         <button key={v} className="pmo-focusable pmo-btn" onClick={() => setMode(v)}
                           style={{ padding:"6px 12px", borderRadius:R.pill, fontSize:12, cursor:"pointer",
                             background: mode === v ? `${BRAND.blue}22` : "transparent",
@@ -1510,6 +1348,12 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
                             fontWeight: mode === v ? 700 : 500 }}>{l}</button>
                       ))}
                     </div>
+                    {mode === "update" && plan && (
+                      <div style={{ fontSize:11.5, color:T.muted, marginTop:6 }}>
+                        {plan.upd.length} will be updated (matched by Project ID and name), {plan.add.length} added.
+                        Their follow-up threads and work breakdowns stay.
+                      </div>
+                    )}
                     {mode === "replace" && (
                       <div style={{ fontSize:11.5, color:T.textOf(DATA.danger), marginTop:6 }}>
                         All {existingCount} existing past projects and their follow-up threads will be
@@ -1531,7 +1375,7 @@ function ImportModal({ T, session, supa, pms, existingCount, isCompact, onClose,
               <Button T={T} variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
               <Button T={T} variant="primary" onClick={commit} loading={busy}
                 disabled={!parsed?.rows.length}>
-                {parsed?.rows.length ? `Import ${parsed.rows.length}` : "Import"}
+                {!parsed?.rows.length ? "Import" : mode === "update" && plan ? `Update ${plan.upd.length} · add ${plan.add.length}` : `Import ${parsed.rows.length}`}
               </Button>
             </div>
           </>
@@ -1552,7 +1396,10 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const [status, setStatus] = useState("open_all");
   const [pm, setPm]       = useState("");
   const [openId, setOpenId] = useState(null);
-  const [view, setView]   = useState("list");      // list | timeline
+  const [view, setView]   = useState("list");      // list | timeline | pms
+  const [groupBy, setGroupBy] = useState("campus"); // campus | fy | pm
+  const [campus, setCampus] = useState("");
+  const [prog, setProg]   = useState("");          // "" | In Progress | No progress | gap
   const [rollup, setRollup] = useState({});       // past_project_id -> task roll-up
   const [collapsed, setCollapsed] = useState({});
   const [hover, setHover] = useState(null);
@@ -1638,34 +1485,42 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const pmChoices = useMemo(() => pmAccounts.filter(u => u.role !== "pmo"), [pmAccounts]);
 
   const years = useMemo(() => [...new Set((rows||[]).map(r => r.fiscal_year))].sort().reverse(), [rows]);
+  const campuses = useMemo(() => [...new Set((rows||[]).map(r => r.campus).filter(Boolean))].sort(), [rows]);
   const pms   = useMemo(() => [...new Set((rows||[]).map(r => r.pm_name).filter(Boolean))].sort(), [rows]);
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (rows||[]).filter(r =>
       (!fy || r.fiscal_year === fy) &&
-      (!pm || r.pm_name === pm) &&
+      (!pm || r.pm_name === pm) && (!campus || r.campus === campus) &&
+      (!prog || (prog === "gap" ? gapOf(r) > 0 : progressOf(r).label === prog)) &&
       (status === "all" ? true : status === "open_all" ? r.status !== "closed" : r.status === status) &&
-      (!needle || `${r.code||""} ${r.name||""} ${r.reason_open||""}`.toLowerCase().includes(needle))
+      (!needle || `${r.code||""} ${r.name||""} ${r.reason_open||""} ${r.campus||""} ${r.pm_name||""}`.toLowerCase().includes(needle))
     );
-  }, [rows, q, fy, pm, status]);
+  }, [rows, q, fy, pm, campus, prog, status]);
 
+  // Grouped by campus (default), fiscal year or manager; oldest release first
+  // inside a group, since the longest-open project is the one to chase.
   const groups = useMemo(() => {
+    const keyOf = (r) => groupBy === "fy" ? r.fiscal_year : groupBy === "pm" ? (r.pm_name || "No project manager") : (r.campus || "No campus");
     const m = {};
-    list.forEach(r => { (m[r.fiscal_year] ||= []).push(r); });
-    Object.values(m).forEach(g => g.sort((a,b) =>
-      (b.days_since_followup ?? 9999) - (a.days_since_followup ?? 9999)));
-    return Object.entries(m).sort((a,b) => b[0].localeCompare(a[0]));
-  }, [list]);
+    list.forEach(r => { (m[keyOf(r)] ||= []).push(r); });
+    Object.values(m).forEach(g => g.sort((a,b) => (ageOf(b).days ?? -1) - (ageOf(a).days ?? -1)));
+    const val = (rs) => rs.reduce((s,r) => s + (parseFloat(r.approved_amount)||0), 0);
+    return Object.entries(m).sort((a,b) => groupBy === "fy" ? b[0].localeCompare(a[0]) : val(b[1]) - val(a[1]));
+  }, [list, groupBy]);
 
   const totals = useMemo(() => {
     const src = (rows||[]).filter(r => r.status !== "closed");
+    const sum = (k) => src.reduce((s,r) => s + (parseFloat(r[k])||0), 0);
+    const gaps = src.filter(r => gapOf(r) > 0);
     return {
       openCount: src.length,
-      value: src.reduce((s,r) => s + (parseFloat(r.approved_amount)||0), 0),
+      approved: sum("approved_amount"), released: sum("released_amount"),
+      gap: gaps.reduce((s,r) => s + gapOf(r), 0), gapCount: gaps.length,
+      noProgress: src.filter(r => progressOf(r).label === "No progress").length,
+      old: src.filter(r => ageOf(r).key === "old").length,
       stale: src.filter(r => (r.days_since_followup ?? 9999) > 30).length,
-      unasked: src.filter(r => !r.update_count).length,
-      overdue: src.filter(r => scheduleOf(r).key === "overdue").length,
     };
   }, [rows]);
 
@@ -1702,31 +1557,25 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
       g.getRow(r).height = Math.max(15, 13*Math.ceil(t.length/112));
     };
     title(2,"Past Projects — how to fill this in",16);
-    para(3,"Fill in the 'Past Projects' sheet and bring it back to the portal. One row per project. "
-          + "Only Project Name and Fiscal Year are required; everything else can be added later.");
+    para(3,"The 'Past Projects' sheet holds every project now in the portal. Change or add rows and bring "
+          + "it back with Import. One row per project; only Project Name and Fiscal Year are required.");
     title(5,"What goes in each column",13);
     const guide=[
-      ["Project ID","Your reference or SAP code. Optional."],
+      ["Project ID","SAP code, e.g. IT.261104-01. Used to match a row to a project already in the portal."],
       ["Project Name","Required."],
-      ["Campus","Al-Mizan, G-7, I-14, Lahore, Malakand, PRH, RIH, MHH. Free text."],
-      ["Fiscal Year","Required. Pick from the dropdown, or type it as FY 24-25."],
+      ["Campus","Al-Mizan, G-7, I-14, GGC, Lahore, Malakand, PRH, RIH, MHH. 'G7' and 'Al mizan' are read as G-7 and Al-Mizan."],
+      ["Fiscal Year","Required. Pick from the dropdown, e.g. FY 25-26."],
       ["Approved Amount","Rupees, as a number. No commas or 'PKR'."],
-      ["Released Amount","Rupees, as a number."],
+      ["Released Amount","Rupees, as a number. Less than approved means money is still to be released."],
       ["Project Manager","Pick from the dropdown. A name with no portal account imports with no "
                        + "manager, and nobody can be chased about it."],
       ["Status","Open, Closing or Closed. Defaults to Open."],
-      ["Why Still Open","Free text. The reason it has not closed — this is what the page exists "
-                      + "to show, so it is worth writing properly."],
+      ["Why Still Open","In Progress or No progress (dropdown), or a short note."],
+      ["Budget Release Date","YYYY-MM-DD. When the money was released. It also becomes the actual "
+                           + "start, and the time since it is how long the project shows as open."],
+      ["Project Start Date","YYYY-MM-DD. When the work started."],
+      ["Last Follow Up","YYYY-MM-DD, if known. The portal fills this in itself from the follow-up chats."],
       ["Notes","Anything else worth keeping. Optional."],
-      ["Last Followed Up","YYYY-MM-DD, if known. Optional."],
-      ["Planned Start","YYYY-MM-DD. When the project was meant to start. Optional."],
-      ["Planned Finish","YYYY-MM-DD. When it was meant to finish. Must not be before Planned Start."],
-      ["Revised Finish","YYYY-MM-DD. The date it is now expected to finish, if it has moved."],
-      ["Budget Release Date","YYYY-MM-DD. When the money was released. This also becomes the "
-                           + "Actual Start, as it does for current projects."],
-      ["Actual Start","YYYY-MM-DD. Leave blank if a Budget Release Date is given."],
-      ["Actual Finish","YYYY-MM-DD. When the work was really completed (PCD received). "
-                     + "Leave blank while it is still open."],
     ];
     guide.forEach(([k,v],i) => {
       const r=7+i, a=g.getCell(`B${r}`), b=g.getCell(`C${r}`);
@@ -1741,6 +1590,8 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
     title(tip,"Things worth knowing",13);
     [ "These are kept completely separate from FY 26-27. They appear in no current-year total, "
       + "chart, deadline alert or the risk matrix.",
+      "Importing again updates the projects already in the portal (matched by Project ID and name) "
+      + "and adds the new ones; follow-up chats and work breakdowns are kept.",
       "A project manager sees only their own past projects and can reply in the portal. They "
       + "cannot change the reason or close a project — those stay with PMO.",
       "Leave unused rows blank. Empty rows are ignored.",
@@ -1752,7 +1603,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                   printTitlesRow:"1:1" },
     });
     ws.columns = XL_COLS.map((h,i) => ({ header:h,
-      width:[16,46,14,13,18,18,26,12,58,32,17,15,15,15,19,15,15][i] }));
+      width:[16,46,14,13,18,18,26,12,22,19,19,16,40][i] }));
     ws.getRow(1).height=28; ws.getRow(1).eachCell(head);
 
     const names = (pmSuggest||[]).map(p => (p.full_name || p.username))
@@ -1766,17 +1617,29 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
         cell.border={ bottom:{style:"hair",color:{argb:RULE}}, right:{style:"hair",color:{argb:RULE}} };
         if (i % 2 === 0) cell.fill={ type:"pattern", pattern:"solid", fgColor:{argb:"FFF6F9FC"} };
         if (c === 5 || c === 6) cell.numFmt = "#,##0";
-        if (c >= 11) cell.numFmt = "yyyy-mm-dd";
-        if (c === 3 || c === 4 || c === 8) cell.alignment={ horizontal:"center" };
+        if (c >= 10 && c <= 12) { cell.numFmt = "yyyy-mm-dd"; cell.alignment={ horizontal:"center" }; }
+        if (c === 3 || c === 4 || c === 8 || c === 9) cell.alignment={ horizontal:"center" };
       }
       row.getCell(4).dataValidation = { type:"list", allowBlank:true,
         formulae:['"FY 21-22,FY 22-23,FY 23-24,FY 24-25,FY 25-26"'] };
       row.getCell(8).dataValidation = { type:"list", allowBlank:true,
         formulae:['"Open,Closing,Closed"'] };
+      // A suggestion list; a short note is still accepted.
+      row.getCell(9).dataValidation = { type:"list", allowBlank:true, showErrorMessage:false,
+        formulae:[`"${PROGRESS.join(",")}"`] };
       if (names.length) row.getCell(7).dataValidation = { type:"list", allowBlank:true,
         formulae:[`"${names.join(",")}"`] };
     }
-    ws.autoFilter = { from:"A1", to:"Q1" };
+    ws.autoFilter = { from:"A1", to:"M1" };
+    // Today's projects, so the sheet can be edited and brought back.
+    (rows || []).forEach((r, i) => {
+      const row = ws.getRow(i + 2);
+      [r.code, r.name, r.campus, r.fiscal_year, Number(r.approved_amount) || 0, Number(r.released_amount) || 0,
+       r.pm_name || "", (STATUS[r.status] || STATUS.open).label, r.reason_open || "",
+       r.budget_release_date ? new Date(r.budget_release_date) : null, r.start_date ? new Date(r.start_date) : null,
+       r.last_followed_up ? new Date(r.last_followed_up) : null, r.notes || ""]
+        .forEach((v, c) => { row.getCell(c + 1).value = v ?? null; });
+    });
 
     const buf = await wb.xlsx.writeBuffer();
     const url = URL.createObjectURL(new Blob([buf],
@@ -1824,15 +1687,23 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
           ) : (<>
           {/* Summary strip — PMO only; a project manager sees just their own projects. */}
           {seeAll && <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
-            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(5, minmax(0,1fr))" }}>
+            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(6, minmax(0,1fr))" }}>
             {[
-              { k:"Still open",      v:totals.openCount, sub:"from prior years", c:DATA.danger,  Icon:History },
-              { k:"Overdue",         v:totals.overdue, sub:"past their finish date", c:DATA.danger, Icon:CalendarRange },
-              { k:"Value involved",  v:`PKR ${fmtM(totals.value)}`, sub:"approved on open items", c:BRAND.gold, Icon:AlertTriangle },
-              { k:"Not chased",      v:totals.stale, sub:"over 30 days", c:DATA.warning, Icon:Clock },
-              { k:"Never asked",     v:totals.unasked, sub:"no follow-up at all", c:T.muted, Icon:MessageSquare },
-            ].map(({k,v,sub,c,Icon}, i, all) => (
-              <div key={k} className="past-row" style={{ animationDelay:`${i*50}ms`,
+              { k:"Still open",       v:totals.openCount, sub:`${totals.old} open over a year`, c:DATA.danger, Icon:History },
+              { k:"Approved",         v:`PKR ${fmtM(totals.approved)}`, sub:"on open projects", c:BRAND.gold, Icon:CheckCircle2 },
+              { k:"Released",         v:`PKR ${fmtM(totals.released)}`,
+                sub: totals.approved ? `${Math.round(totals.released / totals.approved * 100)}% of approved` : "—", c:DATA.positive, Icon:Download,
+                bar: totals.approved ? totals.released / totals.approved : null },
+              { k:"Still to release", v:`PKR ${fmtM(totals.gap)}`, sub:`${totals.gapCount} project${totals.gapCount===1?"":"s"}`, c:DATA.warning, Icon:AlertTriangle,
+                onClick: totals.gapCount ? () => setProg(p => p === "gap" ? "" : "gap") : null, on: prog === "gap" },
+              { k:"No progress",      v:totals.noProgress, sub:"marked in the sheet", c:DATA.danger, Icon:AlertTriangle,
+                onClick: totals.noProgress ? () => setProg(p => p === "No progress" ? "" : "No progress") : null, on: prog === "No progress" },
+              { k:"Not chased",       v:totals.stale, sub:"over 30 days", c:T.muted, Icon:Clock },
+            ].map(({k,v,sub,c,Icon,bar,onClick,on}, i, all) => (
+              <div key={k} className="past-row" onClick={onClick || undefined} role={onClick ? "button" : undefined}
+                title={onClick ? (on ? "Show all" : `Show only these`) : undefined}
+                style={{ animationDelay:`${i*50}ms`, cursor: onClick ? "pointer" : "default",
+                outline: on ? `2px solid ${c}` : "none",
                 // Five cards in a two-column phone grid: the last one takes the row.
                 gridColumn: isCompact && all.length % 2 && i === all.length - 1 ? "1 / -1" : undefined,
                 position:"relative", overflow:"hidden", padding:`${SP.md}px ${SP.lg}px`,
@@ -1848,14 +1719,20 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                 <div style={{ position:"relative", ...TYPE.metricSm, fontSize:24, color:T.text,
                   marginTop:6, lineHeight:1.1 }}>{v}</div>
                 <div style={{ position:"relative", ...TYPE.caption, color:T.dim, marginTop:2 }}>{sub}</div>
+                {bar != null && (
+                  <div style={{ position:"relative", height:4, borderRadius:R.pill, background:T.card2, marginTop:6, overflow:"hidden" }}>
+                    <div style={{ width:`${Math.min(bar,1)*100}%`, height:"100%", background:c }} />
+                  </div>
+                )}
               </div>
             ))}
           </div>}
           {!seeAll && (
             <div style={{ marginBottom:SP.lg, padding:`${SP.md}px ${SP.lg}px`, borderRadius:R.lg, background:T.surface,
               border:`1px solid ${T.border}`, fontSize:13, color:T.textSoft, lineHeight:1.6 }}>
-              Your projects from earlier fiscal years that are still being followed up. Reply to the PMO on a project's
-              Follow-up tab, or use <b>Chat with PMO</b> for all of them at once.
+              Projects from earlier fiscal years still being followed up: what was approved and released, and how
+              long each has been open since its budget release. Reply to the PMO on a project's Follow-up tab, or use
+              <b> Chat with PMO</b> for all of them at once.
             </div>
           )}
 
@@ -1863,8 +1740,26 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
           <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", alignItems:"center",
             marginBottom:SP.md }}>
             <Input T={T} icon={Search} value={q} onChange={e => setQ(e.target.value)}
-              onClear={() => setQ("")} placeholder="Search name, code or reason…"
-              style={{ flex:"0 1 300px", minWidth:160 }} />
+              onClear={() => setQ("")} placeholder="Search name, ID, campus or manager…"
+              style={{ flex:"0 1 280px", minWidth:160 }} />
+            {view !== "pms" && (
+              <Select T={T} value={groupBy} onChange={e => setGroupBy(e.target.value)} aria-label="Group by">
+                <option value="campus">Group by campus</option>
+                <option value="fy">Group by fiscal year</option>
+                {seeAll && <option value="pm">Group by manager</option>}
+              </Select>
+            )}
+            {campuses.length > 1 && (
+              <Select T={T} value={campus} onChange={e => setCampus(e.target.value)}>
+                <option value="">All campuses</option>
+                {campuses.map(c => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            )}
+            <Select T={T} value={prog} onChange={e => setProg(e.target.value)}>
+              <option value="">Any progress</option>
+              {PROGRESS.map(x => <option key={x} value={x}>{x}</option>)}
+              <option value="gap">Money still to release</option>
+            </Select>
             <Select T={T} value={fy} onChange={e => setFy(e.target.value)}>
               <option value="">All fiscal years</option>
               {years.map(y => <option key={y} value={y}>{y}</option>)}
@@ -1906,7 +1801,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               {isPMO && (
                 <>
                   <Button T={T} variant="ghost" icon={Download} onClick={downloadTemplate}>
-                    Template
+                    Download sheet
                   </Button>
                   <Button T={T} variant="primary" icon={Upload} onClick={() => setImporting(true)}>
                     Import
@@ -1922,8 +1817,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
             <PmsView T={T} rows={rows} unread={unread} lastByPm={lastByPm} isCompact={isCompact}
               onOpen={(id) => setChatPm(id)} />
           ) : view === "timeline" ? (
-            <PastGantt T={T} list={list} rollup={rollup} isCompact={isCompact}
-              onOpen={(r) => setOpenId(r.id)} />
+            <PastAging T={T} groups={groups} isCompact={isCompact} onOpen={(r) => setOpenId(r.id)} />
           ) : groups.length === 0 ? (
             <div style={{ padding:SP.xxl, textAlign:"center", background:T.surface,
               border:`1px solid ${T.border}`, borderRadius:R.lg, color:T.muted, fontSize:13 }}>
@@ -1931,8 +1825,8 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
             </div>
           ) : groups.map(([year, items], gi) => {
             const shut = collapsed[year];
-            const openVal = items.filter(r => r.status !== "closed")
-                                 .reduce((s,r) => s + (parseFloat(r.approved_amount)||0), 0);
+            const sumOf = (k) => items.reduce((s,r) => s + (parseFloat(r[k])||0), 0);
+            const gApp = sumOf("approved_amount"), gRel = sumOf("released_amount");
             return (
               <div key={year} style={{ marginBottom:SP.lg }}>
                 <button className="pmo-focusable pmo-btn"
@@ -1943,77 +1837,90 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                   {shut ? <ChevronRight size={14} color={T.muted} /> : <ChevronDown size={14} color={T.muted} />}
                   <span style={{ ...TYPE.label, color:T.text, fontSize:11 }}>{year}</span>
                   <span style={{ ...TYPE.caption, color:T.dim }}>
-                    {items.length} project{items.length===1?"":"s"} · PKR {fmtM(openVal)} open
+                    {items.length} project{items.length===1?"":"s"} · PKR {fmtM(gApp)} approved · {fmtM(gRel)} released
                   </span>
+                  {gApp > 0 && (
+                    <span aria-hidden="true" style={{ flex:"0 0 80px", height:4, borderRadius:R.pill, background:T.card2, overflow:"hidden" }}>
+                      <span style={{ display:"block", width:`${Math.min(gRel/gApp,1)*100}%`, height:"100%",
+                        background: gRel >= gApp ? DATA.positive : DATA.warning }} />
+                    </span>
+                  )}
                 </button>
 
                 {!shut && (
                   <div style={{ display:"flex", flexDirection:"column", gap:SP.sm }}>
                     {items.map((r, i) => {
                       const st = STATUS[r.status] || STATUS.open;
+                      const ag = ageOf(r), am = AGE[ag.key], pg = progressOf(r);
+                      const gap = gapOf(r), pct = relPct(r);
                       const stale = (r.days_since_followup ?? 9999) > 30 && r.status !== "closed";
+                      const hot = hover === r.id;
                       const on = CAN_HOVER ? { onMouseEnter:() => setHover(r.id),
                                                onMouseLeave:() => setHover(null) } : {};
+                      const meta = [groupBy !== "campus" && r.campus, groupBy !== "pm" && (r.pm_name || "No project manager"),
+                                    groupBy !== "fy" && r.fiscal_year].filter(Boolean);
                       return (
                         <div key={r.id} {...on} onClick={() => setOpenId(r.id)}
                           className="past-row" style={{ animationDelay:`${Math.min(i,8)*40 + gi*60}ms`,
                             position:"relative", overflow:"hidden", cursor:"pointer",
                             display:"flex", alignItems:"stretch", gap:SP.md,
                             padding:`${SP.md}px ${SP.lg}px`,
-                            background: hover === r.id ? T.surfaceRaised : T.surface,
-                            border:`1px solid ${hover === r.id ? T.borderStrong : T.border}`,
+                            background: hot ? T.surfaceRaised : T.surface,
+                            border:`1px solid ${hot ? T.borderStrong : T.border}`,
                             borderRadius:R.lg,
-                            boxShadow: hover === r.id ? T.glowSoft(st.color) : T.shadow,
-                            transform: hover === r.id ? "translateY(-1px)" : "none",
+                            boxShadow: hot ? T.glowSoft(am.color) : T.shadow,
+                            transform: hot ? "translateY(-1px)" : "none",
                             transition:`background ${MOTION.fast}, border-color ${MOTION.fast},
                                         box-shadow ${MOTION.base}, transform ${MOTION.base}` }}>
-                          <span aria-hidden="true" style={{ width:3, borderRadius:2,
-                            background:st.color, flexShrink:0,
-                            opacity: hover === r.id ? 1 : .75,
+                          <span aria-hidden="true" title={am.label} style={{ width:3, borderRadius:2,
+                            background:am.color, flexShrink:0, opacity: hot ? 1 : .75,
                             transition:`opacity ${MOTION.fast}` }} />
 
                           <div style={{ flex:1, minWidth:0 }}>
                             <div style={{ display:"flex", alignItems:"baseline", gap:8, flexWrap:"wrap" }}>
                               {r.code && <span style={{ ...TYPE.mono, fontSize:9.5, color:T.dim }}>{r.code}</span>}
                               <span style={{ fontSize:13.5, color:T.text, fontWeight:600 }}>{r.name}</span>
-                              {stale && (
-                                <span className="past-dot" style={{ display:"inline-flex",
-                                  alignItems:"center", gap:4, ...TYPE.caption,
-                                  color:T.textOf(DATA.warning) }}>
-                                  <Clock size={10} /> stale
-                                </span>
-                              )}
-                              {(() => {
-                                const sc = scheduleOf(r);
-                                return sc.key === "overdue" && (
-                                  <span style={{ display:"inline-flex", alignItems:"center", gap:4,
-                                    ...TYPE.caption, fontWeight:700, color:T.textOf(DATA.danger) }}>
-                                    <CalendarRange size={10} /> overdue {span(sc.days)}
-                                  </span>
-                                );
-                              })()}
                             </div>
                             <div style={{ ...TYPE.caption, color:T.muted, marginTop:3 }}>
-                              {r.campus || "No campus"} · {r.pm_name || "No project manager"} · {ago(r.days_since_followup)}
+                              {meta.join(" · ")}{meta.length ? " · " : ""}
+                              {ag.days == null ? "no release date" : `released ${fmtDate(r.budget_release_date || r.start_date)} · open ${span(ag.days)}`}
                             </div>
-                            {r.reason_open && (
-                              <div style={{ fontSize:12, color:T.textSoft, marginTop:6, lineHeight:1.55,
-                                display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical",
-                                overflow:"hidden" }}>{r.reason_open}</div>
-                            )}
+                            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:7, alignItems:"center" }}>
+                              <span style={{ ...TYPE.caption, fontWeight:700, padding:"1px 8px", borderRadius:R.pill,
+                                background:`${pg.color}${T.badge}`, color:T.textOf(pg.color) }}>{pg.label}</span>
+                              {pg.text && <span style={{ fontSize:11.5, color:T.textSoft, overflow:"hidden", textOverflow:"ellipsis",
+                                whiteSpace:"nowrap", maxWidth:360 }}>{pg.text}</span>}
+                              {gap > 0 && (
+                                <span style={{ ...TYPE.caption, fontWeight:700, padding:"1px 8px", borderRadius:R.pill,
+                                  background:`${DATA.warning}${T.badge}`, color:T.textOf(DATA.warning) }}>
+                                  PKR {fmtM(gap)} still to release</span>
+                              )}
+                              {r.status !== "open" && (
+                                <span style={{ ...TYPE.caption, fontWeight:700, padding:"1px 8px", borderRadius:R.pill,
+                                  background:`${st.color}${T.badge}`, color:T.textOf(st.color) }}>{st.label}</span>
+                              )}
+                              <span style={{ ...TYPE.caption, color: stale ? T.textOf(DATA.warning) : T.dim,
+                                display:"inline-flex", alignItems:"center", gap:4 }}>
+                                {stale && <Clock size={10} />}{ago(r.days_since_followup)}
+                              </span>
+                            </div>
                           </div>
 
                           <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end",
-                            justifyContent:"space-between", flexShrink:0, gap:6 }}>
+                            justifyContent:"space-between", flexShrink:0, gap:6, minWidth: isCompact ? 76 : 120 }}>
                             <span style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
                               <UnreadDot T={T} n={unread[`project:${r.id}`] || 0} />
-                              <span style={{ ...TYPE.caption, fontWeight:700, padding:"2px 9px",
-                                borderRadius:R.pill, background:`${st.color}${T.badge}`,
-                                color:T.textOf(st.color), whiteSpace:"nowrap" }}>{st.label}</span>
+                              <span style={{ fontSize:13, fontWeight:700, color:T.text }}>{fmtM(r.approved_amount)}</span>
                             </span>
-                            <div style={{ textAlign:"right" }}>
-                              <div style={{ fontSize:12.5, fontWeight:700, color:T.text }}>
-                                {fmtM(r.approved_amount)}
+                            <div style={{ width:"100%", textAlign:"right" }}>
+                              {pct != null && (
+                                <div title={`Released PKR ${fmtM(r.released_amount)} of ${fmtM(r.approved_amount)}`}
+                                  style={{ height:4, borderRadius:R.pill, background:T.card2, overflow:"hidden", marginBottom:3 }}>
+                                  <div style={{ width:`${pct}%`, height:"100%", background: pct >= 100 ? DATA.positive : DATA.warning }} />
+                                </div>
+                              )}
+                              <div style={{ ...TYPE.caption, color:T.dim }}>
+                                {pct == null ? "no amount" : `${Math.round(pct)}% released`}
                               </div>
                               <div style={{ ...TYPE.caption, color:T.dim }}>
                                 {r.update_count ? `${r.update_count} message${r.update_count===1?"":"s"}` : "not asked"}
@@ -2034,7 +1941,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
 
       {importing && (
         <ImportModal T={T} session={session} supa={supa} pms={pmAccounts}
-          existingCount={rows.length} isCompact={isCompact}
+          existing={rows} isCompact={isCompact}
           onClose={() => setImporting(false)} onDone={load} />
       )}
 
