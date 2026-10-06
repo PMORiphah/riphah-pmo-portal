@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { PackageCheck, Sparkles, Plus, Pencil, Undo2, Check, X, TrendingUp, TrendingDown, FileText } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
-import { Button, Surface, CAN_HOVER } from "./ui.jsx";
+import { Button, CAN_HOVER } from "./ui.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    DELIVERABLES (PMO, 6 Oct 2026)
@@ -25,6 +25,8 @@ export const DELIV_STATUS = {
   handed_over: { label:"Handed over", color:DATA.positive },
 };
 const DONE = new Set(["delivered", "installed", "handed_over"]);
+// Done · item · qty · unit cost · total · note · tools
+const GRID = "24px minmax(0,1fr) 90px 100px 110px minmax(120px,200px) 44px";
 const money = (n, cur = "PKR") => n == null ? "—" : `${cur === "PKR" ? "" : cur + " "}${Number(n).toLocaleString("en", { maximumFractionDigits: 2 })}`;
 const qtyText = (r) => r.qty == null ? "—" : `${Number(r.qty).toLocaleString("en")}${r.unit ? ` ${r.unit}` : ""}`;
 const fmtDay = (s) => s ? new Date(String(s).slice(0,10) + "T00:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }) : "";
@@ -117,62 +119,38 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
 
   if (rows === null) return <div style={{ padding:SP.lg, color:T.muted, fontSize:13 }}>Loading deliverables…</div>;
 
-  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm, padding:"6px 9px",
-    fontSize:12.5, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", boxSizing:"border-box" };
   const pct = active.length ? done / active.length * 100 : 0;
 
   return (
     <div>
-      {/* Summary */}
-      <Surface T={T} tone={BRAND.gold} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.lg }}>
-        <div style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap" }}>
-          <PackageCheck size={16} color={T.textOf(BRAND.gold)} />
-          <span style={{ ...TYPE.label, color:T.text }}>Deliverables</span>
-          {pddLabel && <span style={{ ...TYPE.caption, color:T.muted }}>from {pddLabel}</span>}
-          {!fromPdd && active.length > 0 && <span style={{ ...TYPE.caption, color:T.muted }}>from the charter</span>}
-          {isPMO && (
-            <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm, flexWrap:"wrap" }}>
-              {!fromPdd && (
-                <Button T={T} size="sm" variant="ghost" icon={Sparkles} onClick={readCharter} loading={busy === "read"}>
-                  {active.some(r => r.source === "charter") ? "Read the charter again" : "Read the charter"}
-                </Button>
-              )}
-              <Button T={T} size="sm" variant="ghost" icon={Plus} onClick={() => setEdit({})}>Add deliverable</Button>
-            </div>
-          )}
-        </div>
-        <div style={{ display:"grid", gap:SP.md, marginTop:SP.md,
-          gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(3, minmax(0,1fr))" }}>
-          <div>
-            <div style={{ ...TYPE.caption, color:T.dim }}>Delivered or further</div>
-            <div style={{ fontSize:18, fontWeight:700, color:T.text }}>{done} <span style={{ fontSize:13, color:T.muted }}>of {active.length}</span></div>
-          </div>
-          <div>
-            <div style={{ ...TYPE.caption, color:T.dim }}>Value of the items</div>
-            <div style={{ fontSize:15, fontWeight:700, color:T.text }}>
-              {Object.keys(totals).length ? Object.entries(totals).map(([c, v]) => `${c} ${Number(v).toLocaleString("en")}`).join(" · ") : "—"}
-            </div>
-          </div>
-          {!isCompact && (
-            <div>
-              <div style={{ ...TYPE.caption, color:T.dim }}>By status</div>
-              <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginTop:3 }}>
-                {Object.entries(DELIV_STATUS).map(([k, s]) => {
-                  const n = active.filter(r => r.status === k).length;
-                  return n ? <span key={k} style={{ ...TYPE.caption, fontWeight:700, padding:"1px 7px", borderRadius:R.pill,
-                    background:`${s.color}${T.badge}`, color:T.textOf(s.color) }}>{s.label} {n}</span> : null;
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+      {/* Summary: one line */}
+      <div style={{ display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap", marginBottom:SP.md }}>
+        <PackageCheck size={16} color={T.textOf(BRAND.gold)} />
+        <span style={{ fontSize:14, fontWeight:700, color:T.text }}>
+          {done} of {active.length} delivered
+        </span>
+        {Object.keys(totals).length > 0 && (
+          <span style={{ ...TYPE.caption, color:T.muted }}>
+            {Object.entries(totals).map(([c, v]) => `${c} ${Number(v).toLocaleString("en")}`).join(" · ")}
+          </span>
+        )}
+        <span style={{ ...TYPE.caption, color:T.dim }}>{pddLabel ? `from ${pddLabel}` : active.length ? "from the charter" : ""}</span>
         {active.length > 0 && (
-          <div style={{ height:6, borderRadius:R.pill, background:T.card2, marginTop:SP.md, overflow:"hidden" }}>
-            <div style={{ width:`${pct}%`, height:"100%", background:`linear-gradient(90deg, ${DATA.warning}, ${DATA.positive})`,
-              transition:`width ${MOTION.base}` }} />
+          <span aria-hidden="true" style={{ flex:"1 1 120px", maxWidth:240, height:5, borderRadius:R.pill, background:T.card2, overflow:"hidden" }}>
+            <span style={{ display:"block", width:`${pct}%`, height:"100%", background:DATA.positive, transition:`width ${MOTION.base}` }} />
+          </span>
+        )}
+        {isPMO && (
+          <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm, flexWrap:"wrap" }}>
+            {!fromPdd && (
+              <Button T={T} size="sm" variant="ghost" icon={Sparkles} onClick={readCharter} loading={busy === "read"}>
+                {active.some(r => r.source === "charter") ? "Read the charter again" : "Read the charter"}
+              </Button>
+            )}
+            <Button T={T} size="sm" variant="ghost" icon={Plus} onClick={() => setEdit({})}>Add item</Button>
           </div>
         )}
-      </Surface>
+      </div>
 
       {drafts.length > 0 && (
         <div style={{ display:"flex", gap:SP.sm, alignItems:"center", flexWrap:"wrap", marginBottom:SP.md, padding:"10px 13px",
@@ -195,70 +173,84 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
           {isPMO ? " Read the charter to draft the list, or add the items yourself." : " The PMO will add them from the project's charter."}
         </div>
       ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:SP.sm }}>
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:R.lg, overflow:"hidden", background:T.surface }}>
+          {!isCompact && (
+            <div style={{ display:"grid", gridTemplateColumns:GRID, gap:SP.sm, padding:"7px 12px",
+              background:T.card2, ...TYPE.label, fontSize:9.5, color:T.dim }}>
+              <span title="Delivered" style={{ display:"inline-flex", justifyContent:"center" }}><Check size={11} /></span><span>Item</span><span style={{ textAlign:"right" }}>Qty</span>
+              <span style={{ textAlign:"right" }}>Unit cost</span><span style={{ textAlign:"right" }}>Total</span><span>Note</span><span />
+            </div>
+          )}
           {active.map((r, i) => {
-            const st = DELIV_STATUS[r.status] || DELIV_STATUS.not_started;
+            const isDone = DONE.has(r.status);
             const up = r.prev_total != null && r.total != null && Number(r.total) > Number(r.prev_total);
+            const hot = hover === r.id;
             const on = CAN_HOVER ? { onMouseEnter:() => setHover(r.id), onMouseLeave:() => setHover(null) } : {};
+            const toggle = () => canUpdate && busy !== r.id && patch(r.id, isDone
+              ? { status:"not_started", status_date:null }
+              : { status:"delivered", status_date:new Date().toISOString().slice(0,10) });
+            const box = (
+              <button onClick={toggle} disabled={!canUpdate || busy === r.id} aria-pressed={isDone}
+                aria-label={isDone ? "Delivered; untick" : "Mark delivered"} title={isDone && r.status_date ? `Delivered ${fmtDay(r.status_date)}` : "Mark delivered"}
+                className="pmo-focusable"
+                style={{ width:20, height:20, borderRadius:5, flexShrink:0, cursor: canUpdate ? "pointer" : "default",
+                  display:"inline-flex", alignItems:"center", justifyContent:"center", padding:0,
+                  background: isDone ? DATA.positive : "transparent",
+                  border:`1.5px solid ${isDone ? DATA.positive : T.borderStrong}`, transition:`all ${MOTION.fast}` }}>
+                {isDone && <Check size={13} color="#fff" strokeWidth={3} />}
+              </button>
+            );
+            const priceTag = r.price_changed_at && (
+              <span title={`Price changed ${fmtDay(r.price_changed_at)}: was ${money(r.prev_total, r.currency)}`}
+                style={{ display:"inline-flex", alignItems:"center", gap:3, marginLeft:6, ...TYPE.caption, fontWeight:700,
+                  color:T.textOf(up ? DATA.danger : DATA.positive) }}>
+                {up ? <TrendingUp size={11} /> : <TrendingDown size={11} />}was {money(r.prev_total, r.currency)}
+              </span>
+            );
+            const tools = isPMO && (
+              <span style={{ display:"inline-flex", gap:2, opacity: hot || isCompact ? 1 : 0, transition:`opacity ${MOTION.fast}` }}>
+                <button className="pmo-focusable pmo-btn" onClick={() => setEdit(r)} title="Edit item"
+                  style={{ background:"none", border:"none", color:T.dim, cursor:"pointer", padding:3 }}><Pencil size={12} /></button>
+                <button className="pmo-focusable pmo-btn" onClick={() => patch(r.id, { superseded: true })} title="Set aside"
+                  style={{ background:"none", border:"none", color:T.dim, cursor:"pointer", padding:3 }}><X size={13} /></button>
+              </span>
+            );
+            const title = (
+              <span style={{ fontSize:13, color: isDone ? T.muted : T.text, fontWeight:600, lineHeight:1.4,
+                textDecoration: isDone ? "line-through" : "none", textDecorationColor:`${T.muted}88`, overflowWrap:"anywhere" }}>
+                {r.title}
+                {!r.confirmed && <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(BRAND.gold), marginLeft:6 }}>draft</span>}
+                {priceTag}
+              </span>
+            );
+            const note = canUpdate
+              ? <NoteField T={T} value={r.note || ""} onSave={v => patch(r.id, { note: v || null })} />
+              : <span style={{ fontSize:12, color:T.muted }}>{r.note || ""}</span>;
+            const rowStyle = { borderTop: i ? `1px solid ${T.border}` : "none", background: hot ? T.surfaceRaised : "transparent",
+              transition:`background ${MOTION.fast}` };
+            if (isCompact) return (
+              <div key={r.id} {...on} style={{ ...rowStyle, display:"flex", gap:10, padding:"9px 12px", alignItems:"flex-start" }}>
+                <span style={{ paddingTop:1 }}>{box}</span>
+                <div style={{ flex:1, minWidth:0 }}>
+                  {title}
+                  <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>
+                    {qtyText(r)}{r.total != null ? ` · ${r.currency} ${Number(r.total).toLocaleString("en")}` : ""}
+                  </div>
+                  <div style={{ marginTop:4 }}>{note}</div>
+                </div>
+                {tools}
+              </div>
+            );
             return (
-              <div key={r.id} {...on} style={{ display:"flex", gap:SP.md, alignItems:"stretch", flexWrap: isCompact ? "wrap" : "nowrap",
-                padding:`${SP.md}px ${SP.lg}px`, borderRadius:R.lg, background: hover === r.id ? T.surfaceRaised : T.surface,
-                border:`1px solid ${r.confirmed ? T.border : `${BRAND.gold}66`}`,
-                boxShadow: hover === r.id ? T.glowSoft(st.color) : T.shadow, transition:`background ${MOTION.fast}, box-shadow ${MOTION.base}` }}>
-                <span aria-hidden="true" style={{ width:3, borderRadius:2, background:st.color, flexShrink:0 }} />
-                <div style={{ flex:"1 1 260px", minWidth:0 }}>
-                  <div style={{ display:"flex", gap:8, alignItems:"baseline", flexWrap:"wrap" }}>
-                    <span style={{ ...TYPE.mono, fontSize:10, color:T.dim }}>{i + 1}</span>
-                    <span style={{ fontSize:13.5, fontWeight:600, color:T.text, whiteSpace:"pre-wrap", overflowWrap:"anywhere" }}>{r.title}</span>
-                    {!r.confirmed && <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(BRAND.gold) }}>draft</span>}
-                    {r.source === "pmo" && <span style={{ ...TYPE.caption, color:T.dim }}>added by the PMO</span>}
-                  </div>
-                  <div style={{ ...TYPE.caption, color:T.muted, marginTop:4, display:"flex", gap:10, flexWrap:"wrap" }}>
-                    <span>Qty {qtyText(r)}</span>
-                    {r.unit_cost != null && <span>Unit {money(r.unit_cost, r.currency)}</span>}
-                    {r.total != null && <span style={{ color:T.text, fontWeight:700 }}>Total {r.currency} {Number(r.total).toLocaleString("en")}</span>}
-                  </div>
-                  {r.price_changed_at && (
-                    <div style={{ display:"inline-flex", alignItems:"center", gap:5, marginTop:6, padding:"2px 9px", borderRadius:R.pill,
-                      background:`${up ? DATA.danger : DATA.positive}${T.badge}`, color:T.textOf(up ? DATA.danger : DATA.positive),
-                      ...TYPE.caption, fontWeight:700 }}>
-                      {up ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                      Price changed {fmtDay(r.price_changed_at)}: was {money(r.prev_total, r.currency)}
-                      {r.prev_unit_cost != null ? ` (unit ${money(r.prev_unit_cost, r.currency)})` : ""}, now {money(r.total, r.currency)}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ display:"flex", flexDirection:"column", gap:6, flex: isCompact ? "1 1 100%" : "0 0 300px" }}>
-                  <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
-                    {canUpdate ? (
-                      <select value={r.status} disabled={busy === r.id} aria-label="Status"
-                        onChange={e => patch(r.id, { status: e.target.value,
-                          status_date: r.status_date || new Date().toISOString().slice(0,10) })}
-                        style={{ ...inp, fontWeight:700, color:T.textOf(st.color), borderColor:`${st.color}88`, flex:"1 1 130px" }}>
-                        {Object.entries(DELIV_STATUS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-                      </select>
-                    ) : (
-                      <span style={{ ...TYPE.caption, fontWeight:700, padding:"3px 10px", borderRadius:R.pill,
-                        background:`${st.color}${T.badge}`, color:T.textOf(st.color) }}>{st.label}</span>
-                    )}
-                    {canUpdate ? (
-                      <input type="date" value={r.status_date || ""} aria-label="Status date" disabled={busy === r.id}
-                        onChange={e => patch(r.id, { status_date: e.target.value || null })} style={{ ...inp, flex:"1 1 120px" }} />
-                    ) : r.status_date && <span style={{ ...TYPE.caption, color:T.dim }}>{fmtDay(r.status_date)}</span>}
-                  </div>
-                  {canUpdate ? (
-                    <NoteField T={T} value={r.note || ""} inp={inp} onSave={v => patch(r.id, { note: v || null })} />
-                  ) : r.note && <div style={{ fontSize:12, color:T.textSoft }}>{r.note}</div>}
-                  {isPMO && (
-                    <div style={{ display:"flex", gap:6, justifyContent:"flex-end" }}>
-                      <button className="pmo-focusable pmo-btn" onClick={() => setEdit(r)} title="Edit item"
-                        style={{ background:"none", border:"none", color:T.dim, cursor:"pointer", padding:2 }}><Pencil size={13} /></button>
-                      <button className="pmo-focusable pmo-btn" onClick={() => patch(r.id, { superseded: true })} title="Set aside"
-                        style={{ background:"none", border:"none", color:T.dim, cursor:"pointer", padding:2 }}><X size={14} /></button>
-                    </div>
-                  )}
-                </div>
+              <div key={r.id} {...on} style={{ ...rowStyle, display:"grid", gridTemplateColumns:GRID, gap:SP.sm,
+                padding:"7px 12px", alignItems:"center" }}>
+                {box}
+                {title}
+                <span style={{ fontSize:12.5, color:T.textSoft, textAlign:"right", whiteSpace:"nowrap" }}>{qtyText(r)}</span>
+                <span style={{ fontSize:12.5, color:T.textSoft, textAlign:"right", whiteSpace:"nowrap" }}>{money(r.unit_cost, r.currency)}</span>
+                <span style={{ fontSize:12.5, color:T.text, fontWeight:700, textAlign:"right", whiteSpace:"nowrap" }}>{money(r.total, r.currency)}</span>
+                {note}
+                {tools || <span />}
               </div>
             );
           })}
@@ -293,14 +285,18 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
   );
 }
 
-function NoteField({ T, value, inp, onSave }) {
+function NoteField({ T, value, onSave }) {
   const [v, setV] = useState(value);
+  const [focus, setFocus] = useState(false);
   useEffect(() => setV(value), [value]);
   return (
-    <input value={v} onChange={e => setV(e.target.value)} placeholder="Note (e.g. supplier, GRN, where it is)"
-      onBlur={() => { if (v !== value) onSave(v.trim()); }}
-      onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
-      style={{ ...inp, width:"100%" }} />
+    <input value={v} onChange={e => setV(e.target.value)} placeholder="+ note" maxLength={200}
+      onFocus={() => setFocus(true)}
+      onBlur={() => { setFocus(false); if (v !== value) onSave(v.trim()); }}
+      onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setV(value); e.currentTarget.blur(); } }}
+      style={{ width:"100%", boxSizing:"border-box", fontSize:12, fontFamily:TYPE.body.fontFamily, color:T.textSoft,
+        padding:"4px 7px", borderRadius:R.sm, outline:"none",
+        background: focus ? T.inputBg : "transparent", border:`1px solid ${focus ? T.inputBorder : "transparent"}` }} />
   );
 }
 
