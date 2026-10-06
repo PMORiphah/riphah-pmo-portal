@@ -8,6 +8,7 @@ import { useNear } from "./presence.jsx";
 import { useSpeech } from "./speech.js";
 import { track } from "./sessionTrack.js";
 import { AssistantAvatar, AssistantLauncher, launcherLift } from "./AssistantAvatar.jsx";
+import { useTour } from "./TourGuide.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    ASK — the portal assistant
@@ -20,6 +21,19 @@ import { AssistantAvatar, AssistantLauncher, launcherLift } from "./AssistantAva
    The panel shows what each answer was based on ("30 of 105 projects"), so a
    figure can always be traced back to rows rather than taken on trust.
    ═══════════════════════════════════════════════════════════════════════════ */
+
+// A Project Manager sees only their own projects, so portfolio-wide starters
+// ("risks on Ferozpur", "no project manager") would mostly answer "none".
+const PM_STARTERS = [
+  "Show me around the portal",
+  "Which of my projects are overdue?",
+  "What stage are my projects at?",
+  "How much has been released on my projects?",
+];
+
+// Asking for help using the portal is answered here, without the server: the
+// assistant offers the guided tour (Guest and Project Manager, desktop only).
+const TOUR_RE = /\b(tour|show me around|walk ?(me )?through|guide me|get(ting)? started|new here|what can i do here|how (does|do) (this|the) portal work|how (do|can|should) i (use|start|update|add|record|post|enter|fill))\b/i;
 
 const STARTERS = [
   "How much has been released across the portfolio?",
@@ -220,7 +234,7 @@ function HeadlineCard({ T, headline }) {
   );
 }
 
-function Bubble({ T, msg, speech, id }) {
+function Bubble({ T, msg, speech, id, onStartTour }) {
   const mine = msg.role === "user";
   const talking = speech?.speakingId === id;
   return (
@@ -238,6 +252,15 @@ function Bubble({ T, msg, speech, id }) {
           <>
             {msg.headline && <HeadlineCard T={T} headline={msg.headline} />}
             <Rendered T={T} text={msg.content} />
+            {msg.tourOffer && onStartTour && (
+              <button onClick={onStartTour} className="pmo-focusable pmo-btn"
+                style={{ marginTop: SP.sm, display: "inline-flex", alignItems: "center", gap: 7,
+                  padding: "8px 16px", borderRadius: R.sm, border: "none", cursor: "pointer",
+                  background: `linear-gradient(135deg, ${BRAND.gold}, #C47818)`,
+                  color: "#1A1206", fontWeight: 700, fontSize: 13 }}>
+                <Sparkles size={13} /> Start tour
+              </button>
+            )}
           </>
         )}
         {!mine && (msg.used || speech?.supported) && (
@@ -286,6 +309,10 @@ export function AskPanel({ T, session, supa, isCompact }) {
   const [busy, setBusy]   = useState(false);
   const [err, setErr]     = useState(null);
   const speech  = useSpeech();
+  const tour    = useTour();
+  const role    = session?.role;
+  const isPM    = role === "project_manager";
+  const tourRole = role === "guest" || isPM;
   const endRef  = useRef(null);
   const inputRef = useRef(null);
 
@@ -311,6 +338,17 @@ export function AskPanel({ T, session, supa, isCompact }) {
     setQ(""); setErr(null); setBusy(true);
     const next = [...msgs, { role: "user", content: question }];
     setMsgs(next);
+    if (tourRole && TOUR_RE.test(question)) {
+      const answer = isCompact
+        ? "The guided tour runs on a computer, where there's room to show each part of the portal. Sign in on a desktop or laptop and ask me again, or press **Take the tour** in the sidebar there."
+        : isPM
+          ? "Happy to. I'll walk you through your projects, the work breakdown (WBS) where you record progress, how to reach the PMO and your account settings. It takes about three minutes."
+          : "Happy to. I'll walk you through the dashboard, the registers and one project in full. It takes about two minutes.";
+      setMsgs([...next, { role: "assistant", content: answer, tourOffer: !isCompact }]);
+      track("chat", question, { answer, used: { tour_offer: true } });
+      setBusy(false);
+      return;
+    }
     try {
       const r = await supa("/functions/v1/ask", {
         method: "POST",
@@ -332,7 +370,13 @@ export function AskPanel({ T, session, supa, isCompact }) {
       setErr(e?.message || "The assistant could not be reached.");
     }
     setBusy(false);
-  }, [q, busy, msgs, supa, session]);
+  }, [q, busy, msgs, supa, session, tourRole, isPM, isCompact]);
+
+  // Close the panel first: the tour's spotlight must not sit under the dialog.
+  const startTour = useCallback(() => {
+    close();
+    setTimeout(() => tour?.startDefault?.(), 380);
+  }, [close, tour]);
 
   const panelW = isCompact ? "100%" : 460;
 
@@ -427,7 +471,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
                   </div>
                   <div style={{ ...TYPE.label, color: T.muted, marginBottom: SP.sm }}>Try</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {STARTERS.map((s) => (
+                    {(isPM ? PM_STARTERS : STARTERS).map((s) => (
                       <button key={s} onClick={() => send(s)} className="pmo-focusable pmo-btn"
                         style={{ textAlign: "left", padding: "8px 11px", borderRadius: R.md,
                           background: T.card2, border: `1px solid ${T.border}`,
@@ -446,7 +490,8 @@ export function AskPanel({ T, session, supa, isCompact }) {
                 </div>
               )}
 
-              {msgs.map((m, i) => <Bubble key={i} T={T} msg={m} speech={speech} id={i} />)}
+              {msgs.map((m, i) => <Bubble key={i} T={T} msg={m} speech={speech} id={i}
+                onStartTour={m.tourOffer && tourRole && !isCompact ? startTour : undefined} />)}
 
               {busy && (
                 <div style={{ display: "flex", alignItems: "center", gap: 2, color: T.muted }}>

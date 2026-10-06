@@ -20,7 +20,7 @@ import { saveSession, loadSession, clearSession, renewSession, revokeSession,
 import { SessionDetail } from "./SessionDetail.jsx";
 import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
-import { guestSteps } from "./tourSteps.js";
+import { guestSteps, pmSteps } from "./tourSteps.js";
 import { InvestmentsTab } from "./InvestmentsTab.jsx";
 import { InstallPrompt } from "./InstallPrompt.jsx";
 import { BiometricButton } from "./BiometricButton.jsx";
@@ -303,16 +303,16 @@ const PMO_NAV = [
 // Offered once per account (see tutorial_offered_at above), never for PMO.
 // Builds its own step list by role and calls the tour directly — nothing
 // upstream needs to know what a "tour" is beyond rendering this card.
-// Guest-only — a Project Manager is never offered this card at all (see the
-// gating effect below), so the isPM branching that used to live here is
-// unreachable and removed rather than left as dead code.
-function TourInviteCard({ T, show, role, name, onDismiss, onAccept }) {
+// Guests and, since 6 Oct 2026, Project Managers (their own tour, pmSteps).
+// The tour itself comes from TourProvider's startDefault, which picks by role.
+function TourInviteCard({ T, show, role, name, projectCount, onDismiss, onAccept }) {
   const tour = useTour();
   const vpTC = useViewport();
   const near = useNear();   // must be called before any early return — hooks can't be conditional
   const [startHover, setStartHover] = useState(false);
   const [dismissHover, setDismissHover] = useState(false);
-  if (!show || role !== "guest" || vpTC.isCompact) return null;
+  if (!show || (role !== "guest" && role !== "project_manager") || vpTC.isCompact) return null;
+  const isPM = role === "project_manager";
   return (
     <div ref={near} className="pmo-near pmo-invite-card" style={{
       "--near-light": `${BRAND.gold}20`,
@@ -342,7 +342,11 @@ function TourInviteCard({ T, show, role, name, onDismiss, onAccept }) {
         </div>
       </div>
       <div style={{ ...TYPE.bodySm, fontSize: 17, color: T.textSoft, lineHeight: 1.55, marginBottom: 18 }}>
-        I'm the portal assistant. You're set up as a Guest — shall I show you around? It takes about two minutes.
+        {isPM
+          ? <>I'm the portal assistant. {projectCount
+              ? <>You manage <b style={{ color: T.text }}>{projectCount} project{projectCount === 1 ? "" : "s"}</b> here.</>
+              : <>You're set up as a Project Manager.</>} Shall I show you how to keep them up to date? It takes about three minutes.</>
+          : <>I'm the portal assistant. You're set up as a Guest — shall I show you around? It takes about two minutes.</>}
       </div>
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
         <button className="pmo-focusable pmo-btn" onClick={onDismiss}
@@ -352,7 +356,7 @@ function TourInviteCard({ T, show, role, name, onDismiss, onAccept }) {
             cursor: "pointer", padding: "10px 15px", ...TYPE.bodySm, fontSize: 16,
             transition: `all ${MOTION.fast}` }}>Not now</button>
         <button className="pmo-focusable pmo-btn"
-          onClick={() => { onAccept(); tour.start(guestSteps()); }}
+          onClick={() => { onAccept(); tour.startDefault(); }}
           onMouseEnter={() => setStartHover(true)} onMouseLeave={() => setStartHover(false)}
           style={{ padding: "10px 24px",
             background: startHover
@@ -371,7 +375,7 @@ function TourInviteCard({ T, show, role, name, onDismiss, onAccept }) {
 function SidebarTourButton({ T }) {
   const tour = useTour();
   return (
-    <button onClick={() => tour.start(guestSteps())} className="pmo-focusable" style={{
+    <button onClick={() => tour.startDefault()} className="pmo-focusable" style={{
       width:"100%", marginTop:7, padding:"8px 12px", borderRadius:R.sm, cursor:"pointer",
       background:"transparent", border:`1px solid ${T.sidebarBorder}`,
       color:T.sidebarFg, fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
@@ -565,7 +569,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
       )}
 
       {/* User */}
-      <div style={{ borderTop:`1px solid ${T.sidebarBorder}`, padding: mini ? "12px 10px" : "13px 15px", position:"relative" }}>
+      <div data-tour="account-tools" style={{ borderTop:`1px solid ${T.sidebarBorder}`, padding: mini ? "12px 10px" : "13px 15px", position:"relative" }}>
         <div style={{ display:"flex", alignItems:"center", gap:11, justifyContent: mini ? "center" : "flex-start" }}>
           <div style={{
             width:34, height:34, borderRadius:"50%", flexShrink:0,
@@ -605,7 +609,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
         {/* Desktop-only now — mobile never sees the tour at all, not just a
             repositioned version of it. Gated the same way as the invite
             card and the offer-effect below. */}
-        {session?.role === "guest" && !mini && !isCompact && (
+        {(session?.role === "guest" || session?.role === "project_manager") && !mini && !isCompact && (
           <SidebarTourButton T={T} />
         )}
       </div>
@@ -7497,7 +7501,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             ? "This project hasn't been approved yet."
             : "This project is approved but no budget has been released yet.";
         return (
-          <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
+          <div data-tour="detail-wbs" style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
             {!inExecution && (
               <div style={{ display:"flex", gap:10, alignItems:"flex-start", marginBottom:SP.lg,
                 padding:"11px 14px", borderRadius:R.md, background:T.card2,
@@ -7520,7 +7524,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       {/* ── Content grid ── */}
       {/* Overview and Financials share the grid; each card opts into a tab so
           the same markup serves both without duplication. */}
-      <div style={{
+      <div data-tour={tab === "financials" ? "detail-financials" : undefined} style={{
         padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px`,
         display: (tab === "timeline" || tab === "wbs") ? "none" : "grid",
         gridTemplateColumns: vpD.isCompact ? "1fr" : "1fr 1fr", gap:SP.lg, alignItems:"start",
@@ -10030,7 +10034,7 @@ function TeamPage({ T, session }) {
         </div>
 
         {/* ── Contact Us ── */}
-        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px", marginBottom:8 }}>
+        <div data-tour="team-contact" style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px", marginBottom:8 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5 }}>Contact Us</div>
             {isPMO && <button className="pmo-focusable pmo-btn" onClick={()=>setEditContact(true)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 12px", cursor:"pointer", fontSize:11, color:T.muted, fontFamily:TYPE.body.fontFamily }}>✏ Edit</button>}
@@ -11528,6 +11532,7 @@ export default function App() {
   // so tutorial_offered_at is NULL again with no extra logic — the offer
   // reappears on its own.
   const [showTourInvite, setShowTourInvite] = useState(false);
+  const [tourProjectCount, setTourProjectCount] = useState(0);   // shown on a PM's invite
   const vpTourGuard = useViewport();
   // DeadlineAlertPopups and the newer PDD-reminder popups both fire ~5s
   // after login as full-screen modals — without coordination, both can be
@@ -11542,7 +11547,7 @@ export default function App() {
   // profile, and anyone who has finished, declined or closed the invite is
   // never asked again. "Take the tour" in the sidebar still works any time.
   useEffect(() => {
-    if (!session?.access_token || session.role !== "guest") return;
+    if (!session?.access_token || (session.role !== "guest" && session.role !== "project_manager")) return;
     let cancelled = false;
     // Desktop-only: skip entirely on mobile, including the write below —
     // if we marked it offered here, a guest whose first login happens to
@@ -11560,6 +11565,13 @@ export default function App() {
       } catch (_) { return; }        // can't tell: say nothing rather than nag
       if (cancelled || !st) return;
       if (st.tutorial_offered_at || st.tutorial_completed_at || st.tutorial_dismissed_at) return;
+      if (session.role === "project_manager") {
+        // RLS returns only the PM's assigned projects, so this is their count.
+        try {
+          const mine = await supa("/rest/v1/projects?select=id", {}, session.access_token);
+          if (!cancelled && Array.isArray(mine)) setTourProjectCount(mine.length);
+        } catch (_) { /* the invite reads fine without a count */ }
+      }
       t = setTimeout(() => {
         if (cancelled) return;
         setShowTourInvite(true);
@@ -11840,6 +11852,19 @@ export default function App() {
     // renamed, removed, or its code changes, so the tour can never fail to
     // open something.
     const TOUR_SAMPLE_CODE = "IT.261297-04";
+    // A Project Manager is shown one of their own projects (RLS returns only
+    // those), preferring one that has documents so that step isn't empty.
+    if (session?.role === "project_manager") {
+      try {
+        const mine = await supa("/rest/v1/projects?select=id,project_attachments(count)&order=name.asc",
+          {}, session.access_token);
+        if (Array.isArray(mine) && mine.length) {
+          const withDocs = mine.find(p => (p.project_attachments?.[0]?.count || 0) > 0);
+          openProject((withDocs || mine[0]).id);
+        }
+      } catch (_) { /* the step still shows; there is simply nothing open */ }
+      return;
+    }
     try {
       const byCode = await supa(
         `/rest/v1/projects?code=eq.${TOUR_SAMPLE_CODE}&select=id&limit=1`,
@@ -11886,6 +11911,8 @@ export default function App() {
 
   const tourNav = {
     setPage,
+    closeProject: () => setSelectedProjectId(null),
+    buildSteps: () => session?.role === "project_manager" ? pmSteps({ hasPast: pastAllowed }) : guestSteps(),
     setTab: (pg, tab) => { if (pg === "cmd") setDashTab(tab); },
     openSampleProject,
     onFinish: markTourComplete,
@@ -12064,7 +12091,7 @@ export default function App() {
     <FocusProvider>
     <TourProvider T={T} nav={tourNav}>
       <TourInviteCard T={T} show={showTourInvite}
-        role={session?.role} name={session?.full_name}
+        role={session?.role} name={session?.full_name} projectCount={tourProjectCount}
         onAccept={() => setShowTourInvite(false)}
         onDismiss={() => {
           setShowTourInvite(false);

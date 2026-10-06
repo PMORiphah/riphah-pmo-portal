@@ -1853,7 +1853,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
             )}
             <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:SP.sm,
               flexWrap:"wrap" }}>
-              <div role="tablist" aria-label="View" style={{ display:"flex", padding:2, borderRadius:R.pill,
+              <div role="tablist" aria-label="View" data-tour="past-views" style={{ display:"flex", padding:2, borderRadius:R.pill,
                 border:`1px solid ${T.border}`, background:T.surface }}>
                 {[["list","List",List],["timeline","Timeline",CalendarRange],
                   ["pms", isPMO ? "By PM" : "Chat with PMO", MessageSquare]].map(([v,l,Ic]) => (

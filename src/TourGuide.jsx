@@ -78,6 +78,12 @@ export function TourProvider({ T, children, nav }) {
     setSteps(list); setIdx(0);
     nav?.onStart?.(list.length);
   }, [nav]);
+  // The right tour for whoever is signed in (Guest or Project Manager); the
+  // invite card, the sidebar button and the assistant all start it this way.
+  const startDefault = useCallback(() => {
+    const list = nav?.buildSteps?.();
+    if (list?.length) start(list);
+  }, [nav, start]);
   const finishedRef = useRef(false);
   const stop = useCallback(async (opts) => {
     // Closing part way is the interesting case: it says which step lost them.
@@ -133,6 +139,9 @@ export function TourProvider({ T, children, nav }) {
       if (cleanupRef.current) { try { await cleanupRef.current(); } catch (_) {} cleanupRef.current = null; }
       setPhase("moving");
 
+      // A step on another page must leave an open project first: the project
+      // view takes priority over the page, so setPage alone would stay put.
+      if (step.leaveProject) nav.closeProject?.();
       if (step.page) nav.setPage(step.page);
       if (step.tab)  nav.setTab?.(step.page, step.tab);
       if (step.openProject) await nav.openSampleProject?.();
@@ -258,7 +267,7 @@ export function TourProvider({ T, children, nav }) {
   };
 
   return (
-    <TourCtx.Provider value={{ start, stop, running: !!steps }}>
+    <TourCtx.Provider value={{ start, startDefault, stop, running: !!steps }}>
       {children}
       {steps && (
         <TourOverlay T={T} step={steps[idx]} index={idx} total={steps.length}

@@ -194,3 +194,109 @@ export function guestSteps() {
       body: "That's the tour. Anything you want to know about the portfolio — a figure, a project, a risk, why two numbers disagree — I'm right here. Just ask." },
   ];
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PROJECT MANAGER TOUR (6 Oct 2026, PMO). Desktop only, like the guest tour.
+
+   What a PM may actually save, checked against RLS on 6 Oct 2026:
+     project_tasks  tasks_write: is_pmo() OR is_assigned(project_id)   → WBS
+     comments       comments_insert: is_assigned(project_id) …         → Updates
+     past_pm_messages / past_project_updates: own past projects        → Past chat
+     project_attachments: PMO only; projects: update PMO only.
+   So no caption claims a PM can upload a file or edit a project.
+
+   Pages a PM can't open (Dashboard, Campus, Performance, Risks, Timeline,
+   Cashflows) are never visited. The Past Projects step is included only for a
+   PM who manages past projects (hasPast).
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function pmSteps({ hasPast = false } = {}) {
+  return [
+    // ── Your projects ──────────────────────────────────────────────────
+    { section: "Your projects", page: "proj", leaveProject: true,
+      selector: '[data-tour="projects-table"]',
+      title: "Your projects",
+      body: "These are the projects assigned to you, and only those. Everything you see here is yours to follow." },
+
+    { section: "Your projects", page: "proj",
+      selector: '[data-tour="projects-filters"]',
+      title: "Find one fast",
+      body: "Type in the box under any heading, or pick a stage, to narrow the list. Click a heading to sort by it." },
+
+    // ── Inside your project ────────────────────────────────────────────
+    { section: "Inside your project", page: "proj", openProject: true,
+      selector: '[data-tour="detail-hero"]',
+      title: "One of your projects",
+      body: "I've opened one of yours. Stage, priority, value and dates sit across the top; the tabs below hold the rest." },
+
+    { section: "Inside your project",
+      selector: '[data-tour="detail-financials"]',
+      reveal: openDetailTab("financials"),
+      title: "The money side",
+      body: "SU requested, DF recommended, approved and released, as Finance records them. The PMO keeps these figures up to date, so tell us if something looks wrong." },
+
+    { section: "Inside your project",
+      selector: '[data-tour="detail-timeline"]',
+      reveal: openDetailTab("timeline"),
+      title: "How far it has come",
+      body: "The approval journey: the PDD, then DF, ED and MT review, then approved. Only real dates are shown." },
+
+    { section: "Inside your project",
+      selector: '[data-tour="detail-wbs"]',
+      reveal: openDetailTab("wbs"),
+      title: "Your main job: the work breakdown",
+      body: "Break the work into tasks with start and finish dates, and keep the % complete up to date as the work moves. This is how the PMO sees your progress." },
+
+    { section: "Inside your project",
+      selector: '[data-tour="wbs-actions"]',
+      title: "Add your first task",
+      body: "Press Add task to begin, and nest sub-tasks under a parent. Prefer Excel? Download the Template, fill it in and Import it. You can try it right after the tour." },
+
+    { section: "Inside your project",
+      selector: '[data-tour="detail-documents"]',
+      reveal: openDetailTab("documents"),
+      title: "The paperwork",
+      body: "The project's papers: PDD, quotations, approvals. Click one to read it, or use the download icon to save a copy. Only the PMO uploads here, so send new documents to us." },
+
+    { section: "Inside your project",
+      selector: '[data-tour="detail-sitevisit"]',
+      reveal: openDetailTab("sitevisit"),
+      title: "On site",
+      body: "Photos and video from site visits. Click any frame to see it full screen." },
+
+    // ── About the PMO ──────────────────────────────────────────────────
+    { section: "About the PMO", page: "team", leaveProject: true,
+      selector: '[data-tour="team-about"]',
+      title: "Who we are",
+      body: "This is the PMO, the Project Management Office. We review every PDD, track all CAPEX projects through approval and delivery, and support you along the way." },
+
+    { section: "About the PMO", page: "team",
+      selector: '[data-tour="team-contact"]',
+      title: "How to reach us",
+      body: "Need a person rather than the portal? Our email, phone and office hours are here. For anything about one of your projects there's a better way. Let me show you." },
+
+    // ── Talking to the PMO ─────────────────────────────────────────────
+    { section: "Talking to the PMO", page: "upd",
+      selector: '[data-tour="updates-page"]',
+      title: "Updates: talk to the PMO here",
+      body: "Post progress, problems or questions on the project they belong to. The PMO sees it and replies here, and it stays on record. \"New\" marks what you haven't read yet." },
+
+    ...(hasPast ? [
+      { section: "Talking to the PMO", page: "past",
+        selector: '[data-tour="past-views"]',
+        title: "Earlier projects",
+        body: "These are the earlier projects you managed. When the PMO asks for an update, open a project to reply on its own thread, or press Chat with PMO to answer about all of them at once. Your reply reaches the PMO by email too." },
+    ] : []),
+
+    // ── Your account ───────────────────────────────────────────────────
+    { section: "Your account",
+      selector: '[data-tour="account-tools"]',
+      title: "Your account",
+      body: "Change your password here, turn on notifications, and, if this computer supports it, sign in with your fingerprint or face. The sun and moon button at the top switches light and dark." },
+
+    // ── Done ───────────────────────────────────────────────────────────
+    { section: "Done", page: "proj",
+      selector: '[data-tour="assistant-launcher"]',
+      title: "And this is me",
+      body: "That's the tour. Ask me anything about your projects: a date, a figure, what's overdue. You can take the tour again any time from the sidebar." },
+  ];
+}

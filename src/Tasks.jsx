@@ -792,7 +792,7 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
           {rows.length} task{rows.length === 1 ? "" : "s"}
         </span>
         {canWrite && (
-          <div style={{ marginLeft:"auto", display:"flex", gap:6, flexWrap:"wrap" }}>
+          <div data-tour="wbs-actions" style={{ marginLeft:"auto", display:"flex", gap:6, flexWrap:"wrap" }}>
             <button className="pmo-focusable pmo-btn" onClick={downloadTemplate}
               title="Excel template, pre-filled with any tasks already here"
               style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 12px",
