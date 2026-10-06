@@ -5,6 +5,8 @@
 //   { kind: "pm",      id: <past_pm_messages.id> }       — the chat with one manager.
 // The PMO writes → the project manager is emailed (team copied, MAIL_CC).
 // The manager writes → the PMO is emailed (active PMO users with email on, team copied).
+// One of the two past-projects viewers writes → the manager and the PMO (6 Oct 2026);
+// a viewer who has written in a conversation is also emailed on later posts there.
 // Only the message's own author can trigger it, once per message; {preview: true}
 // returns the email without sending. The email names the manager's campus/site
 // and lists their past projects (project ID + name), see email.ts.
@@ -69,34 +71,71 @@ Deno.serve(async (req: Request) => {
   const sites = [...new Set((listed.length ? listed : theirs).map(r => String(r.campus ?? "").trim()).filter(Boolean))];
   const site = sites.join(", ") || "—";
 
+  // Who writes decides who hears (PMO 5 Oct 2026; viewers 6 Oct 2026):
+  //   PMO     → the manager;
+  //   manager → the PMO;
+  //   viewer  → the manager and the PMO (a viewer is one of the two guest
+  //             accounts in settings.past_viewers that may ask follow-ups).
+  // A viewer who has written in this conversation also hears every later post.
+  const viewerIds: string[] = (((await (await rest("settings?key=eq.past_viewers&select=value")).json()) as Row[])?.[0]
+    ?.value as { user_ids?: string[] } | undefined)?.user_ids ?? [];
   const fromPmo = msg.author_role === "pmo";
-  let to: Recipient[] = [];
-  if (fromPmo) {
-    if (pm?.is_active && String(pm.email ?? "").trim())
-      to = [{ id: String(pm.id), email: String(pm.email).trim(), name: String(pm.full_name || pm.username || "there") }];
-  } else {
-    to = await pmoRecipients(ctx);
-  }
-  if (!to.length) {
-    await log(ctx, [{ channel, status: "skipped", detail: `msg ${id}: no recipient with an email address` }]);
-    return json({ ok: true, sent: 0, skipped: "no recipient with an email address" });
-  }
+  const fromViewer = !fromPmo && viewerIds.includes(String(msg.author_id)) && String(msg.author_id) !== pmId;
+  const thread = kind === "pm" ? `pm_user_id=eq.${pmId}` : `past_project_id=eq.${projectId}`;
+  const askedHere = viewerIds.length
+    ? ((await (await rest(`${table}?${thread}&author_id=in.(${viewerIds.join(",")})&select=author_id`)).json()) as Row[]) ?? []
+    : [];
+  const followerIds = [...new Set(askedHere.map(r => String(r.author_id)))].filter(v => v !== msg.author_id);
+  const followers: Recipient[] = followerIds.length
+    ? (((await (await rest(`user_profiles?id=in.(${followerIds.join(",")})&is_active=eq.true&select=id,email,full_name,username`)).json()) as Row[]) ?? [])
+        .filter(r => String(r.email ?? "").trim())
+        .map(r => ({ id: String(r.id), email: String(r.email).trim(), name: String(r.full_name || r.username) }))
+    : [];
+  const pmRecipient: Recipient[] = pm?.is_active && String(pm.email ?? "").trim() && pmId !== msg.author_id
+    ? [{ id: String(pm.id), email: String(pm.email).trim(), name: String(pm.full_name || pm.username || "there") }] : [];
 
   const author = String(msg.author_name || (fromPmo ? "PMO" : "Project manager"));
   const pmName = String(pm?.full_name || pm?.username || "the project manager");
   const link = kind === "pm" ? `${PORTAL_URL}?pastpm=${pmId}` : `${PORTAL_URL}?past=${projectId}`;
-  const { subject, text, html } = composeEmail({
-    kind, fromPmo, toName: to[0].name, author, pmName, site, body: String(msg.body ?? ""),
-    project, listed, projectId, link,
-  });
+  const base = { kind: kind as "pm" | "project", author, pmName, site, body: String(msg.body ?? ""), project, listed, projectId, link };
 
-  if (body.preview) return json({ ok: true, preview: true, to: to.map(r => r.email), subject, text, html });
-  const sent = await mail(to, subject, text, html, true);
-  const pushRes = await push(ctx, to.map(r => r.id), {
-    title: fromPmo ? "PMO follow-up" : `Reply from ${author}`,
-    body: `${project ? project.name : "Update requested"}: ${toAscii(String(msg.body ?? "")).slice(0, 120)}`,
-    tag: kind === "pm" ? `pastpm-${pmId}` : `past-${projectId}`, url: link.replace(PORTAL_URL, "./"),
-  });
+  // One email per group, each worded for its readers.
+  const taken = new Set<string>([String(msg.author_id)]);
+  const pick = (rs: Recipient[]) => rs.filter(r => !taken.has(r.id) && (taken.add(r.id), true));
+  const groups: { to: Recipient[]; mail: ReturnType<typeof composeEmail>; title: string }[] = [];
+  const add = (to: Recipient[], mailArgs: Parameters<typeof composeEmail>[0], title: string) => {
+    const t = pick(to); if (t.length) groups.push({ to: t, mail: composeEmail({ ...mailArgs, toName: t[0].name }), title });
+  };
+  if (fromPmo) {
+    add(pmRecipient, { ...base, fromPmo: true, toName: "" }, "PMO follow-up");
+  } else if (fromViewer) {
+    add(pmRecipient, { ...base, fromPmo: true, asker: author, toName: "" }, `Follow-up from ${author}`);
+    add(await pmoRecipients(ctx), { ...base, fromPmo: false, asked: true, toName: "" }, `Follow-up from ${author}`);
+  } else {
+    add(await pmoRecipients(ctx), { ...base, fromPmo: false, toName: "" }, `Reply from ${author}`);
+  }
+  for (const f of followers) add([f], { ...base, fromPmo: false, greet: f.name, toName: "" }, `Reply from ${author}`);
+
+  if (!groups.length) {
+    await log(ctx, [{ channel, status: "skipped", detail: `msg ${id}: no recipient with an email address` }]);
+    return json({ ok: true, sent: 0, skipped: "no recipient with an email address" });
+  }
+  if (body.preview) return json({ ok: true, preview: true,
+    emails: groups.map(g => ({ to: g.to.map(r => r.email), subject: g.mail.subject, text: g.mail.text, html: g.mail.html })),
+    // Older callers read these from the first email.
+    to: groups[0].to.map(r => r.email), subject: groups[0].mail.subject, text: groups[0].mail.text, html: groups[0].mail.html });
+
+  const sent: Awaited<ReturnType<typeof mail>> = [];
+  const pushRes: unknown[] = [];
+  // The team (MAIL_CC) is copied once per post, on the first email only.
+  for (const [gi, g] of groups.entries()) {
+    sent.push(...await mail(g.to, g.mail.subject, g.mail.text, g.mail.html, gi === 0));
+    pushRes.push(await push(ctx, g.to.map(r => r.id), {
+      title: g.title,
+      body: `${project ? project.name : "Update requested"}: ${toAscii(String(msg.body ?? "")).slice(0, 120)}`,
+      tag: kind === "pm" ? `pastpm-${pmId}` : `past-${projectId}`, url: link.replace(PORTAL_URL, "./"),
+    }));
+  }
   await log(ctx, sent.map(s => ({
     channel, status: s.ok ? "sent" : "failed", recipient_id: s.r.id, recipient_address: s.r.email,
     project_code: (project?.code as string) ?? null,

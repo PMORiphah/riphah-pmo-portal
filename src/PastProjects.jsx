@@ -324,6 +324,9 @@ function ScheduleModal({ T, session, supa, row, isCompact, onClose, onSaved }) {
 export async function loadPastUnread(supa, session) {
   const me = session?.user_id;
   if (!me) return { total: 0, byThread: {} };
+  // A past-projects viewer (two guest accounts, PMO 6 Oct 2026) can read every
+  // conversation, so only the ones they opened or wrote in count as unread.
+  const viewer = session.role !== "pmo" && await isPastViewer(supa, session);
   const [reads, pmMsgs, projMsgs] = await Promise.all([
     supa("/rest/v1/past_chat_reads?select=thread,read_at", {}, session.access_token).catch(() => []),
     supa("/rest/v1/past_pm_messages?select=pm_user_id,author_id,created_at", {}, session.access_token).catch(() => []),
@@ -331,14 +334,31 @@ export async function loadPastUnread(supa, session) {
   ]);
   const seen = Object.fromEntries((Array.isArray(reads) ? reads : []).map(r => [r.thread, r.read_at]));
   const byThread = {};
+  const joined = new Set(Object.keys(seen));
+  if (viewer) {
+    (Array.isArray(pmMsgs) ? pmMsgs : []).forEach(m => { if (m.author_id === me) joined.add(`pm:${m.pm_user_id}`); });
+    (Array.isArray(projMsgs) ? projMsgs : []).forEach(m => { if (m.author_id === me) joined.add(`project:${m.past_project_id}`); });
+  }
   const add = (thread, m) => {
     if (m.author_id === me) return;
+    if (viewer && !joined.has(thread)) return;
     if (seen[thread] && new Date(m.created_at) <= new Date(seen[thread])) return;
     byThread[thread] = (byThread[thread] || 0) + 1;
   };
   (Array.isArray(pmMsgs) ? pmMsgs : []).forEach(m => add(`pm:${m.pm_user_id}`, m));
   (Array.isArray(projMsgs) ? projMsgs : []).forEach(m => add(`project:${m.past_project_id}`, m));
   return { total: Object.values(byThread).reduce((s, n) => s + n, 0), byThread };
+}
+// The two guest accounts the PMO gave Past Projects to (settings.past_viewers,
+// checked by the database). Cached per sign-in.
+const viewerCache = new Map();
+export async function isPastViewer(supa, session) {
+  if (!session?.user_id || session.role === "pmo") return false;
+  if (!viewerCache.has(session.user_id)) {
+    viewerCache.set(session.user_id, supa("/rest/v1/rpc/is_past_viewer", { method:"POST", body:"{}" }, session.access_token)
+      .then(r => r === true).catch(() => { viewerCache.delete(session.user_id); return false; }));
+  }
+  return viewerCache.get(session.user_id);
 }
 async function markPastRead(supa, session, thread) {
   try {
@@ -494,7 +514,10 @@ function EditPastModal({ T, session, supa, row, pms, isCompact, onClose, onSaved
 
 
 /* ── Chat with one project manager about all their past projects ─────────── */
-function PmChat({ T, session, supa, pm, projects, isPMO, isCompact, onOpenProject, onBack, onRead }) {
+function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = false, isCompact, onOpenProject, onBack, onRead }) {
+  // A viewer chats with any manager the way the PMO does; the PMO and the
+  // manager are both emailed when they send.
+  const isPMO = isPMOrole || viewer;
   const [msgs, setMsgs] = useState(null);
   const [body, setBody] = useState("");
   const [tag, setTag]   = useState("");
@@ -586,14 +609,15 @@ function PmChat({ T, session, supa, pm, projects, isPMO, isCompact, onOpenProjec
             {msgs.map(m => {
               const mine = m.author_id === session.user_id;
               const pmo  = m.author_role === "pmo";
+              const asker = !pmo && m.author_id !== pm.id;   // one of the two viewers
               const p = m.past_project_id ? byId[m.past_project_id] : null;
               return (
                 <div key={m.id} style={{ display:"flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
                   <div style={{ maxWidth: isCompact ? "92%" : "80%", padding:"10px 13px", borderRadius:R.md,
-                    background: pmo ? `${BRAND.blue}1A` : T.card2,
-                    border:`1px solid ${pmo ? `${BRAND.blue}3D` : T.border}` }}>
+                    background: pmo ? `${BRAND.blue}1A` : asker ? `${BRAND.gold}14` : T.card2,
+                    border:`1px solid ${pmo ? `${BRAND.blue}3D` : asker ? `${BRAND.gold}4D` : T.border}` }}>
                     <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:4, flexWrap:"wrap" }}>
-                      <span style={{ fontSize:11.5, fontWeight:700, color: pmo ? T.textOf(BRAND.blue) : T.text }}>
+                      <span style={{ fontSize:11.5, fontWeight:700, color: pmo ? T.textOf(BRAND.blue) : asker ? T.textOf(BRAND.gold) : T.text }}>
                         {m.author_name || "Unknown"}
                       </span>
                       <span style={{ ...TYPE.caption, color:T.dim }}>{when(m.created_at)}</span>
@@ -638,7 +662,8 @@ function PmChat({ T, session, supa, pm, projects, isPMO, isCompact, onOpenProjec
             </Button>
           </div>
           <div style={{ ...TYPE.caption, color:T.dim, marginTop:6, display:"flex", alignItems:"center", gap:5 }}>
-            <Mail size={11} /> {isPMO ? `${pm.full_name || pm.username} is emailed when you send.` : "The PMO is emailed when you send."}
+            <Mail size={11} /> {viewer ? `${pm.full_name || pm.username} and the PMO are emailed when you send.`
+              : isPMO ? `${pm.full_name || pm.username} is emailed when you send.` : "The PMO is emailed when you send."}
           </div>
         </div>
       </div>
@@ -872,7 +897,7 @@ function ScheduleTab({ T, session, supa, row, roll, isPMO, isCompact, onChanged 
 
 
 /* ── Follow-up tab: the reason it is still open, and the thread ─────────── */
-function FollowUpPanel({ T, session, supa, row, isPMO, onChanged, onRead }) {
+function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged, onRead }) {
   const [msgs, setMsgs]   = useState(null);
   const [body, setBody]   = useState("");
   const [busy, setBusy]   = useState(false);
@@ -986,13 +1011,14 @@ function FollowUpPanel({ T, session, supa, row, isPMO, onChanged, onRead }) {
           {msgs.map(m => {
             const mine = m.author_id === session.user_id;
             const pmo  = m.author_role === "pmo";
+            const asker = !pmo && m.author_id !== row.pm_user_id;   // one of the two viewers
             return (
               <div key={m.id} style={{ display:"flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
                 <div style={{ maxWidth:"82%", padding:"10px 13px", borderRadius:R.md,
-                  background: pmo ? `${BRAND.blue}1A` : T.card2,
-                  border:`1px solid ${pmo ? `${BRAND.blue}3D` : T.border}` }}>
+                  background: pmo ? `${BRAND.blue}1A` : asker ? `${BRAND.gold}14` : T.card2,
+                  border:`1px solid ${pmo ? `${BRAND.blue}3D` : asker ? `${BRAND.gold}4D` : T.border}` }}>
                   <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:4 }}>
-                    <span style={{ fontSize:11.5, fontWeight:700, color: pmo ? T.textOf(BRAND.blue) : T.text }}>
+                    <span style={{ fontSize:11.5, fontWeight:700, color: pmo ? T.textOf(BRAND.blue) : asker ? T.textOf(BRAND.gold) : T.text }}>
                       {m.author_name || "Unknown"}
                     </span>
                     <span style={{ ...TYPE.caption, color:T.dim }}>{when(m.created_at)}</span>
@@ -1010,7 +1036,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, onChanged, onRead }) {
 
       <div style={{ display:"flex", gap:SP.sm, marginTop:SP.lg, alignItems:"flex-end" }}>
         <textarea value={body} onChange={e => setBody(e.target.value)} rows={2}
-          placeholder={isPMO ? "Ask the project manager where this stands…" : "Reply with the current position…"}
+          placeholder={isPMO || viewer ? "Ask the project manager where this stands…" : "Reply with the current position…"}
           onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) post(); }}
           style={{ ...inp, resize:"vertical", lineHeight:1.55 }} />
         <Button T={T} variant="primary" icon={Send} onClick={post}
@@ -1018,7 +1044,8 @@ function FollowUpPanel({ T, session, supa, row, isPMO, onChanged, onRead }) {
       </div>
       <div style={{ ...TYPE.caption, color:T.dim, marginTop:6, display:"flex", alignItems:"center", gap:5 }}>
         <Mail size={11} />
-        {isPMO ? (row.pm_name ? `${row.pm_name} is emailed when you post.` : "This project has no manager, so nobody is emailed.")
+        {viewer ? (row.pm_name ? `${row.pm_name} and the PMO are emailed when you post.` : "The PMO is emailed when you post.")
+         : isPMO ? (row.pm_name ? `${row.pm_name} is emailed when you post.` : "This project has no manager, so nobody is emailed.")
                : "The PMO is emailed when you post."}
       </div>
     </div>
@@ -1027,7 +1054,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, onChanged, onRead }) {
 
 
 /* ── One past project, full page ─────────────────────────────────────────── */
-function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm }) {
+function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm }) {
   const [tab, setTab] = useState("followup");
   const [editing, setEditing] = useState(false);
   const st = STATUS[row.status] || STATUS.open;
@@ -1055,7 +1082,7 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBa
           <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap" }}>
             {row.pm_user_id && onOpenPm && (
               <Button T={T} size="sm" variant="ghost" icon={MessageSquare} onClick={() => onOpenPm(row.pm_user_id)}>
-                {isPMO ? `Chat with ${String(row.pm_name || "PM").split(" ")[0]}` : "Chat with PMO"}
+                {isPMO || viewer ? `Chat with ${String(row.pm_name || "PM").split(" ")[0]}` : "Chat with PMO"}
               </Button>
             )}
             {isPMO && (
@@ -1091,7 +1118,7 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, isCompact, onBa
 
       {tab === "followup" && (
         <FollowUpPanel key={row.id + row.updated_at} T={T} session={session} supa={supa}
-          row={row} isPMO={isPMO} onChanged={onChanged} onRead={onRead} />
+          row={row} isPMO={isPMO} viewer={viewer} onChanged={onChanged} onRead={onRead} />
       )}
       {tab === "timeline" && (
         <ScheduleTab T={T} session={session} supa={supa} row={row} roll={roll}
@@ -1537,12 +1564,16 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const [lastByPm, setLastByPm] = useState({});         // latest chat message per manager (PMO)
 
   const isPMO = session?.role === "pmo";
+  // Two guest accounts see everything the PMO sees here and can ask, but not edit.
+  const [viewer, setViewer] = useState(false);
+  useEffect(() => { let on = true; isPastViewer(supa, session).then(v => { if (on) setViewer(v); }); return () => { on = false; }; }, [supa, session]);
+  const seeAll = isPMO || viewer;
 
   // Unread counts for the badges here and in the menu.
   const refreshUnread = useCallback(async () => {
     const u = await loadPastUnread(supa, session);
     setUnread(u.byThread); onUnreadChange?.(u.total);
-    if (isPMO) {
+    if (seeAll) {
       try {
         const m = await supa("/rest/v1/past_pm_messages?select=pm_user_id,author_role,body,created_at&order=created_at.desc&limit=500",
                              {}, session.access_token);
@@ -1551,14 +1582,14 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
         setLastByPm(last);
       } catch { /* the preview line is optional */ }
     }
-  }, [supa, session, isPMO]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [supa, session, seeAll]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { refreshUnread(); }, [refreshUnread]);
 
   // A link from an email: ?past=<project> or ?pastpm=<manager>.
   useEffect(() => {
     if (!initialOpen || rows === null) return;
     if (initialOpen.kind === "project" && rows.some(r => r.id === initialOpen.id)) setOpenId(initialOpen.id);
-    if (initialOpen.kind === "pm") { setOpenId(null); setChatPm(isPMO ? initialOpen.id : session.user_id); }
+    if (initialOpen.kind === "pm") { setOpenId(null); setChatPm(seeAll ? initialOpen.id : session.user_id); }
     onInitialOpened?.();
   }, [initialOpen, rows]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1778,21 +1809,21 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
         <div style={{ position:"relative", zIndex:1 }}>
           {openRow ? (
             <PastProjectDetail T={T} session={session} supa={supa} row={openRow}
-              roll={rollup[openRow.id]} isPMO={isPMO} isCompact={isCompact}
+              roll={rollup[openRow.id]} isPMO={isPMO} viewer={viewer} isCompact={isCompact}
               pms={pmChoices} onRead={refreshUnread}
               onOpenPm={(id) => { setOpenId(null); setChatPm(id); }}
               onBack={() => setOpenId(null)} onChanged={load} />
           ) : chatPm ? (
-            <PmChat key={chatPm} T={T} session={session} supa={supa} isPMO={isPMO} isCompact={isCompact}
+            <PmChat key={chatPm} T={T} session={session} supa={supa} isPMO={isPMO} viewer={viewer} isCompact={isCompact}
               pm={{ id: chatPm, full_name: (rows.find(r => r.pm_user_id === chatPm) || {}).pm_name
                      || (chatPm === session.user_id ? (session.full_name || session.username) : "Project manager") }}
               projects={rows.filter(r => r.pm_user_id === chatPm)}
               onOpenProject={(id) => { setChatPm(null); setOpenId(id); }}
-              onBack={() => { setChatPm(null); if (isPMO) setView("pms"); }}
+              onBack={() => { setChatPm(null); if (seeAll) setView("pms"); }}
               onRead={refreshUnread} />
           ) : (<>
           {/* Summary strip — PMO only; a project manager sees just their own projects. */}
-          {isPMO && <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
+          {seeAll && <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
             gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(5, minmax(0,1fr))" }}>
             {[
               { k:"Still open",      v:totals.openCount, sub:"from prior years", c:DATA.danger,  Icon:History },
@@ -1820,7 +1851,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               </div>
             ))}
           </div>}
-          {!isPMO && (
+          {!seeAll && (
             <div style={{ marginBottom:SP.lg, padding:`${SP.md}px ${SP.lg}px`, borderRadius:R.lg, background:T.surface,
               border:`1px solid ${T.border}`, fontSize:13, color:T.textSoft, lineHeight:1.6 }}>
               Your projects from earlier fiscal years that are still being followed up. Reply to the PMO on a project's
@@ -1845,7 +1876,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               <option value="closed">Closed only</option>
               <option value="all">Everything</option>
             </Select>
-            {isPMO && (
+            {seeAll && (
               <Select T={T} value={pm} onChange={e => setPm(e.target.value)}>
                 <option value="">All project managers</option>
                 {pms.map(n => <option key={n} value={n}>{n}</option>)}
@@ -1856,10 +1887,10 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               <div role="tablist" aria-label="View" data-tour="past-views" style={{ display:"flex", padding:2, borderRadius:R.pill,
                 border:`1px solid ${T.border}`, background:T.surface }}>
                 {[["list","List",List],["timeline","Timeline",CalendarRange],
-                  ["pms", isPMO ? "By PM" : "Chat with PMO", MessageSquare]].map(([v,l,Ic]) => (
+                  ["pms", seeAll ? "By PM" : "Chat with PMO", MessageSquare]].map(([v,l,Ic]) => (
                   <button key={v} role="tab" aria-selected={view === v}
                     className="pmo-focusable pmo-btn"
-                    onClick={() => { if (v === "pms" && !isPMO) { setChatPm(session.user_id); return; } setView(v); }}
+                    onClick={() => { if (v === "pms" && !seeAll) { setChatPm(session.user_id); return; } setView(v); }}
                     style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 11px",
                       borderRadius:R.pill, border:"none", cursor:"pointer", fontSize:12,
                       background: view === v ? `${BRAND.blue}22` : "transparent",
@@ -1887,7 +1918,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
 
           {err && <div style={{ fontSize:12.5, color:T.textOf(DATA.danger), marginBottom:SP.md }}>{err}</div>}
 
-          {view === "pms" && isPMO ? (
+          {view === "pms" && seeAll ? (
             <PmsView T={T} rows={rows} unread={unread} lastByPm={lastByPm} isCompact={isCompact}
               onOpen={(id) => setChatPm(id)} />
           ) : view === "timeline" ? (

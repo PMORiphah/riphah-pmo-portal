@@ -60,4 +60,4 @@ alter policy past_pm_insert on public.past_pm_messages
            where p.id = past_pm_messages.past_project_id and p.pm_user_id = past_pm_messages.pm_user_id)));
 
 -- Unchanged on purpose: past_write (PMO only), past_tasks_write (PMO or the
--- project's own manager), past_updates_all / past_pm_update / past_pm_delete (PMO).
+-- project's own manager), past_updates_all and the message edit/removal policies (PMO).
