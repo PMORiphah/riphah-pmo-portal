@@ -37,7 +37,7 @@ import {
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
   Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
-  PackageCheck,
+  PackageCheck, FileBarChart,
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -292,6 +292,8 @@ const NAV = [
   // PMO, and anyone who manages a past project (they see only their own).
   { id:"past",     Icon:History,       label:"Past Projects", pastOnly:true },
   { id:"review",   Icon:ClipboardCheck, label:"PMO Review",   pmoOnly:true },
+  // PMO, and anyone a board report has been shared with (8 Oct 2026).
+  { id:"reports",  Icon:FileBarChart,  label:"Board Reports", reportsOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
   { id:"photowall", Icon:Camera,     label:"Gallery" },
   { id:"team", Icon:Users,           label:"Team & About" },
@@ -386,12 +388,13 @@ function SidebarTourButton({ T }) {
   );
 }
 
-function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, onChangePassword,
+function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false, reportsNew = 0, onChangePassword,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
                   fyLabel = "FY 2026-27", navStats = null }) {
   const roleFiltered = NAV.filter(n => {
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (n.pastOnly && !(session?.role === "pmo" || pastAllowed)) return false;
+    if (n.reportsOnly && !(session?.role === "pmo" || reportsAllowed)) return false;
     if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule")) return false;
     return true;
   });
@@ -468,6 +471,16 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
             fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center",
             boxSizing:"border-box", boxShadow:`0 2px 8px -1px ${BRAND.gold}99`,
           }}>{reviewCount > 99 ? "99+" : reviewCount}</span>
+        )}
+        {/* Board reports shared with this person and not yet opened. */}
+        {id === "reports" && reportsNew > 0 && (
+          <span style={{
+            position: mini ? "absolute" : "static", top: mini ? 4 : undefined, right: mini ? 8 : undefined,
+            minWidth:18, height:18, padding:"0 5px", borderRadius:R.pill,
+            background:BRAND.gold, color:"#1A1206",
+            fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center",
+            boxSizing:"border-box", boxShadow:`0 2px 8px -1px ${BRAND.gold}99`,
+          }}>{reportsNew}</span>
         )}
         {/* Unread follow-up messages on past projects. */}
         {id === "past" && pastCount > 0 && (
@@ -666,10 +679,11 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
 // to change with it.
 const MOBILE_TAB_PRIORITY = ["cmd", "proj", "upd", "photowall", "camp", "perf", "risks", "cashflow", "team"];
 
-function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false }) {
+function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false }) {
   const filtered = NAV.filter(n => {
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (n.pastOnly && !(session?.role === "pmo" || pastAllowed)) return false;
+    if (n.reportsOnly && !(session?.role === "pmo" || reportsAllowed)) return false;
     if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule")) return false;
     return true;
   });
@@ -8091,6 +8105,10 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
 // ─── USER MANAGEMENT ──────────────────────────────────────────────────────────
 const SUPA_FN_URL = "https://prmxkecomqqngvrmytcj.supabase.co/functions/v1";
 
+// Board reports (PMO, 8 Oct 2026): loaded only when opened.
+const BoardReportsPage = lazy(() => import("./BoardReport.jsx").then(m => ({ default: m.BoardReportsPage })));
+const BoardReportPopup = lazy(() => import("./BoardReport.jsx").then(m => ({ default: m.BoardReportPopup })));
+
 // Welcome email generator (PMO, 8 Oct 2026): loaded only when opened.
 const WelcomeEmailModal = lazy(() => import("./WelcomeEmail.jsx").then(m => ({ default: m.WelcomeEmailModal })));
 
@@ -11518,7 +11536,10 @@ export default function App() {
     const q = new URLSearchParams(window.location.search), ok = (v) => /^[0-9a-f-]{36}$/i.test(v || "");
     return ok(q.get("past")) ? { kind:"project", id:q.get("past") } : ok(q.get("pastpm")) ? { kind:"pm", id:q.get("pastpm") } : null;
   })());
-  const [page, setPage] = useState(() => deepReviewId.current ? "review" : deepPast.current ? "past" : "cmd");
+  // ?report=<id> (the board report push and email) opens that report.
+  const deepReport = useRef((() => { const v = new URLSearchParams(window.location.search).get("report"); return /^[0-9a-f-]{36}$/i.test(v || "") ? v : null; })());
+  const [openReport, setOpenReport] = useState(null);
+  const [page, setPage] = useState(() => deepReviewId.current ? "review" : deepPast.current ? "past" : deepReport.current ? "reports" : "cmd");
   const [restoring, setRestoring] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
 
@@ -11557,6 +11578,9 @@ export default function App() {
   const [reviewCount, setReviewCount] = useState(0); // PDDs from the E-PDD portal not yet opened (PMO)
   const [pastAllowed, setPastAllowed] = useState(false); // PMO, or manages at least one past project
   const [pastCount, setPastCount] = useState(0);         // unread past-project follow-up messages
+  const [reportsAllowed, setReportsAllowed] = useState(false); // PMO, or a board report was shared with them
+  const [reportsUnseen, setReportsUnseen] = useState([]);       // shared reports not yet opened
+  const [reportPopupDone, setReportPopupDone] = useState(false);
   const [reviewTick, setReviewTick] = useState(0);
 
   // ─── ONBOARDING TOUR (Guest, Project Manager only — never PMO) ──────────
@@ -11657,6 +11681,28 @@ export default function App() {
     document.addEventListener("visibilitychange", onVisible);
     return () => { alive = false; clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
   }, [session?.access_token, session?.role]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Board reports: who sees the page, and reports shared but not yet opened.
+  const refreshReports = useCallback(async () => {
+    if (!session?.access_token) { setReportsAllowed(false); setReportsUnseen([]); return; }
+    try {
+      const mine = await supa(`/rest/v1/board_report_recipients?user_id=eq.${session.user_id}&removed=is.false&select=report_id,seen_at`, {}, session.access_token);
+      const rows = Array.isArray(mine) ? mine : [];
+      const unseenIds = rows.filter(r => !r.seen_at).map(r => r.report_id);
+      const reps = unseenIds.length
+        ? await supa(`/rest/v1/board_reports?id=in.(${unseenIds.join(",")})&status=eq.published&select=id,title,as_at,published_at&order=published_at.desc`, {}, session.access_token)
+        : [];
+      setReportsAllowed(session.role === "pmo" || rows.length > 0);
+      setReportsUnseen(Array.isArray(reps) ? reps : []);
+    } catch (_) { setReportsAllowed(session.role === "pmo"); setReportsUnseen([]); }
+  }, [session?.access_token, session?.role, session?.user_id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    refreshReports();
+    const iv = setInterval(refreshReports, 120000);
+    const onVisible = () => { if (document.visibilityState === "visible") refreshReports(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
+  }, [refreshReports]);
 
   // PMO Review badge: PDDs copied from the E-PDD portal since intake began that
   // the PMO has not opened. The copy runs every 5 minutes; checking every
@@ -12085,6 +12131,7 @@ export default function App() {
     // empty list rather than saying anything.
     ((page === "cashflow" || page === "review") && session?.role !== "pmo") ? "proj" :
     (page === "past" && session?.role !== "pmo" && !pastAllowed) ? "proj" :
+    (page === "reports" && session?.role !== "pmo" && !reportsAllowed && !deepReport.current && !openReport) ? "proj" :
     page;
 
   // Every page the user lands on, recorded once per change rather than per
@@ -12199,14 +12246,14 @@ export default function App() {
       }} />
       <Sidebar
         T={T} page={effectivePage} setPage={navigateToPage} session={session}
-        unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} onChangePassword={() => setShowChangePassword(true)}
+        unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} reportsAllowed={reportsAllowed} reportsNew={reportsUnseen.length} onChangePassword={() => setShowChangePassword(true)}
         collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}
         isCompact={vp.isCompact} fyLabel={portal.fy} navStats={navStats}
       />
       {vp.isCompact && (
         <BottomTabBar T={T} page={effectivePage} setPage={navigateToPage} session={session}
-          unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} onMore={() => setNavMobileOpen(true)} />
+          unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} reportsAllowed={reportsAllowed} onMore={() => setNavMobileOpen(true)} />
       )}
       {/* §14 — this column is the "world" that pulls back behind an overlay. */}
       <div className="pmo-world" style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden",
@@ -12263,6 +12310,17 @@ export default function App() {
             const u = new URL(window.location.href); u.searchParams.delete("past"); u.searchParams.delete("pastpm");
             window.history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
           }} />}
+        {effectivePage === "reports" && (
+          <Suspense fallback={<div style={{ flex:1 }} />}>
+            <BoardReportsPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
+              initialReport={openReport || deepReport.current}
+              onInitialOpened={() => {
+                deepReport.current = null; setOpenReport(null); refreshReports();
+                const u = new URL(window.location.href); u.searchParams.delete("report");
+                window.history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
+              }} />
+          </Suspense>
+        )}
         {effectivePage === "review" && <PmoReviewPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
           initialOpenId={deepReviewId.current} onInitialOpened={() => { deepReviewId.current = null; }}
           onSeenChange={() => setReviewTick(t => t + 1)}
@@ -12278,6 +12336,15 @@ export default function App() {
       </div>
       {session && (
         <AskPanel T={T} session={session} supa={supa} isCompact={vp.isCompact} />
+      )}
+      {/* A board report shared with this person and not yet opened (8 Oct 2026):
+          once per sign-in, after any blocking deadline alert. */}
+      {session && !reportPopupDone && !blockingAlertActive && reportsUnseen.length > 0 && effectivePage !== "reports" && (
+        <Suspense fallback={null}>
+          <BoardReportPopup T={T} reports={reportsUnseen} isMobile={vp.isCompact}
+            onOpen={(id) => { setReportPopupDone(true); setOpenReport(id); setPage("reports"); }}
+            onLater={() => setReportPopupDone(true)} />
+        </Suspense>
       )}
       {showChangePassword && session && (
         <ChangePasswordModal T={T} session={session} onClose={() => setShowChangePassword(false)} />
