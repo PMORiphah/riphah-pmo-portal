@@ -106,7 +106,7 @@ export function composeWelcome(a: WelcomeInput) {
     cardRows.push(`<tr>${card(...x)}${y ? card(...y) : `<td class="col" width="50%" style="padding:6px;"></td>`}</tr>`);
   }
 
-  const MAX = 25;
+  const MAX = 80;
   const codeOf = (c?: string | null) => String(c ?? "").trim() && c !== "-" ? String(c).trim() : "pending";
   const shown = projects.slice(0, MAX);
   const th = `padding:8px 10px;font:700 11px ${FONT};color:${MUTED};text-transform:uppercase;letter-spacing:0.8px;text-align:left;border-bottom:2px solid ${LINE};`;
