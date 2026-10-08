@@ -234,7 +234,7 @@ export async function loadPastUnread(supa, session) {
   const viewer = session.role !== "pmo" && await isPastViewer(supa, session);
   const [reads, pmMsgs, projMsgs] = await Promise.all([
     supa("/rest/v1/past_chat_reads?select=thread,read_at", {}, session.access_token).catch(() => []),
-    supa("/rest/v1/past_pm_messages?select=pm_user_id,author_id,created_at", {}, session.access_token).catch(() => []),
+    supa("/rest/v1/past_pm_messages?select=pm_user_id,past_project_id,author_id,created_at", {}, session.access_token).catch(() => []),
     supa("/rest/v1/past_project_updates?select=past_project_id,author_id,created_at", {}, session.access_token).catch(() => []),
   ]);
   const seen = Object.fromEntries((Array.isArray(reads) ? reads : []).map(r => [r.thread, r.read_at]));
@@ -249,10 +249,13 @@ export async function loadPastUnread(supa, session) {
     if (viewer && !joined.has(thread)) return;
     if (seen[thread] && new Date(m.created_at) <= new Date(seen[thread])) return;
     byThread[thread] = (byThread[thread] || 0) + 1;
+    // A manager-chat message tagged to a project also marks that project
+    // (the Unread filter, PMO 8 Oct 2026). Not added to the total twice.
+    if (thread.startsWith("pm:") && m.past_project_id) byThread[`tagged:${m.past_project_id}`] = (byThread[`tagged:${m.past_project_id}`] || 0) + 1;
   };
   (Array.isArray(pmMsgs) ? pmMsgs : []).forEach(m => add(`pm:${m.pm_user_id}`, m));
   (Array.isArray(projMsgs) ? projMsgs : []).forEach(m => add(`project:${m.past_project_id}`, m));
-  return { total: Object.values(byThread).reduce((s, n) => s + n, 0), byThread };
+  return { total: Object.entries(byThread).filter(([k]) => !k.startsWith("tagged:")).reduce((s, [, n]) => s + n, 0), byThread };
 }
 // The two guest accounts the PMO gave Past Projects to (settings.past_viewers,
 // checked by the database). Cached per sign-in.
@@ -1396,6 +1399,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const [groupBy, setGroupBy] = useState("campus"); // campus | fy | pm
   const [campus, setCampus] = useState("");
   const [prog, setProg]   = useState("");          // "" | In Progress | No progress | gap
+  const [onlyUnread, setOnlyUnread] = useState(false); // only projects with unread messages
   const [rollup, setRollup] = useState({});       // past_project_id -> task roll-up
   const [collapsed, setCollapsed] = useState({});
   const [hover, setHover] = useState(null);
@@ -1484,16 +1488,22 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const campuses = useMemo(() => [...new Set((rows||[]).map(r => r.campus).filter(Boolean))].sort(), [rows]);
   const pms   = useMemo(() => [...new Set((rows||[]).map(r => r.pm_name).filter(Boolean))].sort(), [rows]);
 
+  // Unread messages on a project: its own thread, plus manager-chat messages tagged to it.
+  const unreadOf = useCallback(r => (unread[`project:${r.id}`] || 0) + (unread[`tagged:${r.id}`] || 0), [unread]);
+  const unreadProjects = useMemo(() => (rows || []).filter(r => unreadOf(r) > 0).length, [rows, unreadOf]);
+  useEffect(() => { if (onlyUnread && !unreadProjects) setOnlyUnread(false); }, [onlyUnread, unreadProjects]);
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (rows||[]).filter(r =>
+      (!onlyUnread || unreadOf(r) > 0) &&
       (!fy || r.fiscal_year === fy) &&
       (!pm || r.pm_name === pm) && (!campus || r.campus === campus) &&
       (!prog || progressOf(r).label === prog) &&
-      (status === "all" ? true : status === "open_all" ? r.status !== "closed" : r.status === status) &&
+      // Unread shows every project with unread messages, closed ones too.
+      (onlyUnread || (status === "all" ? true : status === "open_all" ? r.status !== "closed" : r.status === status)) &&
       (!needle || `${r.code||""} ${r.name||""} ${r.reason_open||""} ${r.campus||""} ${r.pm_name||""}`.toLowerCase().includes(needle))
     );
-  }, [rows, q, fy, pm, campus, prog, status]);
+  }, [rows, q, fy, pm, campus, prog, status, onlyUnread, unreadOf]);
 
   // Grouped by campus (default), fiscal year or manager; oldest release first
   // inside a group, since the longest-open project is the one to chase.
@@ -1768,6 +1778,19 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                 {pms.map(n => <option key={n} value={n}>{n}</option>)}
               </Select>
             )}
+            <button type="button" className="pmo-focusable pmo-btn" aria-pressed={onlyUnread}
+              disabled={!unreadProjects}
+              title={unreadProjects ? "Only projects with messages you haven't read" : "No unread messages"}
+              onClick={() => setOnlyUnread(v => !v)}
+              style={{ display:"flex", alignItems:"center", gap:7, padding:"7px 13px", borderRadius:R.md,
+                cursor: unreadProjects ? "pointer" : "default", fontSize:12.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+                border:`1px solid ${onlyUnread ? BRAND.gold : unreadProjects ? `${BRAND.gold}66` : T.border}`,
+                background: onlyUnread ? `${BRAND.gold}26` : "transparent",
+                color: onlyUnread ? T.text : unreadProjects ? T.text : T.muted, opacity: unreadProjects ? 1 : 0.6 }}>
+              <Mail size={13} color={unreadProjects ? BRAND.gold : undefined} />
+              Unread
+              {unreadProjects > 0 && <UnreadDot T={T} n={unreadProjects} />}
+            </button>
             <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:SP.sm,
               flexWrap:"wrap" }}>
               <div role="tablist" aria-label="View" data-tour="past-views" style={{ display:"flex", padding:2, borderRadius:R.pill,
@@ -1895,7 +1918,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                           <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end",
                             justifyContent:"space-between", flexShrink:0, gap:6, minWidth: isCompact ? 76 : 120 }}>
                             <span style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
-                              <UnreadDot T={T} n={unread[`project:${r.id}`] || 0} />
+                              <UnreadDot T={T} n={unreadOf(r)} />
                               <span style={{ fontSize:13, fontWeight:700, color:T.text }}>{fmtM(r.approved_amount)}</span>
                             </span>
                             <div style={{ width:"100%", textAlign:"right" }}>
