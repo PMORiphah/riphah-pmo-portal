@@ -1,7 +1,20 @@
 # Board report generator
 
-Status: **planning paused 8 Oct 2026 at the PMO's request** (moved to the PM welcome email).
-Nothing built, no migration run. Resume with the open decision below.
+Status: **built 8 Oct 2026, waiting for the PMO's approval** to run the migration
+(`supabase/migrations/20261008_board_reports.sql`), deploy `board-report-notify` and put it on /preview/.
+Code: `src/reportCalc.js`, `src/BoardReport.jsx`, wiring in `src/App.jsx`. Tested on a local copy with
+the two new tables simulated; reviewed by three independent reviewers (9 defects found and fixed).
+
+Defaults taken (recommended options, PMO to confirm or change):
+- Aug and Sep 2026 are rebuilt from the Activity Log as "reconstructed" baselines automatically when
+  the first report is built.
+- SU Requested and Budget reduction are left out; schedule/overdue section left out until the dates
+  are confirmed; risks by severity; PDD intake, carry forward and past projects included.
+- "Approved, not yet released" = 131.3M style figure on approved projects; released before approval
+  listed separately under Needs attention.
+- "Released this month" = increase in released recorded in the portal during the month; falls are
+  listed as corrections; the funding chart uses budget release dates (footnoted).
+- The comparison ("since last report") is frozen inside each report at build time.
 
 ## Decided by the PMO (8 Oct 2026)
 
@@ -13,7 +26,7 @@ Nothing built, no migration run. Resume with the open decision below.
 3. **Monthly, frozen at publish**, compared with previous months (each published report becomes
    the next report's "last month").
 
-## Open decision (ask first when resuming)
+## Open decision (answered by default: yes, rebuild as baselines)
 
 Rebuild the August and September 2026 month-ends from the Activity Log and store them as earlier
 reports marked "reconstructed", so the first real report (September) already compares? Recommended

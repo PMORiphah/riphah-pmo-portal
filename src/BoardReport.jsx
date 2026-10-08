@@ -39,6 +39,7 @@ function usePrintStyles() {
   html.br-printing .br-page { box-shadow: none !important; margin: 0 !important; width: auto !important; min-height: 0 !important; border: 0 !important; padding: 0 !important; break-after: page; }
   html.br-printing .br-page:last-child { break-after: auto; }
   html.br-printing .br-avoid { break-inside: avoid; }
+  html.br-printing .br-fit { zoom: 1 !important; width: auto !important; }
   html.br-printing * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }`;
     document.head.appendChild(s);
@@ -119,10 +120,11 @@ function CumulativeChart({ months, upTo }) {
   );
 }
 
-export function ReportDocument({ rep, prev }) {
+export function ReportDocument({ rep }) {
   const f = rep.figures, h = f.headline;
-  const d = deltas(f, prev?.figures);
-  const since = prev?.figures?.period ? prev.figures.period.split(" ")[0] : "";
+  const cmp = f.compare || null;                 // frozen with the report (the same for every reader)
+  const d = deltas(f, cmp);
+  const since = cmp?.period ? cmp.period.split(" ")[0] : "";
   const title = rep.kind === "reconstructed" ? "Baseline (reconstructed)" : "Monthly Board Report";
   const asAtText = f.month_in_progress ? `as at ${fmtDay(f.as_at)} (month in progress)` : `as at the end of ${f.period} (${fmtDay(new Date(new Date(f.as_at).getTime() - 1).toISOString())})`;
   const thisMonth = f.funding.months.find(m => m.ym === f.ym);
@@ -158,8 +160,11 @@ export function ReportDocument({ rep, prev }) {
         <div style={{ marginTop:18 }}><H sub="Worked out from the figures; nothing here is typed by hand">This month</H></div>
         <ul style={{ margin:"0 0 0 18px", padding:0, fontSize:11.5, lineHeight:1.75, color:C.ink }}>
           <li><b>{f.moved_to_approved.length}</b> project{f.moved_to_approved.length === 1 ? "" : "s"} moved to Approved in the portal{f.moved_to_approved.length ? <>, approved budget PKR {fmtM(f.moved_to_approved.reduce((s, p) => s + p.bac, 0))}</> : null}.</li>
-          <li>PKR <b>{fmtM(thisMonth?.released || 0)}</b> released on {thisMonth?.released_count || 0} project{thisMonth?.released_count === 1 ? "" : "s"} (by budget release date).</li>
-          <li>{f.pdds.received} PDD{f.pdds.received === 1 ? "" : "s"} received on E-PDD; {f.pdds.pmo_approved} approved by the PMO and {f.pdds.sent_back} sent back for changes (document stage; a project is sanctioned only after DF → ED → MT).</li>
+          {f.month ? <>
+            <li>PKR <b>{fmtM(f.month.released)}</b> released on {f.month.released_count} project{f.month.released_count === 1 ? "" : "s"}, as recorded in the portal during the month{f.month.backdated ? <> (PKR {fmtM(f.month.backdated)} of it carries an earlier release date)</> : null}.</li>
+            {f.month.corrections_list.length > 0 && <li>Corrections lowered released figures by PKR {fmtM(-f.month.corrections)} on {f.month.corrections_list.length} project{f.month.corrections_list.length === 1 ? "" : "s"}: {f.month.corrections_list.map((p, i) => <span key={p.id}>{i ? "; " : ""}{p.name} (−{fmtPKR(-p.change)})</span>)}.</li>}
+          </> : <li>PKR <b>{fmtM(thisMonth?.released || 0)}</b> released on {thisMonth?.released_count || 0} project{thisMonth?.released_count === 1 ? "" : "s"} (by budget release date).</li>}
+          <li>{f.pdds.received} PDD{f.pdds.received === 1 ? "" : "s"} received by the PMO on E-PDD; {f.pdds.pmo_approved} approved by the PMO and {f.pdds.sent_back} sent back for changes (document stage; a project is sanctioned only after DF → ED → MT).</li>
         </ul>
         <div style={{ marginTop:18 }}><H sub="Listed so they can be followed up">Needs attention</H></div>
         <ul style={{ margin:"0 0 0 18px", padding:0, fontSize:11.5, lineHeight:1.75, color:C.ink }}>
@@ -183,10 +188,10 @@ export function ReportDocument({ rep, prev }) {
             </div>
           ))}
         </div>
-        {prev?.figures?.stages && (
-          <Note>Since {since}: {f.stages.map(s => { const p = prev.figures.stages.find(x => x.stage === s.stage)?.count || 0; return s.count - p ? `${s.label} ${s.count - p > 0 ? "+" : "−"}${Math.abs(s.count - p)}` : null; }).filter(Boolean).join(" · ") || "no change"}.</Note>
+        {cmp?.stages && (
+          <Note>Since {since}: {f.stages.map(s => { const p = cmp.stages.find(x => x.stage === s.stage)?.count || 0; return s.count - p ? `${s.label} ${s.count - p > 0 ? "+" : "−"}${Math.abs(s.count - p)}` : null; }).filter(Boolean).join(" · ") || "no change"}.</Note>
         )}
-        <div style={{ marginTop:20 }}><H sub="The date the portal stage changed, which is not the MT sanction date">Moved to Approved this month ({f.moved_to_approved.length})</H></div>
+        <div style={{ marginTop:20 }}><H sub="Approved or Closed at the end of the month but not at its start; the portal stage date, which is not the MT sanction date">Moved to Approved this month ({f.moved_to_approved.length})</H></div>
         {f.moved_to_approved.length ? (
           <Table head={["Project", "Campus", { label:"Approved (PKR)", num:true }, { label:"Released (PKR)", num:true }]} widths={["52%", "16%", "16%", "16%"]}
             rows={f.moved_to_approved.map(p => <tr key={p.id}><td style={td}>{name(p)}</td><td style={td}>{p.campus}</td><td style={{ ...td, ...num }}>{fmtPKR(p.bac)}</td><td style={{ ...td, ...num }}>{fmtPKR(p.released)}</td></tr>)} />
@@ -208,7 +213,7 @@ export function ReportDocument({ rep, prev }) {
         <Note>
           The cash-flow plan (PKR {fmtM(f.funding.plan_total)} on current projects, CAPEX including PMDC) has not been revised since it was loaded; DF Recommended is PKR {fmtM(h.df_total - f.funding.plan_total)} above it.
           {f.funding.plan_on_deleted ? ` A further PKR ${fmtM(f.funding.plan_on_deleted)} is planned on a project that no longer exists.` : ""}
-          {" "}Each project has one budget release date, so a later top-up counts in the month of the first release.
+          {" "}This chart places each project's released amount in the month of its budget release date (one date per project, so a later top-up counts in the month of the first release); "released this month" on page 1 is what was recorded in the portal during the month.
           {f.funding.released_undated ? ` ${f.funding.released_undated} released project(s) have no release date and are not in the monthly figures.` : ""}
           {" "}Released means disbursed to the project, not spent.
         </Note>
@@ -312,8 +317,8 @@ function RecipientsModal({ T, session, supa, rep, current, publishing, onClose, 
         body: JSON.stringify(now.map(user_id => ({ report_id: rep.id, user_id, removed: false }))) }, session.access_token);
       if (gone.length) await supa(`/rest/v1/board_report_recipients?report_id=eq.${rep.id}&user_id=in.(${gone.join(",")})`, { method:"PATCH",
         headers:{ Prefer:"return=minimal" }, body: JSON.stringify({ removed: true }) }, session.access_token);
-      if (publishing) await supa(`/rest/v1/board_reports?id=eq.${rep.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" },
-        body: JSON.stringify({ status: "published", published_by: session.user_id, published_at: new Date().toISOString() }) }, session.access_token);
+      if (publishing && !(await patchDraft(supa, session.access_token, rep.id, { status: "published" })))
+        throw new Error("This report was already published (perhaps from another tab). Reopen it to manage recipients.");
       let pushed = 0;
       const toTell = publishing ? now : added;
       if (toTell.length) {
@@ -362,7 +367,19 @@ function RecipientsModal({ T, session, supa, rep, current, publishing, onClose, 
 }
 
 /* ── The viewer (full screen; the document is what prints) ─────────────────── */
-function ReportViewer({ T, session, supa, rep, prev, recipients, onClose, onChanged, isMobile }) {
+// The latest published report for an earlier month: what a report is compared with.
+async function comparisonFor(supa, token, ym) {
+  const r = await supa(`/rest/v1/board_reports?status=eq.published&period=lt.${ym}-01&select=id,period,kind,headline:figures->headline,stages:figures->stages,label:figures->>period&order=period.desc,published_at.desc&limit=1`, {}, token).catch(() => []);
+  const c = r?.[0];
+  return c ? { id: c.id, ym: String(c.period).slice(0, 7), period: c.label, kind: c.kind, headline: c.headline, stages: c.stages } : null;
+}
+// Changes to a report only while it is a draft; returns false if it was already published.
+async function patchDraft(supa, token, id, body) {
+  const r = await supa(`/rest/v1/board_reports?id=eq.${id}&status=eq.draft`, { method:"PATCH", headers:{ Prefer:"return=representation" }, body: JSON.stringify(body) }, token);
+  return Array.isArray(r) && r.length > 0;
+}
+
+function ReportViewer({ T, session, supa, rep, recipients, onClose, onChanged, isMobile }) {
   usePrintStyles();
   const isPMO = session.role === "pmo";
   const [modal, setModal] = useState(null);       // "publish" | "share" | "email" | "discard"
@@ -371,6 +388,13 @@ function ReportViewer({ T, session, supa, rep, prev, recipients, onClose, onChan
   const [note, setNote] = useState(rep.note || "");
   const draft = rep.status === "draft";
   const live = recipients.filter(r => !r.removed);
+  // Phones: the A4 page is zoomed to the screen width (zoom, unlike a transform, also shrinks the scroll area).
+  const [fit, setFit] = useState(() => Math.min(1, (window.innerWidth - 8) / 794));
+  useEffect(() => {
+    const on = () => setFit(Math.min(1, (window.innerWidth - 8) / 794));
+    window.addEventListener("resize", on); window.addEventListener("orientationchange", on);
+    return () => { window.removeEventListener("resize", on); window.removeEventListener("orientationchange", on); };
+  }, []);
 
   useEffect(() => {
     if (!isPMO && rep.status === "published")
@@ -384,16 +408,16 @@ function ReportViewer({ T, session, supa, rep, prev, recipients, onClose, onChan
       const rows = await loadReportRows(p => supa(`/rest/v1/${p}`, {}, session.access_token));
       const per = periodOf(ymOf(rep)), now = new Date().toISOString();
       const asAt = per.end < now ? per.end : now;
-      const figures = computeFigures(rows, { ym: ymOf(rep), asAt, builtAt: now });
-      await supa(`/rest/v1/board_reports?id=eq.${rep.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" },
-        body: JSON.stringify({ figures, as_at: asAt, calc_version: CALC_VERSION, note }) }, session.access_token);
-      setMsg({ ok:true, t:"Figures refreshed from today's data." }); onChanged?.();
+      const compare = await comparisonFor(supa, session.access_token, ymOf(rep));
+      const figures = computeFigures(rows, { ym: ymOf(rep), asAt, builtAt: now, compare });
+      const ok = await patchDraft(supa, session.access_token, rep.id, { figures, as_at: asAt, calc_version: CALC_VERSION, note });
+      setMsg(ok ? { ok:true, t:"Figures refreshed from today's data." } : { ok:false, t:"This report has already been published; its figures can't change." }); onChanged?.();
     } catch (e) { setMsg({ ok:false, t:e.message }); }
     setBusy(null);
   };
   const saveNote = async () => {
-    if ((rep.note || "") === note) return;
-    await supa(`/rest/v1/board_reports?id=eq.${rep.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" }, body: JSON.stringify({ note }) }, session.access_token).catch(() => {});
+    if ((rep.note || "") === note || rep.status !== "draft") return;
+    await patchDraft(supa, session.access_token, rep.id, { note }).catch(() => {});
     onChanged?.();
   };
   const email = async () => {
@@ -406,7 +430,11 @@ function ReportViewer({ T, session, supa, rep, prev, recipients, onClose, onChan
     setBusy(null); setModal(null);
   };
   const discard = async () => {
-    await supa(`/rest/v1/board_reports?id=eq.${rep.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" }, body: JSON.stringify({ status:"discarded" }) }, session.access_token).catch(() => {});
+    const ok = await patchDraft(supa, session.access_token, rep.id, { status:"discarded" }).catch(() => false);
+    if (!ok) { setModal(null); setMsg({ ok:false, t:"Already published, so it can't be discarded." }); onChanged?.(); return; }
+    supa("/rest/v1/activity_log", { method:"POST", headers:{ Prefer:"return=minimal" }, body: JSON.stringify({
+      actor_id: session.user_id, actor_name: session.full_name || session.username, actor_role: session.role,
+      action: "updated", entity_type: "board_reports", entity_id: rep.id, summary: `Discarded the draft "${rep.title}"`, details: { status: "discarded" } }) }, session.access_token).catch(() => {});
     onChanged?.(); onClose();
   };
 
@@ -415,11 +443,12 @@ function ReportViewer({ T, session, supa, rep, prev, recipients, onClose, onChan
     <div className="br-print-root" style={{ position:"fixed", inset:0, zIndex:1300, background:T.page, display:"flex", flexDirection:"column" }}>
       <div className="br-toolbar" style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", padding:`${SP.md}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}`, background:T.surface }}>
         <Button T={T} variant="ghost" icon={ArrowLeft} onClick={onClose}>Back</Button>
-        <div style={{ minWidth:0, flex:1 }}>
+        <div style={{ minWidth:0, flex: isMobile ? "1 1 calc(100% - 110px)" : 1 }}>
           <div style={{ ...TYPE.h3, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{rep.title}</div>
           <div style={{ ...TYPE.caption, color:T.muted }}><span style={{ color:chip[1], fontWeight:700 }}>{chip[0]}</span>
             {isPMO && rep.status === "published" && rep.kind !== "reconstructed" && <> · shared with {live.length} · opened by {live.filter(r => r.seen_at).length}</>}</div>
         </div>
+        {isMobile && <div style={{ flexBasis:"100%", height:0 }} />}
         {msg && <span style={{ fontSize:12.5, color: msg.ok ? T.textOf(T.positive) : T.textOf(T.danger), display:"flex", alignItems:"center", gap:5 }}>{msg.ok ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}{msg.t}</span>}
         {isPMO && draft && <Button T={T} variant="ghost" icon={RefreshCw} loading={busy === "refresh"} onClick={refresh} title="Rebuild the figures from today's data">Refresh figures</Button>}
         {isPMO && draft && <Button T={T} variant="ghost" icon={Trash2} onClick={() => setModal("discard")}>Discard</Button>}
@@ -436,8 +465,8 @@ function ReportViewer({ T, session, supa, rep, prev, recipients, onClose, onChan
         </div>
       )}
       <div className="br-scroll pmo-scroll" style={{ flex:1, overflow:"auto", padding: isMobile ? "12px 0" : "24px 12px", background: T.mode === "dark" ? "#0A1424" : "#DCE4EE" }}>
-        <div style={isMobile ? { transform:`scale(${Math.min(1, (window.innerWidth - 8) / 794)})`, transformOrigin:"top left", width:794 } : null}>
-          <ReportDocument rep={{ ...rep, note }} prev={prev} />
+        <div className="br-fit" style={isMobile ? { zoom: fit, width:794 } : null}>
+          <ReportDocument rep={{ ...rep, note }} />
         </div>
       </div>
       {(modal === "publish" || modal === "share") && (
@@ -469,7 +498,8 @@ function NewReportModal({ T, session, supa, reports, onClose, onBuilt, isMobile 
   const [err, setErr] = useState(null);
   const live = reports.filter(r => r.status !== "discarded");
   const has = (m, kind) => live.some(r => ymOf(r) === m && (!kind || r.kind === kind));
-  const missingBefore = months.filter(m => m < ym && !has(m)).sort();
+  const hasPublished = (m) => live.some(r => ymOf(r) === m && r.status === "published");
+  const missingBefore = months.filter(m => m < ym && !hasPublished(m)).sort();
   const build = async () => {
     setBusy(true); setErr(null);
     try {
@@ -477,7 +507,8 @@ function NewReportModal({ T, session, supa, reports, onClose, onBuilt, isMobile 
       const now = new Date().toISOString();
       const make = async (m, kind) => {
         const per = periodOf(m), asAt = per.end < now ? per.end : now;
-        const figures = computeFigures(rows, { ym: m, asAt, builtAt: now });
+        const compare = await comparisonFor(supa, session.access_token, m);
+        const figures = computeFigures(rows, { ym: m, asAt, builtAt: now, compare });
         const r = await supa("/rest/v1/board_reports", { method:"POST", headers:{ Prefer:"return=representation" }, body: JSON.stringify({
           period: `${m}-01`, title: kind === "reconstructed" ? `Baseline: ${per.label}` : `Monthly Board Report: ${per.label}`,
           kind, status: kind === "reconstructed" ? "published" : "draft", as_at: asAt, figures, calc_version: CALC_VERSION,
@@ -542,18 +573,15 @@ export function BoardReportsPage({ T, session, supa, isCompact, initialReport = 
     if (initialReport && reports) { setOpenId(initialReport); onInitialOpened?.(); }
   }, [initialReport, reports]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The open report and the one it compares with (latest earlier published month).
-  const [prevFull, setPrevFull] = useState(null);
+  // The open report (its comparison is frozen inside its figures).
   useEffect(() => {
-    if (!openId) { setFull(null); setPrevFull(null); return; }
+    if (!openId) { setFull(null); return; }
     let on = true;
     (async () => {
       const r = await supa(`/rest/v1/board_reports?id=eq.${openId}&select=*`, {}, session.access_token).catch(() => []);
       const rep = r?.[0]; if (!on) return;
       if (!rep) { setOpenId(null); return; }
       setFull(rep);
-      const p = await supa(`/rest/v1/board_reports?status=eq.published&period=lt.${rep.period}&select=id,title,kind,figures&order=period.desc,published_at.desc&limit=1`, {}, session.access_token).catch(() => []);
-      if (on) setPrevFull(p?.[0] || null);
     })();
     return () => { on = false; };
   }, [openId, reports, supa, session.access_token]);
@@ -611,7 +639,7 @@ export function BoardReportsPage({ T, session, supa, isCompact, initialReport = 
       {building && <NewReportModal T={T} session={session} supa={supa} reports={reports || []} isMobile={isCompact}
         onClose={() => setBuilding(false)} onBuilt={(rep) => { setBuilding(false); load().then(() => setOpenId(rep.id)); }} />}
       {openId && full && (
-        <ReportViewer T={T} session={session} supa={supa} rep={full} prev={prevFull} recipients={recOf(full.id)} isMobile={isCompact}
+        <ReportViewer T={T} session={session} supa={supa} rep={full} recipients={recOf(full.id)} isMobile={isCompact}
           onClose={() => setOpenId(null)} onChanged={load} />
       )}
     </div>

@@ -24,7 +24,7 @@
    have no such history: they are read as they are when the report is built.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-export const CALC_VERSION = "board-1";
+export const CALC_VERSION = "board-2";
 export const REPLAY_FLOOR = "2026-08-21T09:39:55Z";
 const PKT = 5 * 3600 * 1000;
 
@@ -64,7 +64,7 @@ export async function loadReportRows(get) {
     get("sectors?select=id,name,sort_order"),
     all("project_cashflows?select=project_id,month,amount,bucket"),
     all("project_risks_scored?select=id,project_id,title,category,status,owner,mitigation_plan,severity,date_last_reviewed,project_name,project_code,project_campus"),
-    all("epdd_pdds?select=id,pdd_number,project_name,campus,epdd_status,queue,source_created_at,is_history,approvals,linked_project_id"),
+    all("epdd_pdds?select=id,pdd_number,project_name,campus,epdd_status,queue,received_at,source_created_at,is_history,approvals,linked_project_id"),
     all("carry_forward_projects?select=amount,status"),
     all("past_projects?select=id,status,approved_amount,released_amount,reason_open,budget_release_date,fiscal_year,campus"),
     get("settings?key=in.(dashboard_kpis,team_config)&select=key,value"),
@@ -109,10 +109,16 @@ function epddWhen(s) {
   return new Date(Date.UTC(Number(m[3]), mon, Number(m[1]), h, Number(m[5])) - PKT).toISOString();
 }
 
-export function computeFigures(rows, { ym, asAt, builtAt }) {
+// `compare`: the report this one is measured against (the latest published
+// report for an earlier month), frozen into the figures so every reader sees
+// the same "since last report" whatever they are allowed to open.
+export function computeFigures(rows, { ym, asAt, builtAt, compare = null }) {
   const per = periodOf(ym);
   const atIso = asAt;                                          // end of the month, or now for the month in progress
   const all = projectsAt(rows.projects, rows.log, atIso);
+  // The month's start (the replay cannot go before REPLAY_FLOOR).
+  const startIso = per.start > REPLAY_FLOOR ? per.start : REPLAY_FLOOR;
+  const before = new Map(projectsAt(rows.projects, rows.log, startIso).map(p => [p.id, p]));
   const capex = all.filter(p => (p.portfolio || "capex") === "capex");
   const inv = all.filter(p => p.portfolio === "investment");
   const name = (list, id) => (list || []).find(x => x.id === id)?.name || null;
@@ -159,15 +165,24 @@ export function computeFigures(rows, { ym, asAt, builtAt }) {
     return { stage: s, label: STAGE_NAME[s], count: l.length, df: sum(l, p => p.df_recommended_amount) };
   }).filter(x => x.count > 0 || ["pdd_not_submitted", "df_review", "ed_review", "mt_review", "approved", "closed"].includes(x.stage));
 
-  // Moved to Approved in the portal during the month (net: still approved at its end)
-  const endMs = new Date(per.end).getTime(), startMs = new Date(per.start).getTime(), atMs = new Date(atIso).getTime();
-  const movedIds = new Set();
-  for (const e of rows.log) {
-    const t = new Date(e.created_at).getTime();
-    if (t > Math.min(endMs, atMs) || t < startMs || !e.details?.new) continue;
-    if (e.details.new.workflow_stage === "approved" && e.details.old?.workflow_stage && !isApproved(e.details.old)) movedIds.add(e.entity_id);
+  // Moved to Approved (or Closed) during the month: approved at the end, not at the start.
+  const endMs = new Date(per.end).getTime();
+  const movedToApproved = capex.filter(p => isApproved(p) && !(before.has(p.id) && isApproved(before.get(p.id)))).map(brief).sort((a, b) => b.bac - a.bac);
+
+  // Released during the month, as recorded in the portal: each project's released
+  // amount at the end less at the start. Falls (data corrections) are kept apart.
+  const flows = [];
+  for (const p of capex) {
+    const d = num(p.amount_released) - num(before.get(p.id)?.amount_released);
+    if (d) flows.push({ ...brief(p), change: d, backdated: d > 0 && p.budget_release_date && p.budget_release_date < pktDay(startIso) });
   }
-  const movedToApproved = capex.filter(p => movedIds.has(p.id) && isApproved(p)).map(brief).sort((a, b) => b.bac - a.bac);
+  for (const [id, p] of before) if ((p.portfolio || "capex") === "capex" && !capex.some(x => x.id === id) && num(p.amount_released))
+    flows.push({ ...brief(p), change: -num(p.amount_released), removed: true });
+  const ups = flows.filter(x => x.change > 0).sort((a, b) => b.change - a.change);
+  const downs = flows.filter(x => x.change < 0).sort((a, b) => a.change - b.change);
+  const month = { from: startIso, released: ups.reduce((s, x) => s + x.change, 0), released_count: ups.length, released_list: ups,
+    backdated: ups.filter(x => x.backdated).reduce((s, x) => s + x.change, 0),
+    corrections: downs.reduce((s, x) => s + x.change, 0), corrections_list: downs };
 
   // Needs attention (computed, fixed wording in the page)
   const attention = {
@@ -242,7 +257,8 @@ export function computeFigures(rows, { ym, asAt, builtAt }) {
 
   // PDD intake (E-PDD; document stage, not sanction)
   const inMonth = (iso) => iso && iso >= per.start && iso < per.end;
-  const pddIn = rows.pdds.filter(p => inMonth(p.source_created_at));
+  // Received = the date the PMO received it (as on PMO Review); removed PDDs left out.
+  const pddIn = rows.pdds.filter(p => p.queue !== "removed" && inMonth(p.received_at || p.source_created_at));
   let pmoApproved = 0, sentBack = 0;
   for (const p of rows.pdds) for (const a of (Array.isArray(p.approvals) ? p.approvals : [])) {
     if (a.kind !== "decision") continue;
@@ -277,7 +293,8 @@ export function computeFigures(rows, { ym, asAt, builtAt }) {
   return {
     calc_version: CALC_VERSION, ym, period: per.label, as_at: atIso, built_at: builtAt,
     month_in_progress: new Date(atIso).getTime() < endMs,
-    headline, stages, moved_to_approved: movedToApproved, attention,
+    headline, stages, moved_to_approved: movedToApproved, month, attention,
+    compare: compare ? { id: compare.id, ym: compare.ym, period: compare.period, kind: compare.kind, headline: compare.headline, stages: compare.stages } : null,
     funding: { months: funding, plan_total: planTotal, plan_on_deleted: planOnDeleted, released_undated: releasedUndated, pmdc_df: headline.pmdc_df },
     breakdown, top, risks, pdds, carry, past, register, published,
   };
@@ -285,7 +302,7 @@ export function computeFigures(rows, { ym, asAt, builtAt }) {
 
 // The "since last report" figures for the summary tiles.
 export const DELTA_KEYS = ["capex_count", "df_total", "approved_count", "approved_bac", "released_total", "approved_not_released", "investment_released"];
-export function deltas(cur, prev) {
+export function deltas(cur, prev = cur?.compare) {
   if (!prev?.headline) return null;
   return Object.fromEntries(DELTA_KEYS.map(k => [k, num(cur.headline[k]) - num(prev.headline[k])]));
 }

@@ -8106,8 +8106,17 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
 const SUPA_FN_URL = "https://prmxkecomqqngvrmytcj.supabase.co/functions/v1";
 
 // Board reports (PMO, 8 Oct 2026): loaded only when opened.
-const BoardReportsPage = lazy(() => import("./BoardReport.jsx").then(m => ({ default: m.BoardReportsPage })));
-const BoardReportPopup = lazy(() => import("./BoardReport.jsx").then(m => ({ default: m.BoardReportPopup })));
+// After a deploy an open tab may ask for a file that no longer exists: reload
+// once to pick up the new version instead of failing the whole page.
+const loadBoardReport = () => import("./BoardReport.jsx").catch(() => {
+  let again = false;
+  try { again = sessionStorage.getItem("pmo-chunk-reload") === "1"; sessionStorage.setItem("pmo-chunk-reload", "1"); } catch (_) { /* ignore */ }
+  if (!again) window.location.reload();
+  const Nothing = () => null;
+  return { BoardReportsPage: Nothing, BoardReportPopup: Nothing };
+});
+const BoardReportsPage = lazy(() => loadBoardReport().then(m => ({ default: m.BoardReportsPage })));
+const BoardReportPopup = lazy(() => loadBoardReport().then(m => ({ default: m.BoardReportPopup })));
 
 // Welcome email generator (PMO, 8 Oct 2026): loaded only when opened.
 const WelcomeEmailModal = lazy(() => import("./WelcomeEmail.jsx").then(m => ({ default: m.WelcomeEmailModal })));
@@ -11581,6 +11590,8 @@ export default function App() {
   const [reportsAllowed, setReportsAllowed] = useState(false); // PMO, or a board report was shared with them
   const [reportsUnseen, setReportsUnseen] = useState([]);       // shared reports not yet opened
   const [reportPopupDone, setReportPopupDone] = useState(false);
+  const [reportsPinned, setReportsPinned] = useState(() => !!deepReport.current); // opened from a link or the pop-up
+  useEffect(() => { if (page !== "reports") setReportsPinned(false); }, [page]);
   const [reviewTick, setReviewTick] = useState(0);
 
   // ─── ONBOARDING TOUR (Guest, Project Manager only — never PMO) ──────────
@@ -11694,7 +11705,8 @@ export default function App() {
         : [];
       setReportsAllowed(session.role === "pmo" || rows.length > 0);
       setReportsUnseen(Array.isArray(reps) ? reps : []);
-    } catch (_) { setReportsAllowed(session.role === "pmo"); setReportsUnseen([]); }
+      try { sessionStorage.removeItem("pmo-chunk-reload"); } catch (_) { /* ignore */ }
+    } catch (_) { if (session.role === "pmo") setReportsAllowed(true); /* otherwise keep what we knew */ }
   }, [session?.access_token, session?.role, session?.user_id]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     refreshReports();
@@ -12131,7 +12143,7 @@ export default function App() {
     // empty list rather than saying anything.
     ((page === "cashflow" || page === "review") && session?.role !== "pmo") ? "proj" :
     (page === "past" && session?.role !== "pmo" && !pastAllowed) ? "proj" :
-    (page === "reports" && session?.role !== "pmo" && !reportsAllowed && !deepReport.current && !openReport) ? "proj" :
+    (page === "reports" && session?.role !== "pmo" && !reportsAllowed && !reportsPinned) ? "proj" :
     page;
 
   // Every page the user lands on, recorded once per change rather than per
@@ -12342,7 +12354,7 @@ export default function App() {
       {session && !reportPopupDone && !blockingAlertActive && reportsUnseen.length > 0 && effectivePage !== "reports" && (
         <Suspense fallback={null}>
           <BoardReportPopup T={T} reports={reportsUnseen} isMobile={vp.isCompact}
-            onOpen={(id) => { setReportPopupDone(true); setOpenReport(id); setPage("reports"); }}
+            onOpen={(id) => { setReportPopupDone(true); setReportsPinned(true); setOpenReport(id); setPage("reports"); }}
             onLater={() => setReportPopupDone(true)} />
         </Suspense>
       )}

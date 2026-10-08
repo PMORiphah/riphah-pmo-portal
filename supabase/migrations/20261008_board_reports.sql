@@ -89,13 +89,34 @@ create trigger trg_board_recipient_guard
   before update on public.board_report_recipients
   for each row execute function public.trg_board_recipient_guard();
 
-create or replace function public.trg_board_reports_touch()
+-- A published report is frozen: once it leaves 'draft' nothing in it changes.
+-- Publishing stamps who and when on the server.
+create or replace function public.trg_board_reports_guard()
 returns trigger language plpgsql
 set search_path to 'public', 'pg_temp'
-as $$ begin new.updated_at := now(); return new; end; $$;
-create trigger trg_board_reports_touch
+as $$
+begin
+  new.updated_at := now();
+  if old.status = 'draft' then
+    if new.status = 'published' then
+      new.published_by := coalesce(auth.uid(), new.published_by);
+      new.published_at := now();
+    end if;
+    return new;
+  end if;
+  if (new.period, new.title, new.kind, new.status, new.as_at, new.figures, new.calc_version, new.note,
+      new.created_by, new.created_at, new.published_by, new.published_at)
+     is distinct from
+     (old.period, old.title, old.kind, old.status, old.as_at, old.figures, old.calc_version, old.note,
+      old.created_by, old.created_at, old.published_by, old.published_at) then
+    raise exception 'This report is already %; it can no longer change', old.status;
+  end if;
+  return new;
+end;
+$$;
+create trigger trg_board_reports_guard
   before update on public.board_reports
-  for each row execute function public.trg_board_reports_touch();
+  for each row execute function public.trg_board_reports_guard();
 
 -- Grants (Supabase rule from 30 Oct 2026); access is still decided by RLS.
 grant select on public.board_reports, public.board_report_recipients to anon;
