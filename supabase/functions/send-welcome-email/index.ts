@@ -24,6 +24,9 @@ const CORS = {
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 type Row = Record<string, unknown>;
+// The screenshots in the email, served from the commit that added them (works
+// before and after a site deploy; the same files are in public/email).
+const IMG_BASE = "https://raw.githubusercontent.com/PMORiphah/riphah-pmo-portal/cdbd095a8789ef6b98e5ff0d121dd7a5a1254fc3/public/";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -68,7 +71,7 @@ Deno.serve(async (req: Request) => {
   const name = String(person.full_name || person.username);
   const shown = mode === "test" ? (password ? "•".repeat(password.length) : null) : (password || null);
   const e = composeWelcome({ name, username: String(person.username), projects, pastCount, password: shown,
-    note, imgBase: PORTAL_URL, portalUrl: PORTAL_URL });
+    note, imgBase: IMG_BASE, portalUrl: PORTAL_URL });
 
   if (mode === "preview") return json({ ok: true, to: email, ...e });
 
