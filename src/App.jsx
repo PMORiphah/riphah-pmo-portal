@@ -8091,6 +8091,9 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
 // ─── USER MANAGEMENT ──────────────────────────────────────────────────────────
 const SUPA_FN_URL = "https://prmxkecomqqngvrmytcj.supabase.co/functions/v1";
 
+// Welcome email generator (PMO, 8 Oct 2026): loaded only when opened.
+const WelcomeEmailModal = lazy(() => import("./WelcomeEmail.jsx").then(m => ({ default: m.WelcomeEmailModal })));
+
 function UserManagementPage({ T, session }) {
   const vpD = useViewport();
   const [users,          setUsers]          = useState([]);
@@ -8125,6 +8128,7 @@ function UserManagementPage({ T, session }) {
   const [resettingId,      setResettingId]      = useState(null); // user id having its password reset
   const [resettingUser,    setResettingUser]    = useState(null); // user object with the set-password form open
   const [editPhoneId,      setEditPhoneId]      = useState(null);
+  const [welcomeFor,       setWelcomeFor]       = useState(null); // null = closed; "" = no one picked yet; else user id
   const [phoneDraft,       setPhoneDraft]       = useState("");
 
   const savePhone = async (userId) => {
@@ -8290,7 +8294,9 @@ function UserManagementPage({ T, session }) {
         <div style={{ ...TYPE.bodySm, color:T.muted }}>
           {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
         </div>
-        <div style={{ marginLeft:"auto" }}>
+        <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm }}>
+          <Button T={T} variant="ghost" icon={Mail} onClick={() => setWelcomeFor("")}
+            title="Invite a project manager to the portal: preview the email, then send it">Welcome email</Button>
           <Button T={T} variant="primary" icon={Plus} onClick={() => { setShowCreate(true); setCreateStatus(null); }}>Create user</Button>
         </div>
       </div>
@@ -8373,6 +8379,12 @@ function UserManagementPage({ T, session }) {
                     <td style={{ ...td, textAlign:"right" }}>
                       {!me && (
                         <div style={{ display:"flex", gap:8, justifyContent:"flex-end", alignItems:"center" }}>
+                          {u.is_active && (u.role === "project_manager" || (u.role === "guest" && assigns.length > 0)) && (
+                            <Button T={T} variant="ghost" size="sm" icon={Mail} onClick={() => setWelcomeFor(u.id)}
+                              title="Preview and send the welcome email that invites them to the portal">
+                              Welcome
+                            </Button>
+                          )}
                           {(u.role === "project_manager" || u.role === "guest") && (
                             <Button T={T} variant="ghost" size="sm" icon={FolderKanban} onClick={() => openAssign(u)}
                               title={u.role === "guest" ? "Give this Guest PM-level management on specific projects — they keep full portfolio visibility everywhere else" : undefined}>
@@ -8445,6 +8457,13 @@ function UserManagementPage({ T, session }) {
           onSave={saveAssignments}
           onClose={() => setAssigningUser(null)}
         />
+      )}
+      {welcomeFor !== null && (
+        <Suspense fallback={null}>
+          <WelcomeEmailModal T={T} session={session} supa={supa} users={users} isMobile={vpD.isCompact}
+            assignCount={allAssignments.reduce((m, a) => { m[a.user_id] = (m[a.user_id] || 0) + 1; return m; }, {})}
+            initialUserId={welcomeFor} onClose={() => setWelcomeFor(null)} />
+        </Suspense>
       )}
       {resettingUser && (
         <SetUserPasswordModal T={T} user={resettingUser} loading={resettingId === resettingUser.id}
