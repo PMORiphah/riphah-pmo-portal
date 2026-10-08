@@ -1,7 +1,8 @@
 # Board report generator
 
-Status: **built 8 Oct 2026, waiting for the PMO's approval** to run the migration
-(`supabase/migrations/20261008_board_reports.sql`), deploy `board-report-notify` and put it on /preview/.
+Status: **in production since 8 Oct 2026** (commit `7da36cb`; rollback `c82d553`). Migration applied as
+`board_reports`, `board-report-notify` deployed from commit `5fc6b4a`. Aug baseline + Sep draft built; the
+Sep draft awaits the PMO's review and publish (push, pop-up and email not yet exercised on a real publish).
 Code: `src/reportCalc.js`, `src/BoardReport.jsx`, wiring in `src/App.jsx`. Tested on a local copy with
 the two new tables simulated; reviewed by three independent reviewers (9 defects found and fixed).
 

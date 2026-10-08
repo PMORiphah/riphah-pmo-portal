@@ -41,12 +41,16 @@ function useCompareData(supa, session) {
       supa("/rest/v1/user_profiles?select=id,full_name,username", {}, t).catch(() => []),
       supa("/rest/v1/project_risks?select=project_id,status", {}, t).catch(() => []),
       supa("/rest/v1/project_deliverables?select=project_id,status,confirmed,superseded", {}, t).catch(() => []),
-      supa("/rest/v1/past_projects?select=campus,status", {}, t).catch(() => null),
+      // Past projects only for those who see all of them (PMO, the past viewers);
+      // a guest who manages a few would otherwise get a partial column.
+      (session.role === "pmo" ? Promise.resolve(true)
+        : supa("/rest/v1/rpc/is_past_viewer", { method: "POST", body: "{}" }, t).then(r => r === true).catch(() => false))
+        .then(all => all ? supa("/rest/v1/past_projects?select=campus,status", {}, t) : null).catch(() => null),
     ]).then(([projects, assigns, users, risks, deliv, past]) => {
       if (on) setData({ projects: projects || [], assigns: assigns || [], users: users || [], risks: risks || [], deliv: deliv || [], past });
     }).catch(e => on && setErr(e.message));
     return () => { on = false; };
-  }, [supa, session.access_token]);
+  }, [supa, session.access_token, session.role]);
   return { data, err };
 }
 
