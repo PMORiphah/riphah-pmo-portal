@@ -38,6 +38,10 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
   const [pw, setPw] = useState("");
   const [cfg, setCfg] = useState({ cc: [], password: "" });
   const [ccDraft, setCcDraft] = useState("");
+  // This email's CC: starts as the fixed list every time (new person, after a
+  // send); removing or adding someone here changes this email only.
+  const [cc, setCc] = useState([]);
+  useEffect(() => { setCc(cfg.cc); }, [cfg.cc, uid]);
 
   // The saved CC list and standard password.
   useEffect(() => {
@@ -56,8 +60,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
     const list = ccDraft.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
     const bad = list.filter(x => !EMAIL_RE.test(x));
     if (bad.length) { setStatus({ ok:false, msg:`Not an email address: ${bad.join(", ")}` }); return; }
-    const next = [...new Set([...cfg.cc, ...list])];
-    setCcDraft(""); setStatus(null); saveCfg({ ...cfg, cc: next });
+    setCcDraft(""); setStatus(null); setCc(c => [...new Set([...c, ...list])]);
   };
   const [note, setNote] = useState("");
   const [view, setView] = useState(isMobile ? "phone" : "computer");
@@ -110,11 +113,11 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
     setBusy(mode); setStatus(null);
     try {
       const r = await supa("/functions/v1/send-welcome-email", { method:"POST",
-        body: JSON.stringify({ user_id: person.id, note, mode, ...(withPw ? { password: pw.trim() } : {}) }) }, session.access_token);
+        body: JSON.stringify({ user_id: person.id, note, mode, cc, ...(withPw ? { password: pw.trim() } : {}) }) }, session.access_token);
       setStatus({ ok:true, msg: mode === "test"
         ? `Test sent to ${r.sent_to} only (no CC). Nobody's password was changed.`
         : `Sent to ${r.sent_to}${r.cc ? `, copied to ${r.cc}` : ""}.${r.password_set ? ` ${first}'s password is now the one in the email.` : ""}` });
-      if (mode === "send") setData(d => ({ ...d, sent: [{ created_at: new Date().toISOString() }, ...d.sent] }));
+      if (mode === "send") { setData(d => ({ ...d, sent: [{ created_at: new Date().toISOString() }, ...d.sent] })); setCc(cfg.cc); }
     } catch (e) { setStatus({ ok:false, msg: e.message }); }
     setBusy(null); setConfirm(false);
   };
@@ -135,7 +138,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
         </Select>
         {person && (
           <div style={{ ...TYPE.caption, color: person.email ? T.muted : T.textOf(T.danger), marginTop:6 }}>
-            {person.email ? <>To <b style={{ color:T.text }}>{person.email}</b>{cfg.cc.length ? <>, CC {cfg.cc.length} {cfg.cc.length === 1 ? "person" : "people"}</> : null}</> : "This user has no email address."}
+            {person.email ? <>To <b style={{ color:T.text }}>{person.email}</b>{cc.length ? <>, CC {cc.length} {cc.length === 1 ? "person" : "people"}</> : null}</> : "This user has no email address."}
             {person.role === "guest" && <div style={{ marginTop:3 }}>Guest account that manages projects.</div>}
             {data.sent.length > 0 && <div style={{ marginTop:3, color:T.textOf(T.warning || "#D89840") }}>Already sent {data.sent.map(s => when(s.created_at)).join(", ")}</div>}
           </div>
@@ -167,14 +170,14 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
       </div>
 
       <div>
-        <span style={label}>CC on every welcome email</span>
+        <span style={label}>CC on this email</span>
         <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
-          {cfg.cc.length === 0 && <span style={{ ...TYPE.caption, color:T.muted }}>Nobody yet.</span>}
-          {cfg.cc.map(a => (
+          {cc.length === 0 && <span style={{ ...TYPE.caption, color:T.muted }}>Nobody copied on this email.</span>}
+          {cc.map(a => (
             <span key={a} style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"3px 4px 3px 9px", borderRadius:R.pill,
               background:T.card2 || T.inputBg, border:`1px solid ${T.border}`, fontSize:12, color:T.text, maxWidth:"100%" }}>
               <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a}</span>
-              <button type="button" className="pmo-focusable" title={`Remove ${a}`} onClick={() => saveCfg({ ...cfg, cc: cfg.cc.filter(x => x !== a) })}
+              <button type="button" className="pmo-focusable" title={`Remove ${a}`} onClick={() => setCc(c => c.filter(x => x !== a))}
                 style={{ border:0, background:"transparent", color:T.muted, cursor:"pointer", padding:2, display:"flex" }}><X size={12} /></button>
             </span>
           ))}
@@ -184,7 +187,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
             placeholder="name@riphah.edu.pk" style={inp} />
           <Button T={T} variant="ghost" icon={Plus} onClick={addCc} disabled={!ccDraft.trim()}>Add</Button>
         </div>
-        <div style={{ ...TYPE.caption, color:T.muted, marginTop:6 }}>Saved for every welcome email. Tests go to you only.</div>
+        <div style={{ ...TYPE.caption, color:T.muted, marginTop:6 }}>The fixed list of {cfg.cc.length} comes back for every email; removing or adding here changes this email only. Tests go to you only.</div>
       </div>
 
       <div>
@@ -196,7 +199,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
 
       {confirm && !status && (
         <div style={{ padding:"10px 12px", borderRadius:R.md, fontSize:12.5, lineHeight:1.5, background:`${T.blue}18`, color:T.text }}>
-          Press <b>Confirm</b> to send this email to <b>{person?.email}</b>{cfg.cc.length ? <> (CC {cfg.cc.length})</> : null}{withPw ? <> and set this password on {first}&rsquo;s account</> : null}.
+          Press <b>Confirm</b> to send this email to <b>{person?.email}</b>{cc.length ? <> (CC {cc.length})</> : null}{withPw ? <> and set this password on {first}&rsquo;s account</> : null}.
         </div>
       )}
       {status && (

@@ -7,8 +7,8 @@
 // test     sends it to the PMO who pressed the button only ("[Test]" subject,
 //          no CC, the password shown but not set);
 // send     sends it to the person, copied to the CC list kept in the PMO-only
-//          setting `welcome_email` ({cc: [...], password}) that the PMO edits
-//          in the window. With `password`, that password is set on their
+//          setting `welcome_email` ({cc: [...], password}); the PMO may remove
+//          or add people for one email in the window (sent as `cc`). With `password`, that password is set on their
 //          account first (same as Reset password); if that fails, nothing is sent.
 // Nothing is ever sent automatically (rule: PMs are emailed only when the PMO
 // presses Send on a previewed message). Logged in notifications_log as
@@ -48,7 +48,7 @@ Deno.serve(async (req: Request) => {
     .then(r => r.json()).catch(() => false);
   if (isPmo !== true) return json({ error: "Forbidden: PMO role required" }, 403);
 
-  const body = await req.json().catch(() => ({})) as { user_id?: string; note?: string; password?: string; mode?: string };
+  const body = await req.json().catch(() => ({})) as { user_id?: string; note?: string; password?: string; mode?: string; cc?: unknown[] };
   const id = String(body.user_id ?? "");
   const mode = body.mode === "send" ? "send" : body.mode === "test" ? "test" : "preview";
   if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: "user_id required" }, 400);
@@ -68,7 +68,9 @@ Deno.serve(async (req: Request) => {
   const pastRows = (await (await rest(`past_projects?pm_user_id=eq.${id}&select=code,name,fiscal_year,campus`)).json()) as PastProject[];
   const past = Array.isArray(pastRows) ? pastRows : [];
   const setting = ((await (await rest("settings?key=eq.welcome_email&select=value")).json()) as Row[])?.[0]?.value as Row | undefined;
-  const cc = [...new Set((Array.isArray(setting?.cc) ? setting!.cc as unknown[] : []).map(x => String(x).trim().toLowerCase())
+  // The fixed list from the setting, unless the PMO changed it for this email
+  // in the window (then `cc` in the body is that email's list).
+  const cc = [...new Set((Array.isArray(body.cc) ? body.cc : Array.isArray(setting?.cc) ? setting!.cc as unknown[] : []).map(x => String(x).trim().toLowerCase())
     .filter(x => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)))];
 
   const name = String(person.full_name || person.username);
