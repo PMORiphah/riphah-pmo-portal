@@ -5838,8 +5838,36 @@ function CampusPage({ T, session, onSelectProject,
     whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"};
   const ctl = {background:T.inputBg,border:"1px solid "+T.inputBorder,borderRadius:R.sm,padding:"8px 11px",fontSize:13,color:T.text,fontFamily:TYPE.body.fontFamily,outline:"none"};
 
+  // Sites (one campus at a time) or Compare (every campus side by side, head to
+  // head). Compare is for the PMO and guests; a PM only sees their own projects.
+  const canCompare = session?.role !== "project_manager";
+  const [campusView, setCampusViewRaw] = useState(() => { try { return canCompare && sessionStorage.getItem("pmo-campus-view") === "compare" ? "compare" : "sites"; } catch (_) { return "sites"; } });
+  const setCampusView = (v) => { setCampusViewRaw(v); try { sessionStorage.setItem("pmo-campus-view", v); } catch (_) { /* ignore */ } };
+  const viewSwitch = canCompare && (
+    <div role="tablist" aria-label="Campus view" style={{ display:"flex", padding:2, borderRadius:R.pill, border:`1px solid ${T.border}`, background:T.surface, flexShrink:0 }}>
+      {[["sites","Sites"],["compare","Compare"]].map(([v,l]) => (
+        <button key={v} role="tab" aria-selected={campusView === v} className="pmo-focusable pmo-btn" onClick={() => setCampusView(v)}
+          style={{ padding:"6px 14px", borderRadius:R.pill, border:"none", cursor:"pointer", fontSize:12.5, fontFamily:TYPE.body.fontFamily,
+            background: campusView === v ? `${BRAND.blue}22` : "transparent", color: campusView === v ? T.textOf(BRAND.blue) : T.muted, fontWeight: campusView === v ? 700 : 500 }}>{l}</button>
+      ))}
+    </div>
+  );
+
   if (loading) return <div style={{color:T.muted,fontSize:13,padding:20}}>Loading campuses…</div>;
   if (err)     return <div style={{color:T.textOf(ROSE),fontSize:13,padding:20}}>{err}</div>;
+
+  if (canCompare && campusView === "compare") return (
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div className="pmo-scroll" style={{flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",
+        padding:`${SP.lg}px ${vpC.isCompact ? SP.md : SP.xl}px ${SP.xxl}px`, backgroundImage:T.ambient}}>
+        <div style={{ marginBottom:SP.md }}>{viewSwitch}</div>
+        <Suspense fallback={<div style={{ color:T.muted, fontSize:13 }}>Loading the comparison…</div>}>
+          <CampusCompare T={T} session={session} supa={supa} isCompact={vpC.isCompact} onSelectProject={onSelectProject}
+            onOpenCampus={(c) => { setSel(c); setCampusView("sites"); }} />
+        </Suspense>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -5850,6 +5878,7 @@ function CampusPage({ T, session, onSelectProject,
           restate the portfolio for whichever campus is selected. */}
       <Surface T={T} pad={SP.md} style={{marginBottom:SP.lg, flexShrink:0}}>
         <div style={{display:"flex", gap:SP.sm, alignItems:"center", flexWrap:"wrap"}}>
+          {viewSwitch}
           <Select T={T} value={sel} active={!!sel} onChange={e=>setSel(e.target.value)}
             style={{minWidth:230}}>
             <option value="">All campuses ({rows.length})</option>
@@ -8104,6 +8133,12 @@ function AssignProjectsModal({ T, user, projects, selectedIds, onToggle, search,
 
 // ─── USER MANAGEMENT ──────────────────────────────────────────────────────────
 const SUPA_FN_URL = "https://prmxkecomqqngvrmytcj.supabase.co/functions/v1";
+
+// Campus vs campus (PMO, 8 Oct 2026): loaded only when Compare is opened.
+const CampusCompare = lazy(() => import("./CampusCompare.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
+  return { CampusCompare: () => null };
+}).then(m => ({ default: m.CampusCompare })));
 
 // Board reports (PMO, 8 Oct 2026): loaded only when opened.
 // After a deploy an open tab may ask for a file that no longer exists: reload
