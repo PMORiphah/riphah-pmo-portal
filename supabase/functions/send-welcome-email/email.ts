@@ -8,12 +8,13 @@
 // ticks, Updates, past-project replies; no uploads, no project edits) and the
 // person's own projects.
 
-export type WelcomeProject = { code?: string | null; name: string; campus?: string | null; workflow_stage?: string | null };
+export type WelcomeProject = { code?: string | null; name: string; campus?: string | null; workflow_stage?: string | null; start_date?: string | null };
+export type PastProject = { code?: string | null; name: string; fiscal_year?: string | null; campus?: string | null };
 export type WelcomeInput = {
   name: string;                 // full name or username
   username: string;
   projects: WelcomeProject[];   // assigned projects (CAPEX and investment)
-  pastCount?: number;           // past projects they manage (Past Projects chat)
+  past?: PastProject[];         // projects from previous fiscal years they manage (Past Projects)
   password?: string | null;     // a temporary password to include, or null
   note?: string | null;         // an optional line from the PMO
   imgBase: string;              // where email/login.jpg and email/after-signin.jpg are served
@@ -30,6 +31,12 @@ const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g,
 
 const NAVY = "#185078", INK = "#0D1929", BODY = "#3A5068", MUTED = "#7A98AE", GOLD = "#D89840", PANEL = "#F2F8FC", LINE = "#DDE8F4";
 const FONT = "Arial,Helvetica,sans-serif";
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// "2026-09-01" → "1 Sep 2026" (no Date, so it reads the same everywhere).
+export const fmtDate = (d?: string | null) => {
+  const m = String(d ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${Number(m[3])} ${MON[Number(m[2]) - 1]} ${m[1]}` : "—";
+};
 
 // The person's main site: the campus most of their projects sit at.
 export function mainSite(projects: WelcomeProject[]): string {
@@ -45,7 +52,10 @@ export function composeWelcome(a: WelcomeInput) {
   const n = projects.length;
   const site = mainSite(projects);
   const sites = new Set(projects.map(p => p.campus ?? "")).size;
-  const past = a.pastCount ?? 0;
+  const pastList = [...(a.past ?? [])].sort((x, y) =>
+    String(x.fiscal_year ?? "").localeCompare(String(y.fiscal_year ?? "")) || x.name.localeCompare(y.name));
+  const past = pastList.length;
+  const total = n + past;
   const img = (f: string) => `${a.imgBase.replace(/\/?$/, "/")}email/${f}`;
   const subject = "Welcome to the PMO Portal: your account is ready";
   const preheader = `Your PMO Portal account is ready. Sign in as ${a.username}, change your password and take the 2-minute tour.`;
@@ -88,7 +98,7 @@ export function composeWelcome(a: WelcomeInput) {
     ["&#128467;", "Plan the work (WBS)", "Break each project into tasks with dates and keep their progress up to date."],
     ["&#128172;", "Talk to the PMO", "Post progress or a question in <b>Updates</b>. The PMO is told straight away, and you are told when they reply."],
   ];
-  if (past > 0) cards.push(["&#128336;", "Earlier projects", `You also manage ${past} project${past === 1 ? "" : "s"} from earlier fiscal years. Reply to the PMO&rsquo;s follow-ups under <b>Past Projects</b>.`]);
+  if (past > 0) cards.push(["&#128336;", "Previous fiscal years", `Keep the PMO updated on the ${past} project${past === 1 ? "" : "s"} from previous fiscal years under <b>Past Projects</b>, and reply to their follow-ups there.`]);
   cards.push(["&#10024;", "Ask the assistant", "The robot at the bottom right answers questions such as &ldquo;Which of my projects are overdue?&rdquo;"]);
   const cardRows: string[] = [];
   for (let i = 0; i < cards.length; i += 2) {
@@ -97,23 +107,35 @@ export function composeWelcome(a: WelcomeInput) {
   }
 
   const MAX = 25;
+  const codeOf = (c?: string | null) => String(c ?? "").trim() && c !== "-" ? String(c).trim() : "pending";
   const shown = projects.slice(0, MAX);
   const th = `padding:8px 10px;font:700 11px ${FONT};color:${MUTED};text-transform:uppercase;letter-spacing:0.8px;text-align:left;border-bottom:2px solid ${LINE};`;
   const td = `padding:9px 10px;font:13.5px/1.45 ${FONT};color:${INK};border-bottom:1px solid ${LINE};vertical-align:top;`;
   const showSite = sites > 1;
   const projectTable = n ? `
-${stepHead("&#9733;", `Your projects (${n})`, site && !showSite ? `All at ${esc(site)}` : "Already waiting for you in the portal")}
+${stepHead("&#9733;", `Your FY 2026-27 projects (${n})`, site && !showSite ? `All at ${esc(site)}` : "Already waiting for you in the portal")}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-<tr><th style="${th}">Project ID</th><th style="${th}">Project</th>${showSite ? `<th style="${th}">Site</th>` : ""}<th style="${th}">Stage</th></tr>
-${shown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consolas,Menlo,monospace;font-size:12.5px;color:${BODY};">${esc(String(r.code ?? "").trim() && r.code !== "-" ? r.code : "pending")}</td><td style="${td}">${esc(r.name)}</td>${showSite ? `<td style="${td}color:${BODY};">${esc(r.campus ?? "")}</td>` : ""}<td style="${td}white-space:nowrap;color:${BODY};">${esc(STAGE_LABEL[String(r.workflow_stage)] ?? "")}</td></tr>`).join("\n")}
+<tr><th style="${th}">Project ID</th><th style="${th}">Project</th>${showSite ? `<th style="${th}">Site</th>` : ""}<th style="${th}">Planned start</th><th style="${th}">Stage</th></tr>
+${shown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consolas,Menlo,monospace;font-size:12.5px;color:${BODY};">${esc(codeOf(r.code))}</td><td style="${td}">${esc(r.name)}</td>${showSite ? `<td style="${td}color:${BODY};">${esc(r.campus ?? "")}</td>` : ""}<td style="${td}white-space:nowrap;color:${BODY};">${esc(fmtDate(r.start_date))}</td><td style="${td}white-space:nowrap;color:${BODY};">${esc(STAGE_LABEL[String(r.workflow_stage)] ?? "")}</td></tr>`).join("\n")}
 </table>${n > MAX ? p(`&hellip; and ${n - MAX} more in the portal.`, "margin-top:10px;font-size:13px;") : ""}` : "";
+  const pastShown = pastList.slice(0, MAX);
+  const pastTable = past ? `
+${stepHead("&#9719;", `Projects from previous fiscal years (${past})`, "Under Past Projects in the portal")}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+<tr><th style="${th}">Project ID</th><th style="${th}">Project</th><th style="${th}">FY</th></tr>
+${pastShown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consolas,Menlo,monospace;font-size:12.5px;color:${BODY};">${esc(codeOf(r.code))}</td><td style="${td}">${esc(r.name)}</td><td style="${td}white-space:nowrap;color:${BODY};">${esc(r.fiscal_year ?? "—")}</td></tr>`).join("\n")}
+</table>${past > MAX ? p(`&hellip; and ${past - MAX} more in the portal.`, "margin-top:10px;font-size:13px;") : ""}` : "";
 
   const passwordCell = a.password
     ? `${mono(a.password)}<div style="font:12.5px/1.5 ${FONT};color:#A15C07;margin-top:6px;">Temporary. Please change it after you sign in (step 2).</div>`
     : `<span style="font:14px ${FONT};color:${BODY};">The PMO will share it with you separately.</span>`;
 
-  const intro = n
-    ? `The Project Management Office has opened your account on the <b>PMO Capital Projects Portal</b>, where Riphah&rsquo;s FY 2026-27 capital projects are planned, approved and followed up. You are the project manager for <b>${projWord}</b>${site && !showSite ? ` at <b>${esc(site)}</b>` : ""}, and they are already in the portal for you.`
+  const pastWord = `${past} project${past === 1 ? "" : "s"}`;
+  const scope = past
+    ? `You are the project manager for <b>${projWord} in FY 2026-27</b> and <b>${pastWord} from previous fiscal years</b>: <b>${total} projects in all</b>${site && !showSite ? `, mostly at <b>${esc(site)}</b>` : ""}. They are already in the portal for you.`
+    : `You are the project manager for <b>${projWord} in FY 2026-27</b>${site && !showSite ? ` at <b>${esc(site)}</b>` : ""}, and they are already in the portal for you.`;
+  const intro = (n || past)
+    ? `The Project Management Office has opened your account on the <b>PMO Capital Projects Portal</b>, where Riphah&rsquo;s capital projects are planned, approved and followed up: the current FY 2026-27 portfolio and projects from previous fiscal years. ${scope}`
     : `The Project Management Office has opened your account on the <b>PMO Capital Projects Portal</b>, where Riphah&rsquo;s FY 2026-27 capital projects are planned, approved and followed up. Your projects will appear as soon as the PMO assigns them to you.`;
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="x-apple-disable-message-reformatting"><title>${esc(subject)}</title>
@@ -179,6 +201,7 @@ ${cardRows.join("\n")}
 </table>
 
 ${projectTable}
+${pastTable}
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:30px 0 4px;background:${INK};border-radius:12px;"><tr><td style="padding:20px 22px;">
 <div style="font:700 15px ${FONT};color:#ffffff;margin-bottom:8px;">&#128241; Keep it on your phone</div>
@@ -199,7 +222,7 @@ ${p(`Kind regards,<br><b style="color:${INK};">Project Management Office</b><br>
   const text = [
     `Dear ${name},`,
     "",
-    n ? `The Project Management Office has opened your account on the PMO Capital Projects Portal, where Riphah's FY 2026-27 capital projects are planned, approved and followed up. You are the project manager for ${projWord}${site && !showSite ? ` at ${site}` : ""}.`
+    (n || past) ? `The Project Management Office has opened your account on the PMO Capital Projects Portal, where Riphah's capital projects are planned, approved and followed up. You are the project manager for ${projWord} in FY 2026-27${past ? ` and ${pastWord} from previous fiscal years (${total} projects in all)` : ""}.`
       : "The Project Management Office has opened your account on the PMO Capital Projects Portal. Your projects will appear as soon as the PMO assigns them to you.",
     ...(a.note && a.note.trim() ? ["", a.note.trim(), "- Project Management Office"] : []),
     "",
@@ -220,9 +243,10 @@ ${p(`Kind regards,<br><b style="color:${INK};">Project Management Office</b><br>
     "- Tick deliverables as they are delivered, with a short note.",
     "- Plan the work (WBS) and keep progress up to date.",
     "- Talk to the PMO in Updates.",
-    ...(past > 0 ? [`- Reply to the PMO's follow-ups under Past Projects (${past} project${past === 1 ? "" : "s"} from earlier fiscal years).`] : []),
+    ...(past > 0 ? [`- Keep the PMO updated on your ${pastWord} from previous fiscal years under Past Projects.`] : []),
     "- Ask the assistant, e.g. 'Which of my projects are overdue?'",
-    ...(n ? ["", `YOUR PROJECTS (${n})`, ...shown.map((r, i) => `${i + 1}. ${String(r.code ?? "").trim() && r.code !== "-" ? r.code : "pending"}  ${r.name}${showSite && r.campus ? ` (${r.campus})` : ""}  - ${STAGE_LABEL[String(r.workflow_stage)] ?? ""}`), ...(n > MAX ? [`... and ${n - MAX} more in the portal.`] : [])] : []),
+    ...(n ? ["", `YOUR FY 2026-27 PROJECTS (${n})`, ...shown.map((r, i) => `${i + 1}. ${codeOf(r.code)}  ${r.name}${showSite && r.campus ? ` (${r.campus})` : ""}  - planned start ${fmtDate(r.start_date)} - ${STAGE_LABEL[String(r.workflow_stage)] ?? ""}`), ...(n > MAX ? [`... and ${n - MAX} more in the portal.`] : [])] : []),
+    ...(past ? ["", `PROJECTS FROM PREVIOUS FISCAL YEARS (${past})`, ...pastShown.map((r, i) => `${i + 1}. ${codeOf(r.code)}  ${r.name} (${r.fiscal_year ?? "-"})`), ...(past > MAX ? [`... and ${past - MAX} more in the portal.`] : [])] : []),
     "",
     "On your phone: iPhone - Safari, Share, Add to Home Screen. Android - Chrome, menu, Add to Home screen.",
     "",

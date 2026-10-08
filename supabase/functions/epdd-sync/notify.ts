@@ -55,7 +55,8 @@ export async function push(ctx: Ctx, userIds: string[], n: { title: string; body
 // One message to each recipient (the team copied), as the deadline digest does.
 // `cc: false` sends to the recipients alone (used for the PMO's test message).
 export type Sent = { r: Recipient; ok: boolean; error?: string; cc?: number };
-export async function mail(to: Recipient[], subject: string, text: string, html: string, cc = true): Promise<Sent[]> {
+// `cc` may also be a list of addresses (the welcome email's own CC list, 8 Oct 2026).
+export async function mail(to: Recipient[], subject: string, text: string, html: string, cc: boolean | string[] = true): Promise<Sent[]> {
   const user = Deno.env.get("GMAIL_USER"), pass = Deno.env.get("GMAIL_APP_PASSWORD");
   if (!user || !pass) return to.map(r => ({ r, ok: false, error: "GMAIL_USER / GMAIL_APP_PASSWORD not configured" }));
   const fromName = (toAscii(Deno.env.get("MAIL_FROM_NAME") || DEFAULT_FROM_NAME).replace(/["\\]/g, "")) || DEFAULT_FROM_NAME;
@@ -65,7 +66,7 @@ export async function mail(to: Recipient[], subject: string, text: string, html:
   const out: Sent[] = [];
   try {
     for (const r of to) {
-      const c = cc ? ccList.filter(a => a !== r.email.toLowerCase()) : [];
+      const c = (Array.isArray(cc) ? cc.map(x => x.trim().toLowerCase()) : cc ? ccList : []).filter(a => a && a !== r.email.toLowerCase());
       try {
         await client.send({ from: `"${fromName}" <${user}>`, to: r.email, ...(c.length ? { cc: c } : {}),
           ...(replyTo ? { replyTo } : {}), subject: toAscii(subject), content: text, html });

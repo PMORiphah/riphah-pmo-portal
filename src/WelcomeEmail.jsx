@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Mail, Send, RefreshCw, Monitor, Smartphone, KeyRound, CheckCircle2, AlertCircle } from "lucide-react";
+import { Mail, Send, Monitor, Smartphone, KeyRound, CheckCircle2, AlertCircle, X, Plus } from "lucide-react";
 import { TYPE, SP, R } from "./theme.js";
 import { Button, Modal, Select } from "./ui.jsx";
 import { composeWelcome } from "../supabase/functions/send-welcome-email/email.ts";
@@ -16,11 +16,9 @@ import { composeWelcome } from "../supabase/functions/send-welcome-email/email.t
    the edge function uses (supabase/functions/send-welcome-email/email.ts).
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const WORDS = ["Cedar", "Lotus", "Falcon", "Maple", "Harbor", "Summit", "Orchid", "Comet", "Willow", "Canyon",
-  "Meadow", "Saffron", "Indigo", "Granite", "Jasmine", "Aurora", "Pine", "River", "Atlas", "Coral",
-  "Ember", "Glacier", "Hazel", "Iris", "Juniper", "Kestrel", "Lagoon", "Monsoon", "Nova", "Opal"];
-const pick = (n) => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; };
-export const tempPassword = () => `${WORDS[pick(WORDS.length)]}-${String(1000 + pick(9000))}-${WORDS[pick(WORDS.length)]}`;
+// The CC list and the standard first password live in the PMO-only setting
+// `welcome_email` ({cc: [...], password}), never in this public code.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const PORTAL = "https://pmoriphah.github.io/riphah-pmo-portal/";
 const when = (s) => new Date(s).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Asia/Karachi" });
@@ -34,10 +32,33 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
   const [uid, setUid] = useState(initialUserId && people.some(p => p.id === initialUserId) ? initialUserId : people[0]?.id || "");
   const person = people.find(p => p.id === uid) || null;
 
-  const [data, setData] = useState({ projects: [], past: 0, sent: [] });
+  const [data, setData] = useState({ projects: [], past: [], sent: [] });
   const [loading, setLoading] = useState(false);
-  const [withPw, setWithPw] = useState(false);
-  const [pw, setPw] = useState(tempPassword);
+  const [withPw, setWithPw] = useState(true);
+  const [pw, setPw] = useState("");
+  const [cfg, setCfg] = useState({ cc: [], password: "" });
+  const [ccDraft, setCcDraft] = useState("");
+
+  // The saved CC list and standard password.
+  useEffect(() => {
+    supa("/rest/v1/settings?key=eq.welcome_email&select=value", {}, session.access_token)
+      .then(r => { const v = r?.[0]?.value || {}; const c = { cc: Array.isArray(v.cc) ? v.cc : [], password: v.password || "" }; setCfg(c); setPw(p => p || c.password); })
+      .catch(() => {});
+  }, [supa, session.access_token]);
+  const saveCfg = async (next) => {
+    setCfg(next);
+    try {
+      await supa("/rest/v1/settings?on_conflict=key", { method:"POST", body: JSON.stringify({ key:"welcome_email", value: next }),
+        headers:{ Prefer:"resolution=merge-duplicates,return=minimal" } }, session.access_token);
+    } catch (e) { setStatus({ ok:false, msg:`Could not save: ${e.message}` }); }
+  };
+  const addCc = () => {
+    const list = ccDraft.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+    const bad = list.filter(x => !EMAIL_RE.test(x));
+    if (bad.length) { setStatus({ ok:false, msg:`Not an email address: ${bad.join(", ")}` }); return; }
+    const next = [...new Set([...cfg.cc, ...list])];
+    setCcDraft(""); setStatus(null); saveCfg({ ...cfg, cc: next });
+  };
   const [note, setNote] = useState("");
   const [view, setView] = useState(isMobile ? "phone" : "computer");
   const [busy, setBusy] = useState(null);       // "test" | "send"
@@ -49,12 +70,12 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
     let live = true;
     setLoading(true); setConfirm(false); setStatus(null);
     Promise.all([
-      supa(`/rest/v1/project_assignments?user_id=eq.${uid}&select=projects(code,name,campus,workflow_stage)`, {}, session.access_token).catch(() => []),
-      supa(`/rest/v1/past_projects?pm_user_id=eq.${uid}&select=id`, {}, session.access_token).catch(() => []),
+      supa(`/rest/v1/project_assignments?user_id=eq.${uid}&select=projects(code,name,campus,workflow_stage,start_date)`, {}, session.access_token).catch(() => []),
+      supa(`/rest/v1/past_projects?pm_user_id=eq.${uid}&select=code,name,fiscal_year,campus`, {}, session.access_token).catch(() => []),
       supa(`/rest/v1/notifications_log?channel=eq.welcome-email&recipient_id=eq.${uid}&status=eq.sent&select=created_at&order=created_at.desc&limit=3`, {}, session.access_token).catch(() => []),
     ]).then(([a, p, s]) => {
       if (!live) return;
-      setData({ projects: (a || []).map(r => r.projects).filter(Boolean), past: (p || []).length, sent: s || [] });
+      setData({ projects: (a || []).map(r => r.projects).filter(Boolean), past: p || [], sent: s || [] });
       setLoading(false);
     });
     return () => { live = false; };
@@ -63,7 +84,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
   const imgBase = useMemo(() => new URL(import.meta.env.BASE_URL || "/", window.location.origin).href, []);
   const email = useMemo(() => person ? composeWelcome({
     name: person.full_name || person.username, username: person.username, projects: data.projects,
-    pastCount: data.past, password: withPw ? pw : null, note, imgBase, portalUrl: PORTAL,
+    past: data.past, password: withPw ? pw : null, note, imgBase, portalUrl: PORTAL,
   }) : null, [person, data, withPw, pw, note, imgBase]);
 
   // "M Fazal" → Fazal, "Maj. Shuaib Arshad Butt" → Shuaib, "Syed Ishfaq Ahmed" → Ishfaq.
@@ -79,8 +100,8 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
       const r = await supa("/functions/v1/send-welcome-email", { method:"POST",
         body: JSON.stringify({ user_id: person.id, note, mode, ...(withPw ? { password: pw.trim() } : {}) }) }, session.access_token);
       setStatus({ ok:true, msg: mode === "test"
-        ? `Test sent to ${r.sent_to}. The password is shown as dots in a test and was not changed.`
-        : `Sent to ${r.sent_to}.${r.password_set ? " Their password is now the temporary one in the email." : ""}` });
+        ? `Test sent to ${r.sent_to} only (no CC). Nobody's password was changed.`
+        : `Sent to ${r.sent_to}${r.cc ? `, copied to ${r.cc}` : ""}.${r.password_set ? ` ${first}'s password is now the one in the email.` : ""}` });
       if (mode === "send") setData(d => ({ ...d, sent: [{ created_at: new Date().toISOString() }, ...d.sent] }));
     } catch (e) { setStatus({ ok:false, msg: e.message }); }
     setBusy(null); setConfirm(false);
@@ -102,7 +123,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
         </Select>
         {person && (
           <div style={{ ...TYPE.caption, color: person.email ? T.muted : T.textOf(T.danger), marginTop:6 }}>
-            {person.email ? <>To <b style={{ color:T.text }}>{person.email}</b> only (the team is not copied)</> : "This user has no email address."}
+            {person.email ? <>To <b style={{ color:T.text }}>{person.email}</b>{cfg.cc.length ? <>, CC {cfg.cc.length} {cfg.cc.length === 1 ? "person" : "people"}</> : null}</> : "This user has no email address."}
             {person.role === "guest" && <div style={{ marginTop:3 }}>Guest account that manages projects.</div>}
             {data.sent.length > 0 && <div style={{ marginTop:3, color:T.textOf(T.warning || "#D89840") }}>Already sent {data.sent.map(s => when(s.created_at)).join(", ")}</div>}
           </div>
@@ -113,14 +134,15 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
         <span style={label}>Password in the email</span>
         <div style={{ display:"flex", gap:6 }}>
           <button type="button" className="pmo-focusable" style={seg(!withPw)} onClick={() => setWithPw(false)}>Not included</button>
-          <button type="button" className="pmo-focusable" style={seg(withPw)} onClick={() => setWithPw(true)}><KeyRound size={13} />Temporary one</button>
+          <button type="button" className="pmo-focusable" style={seg(withPw)} onClick={() => setWithPw(true)}><KeyRound size={13} />Included</button>
         </div>
         {withPw ? (
           <>
             <div style={{ display:"flex", gap:6, marginTop:8 }}>
               <input value={pw} onChange={e => setPw(e.target.value)} spellCheck={false} autoComplete="off"
+                onBlur={() => { if (pw.trim().length >= 8 && pw.trim() !== cfg.password) saveCfg({ ...cfg, password: pw.trim() }); }}
+                title="Saved as the standard password for every welcome email"
                 style={{ ...inp, fontFamily:"Consolas,Menlo,monospace", fontWeight:700, letterSpacing:0.3 }} />
-              <Button T={T} variant="ghost" icon={RefreshCw} onClick={() => setPw(tempPassword())} title="Make another one" />
             </div>
             <div style={{ ...TYPE.caption, color: pwOk ? T.textOf(T.warning || "#D89840") : T.textOf(T.danger), marginTop:6, lineHeight:1.5 }}>
               {pwOk ? <>Pressing Send <b>replaces {first}&rsquo;s current password</b> with this one. The email asks them to change it after signing in.</>
@@ -133,6 +155,27 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
       </div>
 
       <div>
+        <span style={label}>CC on every welcome email</span>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
+          {cfg.cc.length === 0 && <span style={{ ...TYPE.caption, color:T.muted }}>Nobody yet.</span>}
+          {cfg.cc.map(a => (
+            <span key={a} style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"3px 4px 3px 9px", borderRadius:R.pill,
+              background:T.card2 || T.inputBg, border:`1px solid ${T.border}`, fontSize:12, color:T.text, maxWidth:"100%" }}>
+              <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a}</span>
+              <button type="button" className="pmo-focusable" title={`Remove ${a}`} onClick={() => saveCfg({ ...cfg, cc: cfg.cc.filter(x => x !== a) })}
+                style={{ border:0, background:"transparent", color:T.muted, cursor:"pointer", padding:2, display:"flex" }}><X size={12} /></button>
+            </span>
+          ))}
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          <input value={ccDraft} onChange={e => setCcDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCc(); } }}
+            placeholder="name@riphah.edu.pk" style={inp} />
+          <Button T={T} variant="ghost" icon={Plus} onClick={addCc} disabled={!ccDraft.trim()}>Add</Button>
+        </div>
+        <div style={{ ...TYPE.caption, color:T.muted, marginTop:6 }}>Saved for every welcome email. Tests go to you only.</div>
+      </div>
+
+      <div>
         <span style={label}>A line from the PMO (optional)</span>
         <textarea value={note} onChange={e => setNote(e.target.value.slice(0, 600))} rows={3}
           placeholder={`e.g. We look forward to working with you on your projects this year.`}
@@ -141,7 +184,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
 
       {confirm && !status && (
         <div style={{ padding:"10px 12px", borderRadius:R.md, fontSize:12.5, lineHeight:1.5, background:`${T.blue}18`, color:T.text }}>
-          Press <b>Confirm</b> to send this email to <b>{person?.email}</b>{withPw ? <> and set the temporary password on {first}&rsquo;s account</> : null}.
+          Press <b>Confirm</b> to send this email to <b>{person?.email}</b>{cfg.cc.length ? <> (CC {cfg.cc.length})</> : null}{withPw ? <> and set this password on {first}&rsquo;s account</> : null}.
         </div>
       )}
       {status && (

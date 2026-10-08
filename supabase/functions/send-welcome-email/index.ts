@@ -4,16 +4,16 @@
 // the preview, with
 //   { user_id, note?, password?, mode: "preview" | "test" | "send" }
 // preview  returns the email for that person and sends nothing;
-// test     sends it to the PMO who pressed the button ("[Test]" subject, the
-//          password shown as dots and never set);
-// send     sends it to the person alone (no CC, because it can carry a
-//          password). With `password`, that password is set on their account
-//          first (same as Reset password in User Management); if setting it
-//          fails, nothing is sent.
+// test     sends it to the PMO who pressed the button only ("[Test]" subject,
+//          no CC, the password shown but not set);
+// send     sends it to the person, copied to the CC list kept in the PMO-only
+//          setting `welcome_email` ({cc: [...], password}) that the PMO edits
+//          in the window. With `password`, that password is set on their
+//          account first (same as Reset password); if that fails, nothing is sent.
 // Nothing is ever sent automatically (rule: PMs are emailed only when the PMO
 // presses Send on a previewed message). Logged in notifications_log as
 // channel "welcome-email" (the password is never logged).
-import { composeWelcome, type WelcomeProject } from "./email.ts";
+import { composeWelcome, type WelcomeProject, type PastProject } from "./email.ts";
 import { mail, log, PORTAL_URL, type Ctx } from "../epdd-sync/notify.ts";
 
 const CORS = {
@@ -63,17 +63,19 @@ Deno.serve(async (req: Request) => {
   const email = String(person.email ?? "").trim();
   if (!email) return json({ error: "This user has no email address." }, 400);
 
-  const assigned = (await (await rest(`project_assignments?user_id=eq.${id}&select=projects(code,name,campus,workflow_stage)`)).json()) as Row[];
+  const assigned = (await (await rest(`project_assignments?user_id=eq.${id}&select=projects(code,name,campus,workflow_stage,start_date)`)).json()) as Row[];
   const projects = (Array.isArray(assigned) ? assigned : []).map(r => r.projects as WelcomeProject).filter(Boolean);
-  const pastRes = await rest(`past_projects?pm_user_id=eq.${id}&select=id`, { headers: { Prefer: "count=exact", Range: "0-0" } });
-  const pastCount = Number((pastRes.headers.get("content-range") ?? "").split("/")[1] ?? 0) || 0;
+  const pastRows = (await (await rest(`past_projects?pm_user_id=eq.${id}&select=code,name,fiscal_year,campus`)).json()) as PastProject[];
+  const past = Array.isArray(pastRows) ? pastRows : [];
+  const setting = ((await (await rest("settings?key=eq.welcome_email&select=value")).json()) as Row[])?.[0]?.value as Row | undefined;
+  const cc = [...new Set((Array.isArray(setting?.cc) ? setting!.cc as unknown[] : []).map(x => String(x).trim().toLowerCase())
+    .filter(x => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)))];
 
   const name = String(person.full_name || person.username);
-  const shown = mode === "test" ? (password ? "•".repeat(password.length) : null) : (password || null);
-  const e = composeWelcome({ name, username: String(person.username), projects, pastCount, password: shown,
+  const e = composeWelcome({ name, username: String(person.username), projects, past, password: password || null,
     note, imgBase: IMG_BASE, portalUrl: PORTAL_URL });
 
-  if (mode === "preview") return json({ ok: true, to: email, ...e });
+  if (mode === "preview") return json({ ok: true, to: email, cc, ...e });
 
   if (mode === "test") {
     const pmo = ((await (await rest(`user_profiles?id=eq.${me.id}&select=id,email,full_name,username`)).json()) as Row[])?.[0];
@@ -95,10 +97,10 @@ Deno.serve(async (req: Request) => {
       return json({ error: `Could not set the password: ${err.message ?? err.msg ?? r.status}. Nothing was sent.` }, 400);
     }
   }
-  const sent = await mail([{ id, email, name }], e.subject, e.text, e.html, false);
+  const sent = await mail([{ id, email, name }], e.subject, e.text, e.html, cc);
   await log(ctx, [{ recipient_id: id, recipient_address: email, channel: "welcome-email",
     status: sent[0]?.ok ? "sent" : "failed",
-    detail: `by ${me.id}; ${projects.length} projects; password ${password ? "set and included" : "not included"}${sent[0]?.error ? `; ${sent[0].error}` : ""}` }]);
-  return sent[0]?.ok ? json({ ok: true, sent_to: email, password_set: !!password })
+    detail: `by ${me.id}; ${projects.length}+${past.length} projects; cc ${sent[0]?.cc ?? 0}; password ${password ? "set and included" : "not included"}${sent[0]?.error ? `; ${sent[0].error}` : ""}` }]);
+  return sent[0]?.ok ? json({ ok: true, sent_to: email, cc: sent[0]?.cc ?? 0, password_set: !!password })
     : json({ error: `${sent[0]?.error ?? "Sending failed"}${password ? " (the new password was already set)" : ""}` }, 502);
 });
