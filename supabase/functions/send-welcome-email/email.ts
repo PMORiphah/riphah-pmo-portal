@@ -141,7 +141,7 @@ ${pastShown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consola
 
   const pastWord = `${past} project${past === 1 ? "" : "s"}`;
   const scope = past
-    ? `You are the project manager for <b>${projWord} in FY 2026-27</b> and <b>${pastWord} from previous fiscal years</b>: <b>${total} projects in all</b>${site && !showSite ? `, mostly at <b>${esc(site)}</b>` : ""}. They are already in the portal for you.`
+    ? `You are the project manager for <b>${projWord} in FY 2026-27</b> and <b>${pastWord} from previous fiscal years</b>: <b>${total} projects in all</b>${site && !showSite ? `, at <b>${esc(site)}</b>` : ""}. They are already in the portal for you.`
     : `You are the project manager for <b>${projWord} in FY 2026-27</b>${site && !showSite ? ` at <b>${esc(site)}</b>` : ""}, and they are already in the portal for you.`;
   const intro = (n || past)
     ? `The Project Management Office has opened your account on the <b>PMO Capital Projects Portal</b>, where Riphah&rsquo;s capital projects are planned, approved and followed up: the current FY 2026-27 portfolio and projects from previous fiscal years. ${scope}`
@@ -166,7 +166,7 @@ ${pastShown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consola
 <tr><td style="background:${NAVY};padding:28px 32px;">
 <div style="font:10px ${FONT};color:rgba(255,255,255,0.5);letter-spacing:3px;text-transform:uppercase;margin-bottom:8px;">Riphah International University</div>
 <div style="font:700 21px ${FONT};color:#ffffff;">Project Management Office</div>
-<div style="font:10px ${FONT};color:rgba(255,255,255,0.45);margin-top:6px;letter-spacing:2px;text-transform:uppercase;">Capital Projects Portal &middot; FY 2026-27</div>
+<div style="font:10px ${FONT};color:rgba(255,255,255,0.45);margin-top:6px;letter-spacing:2px;text-transform:uppercase;">Capital Projects Portal</div>
 </td></tr>
 <tr><td style="height:4px;background:${GOLD};line-height:4px;font-size:0;">&nbsp;</td></tr>
 <tr><td class="inner" style="padding:34px 32px 30px;">
