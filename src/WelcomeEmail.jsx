@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Mail, Send, Monitor, Smartphone, KeyRound, CheckCircle2, AlertCircle, X, Plus } from "lucide-react";
 import { TYPE, SP, R } from "./theme.js";
@@ -89,6 +89,18 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
 
   // "M Fazal" → Fazal, "Maj. Shuaib Arshad Butt" → Shuaib, "Syed Ishfaq Ahmed" → Ishfaq.
   const TITLES = /^(mr|ms|mrs|dr|engr|col|maj|brig|capt|lt|gen|syed|sayed|muhammad|mohammad|m)\.?$/i;
+  // The preview is written into the frame's own document. A srcdoc frame came
+  // up blank in some browsers (8 Oct 2026); writing it works everywhere. The
+  // email has no scripts, and the frame allows none.
+  const frame = useRef(null);
+  useEffect(() => {
+    const d = frame.current?.contentDocument;
+    if (!d || !email) return;
+    const y = d.scrollingElement?.scrollTop || 0;
+    d.open(); d.write(email.html); d.close();
+    if (d.scrollingElement) d.scrollingElement.scrollTop = y;
+  }, [email, view]);
+
   const first = (person?.full_name || "").split(/\s+/).find(w => w.length > 1 && !TITLES.test(w)) || person?.username || "";
   const pwOk = !withPw || pw.trim().length >= 8;
 
@@ -214,7 +226,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
         border:`1px solid ${T.border}`, display:"flex", justifyContent:"center", overflow:"hidden", position:"relative" }}>
         {loading && <div style={{ position:"absolute", top:10, right:12, ...TYPE.caption, color:T.muted }}>Loading their projects…</div>}
         {email && (
-          <iframe title="Email preview" srcDoc={email.html} sandbox=""
+          <iframe ref={frame} title="Email preview" sandbox="allow-same-origin"
             style={{ border:0, width: view === "phone" && !isMobile ? 390 : "100%", maxWidth:"100%", height:"100%", minHeight: isMobile ? 520 : 0,
               background:"#E8F0F8", boxShadow: view === "phone" ? "0 0 0 1px rgba(0,0,0,.08), 0 8px 30px rgba(0,0,0,.25)" : "none" }} />
         )}

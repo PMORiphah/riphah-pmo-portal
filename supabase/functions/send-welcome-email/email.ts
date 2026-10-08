@@ -64,21 +64,30 @@ export function composeWelcome(a: WelcomeInput) {
   // ── pieces ────────────────────────────────────────────────────────────────
   const p = (html: string, extra = "") =>
     `<p style="margin:0 0 14px;font:15px/1.7 ${FONT};color:${BODY};${extra}">${html}</p>`;
+  // Numbers sit in table cells: mail apps (Gmail above all) keep a cell's
+  // height and vertical centring, where a styled <div> or <span> drifts.
+  const badge = (t: string, bg: string, fg: string, size: number) =>
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td width="${size}" height="${size}" align="center" valign="middle" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:${size / 2}px;background:${bg};color:${fg};font-family:${FONT};font-size:${Math.round(size * 0.47)}px;font-weight:700;line-height:${size}px;text-align:center;mso-line-height-rule:exactly;">${t}</td></tr></table>`;
   const stepHead = (num: string, title: string, sub: string) => `
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:34px 0 14px;"><tr>
-<td width="40" valign="top" style="padding-top:1px;"><div style="width:30px;height:30px;line-height:30px;border-radius:15px;background:${NAVY};color:#ffffff;text-align:center;font:700 14px ${FONT};">${num}</div></td>
-<td valign="top"><div style="font:700 18px/1.3 ${FONT};color:${INK};">${title}</div><div style="font:13px/1.5 ${FONT};color:${MUTED};margin-top:3px;">${sub}</div></td>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:36px 0 16px;"><tr>
+<td width="46" valign="middle" style="width:46px;min-width:46px;padding:0;">${badge(num, NAVY, "#ffffff", 34)}</td>
+<td valign="middle" style="padding:0 0 0 2px;"><div style="font-family:${FONT};font-size:19px;font-weight:700;line-height:1.3;color:${INK};">${title}</div><div style="font-family:${FONT};font-size:13px;line-height:1.5;color:${MUTED};margin-top:2px;">${sub}</div></td>
+</tr></table>`;
+  const sectionHead = (title: string, sub: string) => `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:36px 0 12px;"><tr>
+<td style="border-left:4px solid ${GOLD};padding:2px 0 2px 14px;"><div style="font-family:${FONT};font-size:18px;font-weight:700;line-height:1.3;color:${INK};">${title}</div><div style="font-family:${FONT};font-size:13px;line-height:1.5;color:${MUTED};margin-top:2px;">${sub}</div></td>
 </tr></table>`;
   const picture = (file: string, alt: string, extra = "") =>
-    `<img src="${img(file)}" width="576" alt="${esc(alt)}" style="display:block;width:100%;max-width:576px;height:auto;border:0;border-radius:10px;box-shadow:0 6px 22px rgba(13,25,41,0.22);${extra}">`;
+    `<img src="${img(file)}" width="656" alt="${esc(alt)}" style="display:block;width:100%;max-width:656px;height:auto;border:0;border-radius:10px;${extra}">`;
   // The whole screen on a computer; on a phone (where the whole screen would be
   // too small to read) close-ups of the same numbered pointers instead. Mail
   // apps that ignore the media query simply show the whole screen.
   const shot = (file: string, alt: string, phone: string[]) =>
     `<div class="dsk">${picture(file, alt)}</div>`
     + `<!--[if !mso]><!--><div class="mob" style="display:none;max-height:0;overflow:hidden;">${phone.map((m, i) => picture(m, alt, i ? "margin-top:10px;" : "")).join("")}</div><!--<![endif]-->`;
-  const pill = (t: string) =>
-    `<span style="display:inline-block;width:20px;height:20px;line-height:20px;border-radius:10px;background:${GOLD};color:${INK};text-align:center;font:700 11px ${FONT};vertical-align:1px;">${t}</span>`;
+  // Inline references to the numbered pointers in the screenshots: ① ② ③.
+  const CIRCLED: Record<string, string> = { "1": "&#9312;", "2": "&#9313;", "3": "&#9314;", "4": "&#9315;", "5": "&#9316;" };
+  const pill = (t: string) => `<b style="color:#B8741A;font-size:17px;line-height:1;">${CIRCLED[t] ?? t}</b>`;
   const mono = (t: string) =>
     `<span style="display:inline-block;font:700 15px Consolas,Menlo,monospace;color:${INK};background:#ffffff;border:1px solid ${LINE};border-radius:6px;padding:4px 10px;letter-spacing:0.3px;white-space:nowrap;">${esc(t)}</span>`;
   const row = (label: string, value: string) => `<tr>
@@ -113,14 +122,14 @@ export function composeWelcome(a: WelcomeInput) {
   const td = `padding:9px 10px;font:13.5px/1.45 ${FONT};color:${INK};border-bottom:1px solid ${LINE};vertical-align:top;`;
   const showSite = sites > 1;
   const projectTable = n ? `
-${stepHead("&#9733;", `Your FY 2026-27 projects (${n})`, site && !showSite ? `All at ${esc(site)}` : "Already waiting for you in the portal")}
+${sectionHead(`Your FY 2026-27 projects (${n})`, site && !showSite ? `All at ${esc(site)}` : "Already waiting for you in the portal")}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
 <tr><th style="${th}">Project ID</th><th style="${th}">Project</th>${showSite ? `<th style="${th}">Site</th>` : ""}<th style="${th}">Planned start</th><th style="${th}">Stage</th></tr>
 ${shown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consolas,Menlo,monospace;font-size:12.5px;color:${BODY};">${esc(codeOf(r.code))}</td><td style="${td}">${esc(r.name)}</td>${showSite ? `<td style="${td}color:${BODY};">${esc(r.campus ?? "")}</td>` : ""}<td style="${td}white-space:nowrap;color:${BODY};">${esc(fmtDate(r.start_date))}</td><td style="${td}white-space:nowrap;color:${BODY};">${esc(STAGE_LABEL[String(r.workflow_stage)] ?? "")}</td></tr>`).join("\n")}
 </table>${n > MAX ? p(`&hellip; and ${n - MAX} more in the portal.`, "margin-top:10px;font-size:13px;") : ""}` : "";
   const pastShown = pastList.slice(0, MAX);
   const pastTable = past ? `
-${stepHead("&#9719;", `Projects from previous fiscal years (${past})`, "Under Past Projects in the portal")}
+${sectionHead(`Projects from previous fiscal years (${past})`, "Under Past Projects in the portal")}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
 <tr><th style="${th}">Project ID</th><th style="${th}">Project</th><th style="${th}">FY</th></tr>
 ${pastShown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consolas,Menlo,monospace;font-size:12.5px;color:${BODY};">${esc(codeOf(r.code))}</td><td style="${td}">${esc(r.name)}</td><td style="${td}white-space:nowrap;color:${BODY};">${esc(r.fiscal_year ?? "—")}</td></tr>`).join("\n")}
@@ -141,7 +150,7 @@ ${pastShown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consola
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="x-apple-disable-message-reformatting"><title>${esc(subject)}</title>
 <style>
 @media (max-width:620px){
-  .wrap{padding:16px 8px !important}
+  .wrap{padding:4px 0 !important}
   .inner{padding:24px 18px !important}
   .col{display:block !important;width:100% !important;box-sizing:border-box}
   .hero{font-size:24px !important}
@@ -150,10 +159,10 @@ ${pastShown.map(r => `<tr><td style="${td}white-space:nowrap;font-family:Consola
   .lbl{width:86px !important}
 }
 </style></head>
-<body style="margin:0;padding:0;background:#E8F0F8;">
+<body style="margin:0;padding:0;background:#ffffff;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${esc(preheader)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="wrap" style="background:#E8F0F8;padding:32px 12px;"><tr><td align="center">
-<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:100%;max-width:640px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="wrap" style="background:#ffffff;padding:12px 8px;"><tr><td align="center">
+<table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:100%;max-width:720px;background:#ffffff;border:1px solid #DCE6F0;border-radius:14px;overflow:hidden;">
 <tr><td style="background:${NAVY};padding:28px 32px;">
 <div style="font:10px ${FONT};color:rgba(255,255,255,0.5);letter-spacing:3px;text-transform:uppercase;margin-bottom:8px;">Riphah International University</div>
 <div style="font:700 21px ${FONT};color:#ffffff;">Project Management Office</div>
@@ -186,11 +195,11 @@ ${p(`Type your username ${pill("1")} and password ${pill("2")}, then press <b>Si
 ${stepHead("2", "Right after you sign in", "Two things worth doing first")}
 ${shot("after-signin.jpg", "The first screen after sign-in: 4 the 2-minute tour, 5 Change password", ["tour-m.jpg", "password-m.jpg"])}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;">
-<tr><td width="34" valign="top" style="padding-top:2px;">${pill("4")}</td><td valign="top" style="padding-bottom:14px;">
+<tr><td width="40" valign="top" style="width:40px;min-width:40px;padding:0 0 16px;">${badge("4", GOLD, INK, 26)}</td><td valign="top" style="padding:2px 0 16px;">
 <div style="font:700 15px ${FONT};color:${INK};margin-bottom:3px;">Take the 2-minute tour</div>
 <div style="font:14px/1.7 ${FONT};color:${BODY};">On a computer, the portal assistant greets you and offers a short guided tour: your projects, a project&rsquo;s page (financials, timeline, WBS, documents), how to post updates and how to reach the PMO. Press <b>Start tour</b>. You can take it again any time from <b>Take the tour</b> at the bottom of the left menu. The tour runs on a computer, not on a phone.</div>
 </td></tr>
-<tr><td width="34" valign="top" style="padding-top:2px;">${pill("5")}</td><td valign="top">
+<tr><td width="40" valign="top" style="width:40px;min-width:40px;padding:0;">${badge("5", GOLD, INK, 26)}</td><td valign="top" style="padding:2px 0 0;">
 <div style="font:700 15px ${FONT};color:${INK};margin-bottom:3px;">Change your password <span style="font:700 10.5px ${FONT};color:#A15C07;background:#FDF1DC;border-radius:10px;padding:2px 8px;letter-spacing:0.5px;vertical-align:2px;">RECOMMENDED</span></div>
 <div style="font:14px/1.7 ${FONT};color:${BODY};">Your first password was set by the PMO. Press <b>Change password</b> at the bottom of the left menu (on a phone, open the &#9776; menu first) and choose a new one that only you know, at least 8 characters.</div>
 </td></tr></table>
