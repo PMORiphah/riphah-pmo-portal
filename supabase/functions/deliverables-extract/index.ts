@@ -10,7 +10,7 @@
 //   { project_id, dry?: true }   read one charter; dry returns the lines, saves nothing
 //   { all: true, dry?: true }    every eligible project without PDD lines or a confirmed list
 // Gemini order as everywhere: 3.5 Flash Lite on key 1, key 2, then 3.1 Flash Lite on key 1, key 2.
-import { docxText, GEMINI_MODELS } from "../epdd-sync/ai.ts";
+import { docxText, GEMINI_MODELS, geminiFailure } from "../epdd-sync/ai.ts";
 
 type Row = Record<string, unknown>;
 const CORS = {
@@ -85,8 +85,12 @@ async function readCharter(keys: string[], file: { name: string; mime: string; b
           generationConfig: { temperature: 0, maxOutputTokens: 20000, responseMimeType: "application/json", responseSchema: SCHEMA },
         }),
       });
-      if (!res.ok) { last = `${model} key ${ki + 1} ${res.status}: ${(await res.text()).slice(0, 200)}`;
-                     if (res.status === 429 || res.status >= 500) continue; break outer; }
+      if (!res.ok) { const body = await res.text();
+                     last = `${model} key ${ki + 1} ${res.status}: ${body.slice(0, 200)}`;
+                     const next = geminiFailure(res.status, body);
+                     if (next === "next_key") continue;
+                     if (next === "next_model") continue outer;
+                     break outer; }
       const out = await res.json();
       const txt = (out?.candidates?.[0]?.content?.parts ?? []).filter((p: Row) => p.text && !p.thought)
         .map((p: Row) => p.text).join("").trim();

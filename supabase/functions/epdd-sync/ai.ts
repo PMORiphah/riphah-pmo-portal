@@ -32,6 +32,16 @@ export const AI_VERSION = "ai-4";   // ai-4 (5 Oct 2026): Word quotations, line 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 // Keys come from get_gemini_keys() (Vault gemini_api_key, gemini_api_key_2).
 export const GEMINI_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+// What a failed Gemini call means for the chain: quota or overload tries the next key,
+// a model Google has retired or does not serve tries the next model (12 Oct 2026),
+// anything else (a bad request, a refused key) stops.
+export function geminiFailure(status: number, body: string): "next_key" | "next_model" | "stop" {
+  if (status === 429 || status >= 500) return "next_key";
+  if (status === 404) return "next_model";
+  if ((status === 400 || status === 403) &&
+      /\bmodels?\b[^]{0,160}?\b(not found|not supported|no longer (?:available|supported)|deprecated|retired|discontinued|unavailable|shut ?down)\b/i.test(body)) return "next_model";
+  return "stop";
+}
 const MAX_QUOTE_FILES = 3;
 const BOQ_RE = /\bBOQ\b|bill of quantit/i;
 const MAX_INLINE_BYTES = 14 * 1024 * 1024;   // request limit is 20 MB after base64
@@ -195,9 +205,12 @@ export async function callGemini(keys: string[], row: Row, files: AiFile[], time
                               responseSchema: AI_SCHEMA },
         }),
       });
-      // Only quota and overload move on to the next key or model; anything else stops here.
-      if (!res.ok) { last = `${model} key ${ki + 1} ${res.status}: ${(await res.text()).slice(0, 200)}`;
-                     if (res.status === 429 || res.status >= 500) continue; break outer; }
+      if (!res.ok) { const body = await res.text();
+                     last = `${model} key ${ki + 1} ${res.status}: ${body.slice(0, 200)}`;
+                     const next = geminiFailure(res.status, body);
+                     if (next === "next_key") continue;
+                     if (next === "next_model") continue outer;
+                     break outer; }
       const out = await res.json();
       const txt = (out?.candidates?.[0]?.content?.parts ?? []).filter((p: Row) => p.text && !p.thought)
         .map((p: Row) => p.text).join("").trim();
