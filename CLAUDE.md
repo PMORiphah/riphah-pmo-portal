@@ -181,7 +181,7 @@ If a page or an answer disagrees with these figures, it is wrong until proven ot
 10. Drop the backup tables once the PMO is satisfied.
 11. Decide on `AUDIT_DRY_RUN`.
 12. Deliverables phase 2 (weekly PM check-in): parked 7 Oct 2026, see `docs/plans/deliverable-checkin.md`.
-13. WhatsApp update requests (Meta Cloud API, guided chat then a WhatsApp Flow) and a management demo (simulation build with synthetic data): planned 13 Oct 2026, waiting for the PMO's answers; see `docs/plans/whatsapp-update-requests.md` and `docs/plans/management-demo.md`. Facts found: 0 users opted in to WhatsApp, every signed-in user can read every phone number (`profiles_select`), only 7 of 119 migrations and 7 of 19 edge functions have source in the repo, no automated tests.
+13. WhatsApp update requests (Meta Cloud API, guided chat then a WhatsApp Flow) and the PMO Simulation (assistant-led presentation of the real portal on fictional data, PMO sidebar button → `simulation.html` with static CSP, storage namespacing and a synthetic backend; prioritised by the PMO 13 Oct 2026): proposals waiting for the PMO's answers; see `docs/plans/whatsapp-update-requests.md` and `docs/plans/pmo-simulation.md` (supersedes `management-demo.md`). Facts found: 0 users opted in to WhatsApp, every signed-in user can read every phone number (`profiles_select`), only 7 of 119 migrations and 7 of 19 edge functions have source in the repo, no automated tests.
 
 ## Gotchas
 

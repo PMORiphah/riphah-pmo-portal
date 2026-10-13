@@ -1,7 +1,7 @@
 # Management demo: a simulation of the portal (Track 2)
 
-Status: **planned 13 Oct 2026, waiting for the PMO's decisions** (meeting date and duration first). Nothing
-built. Companion plan: `docs/plans/whatsapp-update-requests.md`. The demo does not depend on any WhatsApp
+Status: **superseded 13 Oct 2026 by `docs/plans/pmo-simulation.md`** (the PMO asked for the simulation as a
+PMO option inside the portal, presented by the assistant). The research below still applies. Nothing built. Companion plan: `docs/plans/whatsapp-update-requests.md`. The demo does not depend on any WhatsApp
 approval.
 
 ## Recommendation
