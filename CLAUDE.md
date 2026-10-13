@@ -120,7 +120,7 @@ Views: `portfolio_metrics`, `portfolio_dashboard`, `project_metrics`, `investmen
 
 ## Pages (NAV ids)
 
-`dash`, `projects`, `campus`, `perf`, `risks`, `cashflows` (PMO), `timeline` (PMO + guest), `past` (PMO), `upd`, `gallery`, `team`, admin `users`, `logs`, `settings` (PMO). PMs see only Projects, Campus/Sites, Performance, Updates, Gallery, Team & About.
+Code ids (App.jsx ~284-305): `cmd` (dashboard), `proj`, `camp`, `perf`, `risks`, `cashflow` (PMO), `schedule` (PMO + guest), `past`, `review` (PMO), `reports`, `upd`, `photowall`, `team`, admin `users`, `log`, `set` (PMO). PMs see only Projects, Updates, Gallery, Team & About, plus Past Projects / Board Reports when those apply; Campus/Sites, Performance, Risks and Timeline are hidden from PMs (`PM_HIDDEN`, App.jsx ~12172; checked 13 Oct 2026).
 - Adding a KPI or stage needs three edits: the card, the `stageMap`/filter branch, and `cardLabels`.
 - **PCD Receiving Date** is its own column, `projects.pcd_received_date` (since 28 Sep 2026), entered in Edit Project next to Actual End Date. It is no longer the same as `actual_end_date`. Excel import aliases *PCD Receiving/Received Date, PCD Date, PCD* map to it. The "PCDs Received" dashboard card still counts `closed` projects.
 - **DF Recommended card is live (1 Oct 2026, PMO):** value = `portfolio_dashboard.df_recommended_total`, sub = "N DF Rec Projects" (CAPEX projects with DF > 0). The pencil can still type an override; saving a figure or label unchanged keeps it live (stored as ""), "Live" clears both value and sub, and a typed figure shows "Typed · live X" to the PMO (not on `su_requested` / `budget_reduction`, which are published-only figures). The old typed 687.7M / "103 DF Rec Projects" was cleared (backup `backup_20261001_settings_kpis`).
@@ -181,6 +181,7 @@ If a page or an answer disagrees with these figures, it is wrong until proven ot
 10. Drop the backup tables once the PMO is satisfied.
 11. Decide on `AUDIT_DRY_RUN`.
 12. Deliverables phase 2 (weekly PM check-in): parked 7 Oct 2026, see `docs/plans/deliverable-checkin.md`.
+13. WhatsApp update requests (Meta Cloud API, guided chat then a WhatsApp Flow) and a management demo (simulation build with synthetic data): planned 13 Oct 2026, waiting for the PMO's answers; see `docs/plans/whatsapp-update-requests.md` and `docs/plans/management-demo.md`. Facts found: 0 users opted in to WhatsApp, every signed-in user can read every phone number (`profiles_select`), only 7 of 119 migrations and 7 of 19 edge functions have source in the repo, no automated tests.
 
 ## Gotchas
 
@@ -207,7 +208,7 @@ If a page or an answer disagrees with these figures, it is wrong until proven ot
 - **Schema changes: show the migration before running it. Bulk data changes: preview the exact rows, take a backup table (`backup_<date>_<table>`), and apply with per-item confirmation.**
 - Import date conflicts: ask about each project one by one; never decide silently.
 - Always ask whether to send the invitation email before creating a user.
-- PMs are never emailed automatically, only when the PMO presses Send on a previewed message.
+- PMs are never emailed automatically, only when the PMO presses Send on a previewed message. (In practice today: a PMO post on Updates calls `notify-comment` v11, which emails and pushes the assigned PMs with no preview; found 13 Oct 2026, keep in mind for any new channel.)
 - Remove test data written to production and confirm the counts are back.
 - Risks follow the charters' tone, one per project, simple, few criticals.
 - Design matters: "living UI" (hover detail, breathing animation, distinct colours), light and dark mode, and mobile checked on every change. Don't over-engineer.
