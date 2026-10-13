@@ -1,6 +1,7 @@
 # Campus map
 
-Status: **planned 12 Oct 2026, waiting for the PMO's decisions** (below, asked one at a time). Nothing built.
+Status: **planned 12 Oct 2026, parked 13 Oct 2026 at the PMO's request.** Nothing built. Resume with decision 1
+(drawn map vs street map), then the rest one at a time.
 Planned with four research passes (campus locations, map technology, the code, the data) and three
 independent designs (decision-first, design-first, lean) merged by a judge; figures re-checked by SQL.
 
