@@ -1,6 +1,6 @@
 # PMO Simulation: the two-minute presentation
 
-Status: **proposed 14 Oct 2026, for discussion with the PMO.** Nothing is built in the app yet. This replaces
+Status: **proposed 14 Oct 2026, for discussion with the PMO.** Nothing is built in the app yet. **Being revised for decision 2a (real campus/PM/team names and Gallery media, §11).** The storyboard figures and names below are still the fictional version. This replaces
 the 5-minute main presentation in `pmo-simulation.md`; that document's isolation design (§6) still applies,
 with the additions below. Its deep-dive chapters are out of scope for now.
 
@@ -642,15 +642,21 @@ the PMO's review on desktop.
 1. **Branding on fictional data: decided 14 Oct 2026 (PMO).** Keep the Riphah branding on screen. Anything
    printable or exportable carries a "Simulation · fictional data" label instead of presenting fictional
    figures under the university's name (§6a lists every surface and its treatment).
-2. **Voice.** Two parts:
-   - **On by default, or captions only?** Recommended: voice on, with captions always shown.
-   - **Which voices?** Recommended: on-device voices only. The narration then never leaves the laptop,
-     the badge's "nothing is sent" stays literally true, and timing is steadier, because network voices add
-     start delay and do not report word timing reliably.
+2. **Voice: decided 14 Oct 2026 (PMO).** Voice is on by default, with captions always shown, using
+   **on-device voices only**: the voice must report `localService === true`. Chrome's "Google …" voices and
+   Edge's "Online" voices are never used.
+2a. **Real names and media: decided 14 Oct 2026 (PMO).** "Don't change the Campus/Site names, the PM names, the
+   PMO team names and the media/photos in Gallery; the rest can be fictional." So the simulation shows:
+   - the real campus and site names;
+   - the real project managers' names;
+   - the real PMO team on Team & About;
+   - the real Gallery photos and videos.
 
-     The alternative is to also allow the more natural online voices: Chrome's "Google …" and Edge's
-     "Online (Natural)". The narration text, which is fictional, would then be sent to Google or Microsoft,
-     and the badge would drop "nothing is sent".
+   Projects, figures, codes, comments, risks, documents and dates stay fictional. This replaces the
+   earlier "fully fictional" rule for these four categories only.
+
+   The repo and GitHub Pages are public, so these real names and media must not be bundled into public
+   files. The redesign is in progress (see the status note at the top).
 3. **Approval of the live-portal changes in §8**, preview first.
 4. **Meeting date.** This decides whether 7.5–8.5 working days fits, and when the rehearsal on the presenting
    laptop happens.
