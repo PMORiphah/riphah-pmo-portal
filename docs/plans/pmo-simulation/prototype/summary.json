@@ -1,1042 +1,1242 @@
 {
- "dash_before": {
-  "total_projects": 48,
-  "pdd_not_submitted_count": 20,
-  "pdds_submitted": 2,
-  "in_df": 4,
-  "in_ed": 3,
-  "in_mt": 5,
-  "approved_count": 12,
-  "closed_count": 2,
-  "on_time_count": 7,
-  "delayed_count": 4,
-  "over_budget_count": 1,
-  "scope_change_count": 1,
-  "payments_pending_count": 2,
-  "payments_pending_amount": 16580000,
-  "su_requested_total": 552375000,
-  "df_recommended_total": 447470000,
-  "approved_total": 224410000,
-  "total_capex": 447470000,
-  "budget_consumed": 164570000,
-  "payments_made_total": 137090000,
-  "total_ev": 89838000,
-  "total_pv": 95212024.29,
-  "total_ac": 88112500,
-  "portfolio_cpi": 1.02,
-  "portfolio_spi": 0.944,
-  "reporting_progress_count": 13,
-  "portfolio_health": "At Risk"
- },
- "dash_after": {
-  "total_projects": 48,
-  "pdd_not_submitted_count": 20,
-  "pdds_submitted": 2,
-  "in_df": 4,
-  "in_ed": 3,
-  "in_mt": 5,
-  "approved_count": 12,
-  "closed_count": 2,
-  "on_time_count": 8,
-  "delayed_count": 3,
-  "over_budget_count": 1,
-  "scope_change_count": 1,
-  "payments_pending_count": 2,
-  "payments_pending_amount": 16580000,
-  "su_requested_total": 552375000,
-  "df_recommended_total": 447470000,
-  "approved_total": 224410000,
-  "total_capex": 447470000,
-  "budget_consumed": 164570000,
-  "payments_made_total": 137090000,
-  "total_ev": 97174000,
-  "total_pv": 95212024.29,
-  "total_ac": 88112500,
-  "portfolio_cpi": 1.103,
-  "portfolio_spi": 1.021,
-  "reporting_progress_count": 13,
-  "portfolio_health": "Good"
- },
- "hero": {
-  "before": {
-   "cpi": 1.02,
-   "spi": 0.944,
-   "verdict": "Attention Required"
+ "s01_overview": {
+  "hero": {
+   "verdict": "Attention Required",
+   "cpi": "1.037",
+   "cpiLabel": "Healthy",
+   "spi": "0.920",
+   "spiLabel": "Watch",
+   "hint": "Cost performance · 14 of 48 projects",
+   "total": "PKR 447.5M",
+   "sub": "48 projects · FY 2026-27"
   },
-  "after": {
-   "cpi": 1.103,
-   "spi": 1.021,
-   "verdict": "Healthy"
+  "cards": {
+   "SU Requested": [
+    "948.17M",
+    "From 64 proposals"
+   ],
+   "DF Recommended": [
+    "447.5M",
+    "48 DF Rec Projects"
+   ],
+   "Approved Projects": [
+    "235.5M",
+    "16 of 48 projects"
+   ],
+   "Budgeted Projects": [
+    "229.3M",
+    "14 of 48 projects"
+   ],
+   "Non-Budgeted Projects": [
+    "6.2M",
+    "2 of 48 projects"
+   ],
+   "Carry Forward": [
+    "83.9M",
+    "24 projects from prior FY"
+   ],
+   "PCDs Received": [
+    "2",
+    "2 of 48 projects"
+   ]
   }
  },
- "story": [
-  {
-   "w": "before",
-   "pct": 38,
-   "ev": 19912000,
-   "pv": 26200000,
-   "el": 0.5,
-   "spi": 0.76,
-   "cpi": 1.013,
-   "eac": 51710526.32,
-   "flag": "delayed",
-   "budget": "within"
+ "s02_pdd": {
+  "cards": {
+   "PDDs Not Submitted": 19,
+   "PDDs Submitted": 2,
+   "DF Review": 4,
+   "ED Review": 2,
+   "MT Review": 5,
+   "Approved": 14,
+   "closedSegment": 2
   },
-  {
-   "w": "after",
-   "pct": 52,
-   "ev": 27248000,
-   "pv": 26200000,
-   "el": 0.5,
-   "spi": 1.04,
-   "cpi": 1.387,
-   "eac": 37788461.54,
-   "flag": "on_time",
-   "budget": "within"
-  }
- ],
- "approvedMetrics": [
-  [
-   "A1",
-   "Clinical Skills Lab Upgrade",
-   "Hillview",
-   52400000,
-   26200000,
-   38,
-   0.5,
-   0.76,
-   1.013,
-   "delayed",
-   "within",
-   26200000,
-   19912000
+  "mtList": [
+   [
+    "ET.273010-03",
+    "Hospital Pharmacy Automation",
+    "Riverside Hospital"
+   ],
+   [
+    "EU.271060-04",
+    "Westfield Biology Lab Renovation",
+    "Westfield"
+   ],
+   [
+    "EU.271050-04",
+    "Eastgate Solar Water Heaters",
+    "Eastgate"
+   ],
+   [
+    "EU.271070-04",
+    "Northbridge Gym Equipment",
+    "Northbridge"
+   ],
+   [
+    "ET.273010-04",
+    "Riverside Ward Block Refurbishment",
+    "Riverside Hospital"
+   ]
   ],
-  [
-   "A2",
-   "Main Library Digital Commons",
-   "Northbridge",
-   31750000,
-   31750000,
-   50,
-   0.4462,
-   1.121,
-   1.024,
-   "on_time",
-   "within",
-   14165384.62,
-   15875000
-  ],
-  [
-   "A3",
-   "Campus Network Core Switch Refresh",
-   "Northbridge",
-   18900000,
-   18900000,
-   70,
-   0.632,
-   1.108,
-   1.034,
-   "on_time",
-   "within",
-   11944800,
-   13230000
-  ],
-  [
-   "A4",
-   "Accreditation Upgrade: ICU Monitors",
-   "Riverside Hospital",
-   27300000,
-   20000000,
-   24,
-   0.299,
-   0.803,
-   1.024,
-   "delayed",
-   "within",
-   8161855.67,
-   6552000
-  ],
-  [
-   "A5",
-   "Solar Rooftop Phase 2",
-   "Lakeside",
-   22480000,
-   11240000,
-   24,
-   0.2085,
-   1.151,
-   1.058,
-   "on_time",
-   "within",
-   4687772.51,
-   5395200
-  ],
-  [
-   "A6",
-   "Hostel Block C Washroom Renovation",
-   "Hostels",
-   9860000,
-   9860000,
-   70,
-   0.8519,
-   0.822,
-   1.03,
-   "delayed",
-   "within",
-   8399259.26,
-   6902000
-  ],
-  [
-   "A7",
-   "Examination Hall Furniture",
-   "Eastgate",
-   6240000,
-   6240000,
-   90,
-   1,
-   0.9,
-   1.021,
-   "delayed",
-   "within",
-   6240000,
-   5616000
-  ],
-  [
-   "A8",
-   "Dental Unit Chairs Replacement",
-   "Hillview",
-   14350000,
-   14350000,
-   38,
-   0.3566,
-   1.065,
-   1.029,
-   "on_time",
-   "within",
-   5117832.17,
-   5453000
-  ],
-  [
-   "A9",
-   "Admissions Office Refurbishment",
-   "Central Office",
-   4980000,
-   4980000,
-   45,
-   0.3846,
-   1.17,
-   1.042,
-   "on_time",
-   "within",
-   1915384.62,
-   2241000
-  ],
-  [
-   "A10",
-   "Science Labs Fume Hoods",
-   "Westfield",
-   11600000,
-   5800000,
-   6,
-   0.0423,
-   1.42,
-   1.088,
-   "on_time",
-   "within",
-   490140.85,
-   696000
-  ],
-  [
-   "A11",
-   "CCTV Coverage Extension",
-   "Lakeside",
-   7420000,
-   7420000,
-   49,
-   0.4797,
-   1.021,
-   0.876,
-   "on_time",
-   "over",
-   3559594.59,
-   3635800
-  ],
-  [
-   "A12",
-   "Lecture Theatre AV Upgrade",
-   "Eastgate",
-   12800000,
-   0,
-   0,
-   0,
-   null,
-   null,
-   "not_started",
-   "not_started",
-   0,
-   0
-  ],
-  [
-   "C1",
-   "Faculty Lounge Furniture",
-   "Westfield",
-   3150000,
-   3150000,
-   100,
-   1,
-   1,
-   1.035,
-   "on_time",
-   "within",
-   3150000,
-   3150000
-  ],
-  [
-   "C2",
-   "Reception Kiosk Installation",
-   "Central Office",
-   1180000,
-   1180000,
-   100,
-   1,
-   1,
-   1,
-   "on_time",
-   "within",
-   1180000,
-   1180000
+  "mtListHeader": "PDD STATUS — MT REVIEW · 5 projects",
+  "notSubmittedShare": "39.6%"
+ },
+ "s03_investments": {
+  "tiles": {
+   "Investment Projects": 3,
+   "Total Requested": "173,000,000",
+   "Recommended": "147,500,000",
+   "Approved": "107,500,000 · 2 sanctioned",
+   "Released": "29,700,000"
+  },
+  "register": [
+   [
+    "ET.270020-01",
+    "Medical Plaza Basement Fit-out",
+    "approved",
+    "110,000,000",
+    "95,000,000",
+    "95,000,000",
+    "27,000,000"
+   ],
+   [
+    "ET.270020-02",
+    "Endowment Property Units",
+    "approved",
+    "15,000,000",
+    "12,500,000",
+    "12,500,000",
+    "2,700,000"
+   ],
+   [
+    "ET.270020-03",
+    "Faculty Housing Rental Block",
+    "ed_review",
+    "48,000,000",
+    "40,000,000",
+    "0",
+    "0"
+   ]
   ]
- ],
- "atRisk": [
-  {
-   "name": "Hostel Block C Washroom Renovation",
-   "campus": "Hostels",
-   "stage": "approved",
-   "days_remaining": 16
+ },
+ "s04_payments": {
+  "cards": {
+   "Total CAPEX": "447.5M",
+   "Budget Released": [
+    "92.5M",
+    "20.7% of total CAPEX"
+   ],
+   "Remaining CAPEX": [
+    "212.0M",
+    "47.4% awaiting approval"
+   ],
+   "Payments Made": "80.4M",
+   "Payments Pending": [
+    "4.3M",
+    "2 projects awaiting transfer"
+   ]
   },
-  {
-   "name": "Examination Hall Furniture",
-   "campus": "Eastgate",
-   "stage": "approved",
-   "days_remaining": -5
-  }
- ],
- "stages": [
-  [
-   "pdd_not_submitted",
-   20,
-   110140000
+  "flow": [
+   [
+    "DF Recommended",
+    "447.5M"
+   ],
+   [
+    "Approved",
+    "235.5M",
+    "53%"
+   ],
+   [
+    "Released",
+    "92.5M",
+    "21%"
+   ],
+   [
+    "Paid",
+    "80.4M",
+    "18%"
+   ]
   ],
-  [
-   "identified",
-   2,
-   12450000
+  "releasedList": "PAYMENTS STATUS — BUDGET RELEASED · 15 projects",
+  "releasedTop": [
+   [
+    "Clinical Skills Lab Upgrade",
+    "approved",
+    "18.3M"
+   ],
+   [
+    "Campus Network Core Switch Refresh",
+    "approved",
+    "15.1M"
+   ],
+   [
+    "Main Library Digital Commons",
+    "approved",
+    "13.5M"
+   ],
+   [
+    "Hostel Block C Washroom Renovation",
+    "approved",
+    "7.9M"
+   ],
+   [
+    "Accreditation Upgrade: ICU Monitors",
+    "approved",
+    "5.6M"
+   ]
   ],
-  [
-   "df_review",
-   4,
-   24365000
-  ],
-  [
-   "ed_review",
-   3,
-   16880000
-  ],
-  [
-   "mt_review",
-   5,
-   58525000
-  ],
-  [
-   "approved",
-   12,
-   220780000
-  ],
-  [
-   "closed",
-   2,
-   4330000
-  ]
- ],
- "headline": {
-  "capex": 48,
-  "df": 447470000,
-  "approvedN": 14,
-  "approvedBac": 224410000,
-  "released": 164570000,
-  "releasedProjects": 14,
-  "paid": 137090000,
-  "su_projects": 552375000,
-  "pmdcN": 3,
-  "pmdcDf": 59025000,
-  "budgeted": [
-   12,
-   218250000
-  ],
-  "nonBudgeted": [
-   2,
-   6160000
-  ],
-  "invN": 2,
-  "invDf": 107500000,
-  "invReleased": 107500000,
   "releasedBeforeApproval": [
    [
     "Hospital Pharmacy Automation",
     "mt_review",
-    3500000
+    "3,500,000"
+   ]
+  ]
+ },
+ "s05_projects": {
+  "all": "48 of 48",
+  "df": "PKR 447.5M",
+  "approvedBudget": "PKR 235.5M",
+  "approvedN": 16,
+  "search": {
+   "q": "Clinical",
+   "rows": [
+    "Clinical Skills Lab Upgrade"
+   ],
+   "df": "PKR 52.4M",
+   "approved": "PKR 52.4M"
+  }
+ },
+ "s06_performance": {
+  "strip": {
+   "CPI": "1.043",
+   "SPI": "0.943",
+   "Earned Value": "119.3M",
+   "Planned Value": "126.5M",
+   "Released (AC)": "114.3M",
+   "Cost Variance": "+5.0M",
+   "Sched Variance": "−7.1M",
+   "executing": "14 projects actively executing"
+  },
+  "pills": {
+   "All": 18,
+   "Active": 16,
+   "On Schedule": 12,
+   "Delayed": 4,
+   "Over Budget": 1,
+   "Closed": 2
+  },
+  "delayed": [
+   [
+    "ET.272010-05",
+    "Clinical Skills Lab Upgrade",
+    "38.0%",
+    "0.760",
+    "1.086"
+   ],
+   [
+    "ET.273010-05",
+    "Accreditation Upgrade: ICU Monitors",
+    "22.0%",
+    "0.736",
+    "1.073"
+   ],
+   [
+    "EU.271050-05",
+    "Examination Hall Furniture",
+    "90.0%",
+    "0.900",
+    "1.040"
+   ],
+   [
+    "ET.273010-06",
+    "Operation Theatre Lights Replacement",
+    "85.0%",
+    "0.850",
+    "1.204"
    ]
   ],
-  "noPm": [
-   "Fire Alarm System Upgrade, Lakeside",
-   "Student Counselling Centre Fit-out",
-   "Northbridge Gym Equipment"
-  ],
-  "suTotal": 948175000,
-  "suCount": 64,
-  "budgetReduction": 500705000,
-  "cfTotal": 83940750,
-  "cfCount": 24
- },
- "campus": [
-  {
-   "campus": "Northbridge",
-   "projects": 9,
-   "df": 97475000,
-   "approved": 2,
-   "bac": 50650000,
-   "released": 50650000,
-   "releasedPct": 52,
-   "pddNot": 4,
-   "pastFinish": 0,
-   "risks": 3,
-   "deliv": "5 of 8",
-   "delivRate": 0.625,
-   "noPm": 2,
-   "pastOpen": 2
-  },
-  {
-   "campus": "Lakeside",
-   "projects": 6,
-   "df": 53815000,
-   "approved": 2,
-   "bac": 29900000,
-   "released": 18660000,
-   "releasedPct": 35,
-   "pddNot": 3,
-   "pastFinish": 0,
-   "risks": 3,
-   "deliv": "1 of 4",
-   "delivRate": 0.25,
-   "noPm": 1,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Hillview",
-   "projects": 7,
-   "df": 95105000,
-   "approved": 2,
-   "bac": 66750000,
-   "released": 40550000,
-   "releasedPct": 43,
-   "pddNot": 3,
-   "pastFinish": 0,
-   "risks": 2,
-   "deliv": "3 of 12",
-   "delivRate": 0.25,
-   "noPm": 0,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Riverside Hospital",
-   "projects": 6,
-   "df": 97420000,
-   "approved": 1,
-   "bac": 27300000,
-   "released": 23500000,
-   "releasedPct": 24,
-   "pddNot": 2,
-   "pastFinish": 0,
-   "risks": 4,
-   "deliv": "0 of 0",
-   "delivRate": null,
-   "noPm": 0,
-   "pastOpen": 2
-  },
-  {
-   "campus": "Eastgate",
-   "projects": 6,
-   "df": 35845000,
-   "approved": 2,
-   "bac": 19040000,
-   "released": 6240000,
-   "releasedPct": 17,
-   "pddNot": 2,
-   "pastFinish": 1,
-   "risks": 2,
-   "deliv": "0 of 0",
-   "delivRate": null,
-   "noPm": 0,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Westfield",
-   "projects": 6,
-   "df": 39295000,
-   "approved": 2,
-   "bac": 14750000,
-   "released": 8950000,
-   "releasedPct": 23,
-   "pddNot": 2,
-   "pastFinish": 0,
-   "risks": 2,
-   "deliv": "0 of 4",
-   "delivRate": 0,
-   "noPm": 0,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Central Office",
-   "projects": 4,
-   "df": 9825000,
-   "approved": 2,
-   "bac": 6160000,
-   "released": 6160000,
-   "releasedPct": 63,
-   "pddNot": 1,
-   "pastFinish": 0,
-   "risks": 1,
-   "deliv": "1 of 3",
-   "delivRate": 0.3333333333333333,
-   "noPm": 0,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Hostels",
-   "projects": 4,
-   "df": 18690000,
-   "approved": 1,
-   "bac": 9860000,
-   "released": 9860000,
-   "releasedPct": 53,
-   "pddNot": 3,
-   "pastFinish": 0,
-   "risks": 1,
-   "deliv": "0 of 0",
-   "delivRate": null,
-   "noPm": 0,
-   "pastOpen": 1
-  }
- ],
- "campusAfter": [
-  {
-   "campus": "Northbridge",
-   "projects": 9,
-   "df": 97475000,
-   "approved": 2,
-   "bac": 50650000,
-   "released": 50650000,
-   "releasedPct": 52,
-   "pddNot": 4,
-   "pastFinish": 0,
-   "risks": 3,
-   "deliv": "5 of 8",
-   "delivRate": 0.625,
-   "noPm": 2,
-   "pastOpen": 2
-  },
-  {
-   "campus": "Lakeside",
-   "projects": 6,
-   "df": 53815000,
-   "approved": 2,
-   "bac": 29900000,
-   "released": 18660000,
-   "releasedPct": 35,
-   "pddNot": 3,
-   "pastFinish": 0,
-   "risks": 3,
-   "deliv": "1 of 4",
-   "delivRate": 0.25,
-   "noPm": 1,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Hillview",
-   "projects": 7,
-   "df": 95105000,
-   "approved": 2,
-   "bac": 66750000,
-   "released": 40550000,
-   "releasedPct": 43,
-   "pddNot": 3,
-   "pastFinish": 0,
-   "risks": 2,
-   "deliv": "6 of 12",
-   "delivRate": 0.5,
-   "noPm": 0,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Riverside Hospital",
-   "projects": 6,
-   "df": 97420000,
-   "approved": 1,
-   "bac": 27300000,
-   "released": 23500000,
-   "releasedPct": 24,
-   "pddNot": 2,
-   "pastFinish": 0,
-   "risks": 4,
-   "deliv": "0 of 0",
-   "delivRate": null,
-   "noPm": 0,
-   "pastOpen": 2
-  },
-  {
-   "campus": "Eastgate",
-   "projects": 6,
-   "df": 35845000,
-   "approved": 2,
-   "bac": 19040000,
-   "released": 6240000,
-   "releasedPct": 17,
-   "pddNot": 2,
-   "pastFinish": 1,
-   "risks": 2,
-   "deliv": "0 of 0",
-   "delivRate": null,
-   "noPm": 0,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Westfield",
-   "projects": 6,
-   "df": 39295000,
-   "approved": 2,
-   "bac": 14750000,
-   "released": 8950000,
-   "releasedPct": 23,
-   "pddNot": 2,
-   "pastFinish": 0,
-   "risks": 2,
-   "deliv": "0 of 4",
-   "delivRate": 0,
-   "noPm": 0,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Central Office",
-   "projects": 4,
-   "df": 9825000,
-   "approved": 2,
-   "bac": 6160000,
-   "released": 6160000,
-   "releasedPct": 63,
-   "pddNot": 1,
-   "pastFinish": 0,
-   "risks": 1,
-   "deliv": "1 of 3",
-   "delivRate": 0.3333333333333333,
-   "noPm": 0,
-   "pastOpen": 1
-  },
-  {
-   "campus": "Hostels",
-   "projects": 4,
-   "df": 18690000,
-   "approved": 1,
-   "bac": 9860000,
-   "released": 9860000,
-   "releasedPct": 53,
-   "pddNot": 3,
-   "pastFinish": 0,
-   "risks": 1,
-   "deliv": "0 of 0",
-   "delivRate": null,
-   "noPm": 0,
-   "pastOpen": 1
-  }
- ],
- "pmLoads": [
-  [
-   "Nadia Fairweather",
-   7,
-   95105000
-  ],
-  [
-   "Omar Linfield",
-   4,
-   49175000
-  ],
-  [
-   "Hira Brookes",
-   6,
-   97420000
-  ],
-  [
-   "Faisal Stonebridge",
-   8,
-   61505000
-  ],
-  [
-   "Zara Kingsley",
-   6,
-   35845000
-  ],
-  [
-   "Imran Ashdown",
-   8,
-   55485000
-  ],
-  [
-   "Maryam Holloway",
-   6,
-   39295000
-  ]
- ],
- "riskSev": [
-  [
-   "critical",
-   0,
-   0
-  ],
-  [
-   "high",
-   8,
-   7
-  ],
-  [
-   "medium",
-   8,
-   9
-  ],
-  [
-   "low",
-   2,
-   2
-  ]
- ],
- "deliv": {
-  "lines": 31,
-  "delivered": 10,
-  "projects": 7,
-  "a1": [
+  "over": [
    [
-    1,
-    "High-fidelity adult patient simulator",
-    2,
-    9850000,
-    19700000
+    "Campus Network Core Switch Refresh",
+    "0.825"
+   ]
+  ],
+  "investmentRows": [
+   [
+    "Medical Plaza Basement Fit-out",
+    "on_time",
+    "within"
    ],
    [
-    2,
-    "Paediatric patient simulator",
-    1,
-    7400000,
-    7400000
+    "Endowment Property Units",
+    "on_time",
+    "within"
+   ]
+  ],
+  "rows": [
+   [
+    "EU.271040-04",
+    "Lakeside Science Block Roof Waterproofing",
+    0,
+    null,
+    null,
+    "not_started",
+    "not_started"
    ],
    [
-    3,
-    "IV and injection task trainers",
-    12,
-    185000,
-    2220000
+    "ET.272010-05",
+    "Clinical Skills Lab Upgrade",
+    38,
+    0.76,
+    1.086,
+    "delayed",
+    "within"
    ],
    [
-    4,
-    "Airway management trainers",
-    6,
-    310000,
-    1860000
+    "EU.271030-02",
+    "Main Library Digital Commons",
+    46,
+    1.031,
+    1.082,
+    "on_time",
+    "within"
    ],
    [
+    "EU.271020-04",
+    "Campus Network Core Switch Refresh",
+    66,
+    1.044,
+    0.825,
+    "on_time",
+    "over"
+   ],
+   [
+    "ET.273010-05",
+    "Accreditation Upgrade: ICU Monitors",
+    22,
+    0.736,
+    1.073,
+    "delayed",
+    "within"
+   ],
+   [
+    "EU.271040-05",
+    "Solar Rooftop Phase 2",
+    22,
+    1.055,
+    1.099,
+    "on_time",
+    "within"
+   ],
+   [
+    "EU.271070-05",
+    "Hostel Block C Washroom Renovation",
+    86,
+    1.01,
+    1.075,
+    "on_time",
+    "within"
+   ],
+   [
+    "EU.271050-05",
+    "Examination Hall Furniture",
+    90,
+    0.9,
+    1.04,
+    "delayed",
+    "within"
+   ],
+   [
+    "ET.272020-02",
+    "Dental Unit Chairs Replacement",
+    37,
+    1.037,
+    1.084,
+    "on_time",
+    "within"
+   ],
+   [
+    "ET.270010-03",
+    "Admissions Office Refurbishment",
+    41,
+    1.066,
+    1.021,
+    "on_time",
+    "within"
+   ],
+   [
+    "EU.271060-05",
+    "Science Labs Fume Hoods",
     5,
-    "AV debriefing and recording system",
+    1.183,
+    1.16,
+    "on_time",
+    "within"
+   ],
+   [
+    "EU.271040-06",
+    "CCTV Coverage Extension",
+    49,
+    1.021,
+    1.102,
+    "on_time",
+    "within"
+   ],
+   [
+    "EU.271050-06",
+    "Lecture Theatre AV Upgrade",
+    0,
+    null,
+    null,
+    "not_started",
+    "not_started"
+   ],
+   [
+    "ET.273010-06",
+    "Operation Theatre Lights Replacement",
+    85,
+    0.85,
+    1.204,
+    "delayed",
+    "within"
+   ],
+   [
+    "EU.271060-06",
+    "Faculty Lounge Furniture",
+    100,
     1,
-    6950000,
-    6950000
-   ],
-   [
-    6,
-    "Hospital beds with mattresses",
-    10,
-    420000,
-    4200000
-   ],
-   [
-    7,
-    "Medical gas and electrical works",
     1,
-    5600000,
-    5600000
+    "on_time",
+    "within"
    ],
    [
-    8,
-    "Skills lab furniture and storage",
+    "ET.270010-04",
+    "Reception Kiosk Installation",
+    100,
     1,
-    4220000,
-    4220000
-   ]
-  ],
-  "a1Total": 52150000,
-  "sums": {
-   "A1": 52150000,
-   "A2": 31750000,
-   "A3": 18850000,
-   "A5": 22480000,
-   "A8": 14318000,
-   "A9": 4980000,
-   "D1": 8750000
-  }
- },
- "pdd": {
-  "grand": 4125000,
-  "items": [
-   [
-    "Glass display cabinets, floor standing",
-    8,
-    245000,
-    1960000
-   ],
-   [
-    "Wall-mounted specimen cases",
-    6,
-    140000,
-    840000
-   ],
-   [
-    "LED cabinet lighting",
-    14,
-    22500,
-    315000
-   ],
-   [
-    "Specimen labelling and mounting",
     1,
-    860000,
-    860000
+    "on_time",
+    "within"
    ],
    [
-    "Installation and transport",
-    1,
-    150000,
-    150000
-   ]
-  ],
-  "verdict": "needs_changes",
-  "summary": "Needs changes: the cost is above the DF Recommended amount.",
-  "linked": [
-   "Anatomy Museum Display Cabinets",
-   0.85,
-   3600000
-  ],
-  "linkSource": "auto",
-  "checks": [
-   [
-    "Completeness",
-    "required",
-    "pass",
-    "Required fields",
-    "Every required field is filled in.",
-    ""
+    "ET.270020-01",
+    "Medical Plaza Basement Fit-out",
+    30,
+    1.03,
+    1.056,
+    "on_time",
+    "within"
    ],
    [
-    "Completeness",
-    "thin",
-    "pass",
-    "Short or repeated answers",
-    "No field is a one-liner or a copy of another.",
-    ""
-   ],
-   [
-    "Cost table",
-    "line_math",
-    "pass",
-    "Quantity × unit cost",
-    "All 5 lines add up.",
-    ""
-   ],
-   [
-    "Cost table",
-    "grand_sum",
-    "pass",
-    "Lines = grand total",
-    "Lines add up to the grand total, PKR 4,125,000.",
-    ""
-   ],
-   [
-    "Cost table",
-    "grand_est",
-    "pass",
-    "Grand total = estimated total cost",
-    "They match.",
-    ""
-   ],
-   [
-    "Schedule",
-    "order",
-    "pass",
-    "Start before finish",
-    "2026-11-15 → 2027-02-28 (105 days).",
-    ""
-   ],
-   [
-    "Schedule",
-    "duration",
-    "pass",
-    "Duration matches the dates",
-    "\"3 months 13 days\" matches the 105 days between the dates.",
-    ""
-   ],
-   [
-    "Documents",
-    "docs_required",
-    "pass",
-    "Required attachments",
-    "Everything required for General, Simple Procurement is attached.",
-    ""
-   ],
-   [
-    "Documents",
-    "docs_mixup",
-    "pass",
-    "Right file in each slot",
-    "No file is used twice and no file name looks misplaced.",
-    ""
-   ],
-   [
-    "Budget",
-    "budget",
-    "fail",
-    "Within DF Recommended",
-    "PKR 4,125,000 is PKR 525,000 above the DF Recommended PKR 3,600,000 for \"Anatomy Museum Display Cabinets\" (matched automatically).",
-    "Budget: The requested PKR 4,125,000 exceeds the budgeted amount of PKR 3,600,000 by PKR 525,000. Please revise the cost or provide the approval for the additional amount."
-   ],
-   [
-    "Budget",
-    "portal_stage",
-    "info",
-    "Portal stage",
-    "The portal still shows \"Anatomy Museum Display Cabinets\" as PDD Not Submitted.",
-    ""
-   ]
-  ],
-  "candidates": [
-   [
-    "Anatomy Museum Display Cabinets",
-    0.85
+    "ET.270020-02",
+    "Endowment Property Units",
+    23,
+    1.021,
+    1.065,
+    "on_time",
+    "within"
    ]
   ]
  },
- "cash": {
-  "capex": 388445000,
-  "pmdc": 59025000,
-  "inv": 107500000,
-  "rows": 236,
+ "s07_risks": {
+  "header": "23 open · 1 critical · across the portfolio",
+  "cells": {
+   "low-high": 2,
+   "low-medium": 2,
+   "low-low": 2,
+   "medium-high": 3,
+   "medium-medium": 5,
+   "medium-low": 2,
+   "high-high": 1,
+   "high-medium": 4,
+   "high-low": 2
+  },
+  "bySeverity": {
+   "critical": 1,
+   "high": 7,
+   "medium": 13,
+   "low": 2
+  },
+  "highMedium": [
+   [
+    "Clinical Skills Lab Upgrade",
+    "Simulator delivery from the overseas vendor may slip"
+   ],
+   [
+    "Examination Hall Furniture",
+    "Furniture supplier is behind on the last batch"
+   ],
+   [
+    "Operation Theatre Lights Replacement",
+    "Theatre schedule leaves few windows to fit the lights"
+   ],
+   [
+    "Data Centre UPS Replacement",
+    "Current UPS batteries are near end of life"
+   ]
+  ],
+  "critical": [
+   [
+    "Hospital Generator Overhaul",
+    "Ageing generator could fail before the overhaul is approved"
+   ]
+  ]
+ },
+ "s08_compare": {
+  "caption": "8 campuses · 48 CAPEX projects · DF PKR 447.5M · 16 approved · released PKR 92.5M",
+  "byDf": [
+   "Northbridge",
+   "Riverside Hospital",
+   "Hillview",
+   "Lakeside",
+   "Westfield",
+   "Eastgate",
+   "Hostels",
+   "Central Office"
+  ],
+  "byReleasedRate": [
+   "Hostels 42%",
+   "Central Office 32%",
+   "Northbridge 29%",
+   "Hillview 24%",
+   "Eastgate 15%",
+   "Lakeside 14%",
+   "Riverside Hospital 13%",
+   "Westfield 9%"
+  ],
+  "rows": [
+   {
+    "campus": "Northbridge",
+    "projects": 9,
+    "df": 97475000,
+    "dfS": "97.5M",
+    "approved": "2 of 9",
+    "approvedRate": 0.2222222222222222,
+    "approvedSub": "50.7M approved",
+    "bac": 50650000,
+    "released": "28.6M",
+    "releasedRate": 0.2936137471146448,
+    "releasedSub": "29% of DF",
+    "pddNot": 4,
+    "pastFinish": 0,
+    "risks": 3,
+    "deliv": "5 of 8",
+    "noPm": 2,
+    "pastOpen": 2,
+    "pms": "Omar Linfield (4) · Imran Ashdown (3) · 2 without a PM",
+    "top": [
+     "Main Library Digital Commons 31.8M",
+     "Campus Network Core Switch Refresh 18.9M",
+     "Data Centre UPS Replacement 12.6M",
+     "Northbridge Auditorium Seating 10.5M",
+     "ERP Reporting Server 9.3M"
+    ]
+   },
+   {
+    "campus": "Lakeside",
+    "projects": 6,
+    "df": 53815000,
+    "dfS": "53.8M",
+    "approved": "3 of 6",
+    "approvedRate": 0.5,
+    "approvedSub": "35.9M approved",
+    "bac": 35860000,
+    "released": "7.8M",
+    "releasedRate": 0.14494100157948528,
+    "releasedSub": "14% of DF",
+    "pddNot": 3,
+    "pastFinish": 0,
+    "risks": 4,
+    "deliv": "1 of 4",
+    "noPm": 1,
+    "pastOpen": 2,
+    "pms": "Faisal Stonebridge (5) · 1 without a PM",
+    "top": [
+     "Solar Rooftop Phase 2 22.5M",
+     "CCTV Coverage Extension 7.4M",
+     "Lakeside Boundary Wall Repair 7.3M",
+     "Fire Alarm System Upgrade, Lakeside 6.2M",
+     "Lakeside Science Block Roof Waterproofing 6.0M"
+    ]
+   },
+   {
+    "campus": "Hillview",
+    "projects": 7,
+    "df": 95105000,
+    "dfS": "95.1M",
+    "approved": "2 of 7",
+    "approvedRate": 0.2857142857142857,
+    "approvedSub": "66.8M approved",
+    "bac": 66750000,
+    "released": "23.2M",
+    "releasedRate": 0.24436149518952738,
+    "releasedSub": "24% of DF",
+    "pddNot": 3,
+    "pastFinish": 0,
+    "risks": 4,
+    "deliv": "5 of 12",
+    "noPm": 0,
+    "pastOpen": 2,
+    "pms": "Nadia Fairweather (7)",
+    "top": [
+     "Clinical Skills Lab Upgrade 52.4M",
+     "Dental Unit Chairs Replacement 14.4M",
+     "Hillview Lecture Hall Air Conditioning 8.9M",
+     "Dental Radiography Unit 7.9M",
+     "Pathology Lab Microscopes 6.4M"
+    ]
+   },
+   {
+    "campus": "Riverside Hospital",
+    "projects": 6,
+    "df": 97420000,
+    "dfS": "97.4M",
+    "approved": "2 of 6",
+    "approvedRate": 0.3333333333333333,
+    "approvedSub": "32.4M approved",
+    "bac": 32400000,
+    "released": "12.7M",
+    "releasedRate": 0.13036337507698625,
+    "releasedSub": "13% of DF",
+    "pddNot": 1,
+    "pastFinish": 1,
+    "risks": 5,
+    "deliv": "0 of 4",
+    "noPm": 0,
+    "pastOpen": 2,
+    "pms": "Hira Brookes (6)",
+    "top": [
+     "Accreditation Upgrade: ICU Monitors 28.0M",
+     "Riverside Ward Block Refurbishment 24.6M",
+     "Hospital Pharmacy Automation 18.5M",
+     "Hospital Generator Overhaul 11.2M",
+     "Hospital Laundry Machines 9.9M"
+    ]
+   },
+   {
+    "campus": "Eastgate",
+    "projects": 6,
+    "df": 35845000,
+    "dfS": "35.8M",
+    "approved": "2 of 6",
+    "approvedRate": 0.3333333333333333,
+    "approvedSub": "19.0M approved",
+    "bac": 19040000,
+    "released": "5.4M",
+    "releasedRate": 0.15064862602873483,
+    "releasedSub": "15% of DF",
+    "pddNot": 2,
+    "pastFinish": 1,
+    "risks": 2,
+    "deliv": "2 of 4",
+    "noPm": 0,
+    "pastOpen": 1,
+    "pms": "Zara Kingsley (6)",
+    "top": [
+     "Lecture Theatre AV Upgrade 12.8M",
+     "Eastgate Classroom Smart Boards 7.0M",
+     "Examination Hall Furniture 6.2M",
+     "Eastgate Solar Water Heaters 3.9M",
+     "Eastgate Parking Shade Structures 3.3M"
+    ]
+   },
+   {
+    "campus": "Westfield",
+    "projects": 6,
+    "df": 39295000,
+    "dfS": "39.3M",
+    "approved": "2 of 6",
+    "approvedRate": 0.3333333333333333,
+    "approvedSub": "14.8M approved",
+    "bac": 14750000,
+    "released": "3.7M",
+    "releasedRate": 0.0928871357679094,
+    "releasedSub": "9% of DF",
+    "pddNot": 2,
+    "pastFinish": 0,
+    "risks": 3,
+    "deliv": "0 of 4",
+    "noPm": 0,
+    "pastOpen": 2,
+    "pms": "Maryam Holloway (6)",
+    "top": [
+     "Science Labs Fume Hoods 11.6M",
+     "Westfield Sports Complex Floodlights 8.8M",
+     "Westfield Biology Lab Renovation 7.2M",
+     "Westfield Physics Lab Equipment 5.6M",
+     "Faculty Lounge Furniture 3.2M"
+    ]
+   },
+   {
+    "campus": "Central Office",
+    "projects": 4,
+    "df": 9825000,
+    "dfS": "9.8M",
+    "approved": "2 of 4",
+    "approvedRate": 0.5,
+    "approvedSub": "6.2M approved",
+    "bac": 6160000,
+    "released": "3.2M",
+    "releasedRate": 0.3236641221374046,
+    "releasedSub": "32% of DF",
+    "pddNot": 1,
+    "pastFinish": 0,
+    "risks": 1,
+    "deliv": "1 of 3",
+    "noPm": 0,
+    "pastOpen": 1,
+    "pms": "Imran Ashdown (4)",
+    "top": [
+     "Admissions Office Refurbishment 5.0M",
+     "Central Office Records Archive 1.9M",
+     "Visitor Management Kiosks 1.7M",
+     "Reception Kiosk Installation 1.2M"
+    ]
+   },
+   {
+    "campus": "Hostels",
+    "projects": 4,
+    "df": 18690000,
+    "dfS": "18.7M",
+    "approved": "1 of 4",
+    "approvedRate": 0.25,
+    "approvedSub": "9.9M approved",
+    "bac": 9860000,
+    "released": "7.9M",
+    "releasedRate": 0.422043873729267,
+    "releasedSub": "42% of DF",
+    "pddNot": 3,
+    "pastFinish": 0,
+    "risks": 1,
+    "deliv": "3 of 4",
+    "noPm": 0,
+    "pastOpen": 1,
+    "pms": "Faisal Stonebridge (3) · Imran Ashdown (1)",
+    "top": [
+     "Hostel Block C Washroom Renovation 9.9M",
+     "Wi-Fi Coverage for Hostels 4.8M",
+     "Nursing Hostel Water Filtration 2.2M",
+     "Hostel Block A Common Room Furniture 1.9M"
+    ]
+   }
+  ]
+ },
+ "s09_cashflows": {
+  "tiles": {
+   "CAPEX total": [
+    "PKR 447.5M",
+    "48 projects · incl. PMDC"
+   ],
+   "of which PMDC": [
+    "PKR 42.4M",
+    "9.5% of CAPEX"
+   ],
+   "Released to date": [
+    "PKR 92.5M",
+    "20.7% drawn"
+   ],
+   "Peak month": [
+    "Jan 27",
+    "PKR 65.3M"
+   ],
+   "Investment": [
+    "PKR 147.5M",
+    "3 projects · outside CAPEX"
+   ]
+  },
+  "pmdcMonths": [
+   "Aug 26",
+   "Sep 26",
+   "Oct 26",
+   "Nov 26"
+  ],
+  "pmdcText": "Concentrated in 4 months and then complete — the inspection work does not run across the year.",
+  "ofPlan": "20.7%",
   "monthly": [
    [
-    "2026-07",
-    12420000,
-    0
+    "Jul 26",
+    "10.8M",
+    "0.0M",
+    6
    ],
    [
-    "2026-08",
-    32855000,
-    4000000
+    "Aug 26",
+    "28.2M",
+    "5.7M",
+    10
    ],
    [
-    "2026-09",
-    36721000,
-    4000000
+    "Sep 26",
+    "37.6M",
+    "14.1M",
+    12
    ],
    [
-    "2026-10",
-    40633000,
-    4000000
+    "Oct 26",
+    "38.4M",
+    "15.0M",
+    12
    ],
    [
-    "2026-11",
-    51649000,
-    7075000
+    "Nov 26",
+    "43.6M",
+    "7.7M",
+    19
    ],
    [
-    "2026-12",
-    69519000,
-    8681000
+    "Dec 26",
+    "59.6M",
+    "0.0M",
+    31
    ],
    [
-    "2027-01",
-    65991000,
-    8681000
+    "Jan 27",
+    "65.3M",
+    "0.0M",
+    35
    ],
    [
-    "2027-02",
-    56097000,
-    8681000
+    "Feb 27",
+    "56.7M",
+    "0.0M",
+    32
    ],
    [
-    "2027-03",
-    42058000,
-    4682000
+    "Mar 27",
+    "38.2M",
+    "0.0M",
+    25
    ],
    [
-    "2027-04",
-    26477000,
-    3075000
+    "Apr 27",
+    "18.8M",
+    "0.0M",
+    16
    ],
    [
-    "2027-05",
-    9317000,
-    3075000
+    "May 27",
+    "6.1M",
+    "0.0M",
+    6
    ],
    [
-    "2027-06",
-    3733000,
-    3075000
+    "Jun 27",
+    "1.7M",
+    "0.0M",
+    2
+   ]
+  ],
+  "hillviewFilter": "filtered · PKR 95.1M across 7 projects",
+  "priorities": [
+   "1st Priority",
+   "2nd Priority",
+   "3rd Priority"
+  ],
+  "types": [
+   "Civil Works",
+   "Equipment Procurement",
+   "Software / Licensing"
+  ]
+ },
+ "s10_timeline": {
+  "caption": "48 scheduled · 0 without dates",
+  "groups": [
+   "Central Office 4",
+   "Eastgate 6",
+   "Hillview 7",
+   "Hostels 4",
+   "Lakeside 6",
+   "Northbridge 9",
+   "Riverside Hospital 6",
+   "Westfield 6"
+  ],
+  "late": [
+   "Examination Hall Furniture (end 2026-10-10)",
+   "Operation Theatre Lights Replacement (end 2026-09-30)"
+  ],
+  "story": {
+   "tasks": "11, 1 milestone",
+   "fromTasks": "2026-08-01 → 2026-12-29",
+   "committed": "2026-08-01 → 2026-12-29",
+   "progress": "38%",
+   "approved": "52.4M",
+   "released": "18.3M"
+  }
+ },
+ "s11_updates": {
+  "inbox": 4,
+  "inboxProjects": [
+   "Clinical Skills Lab Upgrade",
+   "Hospital Pharmacy Automation",
+   "Examination Hall Furniture"
+  ],
+  "storyThread": [
+   "PMO (Simulation) (2026-10-07): Nadia, the schedule shows the simulators past their baseline date. Please confirm the customs date and what is on site now.",
+   "Nadia Fairweather (2026-10-14): Beds, furniture and all the task trainers are on site (4 of 8 items). The simulators cleared shipping on 9 October; customs clearance is now expected by 30 November, 20 days after the baseline. Installation is re-planned so handover on 29 December still holds.",
+   "Nadia Fairweather (2026-10-14): Medical gas and electrical works are about 40% done. The contractor adds a second shift from Monday."
+  ],
+  "nudge": "Nudge on WhatsApp: Nadia Fairweather",
+  "threads": 10,
+  "comments": 19
+ },
+ "s12_past": {
+  "cards": {
+   "Still open": [
+    13,
+    "7 open over a year"
+   ],
+   "Approved": "PKR 80.4M",
+   "Released": "PKR 76.2M",
+   "No progress": 3,
+   "Not chased": 5
+  },
+  "ages": {
+   "under 6 months": 3,
+   "6 to 12 months": 3,
+   "over a year": 7
+  },
+  "unread": "1 project (Hillview Histology Microscopes): Nadia Fairweather's reply of 13 Oct",
+  "total": 16,
+  "closed": 3
+ },
+ "s13_gallery": {
+  "header": "12 photos and videos across the portfolio",
+  "first": "Clinical Skills Lab Upgrade · Hillview",
+  "photos": [
+   [
+    "Clinical Skills Lab Upgrade",
+    "Hillview",
+    "2026-10-13",
+    "Clinical Skills Lab: beds and furniture in place"
+   ],
+   [
+    "Clinical Skills Lab Upgrade",
+    "Hillview",
+    "2026-10-09",
+    "Clinical Skills Lab: medical gas outlets being fitted"
+   ],
+   [
+    "Hostel Block C Washroom Renovation",
+    "Hostels",
+    "2026-10-09",
+    "Hostel Block C: new washroom fittings"
+   ],
+   [
+    "Solar Rooftop Phase 2",
+    "Lakeside",
+    "2026-10-07",
+    "Solar Rooftop Phase 2: panels delivered"
+   ],
+   [
+    "Operation Theatre Lights Replacement",
+    "Riverside Hospital",
+    "2026-10-03",
+    "Operation theatre: new surgical lights"
+   ],
+   [
+    "Main Library Digital Commons",
+    "Northbridge",
+    "2026-09-30",
+    "Main Library: study pods installed"
+   ],
+   [
+    "Examination Hall Furniture",
+    "Eastgate",
+    "2026-09-26",
+    "Examination Hall: first furniture batch"
+   ],
+   [
+    "Campus Network Core Switch Refresh",
+    "Northbridge",
+    "2026-09-19",
+    "Network refresh: new core switch rack"
+   ],
+   [
+    "Dental Unit Chairs Replacement",
+    "Hillview",
+    "2026-09-21",
+    "Dental clinic: chair bays prepared"
+   ],
+   [
+    "CCTV Coverage Extension",
+    "Lakeside",
+    "2026-09-14",
+    "CCTV extension: new camera mast"
+   ],
+   [
+    "Accreditation Upgrade: ICU Monitors",
+    "Riverside Hospital",
+    "2026-09-08",
+    "ICU: bay prepared for new monitors"
+   ],
+   [
+    "Main Library Digital Commons",
+    "Northbridge",
+    "2026-08-24",
+    "Main Library: site cleared for the digital commons"
    ]
   ]
+ },
+ "s14_users": {
+  "header": "13 users · only the PMO can create accounts",
+  "rows": [
+   [
+    "pmo.demo",
+    "PMO (Simulation)",
+    "pmo",
+    "Active",
+    "All projects",
+    "—"
+   ],
+   [
+    "nfairweather",
+    "Nadia Fairweather",
+    "project_manager",
+    "Active",
+    "7 projects",
+    "+00 300 0000 101"
+   ],
+   [
+    "olinfield",
+    "Omar Linfield",
+    "project_manager",
+    "Active",
+    "4 projects",
+    "+00 300 0000 102"
+   ],
+   [
+    "hbrookes",
+    "Hira Brookes",
+    "project_manager",
+    "Active",
+    "6 projects",
+    "+00 300 0000 103"
+   ],
+   [
+    "fstonebridge",
+    "Faisal Stonebridge",
+    "project_manager",
+    "Active",
+    "8 projects",
+    "+00 300 0000 104"
+   ],
+   [
+    "zkingsley",
+    "Zara Kingsley",
+    "project_manager",
+    "Active",
+    "6 projects",
+    "+00 300 0000 105"
+   ],
+   [
+    "iashdown",
+    "Imran Ashdown",
+    "project_manager",
+    "Active",
+    "8 projects",
+    "+00 300 0000 106"
+   ],
+   [
+    "mholloway",
+    "Maryam Holloway",
+    "project_manager",
+    "Active",
+    "6 projects",
+    "+00 300 0000 107"
+   ],
+   [
+    "bwestbrook",
+    "Bilal Westbrook",
+    "project_manager",
+    "Inactive",
+    "None assigned",
+    "+00 300 0000 108"
+   ],
+   [
+    "amarlowe",
+    "Prof. Adeel Marlowe",
+    "guest",
+    "Active",
+    "All projects (can comment)",
+    "—"
+   ],
+   [
+    "rthornton",
+    "Rabia Thornton",
+    "guest",
+    "Active",
+    "All projects (can comment)",
+    "—"
+   ],
+   [
+    "kellery",
+    "Kamran Ellery",
+    "guest",
+    "Active",
+    "All projects (can comment)",
+    "—"
+   ],
+   [
+    "swhitcombe",
+    "Sana Whitcombe",
+    "guest",
+    "Active",
+    "All projects (can comment)",
+    "—"
+   ]
+  ],
+  "siteWise": [
+   "Northbridge: Omar Linfield (4) · Imran Ashdown (3) · 2 without a PM",
+   "Lakeside: Faisal Stonebridge (5) · 1 without a PM",
+   "Hillview: Nadia Fairweather (7)",
+   "Riverside Hospital: Hira Brookes (6)",
+   "Eastgate: Zara Kingsley (6)",
+   "Westfield: Maryam Holloway (6)",
+   "Central Office: Imran Ashdown (4)",
+   "Hostels: Faisal Stonebridge (3) · Imran Ashdown (1)"
+  ],
+  "assignPmNorthbridge": "2 projects will be assigned · 7 left alone — already has a PM"
+ },
+ "s15_board": {
+  "list": [
+   "Monthly Board Report: September 2026 — Published · figures as at 1 Oct 2026 · published 2 Oct 2026 · shared with 3, opened by 2",
+   "Baseline: August 2026 — Baseline · reconstructed · figures as at 1 Sep 2026"
+  ],
+  "sepTiles": {
+   "Total CAPEX portfolio": "447.5M",
+   "Approved": "222.7M (15 projects)",
+   "Released": "88.5M",
+   "Approved not yet released": "134.2M",
+   "Of which PMDC": "42.4M",
+   "Investment (outside CAPEX)": "147.5M"
+  },
+  "sinceAugust": {
+   "approved_bac": "10.9M",
+   "released_total": "6.5M",
+   "approved_count": 2
+  },
+  "month": {
+   "released": "6.5M",
+   "n": 2,
+   "list": [
+    "Solar Rooftop Phase 2 4.5M",
+    "Admissions Office Refurbishment 2.0M"
+   ]
+  },
+  "moved": [
+   "Lakeside Science Block Roof Waterproofing",
+   "Admissions Office Refurbishment"
+  ],
+  "attention": {
+   "nothingReleased": [
+    "Science Labs Fume Hoods",
+    "Lakeside Science Block Roof Waterproofing"
+   ],
+   "early": [],
+   "noPm": 3
+  },
+  "note": "In September PKR 6.5M was released to 2 projects (Solar Rooftop Phase 2 and Admissions Office Refurbishment), and Lakeside Science Block Roof Waterproofing and Admissions Office Refurbishment moved to Approved. 6 projects worth PKR 71.3M were with the Managing Trustee at month end.",
+  "risks": {
+   "critical": 1,
+   "high": 6,
+   "medium": 10,
+   "low": 1
+  },
+  "pdds": {
+   "received": 2,
+   "pmo_approved": 0,
+   "sent_back": 1,
+   "waiting_now": 0
+  },
+  "past": {
+   "open": 13,
+   "released_pct": "95%"
+  }
+ },
+ "s16_team": {
+  "about": "About the Project Management Office",
+  "members": [
+   "head_pmo: Dr. Ayesha Hartley",
+   "manager_pmo: Usman Clarke",
+   "deputy_pmo: Mehwish Calloway",
+   "exec_pmo: Haris Penrose",
+   "po1: Sadia Merriman",
+   "po2: Talha Ainsworth"
+  ],
+  "contact": {
+   "email": "pmo@university.example",
+   "phone": "+00 51 0000 0100",
+   "address": "Central Office, 1 University Avenue, Northbridge",
+   "office": "Central Office, 2nd floor, Room 214",
+   "hours": "Monday to Friday, 9:00 am to 5:00 pm",
+   "website": "pmo.university.example"
+  }
+ },
+ "s17_documents": {
+  "header": "Attachments (6)",
+  "files": [
+   "EPDD_Clinical Skills Lab Upgrade.pdf",
+   "Quotation_MedSim Partners_Patient Simulators.pdf",
+   "Quotation_Brightline AV_Debriefing System.pdf",
+   "BOQ_Medical Gas and Electrical Works.xlsx",
+   "Layout_Clinical Skills Lab Floor Plan.jpg",
+   "Award Letter_Patient Simulators.pdf"
+  ],
+  "storageBytes": 857681
+ },
+ "s18_wbs": {
+  "header": "Work Breakdown · 15 tasks",
+  "weighted": 38,
+  "phases": [
+   "Procurement: 100% (done)",
+   "Site works: 26% (in_progress)",
+   "Equipment: 41% (in_progress)",
+   "Commissioning and handover: 0% (not_started)"
+  ],
+  "slip": "Simulators: import and customs +20d (baseline 10 Nov, now 30 Nov)",
+  "milestone": "Handover to Clinical Skills Lab, 29 Dec"
  },
  "board": {
   "aug": {
    "headline": {
     "capex_count": 48,
     "df_total": 447470000,
-    "approved_count": 12,
-    "approved_in_execution": 11,
+    "approved_count": 13,
+    "approved_in_execution": 12,
     "approved_closed": 1,
-    "approved_bac": 206630000,
-    "released_total": 139050000,
-    "released_projects": 10,
-    "released_on_approved": 139050000,
-    "approved_not_released": 67580000,
-    "investment_count": 2,
-    "investment_df": 107500000,
-    "investment_released": 107500000,
-    "released_pct_of_df": 0.3107470891903368,
-    "pmdc_count": 3,
-    "pmdc_df": 59025000
+    "approved_bac": 211730000,
+    "released_total": 81978000,
+    "released_projects": 11,
+    "released_on_approved": 81978000,
+    "approved_not_released": 129752000,
+    "investment_count": 3,
+    "investment_df": 147500000,
+    "investment_released": 29700000,
+    "released_pct_of_df": 0.18320334324088766,
+    "pmdc_count": 2,
+    "pmdc_df": 42350000
    },
    "stages": [
     [
      "pdd_not_submitted",
-     21,
-     118890000
+     19,
+     104900000
     ],
     [
      "identified",
-     2,
-     12450000
+     4,
+     23890000
     ],
     [
      "df_review",
      3,
-     15615000
+     18885000
     ],
     [
      "ed_review",
-     4,
-     24120000
+     3,
+     18160000
     ],
     [
      "mt_review",
@@ -1045,8 +1245,8 @@
     ],
     [
      "approved",
-     11,
-     206150000
+     12,
+     211390000
     ],
     [
      "closed",
@@ -1055,85 +1255,39 @@
     ]
    ],
    "month": {
-    "released": 14350000,
-    "n": 1,
-    "list": [
-     [
-      "Dental Unit Chairs Replacement",
-      14350000,
-      false
-     ]
-    ]
-   },
-   "moved": [],
-   "attention": {
-    "nothing": [
-     "Solar Rooftop Phase 2",
-     "Science Labs Fume Hoods"
-    ],
-    "early": [],
-    "nopm": 3
-   },
-   "risks": {
-    "critical": 0,
-    "high": 8,
-    "medium": 8,
-    "low": 2
-   },
-   "pdds": {
-    "received": 3,
-    "pmo_approved": 3,
-    "sent_back": 0,
-    "waiting_now": 0
-   },
-   "carry": {
-    "count": 24,
-    "amount": 83940750
-   },
-   "past": {
-    "open": 10,
-    "approved": 69630000,
-    "released": 67590000,
-    "released_pct": 0.9707022834984921,
-    "no_progress": 3,
-    "ages": {
-     "under6": 2,
-     "6to12": 3,
-     "over12": 5,
-     "undated": 0
-    }
-   },
-   "plan_total": 447470000
+    "released": 4900000,
+    "n": 1
+   }
   },
   "sep": {
    "headline": {
     "capex_count": 48,
     "df_total": 447470000,
-    "approved_count": 13,
-    "approved_in_execution": 11,
+    "approved_count": 15,
+    "approved_in_execution": 13,
     "approved_closed": 2,
-    "approved_bac": 211610000,
-    "released_total": 155270000,
-    "released_projects": 12,
-    "released_on_approved": 155270000,
-    "approved_not_released": 56340000,
-    "investment_count": 2,
-    "investment_df": 107500000,
-    "investment_released": 107500000,
-    "released_pct_of_df": 0.3469953292958187,
-    "pmdc_count": 3,
-    "pmdc_df": 59025000
+    "approved_bac": 222670000,
+    "released_total": 88478000,
+    "released_projects": 13,
+    "released_on_approved": 88478000,
+    "approved_not_released": 134192000,
+    "investment_count": 3,
+    "investment_df": 147500000,
+    "investment_released": 29700000,
+    "released_pct_of_df": 0.19772945672335576,
+    "pmdc_count": 2,
+    "pmdc_df": 42350000
    },
    "stages": [
     [
      "pdd_not_submitted",
-     21,
-     118890000
+     19,
+     104900000
     ],
     [
      "identified",
-     2,
-     12450000
+     3,
+     21200000
     ],
     [
      "df_review",
@@ -1142,8 +1296,8 @@
     ],
     [
      "ed_review",
-     3,
-     16880000
+     2,
+     10920000
     ],
     [
      "mt_review",
@@ -1152,8 +1306,8 @@
     ],
     [
      "approved",
-     11,
-     207980000
+     13,
+     219180000
     ],
     [
      "closed",
@@ -1162,86 +1316,34 @@
     ]
    ],
    "month": {
-    "released": 16220000,
-    "n": 2,
-    "list": [
-     [
-      "Solar Rooftop Phase 2",
-      11240000,
-      false
-     ],
-     [
-      "Admissions Office Refurbishment",
-      4980000,
-      false
-     ]
-    ]
-   },
-   "moved": [
-    "Admissions Office Refurbishment"
-   ],
-   "attention": {
-    "nothing": [
-     "Science Labs Fume Hoods"
-    ],
-    "early": [],
-    "nopm": 3
-   },
-   "risks": {
-    "critical": 0,
-    "high": 8,
-    "medium": 8,
-    "low": 2
-   },
-   "pdds": {
-    "received": 2,
-    "pmo_approved": 0,
-    "sent_back": 1,
-    "waiting_now": 0
-   },
-   "carry": {
-    "count": 24,
-    "amount": 83940750
-   },
-   "past": {
-    "open": 10,
-    "approved": 69630000,
-    "released": 67590000,
-    "released_pct": 0.9707022834984921,
-    "no_progress": 3,
-    "ages": {
-     "under6": 2,
-     "6to12": 3,
-     "over12": 5,
-     "undated": 0
-    }
-   },
-   "plan_total": 447470000
+    "released": 6500000,
+    "n": 2
+   }
   },
   "oct": {
    "headline": {
     "capex_count": 48,
     "df_total": 447470000,
-    "approved_count": 14,
-    "approved_in_execution": 12,
+    "approved_count": 16,
+    "approved_in_execution": 14,
     "approved_closed": 2,
-    "approved_bac": 224410000,
-    "released_total": 164570000,
-    "released_projects": 14,
-    "released_on_approved": 161070000,
-    "approved_not_released": 63340000,
-    "investment_count": 2,
-    "investment_df": 107500000,
-    "investment_released": 107500000,
-    "released_pct_of_df": 0.36777884550919615,
-    "pmdc_count": 3,
-    "pmdc_df": 59025000
+    "approved_bac": 235470000,
+    "released_total": 92478000,
+    "released_projects": 15,
+    "released_on_approved": 88978000,
+    "approved_not_released": 146492000,
+    "investment_count": 3,
+    "investment_df": 147500000,
+    "investment_released": 29700000,
+    "released_pct_of_df": 0.20666860348179766,
+    "pmdc_count": 2,
+    "pmdc_df": 42350000
    },
    "stages": [
     [
      "pdd_not_submitted",
-     20,
-     110140000
+     19,
+     104900000
     ],
     [
      "identified",
@@ -1255,8 +1357,8 @@
     ],
     [
      "ed_review",
-     3,
-     16880000
+     2,
+     10920000
     ],
     [
      "mt_review",
@@ -1265,8 +1367,8 @@
     ],
     [
      "approved",
-     12,
-     220780000
+     14,
+     231980000
     ],
     [
      "closed",
@@ -1275,79 +1377,378 @@
     ]
    ],
    "month": {
-    "released": 9300000,
-    "n": 2,
-    "list": [
-     [
-      "Science Labs Fume Hoods",
-      5800000,
-      false
-     ],
-     [
-      "Hospital Pharmacy Automation",
-      3500000,
-      false
-     ]
-    ]
-   },
-   "moved": [
-    "Lecture Theatre AV Upgrade"
-   ],
-   "attention": {
-    "nothing": [
-     "Lecture Theatre AV Upgrade"
-    ],
-    "early": [
-     "Hospital Pharmacy Automation"
-    ],
-    "nopm": 3
-   },
-   "risks": {
-    "critical": 0,
-    "high": 8,
-    "medium": 8,
-    "low": 2
-   },
-   "pdds": {
-    "received": 1,
-    "pmo_approved": 1,
-    "sent_back": 0,
-    "waiting_now": 1
-   },
-   "carry": {
-    "count": 24,
-    "amount": 83940750
-   },
-   "past": {
-    "open": 10,
-    "approved": 69630000,
-    "released": 67590000,
-    "released_pct": 0.9707022834984921,
-    "no_progress": 3,
-    "ages": {
-     "under6": 2,
-     "6to12": 3,
-     "over12": 5,
-     "undated": 0
-    }
-   },
-   "plan_total": 447470000
+    "released": 4000000,
+    "n": 2
+   }
   }
  },
- "past": {
-  "open": 10,
-  "approved": 69630000,
-  "released": 67590000,
-  "noProgress": 3,
-  "ages": {
-   "under6": 2,
-   "6to12": 3,
-   "over12": 5,
-   "undated": 0
-  }
+ "dash": {
+  "total_projects": 48,
+  "pdd_not_submitted_count": 19,
+  "identified_count": 2,
+  "pdds_submitted": 2,
+  "in_df": 4,
+  "in_ed": 2,
+  "in_mt": 5,
+  "approved_count": 14,
+  "closed_count": 2,
+  "on_time_count": 8,
+  "delayed_count": 4,
+  "over_budget_count": 1,
+  "scope_change_count": 1,
+  "carry_forward_count": 0,
+  "carry_forward_amount": 0,
+  "payments_pending_count": 2,
+  "payments_pending_amount": 4330000,
+  "su_requested_total": 552375000,
+  "df_recommended_total": 447470000,
+  "approved_total": 235470000,
+  "budget_reduction": 104905000,
+  "total_capex": 447470000,
+  "budget_consumed": 92478000,
+  "budget_remaining": 354992000,
+  "payments_made_total": 80420000,
+  "total_ev": 92270300,
+  "total_pv": 100312024.29,
+  "total_ac": 88978000,
+  "portfolio_cpi": 1.037,
+  "portfolio_spi": 0.92,
+  "portfolio_health": "At Risk",
+  "reporting_progress_count": 14
  },
- "wbs": {
-  "leaves": 9,
-  "weighted_pct": 52
- }
+ "investment": {
+  "total_projects": 3,
+  "su_requested_total": 173000000,
+  "df_recommended_total": 147500000,
+  "approved_total": 107500000,
+  "released_total": 29700000,
+  "payments_made_total": 29700000,
+  "approved_count": 2
+ },
+ "checks": [
+  [
+   "PASS",
+   "48 CAPEX + 3 investment"
+  ],
+  [
+   "PASS",
+   "Total CAPEX == DF sum == portfolio_dashboard.total_capex"
+  ],
+  [
+   "PASS",
+   "bac > 0 only on approved/closed (all portfolios)"
+  ],
+  [
+   "PASS",
+   "bac <= DF on every project"
+  ],
+  [
+   "PASS",
+   "released <= bac on approved; released only where a release date is set"
+  ],
+  [
+   "PASS",
+   "actual_start_date == budget_release_date (trg_sync_actual_start)"
+  ],
+  [
+   "PASS",
+   "payments_made <= released"
+  ],
+  [
+   "PASS",
+   "actual_cost == amount_released on approved/closed (Performance AC column == CPI basis)"
+  ],
+  [
+   "PASS",
+   "pct > 0 only on approved/closed with release"
+  ],
+  [
+   "PASS",
+   "closed: pct 100, actual_end set, pcd set"
+  ],
+  [
+   "PASS",
+   "duration_months == calcDurationMonths(start,end)"
+  ],
+  [
+   "PASS",
+   "no SPI or CPI in [0.95,1.00) on any row (cards say 0.95, thresholds are 1)"
+  ],
+  [
+   "PASS",
+   "payments pending: released == bac and paid 0 (so 'awaiting transfer' is true money)"
+  ],
+  [
+   "PASS",
+   "released before approval only at MT review (Hospital Pharmacy Automation)"
+  ],
+  [
+   "PASS",
+   "hero verdict 'Attention Required' (SPI in [0.90,0.95), CPI >= 0.95)"
+  ],
+  [
+   "PASS",
+   "Performance strip CPI/SPI in the same colour bands as the hero (CPI >= 0.95 green, 0.85 <= SPI < 0.95 amber)"
+  ],
+  [
+   "PASS",
+   "Delayed = 4 (incl. the walkthrough project), Over budget = 1 (scope change), no investment row flagged"
+  ],
+  [
+   "PASS",
+   "dashboard delayed/on-time/over counts == Performance pills on approved CAPEX rows"
+  ],
+  [
+   "PASS",
+   "scatter: >= 10 CAPEX projects plot with both CPI and SPI, in at least 3 quadrants"
+  ],
+  [
+   "PASS",
+   "cash plan capex+pmdc == Total CAPEX DF; investment plan == investment DF"
+  ],
+  [
+   "PASS",
+   "cash rows per project sum to its DF"
+  ],
+  [
+   "PASS",
+   "PMDC rows only on CAPEX; investment rows only on investment; a PMDC project has only PMDC rows"
+  ],
+  [
+   "PASS",
+   "PMDC concentrated in 3-4 months (Cashflows fixed text)"
+  ],
+  [
+   "PASS",
+   "Cashflows PMDC tile == board report 'Of which PMDC' (same projects, all rows pmdc)"
+  ],
+  [
+   "PASS",
+   "cash-flow labels use production spellings (1st/2nd/3rd Priority; Civil Works / Equipment Procurement / Software / Licensing)"
+  ],
+  [
+   "PASS",
+   "every plan month inside FY 26-27"
+  ],
+  [
+   "PASS",
+   "monthly plan has a visible shape (peak month >= 1.5x the FY average)"
+  ],
+  [
+   "PASS",
+   "every release date inside FY 26-27 (Cumulative release chart)"
+  ],
+  [
+   "PASS",
+   "deliverable lines per project == linked PDD grand total and <= DF"
+  ],
+  [
+   "PASS",
+   "deliverables only where project_has_deliverables (approved PDD linked)"
+  ],
+  [
+   "PASS",
+   "incoming PDD: rules-3 verdict needs_changes with exactly one fail (budget)"
+  ],
+  [
+   "PASS",
+   "PMO Review badge == 1 (is_history=false, seen_at null)"
+  ],
+  [
+   "PASS",
+   "SU list total == card; budget_reduction == SU list - DF"
+  ],
+  [
+   "PASS",
+   "carry forward card live (value '') == list total"
+  ],
+  [
+   "PASS",
+   "Approved Projects hover text == card (count from the same rule)"
+  ],
+  [
+   "PASS",
+   "board replay: Sep headline recomputes identically"
+  ],
+  [
+   "PASS",
+   "Sep report: risks snapshot as at its build date (none identified or reviewed after 2 Oct)"
+  ],
+  [
+   "PASS",
+   "board replay at NOW reproduces live rows (no log entry after NOW)"
+  ],
+  [
+   "PASS",
+   "board Oct headline == dashboard (count, DF, released)"
+  ],
+  [
+   "PASS",
+   "board Aug baseline replays the logged 'old' values (A9 not approved, C1 open)"
+  ],
+  [
+   "PASS",
+   "Sep report: released this month == sum of Sep release log entries"
+  ],
+  [
+   "PASS",
+   "Sep report recipients: 3 guests, 2 opened, PMO not a recipient (no sign-in pop-up)"
+  ],
+  [
+   "PASS",
+   "Sep report note quotes the report's own figures"
+  ],
+  [
+   "PASS",
+   "risks: one per project, all 9 matrix cells used, exactly 1 critical"
+  ],
+  [
+   "PASS",
+   "risks: all open or monitoring (header, matrix and filter counts agree)"
+  ],
+  [
+   "PASS",
+   "risks: date_identified varied, <= last reviewed <= today; owner is the project's PM"
+  ],
+  [
+   "PASS",
+   "story risk created_by_name == PMO username"
+  ],
+  [
+   "PASS",
+   "Compare: two largest by DF are Northbridge and Riverside Hospital (pre-ticked), Hillview third"
+  ],
+  [
+   "PASS",
+   "Compare: released share spread >= 30 points across campuses, no two campuses equal"
+  ],
+  [
+   "PASS",
+   "Compare head to head (Northbridge / Riverside / Hillview): each attention metric has a different leader or laggard"
+  ],
+  [
+   "PASS",
+   "Compare: 'Planned finish passed' on 2 campuses (Eastgate, Riverside Hospital), 'No PM' on 2 (Northbridge 2, Lakeside 1)"
+  ],
+  [
+   "PASS",
+   "Compare: deliverables on every campus, ticked rates spread from 0% to >= 70%"
+  ],
+  [
+   "PASS",
+   "Compare: approved rate spread >= 25 points"
+  ],
+  [
+   "PASS",
+   "every CAPEX project has a campus and fiscal_year FY 26-27"
+  ],
+  [
+   "PASS",
+   "each project has at most one PM; PMs are active project_manager accounts"
+  ],
+  [
+   "PASS",
+   "site-wise managers: each campus's PMs are 1-2 people; Hillview, Riverside, Eastgate, Westfield have exactly one"
+  ],
+  [
+   "PASS",
+   "phones on the invalid +00 prefix only; emails on university.example"
+  ],
+  [
+   "PASS",
+   "Users: one inactive account with no assignments"
+  ],
+  [
+   "PASS",
+   "Updates: 4 unread PM replies on 3 projects (inbox), story thread unread"
+  ],
+  [
+   "PASS",
+   "Updates: every reply's parent is in the same project and earlier"
+  ],
+  [
+   "PASS",
+   "Updates: is_read_by_pmo agrees with the PMO's comment_reads"
+  ],
+  [
+   "PASS",
+   "Updates: story thread agrees with WBS, deliverables and risk (30 Nov customs, 4 of 8 items, +20d)"
+  ],
+  [
+   "PASS",
+   "past: FY spelled as production ('FY 24-25'), 3 fiscal years"
+  ],
+  [
+   "PASS",
+   "past: open projects in all three age bands"
+  ],
+  [
+   "PASS",
+   "past: last_followed_up == day of the latest message where messages exist"
+  ],
+  [
+   "PASS",
+   "past: exactly 1 unread project for the PMO (Unread filter) and 1 unread message in total (badge)"
+  ],
+  [
+   "PASS",
+   "past: tagged PM-chat messages only tag that manager's own projects"
+  ],
+  [
+   "PASS",
+   "past: closed rows read 'Closed/PCD Received'; released <= approved"
+  ],
+  [
+   "PASS",
+   "past-project age bands agree between the page (182/365 days) and the board report (30.44-day months)"
+  ],
+  [
+   "PASS",
+   "WBS weighted progress (project_task_rollup) == the project's % complete (38)"
+  ],
+  [
+   "PASS",
+   "WBS: phase status reflects its tasks (all done -> done, none started -> not_started)"
+  ],
+  [
+   "PASS",
+   "WBS: tasks inside the project dates; one milestone on the planned end"
+  ],
+  [
+   "PASS",
+   "WBS: exactly one baseline slip (+20d), rollup committed end == planned end"
+  ],
+  [
+   "PASS",
+   "WBS: delivered tasks agree with ticked deliverables (beds, furniture, trainers)"
+  ],
+  [
+   "PASS",
+   "documents: walkthrough project has 6 files of 3 kinds (PDF, sheet, image), uploaded by the PMO before today"
+  ],
+  [
+   "PASS",
+   "gallery: 12 site-visit photos, newest is the walkthrough project, images only"
+  ],
+  [
+   "PASS",
+   "file paths are '<project_id>/<id>-<storage-safe name>' and unique"
+  ],
+  [
+   "PASS",
+   "file_size == generated bytes (run assets.mjs, then gen.mjs again)"
+  ],
+  [
+   "PASS",
+   "no PDD-not-submitted pop-up rows (pdd_pending_projects empty)"
+  ],
+  [
+   "PASS",
+   "at_risk_projects (deadline pop-up source) is non-empty, so the sim must answer it with [] or dismiss the pop-up"
+  ],
+  [
+   "PASS",
+   "names: no project, person or place uses 'Riphah' or a real domain"
+  ]
+ ]
 }
