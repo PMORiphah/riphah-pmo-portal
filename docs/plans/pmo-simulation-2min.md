@@ -547,12 +547,9 @@ the PMO's review on desktop.
 
 ## 11. Decisions
 
-1. **Branding on fictional data.** Recommended:
-   - Keep the Riphah logo and look in the portal's chrome, since it is the PMO's own portal.
-   - Replace the university's name with "Simulation · fictional data" on anything printable or exportable
-     (the board report header and footer, PDFs).
-
-   The alternative is neutral branding throughout.
+1. **Branding on fictional data: decided 14 Oct 2026 (PMO).** Keep the Riphah branding on screen. Anything
+   printable or exportable carries a "Simulation · fictional data" label instead of presenting fictional
+   figures under the university's name (see §6 and the printables list).
 2. **Voice.** Recommended: voice on, with captions always shown. The alternative is captions only, with
    voice switched on manually.
 3. **Approval of the live-portal changes in §8**, preview first.
