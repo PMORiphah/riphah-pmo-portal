@@ -1,6 +1,6 @@
 # PMO Simulation: the two-minute presentation
 
-Status: **proposed 14 Oct 2026, for discussion with the PMO.** Nothing is built in the app yet. **Being revised for decision 2a (real campus/PM/team names and Gallery media, §11).** The storyboard figures and names below are still the fictional version. This replaces
+Status: **proposed 14 Oct 2026, for discussion with the PMO.** Nothing is built in the app yet. **Revised the same day for decision 2a** (real campus, PM and PMO-team names and the real Gallery media; everything else fictional): see **§5a**. §2's story and figures will be reissued once the story PM is chosen (§11); until then its lines and figures are the earlier fictional version.
 the 5-minute main presentation in `pmo-simulation.md`; that document's isolation design (§6) still applies,
 with the additions below. Its deep-dive chapters are out of scope for now.
 
@@ -441,6 +441,131 @@ rules.
 **What the narration avoids:** places where the live code counts differently, so a figure could disagree
 between two screens (see Found along the way).
 
+## 5a. Real names and photos (decision 2a, 14 Oct 2026)
+
+**What is real and what is not.**
+- **Real:**
+  - the campus and site names;
+  - the project managers' names, each shown only on the campus where they really work;
+  - the PMO team on Team & About, and the PMO account's own name, "Project Management Office";
+  - the Gallery photos and videos the PMO approves (see "Real photos and videos" below).
+- **Fictional:** everything else. That covers projects, codes, figures, dates, stages, messages, risks,
+  documents, WBS, usernames, emails, phone numbers and the other guest accounts.
+
+**Real names live only in two places:**
+- the PMO's signed-in session;
+- the simulation tab's memory while it runs.
+
+They are never written to the repo, the public `simulation.html` assets, browser storage or any file.
+This document refers to people by role only. The real cast and its pronunciations stay in private notes.
+
+**How the names and photos reach the simulation.** The design below was checked with read-only queries
+and Chromium experiments on 14 Oct 2026.
+
+1. The PMO presses **Simulation** in the sidebar.
+2. The portal opens `simulation.html` in a new tab, with no link back to the portal ("no opener") and a
+   one-time random channel name in the address. Tested in Chromium:
+   - the new tab does **not** receive the portal's session token;
+   - it has no opener;
+   - the channel name is removed from the address bar immediately.
+3. Under the PMO's own session, the portal reads only what it needs:
+   - campus names;
+   - the active project managers' ids and names, and their FY assignments;
+   - the single `team_config` setting;
+   - the approved site-visit media, which it downloads itself.
+4. The portal sends the names and the media files over that one-time channel. Tested: a file sent this
+   way arrives intact and displays under the simulation's security policy, which allows only the page
+   itself, `data:` and `blob:`.
+5. The simulation fills the name slots in its fictional data, turns each file into a local `blob:` link,
+   and from then on works without the network.
+
+What the simulation tab never has, and never does:
+- the token;
+- any signed link;
+- any request to the production servers. Its security policy still allows only its own address.
+
+**Opened directly** by anyone, or without a fresh hand-over, it shows only a locked screen: "Open the
+simulation from the PMO portal". If the PMO wants a fallback for a failed network, an explicit
+"Run with sample names" option can use the earlier fully fictional cast (see §11).
+
+**Hardening**, which the security review asked for:
+- Simulation mode refuses to start unless the boot script has run and the security policy is the first
+  element in the page. So a failure fails closed and never shows the real portal.
+- `localStorage` is shared by every tab on the site, so the simulation can read the PMO's remember-me
+  session there (shown in the Chromium test). It ignores it: all storage is namespaced, and its security
+  policy would block any use anyway.
+- `.gitignore` now excludes `private/`, `*.local.json`, `*resolved*.json` and `real-names*`.
+- A privacy scan, run before every simulation commit, fetches the real names read-only, never stores
+  them, and fails if any real name appears in a committed file.
+
+**Pinned cast.** Slots are tied to stable production ids, not worked out again from live counts each time.
+This matters because a campus or PM moving between the rehearsal and the meeting would otherwise move
+real names onto different fictional facts.
+- **Where the cast is kept (recommended):** a PMO-only settings row, `simulation_cast`. It is readable
+  only by the PMO under existing RLS, like `welcome_email`.
+- **What it holds:** the campus and PM ids per slot, the story PM, the approved media ids and their
+  assignment to host projects, and short spoken forms.
+- This is a production **data** change, so it is previewed and approved before it is written.
+- **On the Begin screen:** the simulation shows a cast code, which must match the rehearsal's. It locks if
+  a pinned id no longer resolves.
+
+**Real photos and videos:**
+- **What exists:** 79 items, 70 images and 9 videos, 59 MB, from 5 campuses. 53 of them are screen
+  captures.
+- **Review first:** nobody has reviewed them yet. A small **Simulation setup** window in the portal shows
+  thumbnails. The PMO ticks which ones may appear. New uploads are left out until they are ticked.
+- **Before sending:** the portal re-encodes approved images to strip location and camera data.
+- **During the run:** videos are muted.
+- **Not allowed:** downloading real media inside the simulation.
+- **Placement:** each item is shown on a fictional project at the same real campus. That project carries
+  no delay, risk or quote, and its name does not echo the real project's theme. This keeps a real site from
+  being recognisable behind fictional figures.
+- **The story project has no real photos.** Its theme was moved away from any real project at its campus.
+  A 60%-similarity check against every real project name enforces this.
+
+**Rules for real people** (from the story and figures review):
+1. **Delays, finish-passed flags, "No progress" and risk ownership** sit only on:
+   - the **story project**, whose PM agrees beforehand;
+   - **projects without a PM**, which exist only where production has them today.
+
+   Every other real PM's projects are on track. Performance therefore shows about 2 delayed projects,
+   not 4.
+2. **Quoted replies** in Updates and Past Projects come only from the story PM. All other scripted messages
+   are from "Project Management Office". The narration names a person only in the story's two "replies"
+   lines.
+3. **No real person is shown inactive.** No PDD under review is attributed to a real person: E-PDD
+   initiators are "Campus office (sample)".
+4. **No critical risk,** matching the real register's practice. Risk texts name outside causes (vendor,
+   shipping) and never a clinical or safety failure.
+5. **PMO team names appear only on Team & About.** There are no team-member quotes or follow-up chases.
+6. **Fictional workloads keep each PM's real ranking.** Every PM appears only on their own campus.
+7. **Files and prints:** campus names stay, and real **PM** names are replaced by "Project manager
+   (simulation)". The label reads "Simulation: campus, manager and team names are real; projects,
+   figures, dates and messages are invented."
+
+**What changes on screen:**
+- **Compare** shows the 11 real CAPEX campuses. RMC holds only investment projects, so it does not appear
+  there, as in production.
+- **Users** lists the real PMs and the PMO team's own accounts. They have invented usernames, emails
+  ending `@simulation.example`, no phone numbers, and no sign-in history. Other senior-management accounts
+  appear as "Senior management viewer 1–3".
+- **Spoken names:**
+  - Campus names spoken in Compare use public respellings, such as "Al Meezaan" and "G seven".
+  - The story PM's first name is spoken twice; its respelling stays in the private cast.
+  - Run time is unchanged: 216 spoken tokens against 214, an estimated 1:55.3 at 135 wpm.
+  - The layout and timing will be measured again with real-length names: 11 Compare rows, about 19 users
+    and longer manager blocks.
+- **Badge:** "Simulation · real names, fictional projects and figures · nothing is sent". The opening line
+  becomes "The real portal: real names, fictional projects."
+
+**What it costs:**
+- **Launching** needs the PMO signed in on the presenting laptop and a network connection. About 59 MB is
+  fetched at launch.
+- **After the Begin screen says ready,** the run, Restart and Chapters all work offline.
+- **Keep the portal tab open:** if the simulation tab is reloaded, the PMO presses Simulation again in the
+  portal.
+- **Extra work:** about 4.5–5.5 more working days (§10).
+
 ## 6. Isolation
 
 As designed and tested in `pmo-simulation.md` §6:
@@ -517,13 +642,14 @@ The rules:
 
 | Surface | Treatment in the simulation |
 |---|---|
-| **Print of any page** (Ctrl+P or the browser menu) | The simulation's own print stylesheet: a "SIMULATION · FICTIONAL DATA" banner on every page, a footer "PMO Portal simulation · every name and figure is invented" with page numbers, Riphah logos hidden in print, and the director's dock, caption and spotlight hidden. The file name is `SIMULATION_<page>_<date>`, set from the page title just before printing. |
+| **Print of any page** (Ctrl+P or the browser menu) | The simulation's own print stylesheet: a "SIMULATION · FICTIONAL DATA" banner on every page, a footer "Simulation: campus, manager and team names are real; projects, figures, dates and messages are invented" with page numbers, Riphah logos hidden in print, and the director's dock, caption and spotlight hidden. The file name is `SIMULATION_<page>_<date>`, set from the page title just before printing. |
 | **Board report on screen** (scene 18) | Unchanged: the Riphah band and footers, with the simulation badge above the page. |
 | **Board report › Save as PDF** | Allowed. In print, the university's name in the band and the footers is replaced by "Simulation · fictional data". A light diagonal "SIMULATION · FICTIONAL DATA" watermark runs across each of the 6 pages. The file name is `SIMULATION_Board_Report_September_2026.pdf`. |
 | **Board report › Email report, Recipients / Publish push** | Blocked: "Not sent: this is the simulation. Nothing leaves this page." |
-| **Excel exports:** Projects Export, Campus comparison › Download as Excel | Allowed. A title row 1 reads "Simulation · fictional data — PMO Portal simulation, exported 15 Oct 2026. Every name and figure is invented." Also print header and footer, file properties, and the name prefix `SIMULATION_`. |
+| **Excel exports:** Projects Export, Campus comparison › Download as Excel | Allowed. A title row 1 reads "Simulation — campus, manager and team names are real; projects, figures, dates and messages are invented. Exported 15 Oct 2026." Real PM names in files are replaced by "Project manager (simulation)". Also print header and footer, file properties, and the name prefix `SIMULATION_`. |
 | **Excel templates:** Projects Template, Import › Download Template, WBS Template, Past Projects › Download sheet | Allowed. Headers stay in row 1, so re-importing works inside the simulation. The label goes on the sheet tab or the guide title, the print header and footer, the file properties ("PMO Portal Simulation" instead of "Riphah PMO Portal") and the file name. The real sample row ("Riphah", "Islamabad") and the real campus list in the past-projects guide are replaced with fictional ones. |
-| **Project documents, Site Visit and Gallery downloads** | Allowed. They are the simulation's own files, already watermarked "SIMULATION – FICTIONAL DATA" or "SIMULATION · illustration", and are saved as `SIMULATION_<file name>`. |
+| **Project documents** | Allowed. They are the simulation's own fictional files, watermarked "SIMULATION – FICTIONAL DATA", and are saved as `SIMULATION_<file name>`. |
+| **Real Gallery and Site Visit media (§5a)** | Shown, but not downloadable: the download chip, "Open in new tab" and the video download menu are blocked. A page print shows them under the simulation banner. |
 | **Welcome email preview** | On screen, a ribbon reads "Simulation · fictional data · this email is never sent". It shows the simulation's own screenshots (see above). In print the preview is replaced by that ribbon. Send is blocked. |
 | **Save page as** (Ctrl+S) | Ctrl+S shows "Not available in the simulation". The menu path saves a page whose title and badge say Simulation. |
 | **Copy suggested reply** (PMO Review) | The copied text starts "[Simulation · fictional data]". Ordinary copying is not changed, so a code copied into the search box still works. |
@@ -570,6 +696,9 @@ off for the run. The Begin screen measures this.
 | `src/PhotoWall.jsx`, `src/App.jsx`, `src/PmoReview.jsx`, `src/WelcomeEmail.jsx` | file links, the Welcome email picture folder and its portal link read through one helper (`storageBase()`) | identical URLs in production |
 | `src/AskPanel.jsx` | starter questions read from a list the simulation can replace | identical in production |
 | `src/BoardReport.jsx` | the university's name in its own `<span data-org>` (2 places) | identical text and look |
+| new `src/simBridge.js` (lazy, loaded only on the PMO's press) | reads names and approved media under the PMO's session, re-encodes images, and sends them over the one-time channel | none for anyone who never presses Simulation |
+| new **Simulation setup** window (lazy, PMO only) | review the media thumbnails, tick the approved ones, choose the story PM, confirm the cast and save it to `settings.simulation_cast` | new window only |
+| `settings` row `simulation_cast` (**data**, not schema) | ids only, plus the media allow-list and short spoken forms; PMO-only under existing RLS | preview and approval before writing |
 | `public/sw.js` | a notification click never takes over a `simulation.html` tab (production or `/preview/`) | closes a same-address hazard |
 | `public/404.html` | `/simulation…` and `/preview/simulation…` typos go to the simulation, never the real portal | closes a same-address hazard |
 
@@ -612,8 +741,16 @@ Compared with the first version of this plan:
      `SIMULATION_` name; re-import each template inside the simulation.
    - Try an upload, an import commit, Forgot password, Sign out, middle-click on a WhatsApp chip, and
      PMO Review › Save. Each must end with nothing leaving the page.
-6. **Slow machine:** with the CPU slowed 4× and no GPU, every run must still end by 2:00.
-7. **Data and screens:**
+6. **Real names (§5a):**
+   - The privacy scan reports 0 real names in every committed and built file.
+   - Opened directly, the page is locked and shows nothing real.
+   - With a valid hand-over: 0 requests to the production servers from the simulation tab, no token in its
+     storage, and blocked downloads of real media.
+   - The layout and timing are measured again with stand-in names of real length.
+   - Screenshots that show the real cast stay out of the repo.
+   - The 9 videos play from `blob:` links in Chrome and Edge on the presenting laptop.
+7. **Slow machine:** with the CPU slowed 4× and no GPU, every run must still end by 2:00.
+8. **Data and screens:**
    - all 81 checks pass;
    - the privacy scan finds nothing real;
    - every scene is screenshotted in light and dark themes and reviewed.
@@ -633,8 +770,9 @@ cannot be tested here, because headless Chromium has no voices.
 | S3 | the 20 scenes and their checks | 1 |
 | S4 | print stylesheet and export labeller (§6a), lite mode, 1366 px, light/dark, Test voice | 1–1.5 |
 | S5 | the verification above, run report, rehearsal checklist | 1 |
+| S6 | real names and photos (§5a): `simBridge.js`, hand-over, Simulation setup window, pinned cast, story re-theme, the rules for real people, privacy scan, re-timing | 4.5–5.5 |
 
-That is about **7.5–8.5 working days** to a `/preview/` build the PMO can try. It then goes to production after
+That is about **12–14 working days** to a `/preview/` build the PMO can try. It then goes to production after
 the PMO's review on desktop.
 
 ## 11. Decisions
@@ -657,8 +795,21 @@ the PMO's review on desktop.
 
    The repo and GitHub Pages are public, so these real names and media must not be bundled into public
    files. The redesign is in progress (see the status note at the top).
+2b. **Decisions that follow from 2a,** one at a time:
+   - **The story PM, and what may appear under real names.** Recommended:
+     - only the story PM, who agrees beforehand, carries the fictional delay, the risk and the two quoted
+       replies;
+     - every other real PM is shown on track;
+     - all other scripted messages come from the PMO.
+   - **Media review:** the PMO ticks the approved Gallery items in the Simulation setup window. Should the
+     RMC investment media and the screen captures be in or out?
+   - **Cast storage:** the PMO-only `simulation_cast` settings row (recommended), approved after a preview.
+   - **Real PM names in files and prints:** replaced by "Project manager (simulation)" (recommended).
+   - **The launch dependency:** a signed-in PMO and a network at launch. Should there also be a "Run with
+     sample names" fallback?
+   - **Badge and opening wording.**
 3. **Approval of the live-portal changes in §8**, preview first.
-4. **Meeting date.** This decides whether 7.5–8.5 working days fits, and when the rehearsal on the presenting
+4. **Meeting date.** This decides whether 12–14 working days fits, and when the rehearsal on the presenting
    laptop happens.
 
 ## Found along the way (live portal; the narration avoids these; each needs its own approval)

@@ -3,3 +3,9 @@ dist/
 dist-preview/
 .DS_Store
 *.log
+
+# Simulation: real-name casts, media and resolved data never committed (repo is public)
+**/private/
+*.local.json
+*resolved*.json
+real-names*
