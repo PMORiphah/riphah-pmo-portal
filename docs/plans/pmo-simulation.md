@@ -156,7 +156,7 @@ chapter; Exit always works. **Restart** reloads the seed. **Exit** clears the si
 **Narration:** prewritten and bound to data; no live AI generation in the presentation (it would add delay,
 unpredictable wording and a dependency, for no gain in a scripted meeting). The "Ask the portal" deep dive
 uses prepared answers computed from the sample data and says so. Voice is optional, off by default,
-browser speech (offline, free); voices differ by machine, so the Begin screen offers a test line and the
+browser speech (free; on-device voices only are offline — Chrome's "Google …" and Edge's "Online" voices send the spoken text to Google/Microsoft, see `pmo-simulation-2min.md` §6); voices differ by machine, so the Begin screen offers a test line and the
 run is timed with the chosen voice.
 
 ## 7. Implementation plan

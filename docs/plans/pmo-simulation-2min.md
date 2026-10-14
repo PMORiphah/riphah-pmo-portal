@@ -445,24 +445,100 @@ between two screens (see Found along the way).
 
 As designed and tested in `pmo-simulation.md` §6:
 - a static Content-Security-Policy that lets the page talk only to itself;
-- a boot script that namespaces storage, tab channels and locks, removes push and passkeys, blocks the
-  service worker and intercepts external links;
+- a boot script that namespaces storage, tab channels and locks, removes push and passkeys, and blocks the
+  service worker;
 - a synthetic backend that refuses anything it does not recognise;
 - self-tests that fail closed.
 
 The Chromium experiment made 0 production calls across 14 pages.
 
-Additions for this version:
-- **Writes kept in memory for the run:** the backend keeps read marks and similar writes for the run
-  only, so the badges count down. Restart, Chapters and Previous restore a saved starting state.
-- **No deadline pop-up:** `at_risk_projects` returns nothing, so the deadline pop-up never appears.
-- **Files stay on the simulation's own address:** file and picture links go through a `storageBase()` that
-  production leaves unchanged. Downloads, print, `window.open`, WhatsApp, mail and phone links all show
-  "Not available in the simulation".
-- **Honest labels:**
-  - A badge, "Simulation · fictional data · nothing is sent", stays on every screen.
-  - Every document and picture is watermarked.
-  - Any printable or exportable page names the simulation, not the university.
+**Additions for this version.** These come from a code sweep on 14 Oct 2026: 110 surfaces were found and
+verified, then reviewed by a completeness critic.
+
+- **Writes kept in memory for the run.** The backend keeps read marks and similar writes for the run only,
+  so the badges count down. Restart, Chapters and Previous restore a saved starting state.
+- **No deadline pop-up.** `at_risk_projects` returns nothing, so the pop-up never appears.
+- **The whole of `fetch` is wrapped, not only the portal's `supa()` helper.** Five calls go straight to the
+  production address with a raw `fetch`:
+  - invite user, reset password and delete user (`App.jsx` ~8248, 8288, 8304);
+  - the deadline email (~931);
+  - the PMO Review charter (`PmoReview.jsx` 519).
+
+  The CSP would block these anyway; the wrapper answers them as "Not sent: this is the simulation".
+- **Nothing real can come in.** The backend refuses the steps that would put real data under fictional
+  labels:
+  - uploads to Documents or Site Visit (`POST /storage/v1/object/*`);
+  - committing an Excel import of projects, past projects or WBS tasks.
+
+  Parsing and the import preview still work, because they are local.
+
+  Otherwise a real file or sheet from the laptop would be printed later as "Simulation · fictional data".
+- **No sign-in inside the simulation:**
+  - Sign out acts as Exit, with a confirm.
+  - Every `/auth/v1/*` call is refused, including Forgot password (`App.jsx` ~10595) and the password
+    grant. A password typed there is never kept or sent.
+- **Links are neutralised at the address, not only on click.** A watcher in the boot script rewrites every
+  outside address to a no-op and keeps the original in a data attribute. This covers wa.me, mailto:,
+  tel:, the E-PDD portal and the production portal link in WhatsApp nudges and the Welcome preview.
+  Middle-click, "Open link in new tab", "Copy link address" and dragging a link therefore lead nowhere real.
+- **The tab cannot be navigated away.** A navigation guard and `beforeunload` cover the places that set
+  `window.location` directly, such as PMO Review › Save (`PmoReview.jsx` 500).
+  `window.open("")` gets a window the simulation controls.
+- **Fonts are self-hosted.** The four families are under `public/sim/fonts`; all are SIL Open Font
+  Licence, so they may be redistributed. The boot script points the portal's runtime Google Fonts link at
+  them before it is inserted, so there is no outside request and no CSP violation. The CSP allows inline
+  `<style>`, which the portal and the Board report rely on.
+- **No install, no home-screen icon.** `simulation.html` has no manifest and no apple-touch tags, so the
+  browser offers no "Install" that would open the real portal.
+- **Speech:** Chrome's "Google …" voices and Edge's "Online (Natural)" voices are network voices. They send
+  the text they speak to Google or Microsoft, outside the page's CSP. `speech.js` currently ranks them
+  first. Decision 2 (§11) settles whether the simulation uses on-device voices only.
+
+**No production information appears.** The sweep found two places where real information would have
+shown inside the simulation. Both are now in the plan:
+1. **The Welcome email preview** loads the real screenshots in `public/email/`. `after-signin.jpg` shows a
+   real PM's header ("2 of 2", DF PKR 3.7M). It also links to the production portal.
+   - Fix: `WelcomeEmail.jsx` reads its picture folder and portal link through the same helper as
+     `storageBase()`.
+   - The simulation points them at screenshots of the simulation itself and at `simulation.html`.
+2. **The assistant's starter question "What are the risks on Ferozpur?"** names a real project
+   (`AskPanel.jsx` 41).
+   - Fix: the starter list becomes a list the simulation can replace, for example with "What are the risks
+     on the Clinical Skills Lab?".
+
+## 6a. Printables and exports (PMO decision 14 Oct 2026)
+
+The rules:
+- **On screen,** the Riphah branding stays: logo, crest, colours, the sign-in look and the tab icon.
+- **Anything that leaves the screen as a print or a file** is allowed, and says "Simulation · fictional
+  data". The university's name and logo never sit on a printout or a file next to fictional figures.
+- **Anything that would leave the machine or reach a person** is blocked with an honest message: email,
+  push, WhatsApp, links to the real portal.
+
+| Surface | Treatment in the simulation |
+|---|---|
+| **Print of any page** (Ctrl+P or the browser menu) | The simulation's own print stylesheet: a "SIMULATION · FICTIONAL DATA" banner on every page, a footer "PMO Portal simulation · every name and figure is invented" with page numbers, Riphah logos hidden in print, and the director's dock, caption and spotlight hidden. The file name is `SIMULATION_<page>_<date>`, set from the page title just before printing. |
+| **Board report on screen** (scene 18) | Unchanged: the Riphah band and footers, with the simulation badge above the page. |
+| **Board report › Save as PDF** | Allowed. In print, the university's name in the band and the footers is replaced by "Simulation · fictional data". A light diagonal "SIMULATION · FICTIONAL DATA" watermark runs across each of the 6 pages. The file name is `SIMULATION_Board_Report_September_2026.pdf`. |
+| **Board report › Email report, Recipients / Publish push** | Blocked: "Not sent: this is the simulation. Nothing leaves this page." |
+| **Excel exports:** Projects Export, Campus comparison › Download as Excel | Allowed. A title row 1 reads "Simulation · fictional data — PMO Portal simulation, exported 15 Oct 2026. Every name and figure is invented." Also print header and footer, file properties, and the name prefix `SIMULATION_`. |
+| **Excel templates:** Projects Template, Import › Download Template, WBS Template, Past Projects › Download sheet | Allowed. Headers stay in row 1, so re-importing works inside the simulation. The label goes on the sheet tab or the guide title, the print header and footer, the file properties ("PMO Portal Simulation" instead of "Riphah PMO Portal") and the file name. The real sample row ("Riphah", "Islamabad") and the real campus list in the past-projects guide are replaced with fictional ones. |
+| **Project documents, Site Visit and Gallery downloads** | Allowed. They are the simulation's own files, already watermarked "SIMULATION – FICTIONAL DATA" or "SIMULATION · illustration", and are saved as `SIMULATION_<file name>`. |
+| **Welcome email preview** | On screen, a ribbon reads "Simulation · fictional data · this email is never sent". It shows the simulation's own screenshots (see above). In print the preview is replaced by that ribbon. Send is blocked. |
+| **Save page as** (Ctrl+S) | Ctrl+S shows "Not available in the simulation". The menu path saves a page whose title and badge say Simulation. |
+| **Copy suggested reply** (PMO Review) | The copied text starts "[Simulation · fictional data]". Ordinary copying is not changed, so a code copied into the search box still works. |
+| **Screenshots, screen share, recordings** | These cannot be intercepted. The badge "Simulation · fictional data · nothing is sent" therefore stays visible in every state: running, paused, the chapter menu and the closing card. |
+| **Tab title** | "PMO Portal Simulation · fictional data", without the university's name, because it becomes the default name of every saved PDF. |
+
+**How this works without production edits.** Every download is caught inside the simulation's own code:
+- SheetJS, which writes 4 of the exports, calls a global `saveAs` first, so the boot script defines one.
+- The 2 exceljs downloads use a Blob link, which the boot script's `createObjectURL` and link wrapper sees.
+
+The labeller then opens each file with exceljs (already a lazy chunk), adds the label and saves the file. A
+file name it does not recognise gets "Not available in the simulation".
+
+The only production edit this needs is in `BoardReport.jsx`: the university's name moves into its own
+`<span data-org>`. The text and appearance in production are unchanged.
 
 ## 7. What the director needs (new code, simulation only)
 
@@ -487,15 +563,22 @@ off for the run. The Begin screen measures this.
 
 | File | Change | Effect on the live portal |
 |---|---|---|
-| new `simulation.source.html`, `public/sim-boot.js`, `src/sim/*`, `public/sim/*` | page, boot script, backend, director, scenes, data, files | none; loaded only on `simulation.html` |
+| new `simulation.source.html`, `public/sim-boot.js`, `src/sim/*`, `public/sim/*` (data, files, fonts, screenshots) | page, boot script, backend, director, scenes, labeller | none; loaded only on `simulation.html` |
 | `build.sh` | also writes `simulation.html` from the built page | none |
 | `src/main.jsx` | if on `simulation.html`, load the simulation chunk | none for the portal; a few hundred bytes |
-| `src/App.jsx` | Simulation button (PMO, desktop); about 35 `data-*` attributes for the director; logo via a brand setting | the button only; attributes have no behaviour |
-| `src/PhotoWall.jsx`, `src/App.jsx`, `src/PmoReview.jsx` | file links via `storageBase()` | identical URLs in production |
-| `src/BoardReport.jsx` | organisation line via the brand setting | identical in production |
-| `public/sw.js`, `public/404.html` | a notification click never takes over the simulation tab; `/simulation…` typos never land in the real portal | closes two same-address hazards |
+| `src/App.jsx` | Simulation button (PMO, desktop); about 35 `data-*` attributes for the director | the button only; attributes have no behaviour |
+| `src/PhotoWall.jsx`, `src/App.jsx`, `src/PmoReview.jsx`, `src/WelcomeEmail.jsx` | file links, the Welcome email picture folder and its portal link read through one helper (`storageBase()`) | identical URLs in production |
+| `src/AskPanel.jsx` | starter questions read from a list the simulation can replace | identical in production |
+| `src/BoardReport.jsx` | the university's name in its own `<span data-org>` (2 places) | identical text and look |
+| `public/sw.js` | a notification click never takes over a `simulation.html` tab (production or `/preview/`) | closes a same-address hazard |
+| `public/404.html` | `/simulation…` and `/preview/simulation…` typos go to the simulation, never the real portal | closes a same-address hazard |
 
 There is no change to the database, RLS, edge functions or schema.
+
+Compared with the first version of this plan:
+- The planned "logo via a brand setting" is dropped, because the logo stays on screen and print CSS hides it.
+- A new `brand.js` was considered for the Board report and rejected. `BRAND` is already the colour export
+  of `theme.js`, which `BoardReport.jsx` imports, so the name would collide.
 
 ## 9. Verification before it is called done
 
@@ -520,8 +603,17 @@ There is no change to the database, RLS, edge functions or schema.
      every run.
    - A real signed-in portal tab, open alongside, is untouched before and after.
    - The run must fail closed when the CSP is removed.
-5. **Slow machine:** with the CPU slowed 4× and no GPU, every run must still end by 2:00.
-6. **Data and screens:**
+5. **Printables and blocks:**
+   - Print-preview every page and the Board report.
+   - Check that the banner, footer and watermark appear, that the Riphah logo does not, and that Chrome's
+     own header and footer do not add "riphah" next to the figures. If the simulation's footer cannot
+     replace Chrome's, record exactly what Chrome adds.
+   - Download all 6 Excel files and the documents. Open each one and check its label and its
+     `SIMULATION_` name; re-import each template inside the simulation.
+   - Try an upload, an import commit, Forgot password, Sign out, middle-click on a WhatsApp chip, and
+     PMO Review › Save. Each must end with nothing leaving the page.
+6. **Slow machine:** with the CPU slowed 4× and no GPU, every run must still end by 2:00.
+7. **Data and screens:**
    - all 81 checks pass;
    - the privacy scan finds nothing real;
    - every scene is screenshotted in light and dark themes and reviewed.
@@ -536,24 +628,31 @@ cannot be tested here, because headless Chromium has no voices.
 
 | Stage | Work | Days |
 |---|---|---|
-| S1 | `simulation.html`, boot script, synthetic backend, data, `storageBase`/brand hooks, sw/404 guards, button | 2–2.5 |
+| S1 | `simulation.html`, boot script (link, navigation and download guards), synthetic backend, data, self-hosted fonts, simulation screenshots, the §8 hooks, sw/404 guards, button | 2.5–3 |
 | S2 | director: overlay, scenes, readiness, snapshots, controls, speech speed control, governor | 2 |
 | S3 | the 20 scenes and their checks | 1 |
-| S4 | lite mode, 1366 px, light/dark, Test voice | 0.5–1 |
+| S4 | print stylesheet and export labeller (§6a), lite mode, 1366 px, light/dark, Test voice | 1–1.5 |
 | S5 | the verification above, run report, rehearsal checklist | 1 |
 
-That is about **7 working days** to a `/preview/` build the PMO can try. It then goes to production after
+That is about **7.5–8.5 working days** to a `/preview/` build the PMO can try. It then goes to production after
 the PMO's review on desktop.
 
 ## 11. Decisions
 
 1. **Branding on fictional data: decided 14 Oct 2026 (PMO).** Keep the Riphah branding on screen. Anything
    printable or exportable carries a "Simulation · fictional data" label instead of presenting fictional
-   figures under the university's name (see §6 and the printables list).
-2. **Voice.** Recommended: voice on, with captions always shown. The alternative is captions only, with
-   voice switched on manually.
+   figures under the university's name (§6a lists every surface and its treatment).
+2. **Voice.** Two parts:
+   - **On by default, or captions only?** Recommended: voice on, with captions always shown.
+   - **Which voices?** Recommended: on-device voices only. The narration then never leaves the laptop,
+     the badge's "nothing is sent" stays literally true, and timing is steadier, because network voices add
+     start delay and do not report word timing reliably.
+
+     The alternative is to also allow the more natural online voices: Chrome's "Google …" and Edge's
+     "Online (Natural)". The narration text, which is fictional, would then be sent to Google or Microsoft,
+     and the badge would drop "nothing is sent".
 3. **Approval of the live-portal changes in §8**, preview first.
-4. **Meeting date.** This decides whether 7 working days fits, and when the rehearsal on the presenting
+4. **Meeting date.** This decides whether 7.5–8.5 working days fits, and when the rehearsal on the presenting
    laptop happens.
 
 ## Found along the way (live portal; the narration avoids these; each needs its own approval)
@@ -569,3 +668,15 @@ New since the 13 Oct list in `pmo-simulation.md`:
 5. **Cashflows says "Planned spend"** for money that is released, not spent.
 6. **The Timeline hover card renders under the tour dimming** (z-index 60, no `role="tooltip"`). The
    simulation works around this with its own overlay.
+7. **Tapping a push notification opens a broken address (live bug, confirmed 14 Oct 2026).** In
+   `public/sw.js` line 77 the link is resolved against `self.location.origin + self.registration.scope`.
+   The scope is already a full address, so the origin appears twice.
+   - The link `./?review=12`, which `epdd-sync` sends for a new PDD, becomes
+     `https://pmoriphah.github.iohttps//pmoriphah.github.io/riphah-pmo-portal/?review=12`.
+   - The same happens to Board report and past-project follow-up pushes.
+   - This was checked in Node. `send-push` v1 was also read: it passes the link through unchanged.
+   - So, with the portal open, a tap sends that tab to an address that does not exist; with it closed, a
+     tap opens one.
+   - The fix is one line: `new URL(url, self.registration.scope)`. It needs a real-phone test (iOS and
+     Android), since push cannot be tested headless. It is separate from the simulation.
+
