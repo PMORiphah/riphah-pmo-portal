@@ -203,7 +203,7 @@ export class Director {
     rec.short = short;
     rec.rate = +this.narrator.rate.toFixed(3);
     rec.wpm = Math.round(this.narrator.wpm);
-    this._set({ scene: i, sceneN: sc.n, chapter: ch ? ch.n : 0, short, note: "",
+    this._set({ scene: i, sceneN: sc.n, chapter: ch ? ch.n : 0, short,
       kicker: sc.kicker || (ch ? `${ch.n}/${this.chapters.length} · ${ch.title}` : "") });
     for (let attempt = 0; attempt < 2; attempt++) {
       rec.tries = attempt + 1;

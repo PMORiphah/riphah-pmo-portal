@@ -122,10 +122,11 @@ export class Narrator {
       const onAbort = () => this.cancel();
       signal?.addEventListener?.("abort", onAbort, { once: true });
       this._current = u;
+      const go = () => { if (done) return; try { this.synth.speak(u); } catch { finish(false, true); } };
       try {
-        // A paused or wedged queue would hold the line back: start from an empty queue.
-        if (this.synth.speaking || this.synth.pending) this.synth.cancel();
-        this.synth.speak(u);
+        // A paused or wedged queue would hold the line back: start from an empty queue. Chrome can
+        // drop a line spoken in the same moment as a cancel, so give the cancel a beat first.
+        if (this.synth.speaking || this.synth.pending) { this.synth.cancel(); setTimeout(go, 60); } else go();
       } catch { finish(false, true); }
     });
   }

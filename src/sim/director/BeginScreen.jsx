@@ -105,7 +105,7 @@ export function BeginScreen({ leaving, mode, castCode, chapters, checks, ready, 
                       <button type="button" className="sim-dir-btn" onClick={v.test} disabled={v.testing}
                         style={{ height: 32, padding: "0 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)",
                           background: "transparent", color: INK, font: `500 12.5px ${SANS}`, cursor: "pointer" }}>
-                        {v.testing ? "Listening…" : "Test voice"}
+                        {v.testing ? "Speaking…" : "Test voice"}
                       </button>
                     )}
                   </div>

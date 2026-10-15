@@ -28,7 +28,7 @@ const App = lazy(() => import("../App.jsx"));
 const preloadChunks = () => Promise.all([import("../CampusCompare.jsx"), import("../BoardReport.jsx"), import("../charts.jsx")]);
 
 // Spoken by Test voice: no names, about the length of a line in the run.
-const TEST_LINE = "This is the simulation's voice. Every line is timed, so the whole run ends inside two minutes.";
+const TEST_LINE = "This is the simulation's voice. Each line is timed to finish inside two minutes.";
 
 // Storage the App writes during a run that must not survive a Restart (the first screen is identical).
 const UI_KEYS = { session: ["pmo-campus-view"], local: ["pmo_recent_projects"] };
@@ -60,21 +60,29 @@ function useInterval(fn, ms, on) {
   }, [ms, on]);
 }
 
-/** Resolves once the dashboard is drawn, its figures have finished counting, and the App is quiet. */
+/** Resolves once the dashboard is drawn, its figures have finished counting, and the App is quiet
+ *  (300 ms without a change). Tries for up to 40 s; a dialog over the dashboard is closed with Escape. */
 async function portalReady(meta, alive) {
   const df = meta?.expect?.[1]?.dfCard;
   const t0 = performance.now();
-  for (;;) {
+  let detail = "the dashboard did not appear";
+  while (performance.now() - t0 < 40000) {
     if (!alive()) return { ok: false };
     const card = document.querySelector('[data-kpi="df_recommended"]');
-    if (isNavActive("cmd") && document.querySelector('[data-tour="hero"]') && card && (!df || hasText(card, df))) break;
-    if (performance.now() - t0 > 30000) return { ok: false, detail: "the dashboard did not appear" };
-    await tick(150);
+    if (!(isNavActive("cmd") && document.querySelector('[data-tour="hero"]') && card && (!df || hasText(card, df)))) { await tick(150); continue; }
+    const dialog = appRoot()?.querySelector('[role="dialog"]');
+    if (dialog) {
+      detail = "a dialog is open over the dashboard";
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await tick(400);
+      continue;
+    }
+    if (await settled({ quiet: 300, timeout: 6000, root: appRoot() })) {
+      return { ok: true, detail: `settled in ${((performance.now() - t0) / 1000).toFixed(1)} s` };
+    }
+    detail = "the dashboard kept changing";
   }
-  const quiet = await settled({ quiet: 300, timeout: 8000, root: appRoot() });
-  if (!quiet) return { ok: false, detail: "the dashboard kept changing" };
-  const dialog = appRoot()?.querySelector('[role="dialog"]');
-  return { ok: !dialog, detail: dialog ? "a dialog is open over the dashboard" : `settled in ${((performance.now() - t0) / 1000).toFixed(1)} s` };
+  return { ok: false, detail };
 }
 
 /** Decodes every handed-over picture now, so the Gallery never waits for one. */
