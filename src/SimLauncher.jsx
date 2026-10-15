@@ -32,7 +32,9 @@ const loadCastModule = DATA_MODULES["./sim/data/cast.js"] && DATA_MODULES["./sim
   : null;
 
 const TICKS_KEY = "pmo-sim-media-ticks";
-const SAY_KEY = "pmo-sim-say";
+// The story PM's spoken name was kept here once; names are never written to browser storage
+// (plan §5a), so it now lives in this window's memory only and any old copy is removed.
+const OLD_SAY_KEY = "pmo-sim-say";
 const MEMBER_TITLE = { head_pmo: "Head PMO", manager_pmo: "Manager PMO", deputy_pmo: "Deputy Manager PMO", exec_pmo: "Executive PMO", po1: "Projects Officer", po2: "Projects Officer" };
 
 const readLS = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -120,7 +122,11 @@ export function SimLauncher({ T, session, supa, onClose }) {
   const [rows, setRows] = useState(null);                            // { campuses, users, teamConfig }
   const [media, setMedia] = useState(null);                          // site-visit rows on the host projects
   const [ticks, setTicks] = useState(null);                          // Set of attachment ids
-  const [sayInput, setSayInput] = useState(() => readLS(SAY_KEY) || "");
+  const [sayInput, setSayInput] = useState("");
+  useEffect(() => { try { localStorage.removeItem(OLD_SAY_KEY); } catch { /* ignore */ } }, []);
+  // Remember me keeps the PMO's session in localStorage, which every tab of this site can read. The
+  // simulation never uses it, but the safest presenting laptop does not have it there at all.
+  const rememberOn = useMemo(() => { try { return !!localStorage.getItem("pmo_session"); } catch { return false; } }, []);
   const [thumbs, setThumbs] = useState({});
   const [run, setRun] = useState(null);                              // progress | { result } | { error }
   const alive = useRef(true);
@@ -327,11 +333,11 @@ export function SimLauncher({ T, session, supa, onClose }) {
                 <div style={{ marginTop: SP.md }}>
                   <label htmlFor="pmo-sim-say" style={{ ...TYPE.label, color: T.muted, display: "block", marginBottom: 4 }}>Spoken name for the story PM</label>
                   <input id="pmo-sim-say" value={sayInput} placeholder={sayDefault}
-                    onChange={(e) => { const v = e.target.value.slice(0, 80); setSayInput(v); writeLS(SAY_KEY, v); }}
+                    onChange={(e) => setSayInput(e.target.value.slice(0, 80))}
                     style={{ width: "100%", boxSizing: "border-box", background: T.inputBg, border: `1px solid ${T.inputBorder}`, borderRadius: R.sm,
                       padding: "7px 10px", fontSize: 13, color: T.text, fontFamily: TYPE.body.fontFamily, outline: "none" }} />
                   <div style={{ ...TYPE.caption, color: T.dim, marginTop: 4, lineHeight: 1.5 }}>
-                    How the voice says {storyName ? storyName.split(" ")[0] : "the story PM"}. Spell it the way it sounds. Kept on this computer only.
+                    How the voice says {storyName ? storyName.split(" ")[0] : "the story PM"}. Spell it the way it sounds. Kept in this window only, never saved.
                   </div>
                 </div>
               )}
@@ -348,7 +354,7 @@ export function SimLauncher({ T, session, supa, onClose }) {
           <Button T={T} size="sm" variant="ghost" onClick={clearAll} disabled={running}>Clear</Button>
         </>}>
         <div style={{ ...TYPE.caption, color: T.muted, marginBottom: SP.sm, lineHeight: 1.55 }}>
-          Ticked items appear in the Gallery and Site Visit, on fictional projects at the same campus. Pictures are re-encoded first, which removes location and camera details. Nothing is ticked until you tick it, and new uploads start unticked. The ticks are kept on this computer; nothing is saved to the portal.
+          Ticked items appear in the Gallery and Site Visit, on fictional projects at the same campus. Pictures are re-encoded first, which removes location and camera details. Videos are sent as they are and may still carry the date, place and phone they were recorded with; the simulation plays them muted and never lets them be downloaded. Nothing is ticked until you tick it, and new uploads start unticked. The ticks are kept on this computer; nothing is saved to the portal.
         </div>
         {tickedRows.length > COUNT_MAX && <div style={{ fontSize: 12, color: T.textOf(T.warning), marginBottom: SP.sm }}>Only the newest {COUNT_MAX} ticked items are sent.</div>}
         {tickedBytes > TOTAL_MAX && <div style={{ fontSize: 12, color: T.textOf(T.warning), marginBottom: SP.sm }}>More than {mb(TOTAL_MAX)} is ticked. Pictures shrink when re-encoded; anything still over the limit is left out.</div>}
@@ -390,7 +396,12 @@ export function SimLauncher({ T, session, supa, onClose }) {
   const footer = (
     <div style={{ display: "flex", alignItems: "center", gap: SP.md, width: "100%", flexWrap: "wrap" }}>
       <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, lineHeight: 1.55 }}>
-        {progressLine() || <span style={{ color: T.muted }}>The simulation opens in a new tab. Keep this tab open until it says Ready.</span>}
+        {progressLine() || (
+          <span style={{ color: T.muted }}>
+            The simulation opens in a new tab. Keep this tab open until it says Ready. Before presenting, turn on Do Not Disturb (Focus assist on Windows) so portal notifications do not appear on screen.
+            {rememberOn && <span style={{ color: T.textOf(T.warning) }}> Remember me is on in this browser: for the presentation, sign out and sign in again with Remember me off.</span>}
+          </span>
+        )}
       </div>
       <Button T={T} variant="ghost" onClick={onClose} disabled={running}>Close</Button>
       <Button T={T} variant="primary" icon={MonitorPlay} onClick={start} disabled={!canStart} loading={running}

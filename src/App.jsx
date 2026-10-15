@@ -3502,10 +3502,13 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
 
             {!vp.isCompact && <div style={{ width:1, alignSelf:"stretch", background:T.heroDivider }} />}
 
-            <Index label="CPI" value={d.portfolio_cpi > 0 ? d.portfolio_cpi : null} status={cpi}
-              hint={`Cost performance · ${d.reporting_progress_count ?? 0} of ${d.total_projects ?? 0} projects`} />
-            <Index label="SPI" value={d.portfolio_spi > 0 ? d.portfolio_spi : null} status={spi}
-              hint={`Schedule performance · ${d.reporting_progress_count ?? 0} of ${d.total_projects ?? 0} projects`} />
+            {/* Called, not mounted as <Index/>: Index is re-declared on every render, so as a
+                component React remounted it each time and CPI/SPI counted up from 0 again
+                (on a card hover, for example). */}
+            {Index({ label: "CPI", value: d.portfolio_cpi > 0 ? d.portfolio_cpi : null, status: cpi,
+              hint: `Cost performance · ${d.reporting_progress_count ?? 0} of ${d.total_projects ?? 0} projects` })}
+            {Index({ label: "SPI", value: d.portfolio_spi > 0 ? d.portfolio_spi : null, status: spi,
+              hint: `Schedule performance · ${d.reporting_progress_count ?? 0} of ${d.total_projects ?? 0} projects` })}
 
             {/* Financial position */}
             <WithInsight T={T} side="bottom" align="right" width={264} tone={BRAND.gold}
@@ -5489,7 +5492,7 @@ function BulkAssignPMModal({ T, session, campus, campusRows, filteredRows, onClo
             : Promise.resolve([]),
         ]);
         // Resolve the names of whoever already holds these projects, so the
-        // preview can say "removes Ali from 14" rather than a bare count.
+        // preview can say "removes <manager> from 14" rather than a bare count.
         const holders = [...new Set((assigns || []).map(a => a.user_id))];
         let names = {};
         if (holders.length) {
@@ -12013,7 +12016,7 @@ export default function App() {
   // which is how this reached production before being caught.
   const openSampleProject = useCallback(async () => {
     if (selectedProjectId) return;
-    // A specific project — Renovation & Upgratdation of QIE Campus — chosen
+    // A specific project (a campus renovation; its code is below) — chosen
     // because it genuinely has both documents and a video in Site Visit, so
     // the tour's Documents and Site Visit steps show real content instead of
     // landing on whatever happened to be edited most recently.

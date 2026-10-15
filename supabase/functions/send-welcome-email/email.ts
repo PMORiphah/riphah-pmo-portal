@@ -19,6 +19,7 @@ export type WelcomeInput = {
   note?: string | null;         // an optional line from the PMO
   imgBase: string;              // where email/login.jpg and email/after-signin.jpg are served
   portalUrl: string;
+  contactEmail?: string;        // the PMO's address in the footer (default the PMO mailbox; the simulation passes its own)
 };
 
 export const STAGE_LABEL: Record<string, string> = {
@@ -46,6 +47,7 @@ export function mainSite(projects: WelcomeProject[]): string {
 }
 
 export function composeWelcome(a: WelcomeInput) {
+  const contact = a.contactEmail || "pmu@riphah.edu.pk";
   const name = a.name.trim() || a.username;
   const projects = [...a.projects].sort((x, y) =>
     String(x.campus ?? "").localeCompare(String(y.campus ?? "")) || x.name.localeCompare(y.name));
@@ -217,7 +219,7 @@ ${pastTable}
 <div style="font:13.5px/1.75 ${FONT};color:rgba(255,255,255,0.78);"><b style="color:#F3C877;">iPhone:</b> open the portal in Safari, tap Share, then <b style="color:#ffffff;">Add to Home Screen</b>, and open it from the new icon. From the &#9776; menu you can then turn on notifications and Face ID sign-in.<br><b style="color:#F3C877;">Android:</b> open it in Chrome, tap &#8942;, then <b style="color:#ffffff;">Add to Home screen</b>.</div>
 </td></tr></table>
 
-${p(`Questions? Write to the PMO at <a href="mailto:pmu@riphah.edu.pk" style="color:${NAVY};font-weight:700;text-decoration:none;">pmu@riphah.edu.pk</a>, or open <b>Team &amp; About</b> in the portal for our contacts.`, "margin-top:24px;")}
+${p(`Questions? Write to the PMO at <a href="mailto:${esc(contact)}" style="color:${NAVY};font-weight:700;text-decoration:none;">${esc(contact)}</a>, or open <b>Team &amp; About</b> in the portal for our contacts.`, "margin-top:24px;")}
 ${p(`Kind regards,<br><b style="color:${INK};">Project Management Office</b><br>Riphah International University`, "margin-bottom:0;")}
 
 </td></tr>
@@ -259,7 +261,7 @@ ${p(`Kind regards,<br><b style="color:${INK};">Project Management Office</b><br>
     "",
     "On your phone: iPhone - Safari, Share, Add to Home Screen. Android - Chrome, menu, Add to Home screen.",
     "",
-    "Questions? pmu@riphah.edu.pk",
+    `Questions? ${contact}`,
     "",
     "Kind regards,",
     "Project Management Office",

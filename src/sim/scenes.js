@@ -76,6 +76,16 @@ export function buildScenes(meta = {}, cast = null) {
     const kids = Array.from(p.children);
     return [kids[1], kids[2]?.firstElementChild].filter(Boolean);
   };
+  // On a short screen (768 px) the docked caption covers the lower sidebar items: scroll the sidebar's
+  // own list (never the page) so this item, and its badge, sit above the caption.
+  const revealNav = (id) => () => {
+    const el = q(attr("data-nav", id)), cap = q('[data-sim-ui="caption"]');
+    const nav = el?.closest("nav");
+    if (!el || !cap || !nav) return;
+    const r = el.getBoundingClientRect(), c = cap.getBoundingClientRect(), n = nav.getBoundingClientRect();
+    const limit = Math.min(c.top - 10, n.bottom);
+    if (r.bottom > limit) nav.scrollBy({ top: r.bottom - limit + 6, behavior: "smooth" });
+  };
   const pageText = (re) => leaves(document.querySelector("[data-sim-app]") || document.body, re);
   const showingDelayed = () => pageText(/^Showing\b/i).some((e) => hasText(e, ex(9, "showing", "Showing")));
   const riskCount = () => pageText(/^\d+ of \d+$/).some((e) => textOf(e) === ex(11, "listCount").toLowerCase());
@@ -340,6 +350,7 @@ export function buildScenes(meta = {}, cast = null) {
       beats: [
         { say: "s15" },
         { nav: "upd", ready: '[data-tour="updates-list"]' },
+        { do: revealNav("upd") },                  // the Updates badge counts down in view
         { wait: storyRow('[data-tour="updates-list"]'), label: "story thread in the inbox" },
         { spot: [storyRow('[data-tour="updates-list"]')] },
         { hold: 0.9, short: 0.5 },
@@ -391,8 +402,9 @@ export function buildScenes(meta = {}, cast = null) {
     // ── Chapter 6 · Reporting and team ──────────────────────────────────────────────────────────
     {
       n: 18, chapter: 6, page: "reports", lines: ["s18"],
-      // These month-end figures differ on purpose from today's dashboard.
-      kicker: ex(18, "asAt") ? `September report · ${ex(18, "asAt")}` : "September report",
+      // These month-end figures differ on purpose from today's dashboard. (Not "as at 30 Sep": the
+      // report's own list row reads "figures as at 1 Oct", midnight after the month's end.)
+      kicker: "September report · month-end figures",
       beats: [
         { say: "s18" },
         { nav: "reports", ready: attr("data-report", meta.reportId) },
@@ -418,14 +430,16 @@ export function buildScenes(meta = {}, cast = null) {
         { nav: "team", ready: '[data-tour="team-about"]' },
         { wait: '[data-member="head_pmo"]', text: ex(19, "headPmo"), label: "team names" },
         { spot: ['[data-tour="team-about"]'] },
-        { hold: 1.3, short: 0.9 },
+        { hold: 0.9, short: 0.7 },
         { scroll: '[data-member="head_pmo"]', block: "center" },
         { spot: ['[data-tour="team-org"]'] },
         { hover: '[data-member="head_pmo"]' },
-        { hold: 1.3, short: 0.9 },
+        { hold: 0.9, short: 0.7 },
         { unhover: true },
+        // "… how to reach us": the contact block is lit as that is said, and stays lit a while.
         { scroll: '[data-tour="team-contact"]', block: "center" },
         { spot: ['[data-tour="team-contact"]'] },
+        { hold: 1.4, short: 1.0 },
       ],
     },
     {

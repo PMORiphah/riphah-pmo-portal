@@ -28,7 +28,7 @@ const PORTAL = IN_SIM ? "#" : "https://pmoriphah.github.io/riphah-pmo-portal/";
 const when = (s) => new Date(s).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Asia/Karachi" });
 
 export function WelcomeEmailModal({ T, session, supa, users, assignCount, initialUserId, onClose, isMobile }) {
-  // Project managers, and guests who manage projects (Waleed), largest first.
+  // Project managers, and guests who manage projects, largest first.
   const people = useMemo(() => users
     .filter(u => u.is_active && (u.role === "project_manager" || (u.role === "guest" && (assignCount[u.id] || 0) > 0)))
     .sort((a, b) => (assignCount[b.id] || 0) - (assignCount[a.id] || 0) || (a.full_name || a.username).localeCompare(b.full_name || b.username)),
@@ -92,9 +92,10 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
   const email = useMemo(() => person ? composeWelcome({
     name: person.full_name || person.username, username: person.username, projects: data.projects,
     past: data.past, password: withPw ? pw : null, note, imgBase, portalUrl: PORTAL,
+    ...(IN_SIM ? { contactEmail: "pmo@simulation.example" } : {}),
   }) : null, [person, data, withPw, pw, note, imgBase]);
 
-  // "M Fazal" → Fazal, "Maj. Shuaib Arshad Butt" → Shuaib, "Syed Ishfaq Ahmed" → Ishfaq.
+  // "M Firstname" → Firstname, "Maj. Firstname Middle Last" → Firstname, "Syed Firstname Last" → Firstname.
   const TITLES = /^(mr|ms|mrs|dr|engr|col|maj|brig|capt|lt|gen|syed|sayed|muhammad|mohammad|m)\.?$/i;
   // The preview is written into the frame's own document. A srcdoc frame came
   // up blank in some browsers (8 Oct 2026); writing it works everywhere. The

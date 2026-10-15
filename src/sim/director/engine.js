@@ -545,6 +545,8 @@ export class Director {
       const go = document.querySelector(D.attr("data-nav", page));
       if (go) { go.click(); await tick(80); }
     }
+    // The sidebar list back at its top (scene 15 scrolls it on a short screen).
+    try { document.querySelector('[data-nav="cmd"]')?.closest("nav")?.scrollTo({ top: 0 }); } catch { /* ignore */ }
     // Badges (Updates, Past Projects) re-read after restored data.
     try { document.dispatchEvent(new Event("visibilitychange")); } catch { /* ignore */ }
     checkAbort(signal);

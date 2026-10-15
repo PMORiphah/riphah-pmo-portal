@@ -19,6 +19,13 @@ const CSS = `
 @media (prefers-reduced-motion: reduce) { .sim-boot-card, .sim-boot-spin, .sim-boot-glow { animation: none !important; } }
 `;
 
+// The footer line says what the page holds at that moment: no names yet (locked, failed, ended),
+// the real cast arriving, or the invented sample names.
+const FOOT_NONE = "Simulation · fictional projects and figures · nothing is sent";
+const FOOT_REAL = "Simulation · real names, fictional projects and figures · nothing is sent";
+const FOOT_SAMPLE = "Simulation · sample names · fictional data · nothing is sent";
+const footDefault = () => (window.__PMO_SIM__?.mode === "sample" ? FOOT_SAMPLE : FOOT_REAL);
+
 function Frame({ kicker = "PMO Portal · Simulation", title, children, footer = true, tone = "gold" }) {
   return (
     <div data-sim-boot="" style={{ position: "fixed", inset: 0, overflow: "auto", display: "flex", alignItems: "center",
@@ -43,7 +50,7 @@ function Frame({ kicker = "PMO Portal · Simulation", title, children, footer = 
         {footer && (
           <div style={{ marginTop: 26, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,.08)", fontSize: 11.5,
             color: "rgba(255,255,255,.5)", letterSpacing: ".02em" }}>
-            Simulation · real names, fictional projects and figures · nothing is sent
+            {typeof footer === "string" ? footer : footDefault()}
           </div>
         )}
       </div>
@@ -66,7 +73,7 @@ export function LockedScreen({ reason, onSample }) {
   const btn = useRef(null);
   useEffect(() => { btn.current?.focus({ preventScroll: true }); }, []);
   return (
-    <Frame title="Open the simulation from the PMO portal">
+    <Frame title="Open the simulation from the PMO portal" footer={FOOT_NONE}>
       {reason && (
         <div role="alert" style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: "rgba(226,108,128,.12)",
           border: "1px solid rgba(226,108,128,.35)", color: "#FFD9DF", fontSize: 13.5 }}>{reason}</div>
@@ -115,7 +122,7 @@ export function ProgressScreen({ phase, received = 0, expect = null }) {
 // The isolation checks failed: nothing else is loaded, and there is no way on from here.
 export function FailScreen({ title = "The simulation could not start safely", reason }) {
   return (
-    <Frame title={title} tone="rose">
+    <Frame title={title} tone="rose" footer={FOOT_NONE}>
       <div role="alert">Nothing was loaded. Close this tab, then sign in to the PMO portal as PMO and press
         Simulation in the sidebar again.</div>
       {reason && <div style={{ marginTop: 12, fontSize: 12, color: "rgba(255,255,255,.45)" }}>Check failed: {reason}</div>}
@@ -126,7 +133,7 @@ export function FailScreen({ title = "The simulation could not start safely", re
 // After Exit, when the browser does not let the page close its own tab.
 export function EndedScreen() {
   return (
-    <Frame title="The simulation has ended">
+    <Frame title="The simulation has ended" footer={FOOT_NONE}>
       <div role="status">Its data and storage have been cleared. You can close this tab.</div>
     </Frame>
   );

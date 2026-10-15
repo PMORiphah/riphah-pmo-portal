@@ -1461,8 +1461,8 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   // on import. PMO only — a project manager never sees these controls.
   useEffect(() => {
     if (!isPMO) return;
-    // Every active account, not just role=project_manager. Waleed Jamshed
-    // manages four current projects on a guest account, so filtering by role
+    // Every active account, not just role=project_manager. One manager
+    // runs current projects on a guest account, so filtering by role
     // would have silently refused to match a real project manager by name.
     Promise.all([
       supa("/rest/v1/user_profiles?is_active=eq.true&select=id,username,full_name,role"
@@ -1481,7 +1481,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   }, [isPMO, supa, session]);
 
   // The edit form's manager list: every active account except the PMO's own,
-  // since a guest (Waleed Jamshed) also runs projects.
+  // since a guest account also runs projects.
   const pmChoices = useMemo(() => pmAccounts.filter(u => u.role !== "pmo"), [pmAccounts]);
 
   const years = useMemo(() => [...new Set((rows||[]).map(r => r.fiscal_year))].sort().reverse(), [rows]);

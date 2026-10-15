@@ -43,9 +43,11 @@ Cast shape: `{ v:1, campuses:{ C01:{ name, say, epdd } }, pms:{ P01:{ name, shor
 
 ## Rules for real people (checked by gen.mjs)
 
-- Delays, a planned finish passed, over-budget, "No progress", high-risk ownership and chases sit only
-  on the story project (its project manager agreed beforehand) or on projects without a PM, which exist
-  only where production has them.
+- Delays, a planned finish passed, over-budget, "No progress", high risks and chases sit only on the
+  story project (its project manager agreed beforehand) or on projects without a PM, which exist only
+  where production has them. Only the story risk names a person as its owner; every other risk is owned
+  by the PMO. No other manager has an open past project over a year old.
+- The Gallery host projects carry no risk.
 - Only the story PM is quoted (two replies in Updates, one in Past Projects); every other message is
   from "Project Management Office".
 - No real person is shown inactive; the one inactive account is "Training Account (retired)".

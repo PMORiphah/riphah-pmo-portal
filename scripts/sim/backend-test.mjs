@@ -57,6 +57,14 @@ async function unitChecks() {
   const sameSite = [];
   // The only "real" fetch here: anything the backend passes through must be this page's own address.
   window.fetch = async (u) => { sameSite.push(String(u)); return new Response("same-site", { status: 200 }); };
+  // Node 22 has a real WebSocket: it is replaced before the backend is loaded, so the realtime check
+  // below can never open a socket to the production host, whatever the backend's own guard does.
+  globalThis.WebSocket = class WebSocket extends EventTarget {
+    constructor(u) { super(); this.url = String(u); this.readyState = 0; }
+    send() {}
+    close() { this.readyState = 3; }
+  };
+  Object.assign(globalThis.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   const { resolveTokens } = await import(path.join(REPO, "src/sim/data/tokens.js"));
   const seed = JSON.parse(fs.readFileSync(path.join(REPO, "src/sim/data/seed.json"), "utf8"));
   const cast = JSON.parse(fs.readFileSync(path.join(REPO, "src/sim/data/sample-cast.json"), "utf8"));

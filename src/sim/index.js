@@ -9,7 +9,7 @@
 // No names here: real names exist only in memory, from the hand-over.
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { waitForCast } from "./handoff.js";
+import { waitForCast, HandoffError } from "./handoff.js";
 import { selfTest, clearSimStorage } from "./boot/guards.js";
 import { LockedScreen, ProgressScreen, FailScreen, EndedScreen, SampleChip } from "./boot/screens.jsx";
 
@@ -69,6 +69,17 @@ function addRows(store, table, rows) {
   for (const r of rows) if (!have.has(r.id)) t.push(r);
 }
 
+// Slots in the cast that the simulation's data never uses (none are expected: the portal sends the
+// pinned slots only). Such a hand-over is refused, so no unneeded real name is kept in memory.
+function unusedSlots(cast, data) {
+  const used = data.tokensUsed([data.SEED, data.NARRATION]);
+  return [
+    ...Object.keys(cast.campuses || {}).filter((k) => !used.C.has(k)),
+    ...Object.keys(cast.pms || {}).filter((k) => !used.P.has(k)),
+    ...Object.keys(cast.team || {}).filter((k) => !used.T.has(k)),
+  ];
+}
+
 function starterList(narration) {
   if (!narration || typeof narration !== "object" || Array.isArray(narration)) return null;
   const s = narration.meta?.starters ?? narration.starters;
@@ -101,6 +112,8 @@ export async function start() {
       const r = await waitForCast({ timeoutMs: 10000, onProgress: (p) => show(h(ProgressScreen, p)) });
       cast = r.cast;
       items = r.items;
+      const extra = unusedSlots(cast, await import("./data/index.js"));
+      if (extra.length) throw new HandoffError("invalid-slot", `slots the simulation does not use: ${extra.length}`);
     } catch (e) {
       console.warn("[simulation] hand-over refused:", e && e.code, e && e.message);
       await lockedUntilSample(reasonText(e));

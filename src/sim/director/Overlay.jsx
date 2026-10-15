@@ -109,8 +109,19 @@ export function CaptionDock({ state, voiceOn, progress }) {
           <AssistantAvatar size={52} boxScale={1.12} track={false} state={avatarState} />
         </div>
         {/* Captions are always shown (PMO decision 14 Oct 2026), also while the assistant is small. */}
-        <div className="sim-dir-caption-text" style={{ maxWidth: 210, padding: "8px 11px", borderRadius: 10, background: "rgba(10,26,46,.92)",
-          border: `1px solid ${GOLD}55`, color: INK, font: `500 14px/1.4 ${SANS}`, opacity: fade, transition: "opacity .16s ease" }}>{shown}</div>
+        <div style={{ maxWidth: 210, padding: "8px 11px", borderRadius: 10, background: "rgba(10,26,46,.92)",
+          border: `1px solid ${GOLD}55`, color: INK, fontFamily: SANS }}>
+          {(state.kicker || state.paused) && (
+            <div style={{ fontSize: 9.5, letterSpacing: ".14em", textTransform: "uppercase", color: GOLD, fontWeight: 700, lineHeight: 1.45, marginBottom: 4 }}>
+              {state.kicker}
+              {state.paused && (
+                <span style={{ marginLeft: state.kicker ? 6 : 0, color: GOLD_SOFT, letterSpacing: ".04em", textTransform: "none", fontSize: 11,
+                  animation: "simDirPulse 1.6s ease-in-out infinite" }}>Paused</span>
+              )}
+            </div>
+          )}
+          <div className="sim-dir-caption-text" style={{ font: `500 14px/1.4 ${SANS}`, opacity: fade, transition: "opacity .16s ease" }}>{shown}</div>
+        </div>
       </div>
     );
   }

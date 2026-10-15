@@ -281,7 +281,12 @@ const project_assignments = projects.filter(p => p._pm).map(p => ({ id: uid("a55
 const project_raci = projects.filter(p => p._pm).flatMap(p => [
   { id: uid("ac100001"), project_id: p.id, raci_role: "responsible", user_id: PM[p._pm].id, person_name: PM[p._pm].full_name, person_title: "Project Manager", sort_order: 0 },
   { id: uid("ac100001"), project_id: p.id, raci_role: "informed", user_id: PMO.id, person_name: "Project Management Office", person_title: "PMO", sort_order: 0 }]);
-const ownerOf = (p) => p._pm ? PM[p._pm].full_name : "Project Management Office";
+// Risk owners (plan §5a rule 1, review 15 Oct 2026): risk ownership sits only on the story project,
+// with its PM; every other risk is owned by the PMO, so no other real manager is named against a risk.
+const ownerOf = (p) => p.id === story.id ? PM[STORY_PM].full_name : "Project Management Office";
+// The projects that host the real Gallery media (MEDIA_HOSTS below). A host carries no delay, risk or
+// quote (plan §5a), so a real photo is never shown behind a fictional negative.
+const MEDIA_HOST_KEYS = ["A14", "A9", "A2", "A5", "A6", "C2", "I1"];
 
 /* ── Risks: one per project, no critical; high only on the story or on projects without a PM ── */
 // Every risk names an outside cause (vendor, shipping, weather, approvals, site limits), never a fault.
@@ -318,13 +323,14 @@ const RISKS = [
 ];
 const sevOf = (pr, im) => pr === "high" && im === "high" ? "critical" : (pr === "high" && im === "medium") || (pr === "medium" && im === "high") ? "high" : pr === "low" && im === "low" ? "low" : "medium";
 const addDays = (d, n) => new Date(day(d) * 864e5 + n * 864e5).toISOString().slice(0, 10);
+// Every row is built (so the ids that follow stay as they were) and the hosts' rows are then left out.
 const project_risks = RISKS.map(([k, title, category, probability, impact, mitigation_plan, identified, status, tag]) => {
   const rev = [addDays(identified, 14), "2026-10-13"].sort()[0];
   const p = byKey(k);
   return { id: uid("e1500001"), project_id: p.id, title, description: null, category, probability, impact, status, owner: ownerOf(p), mitigation_plan,
     date_identified: identified, date_last_reviewed: tag === "story" ? "2026-10-08" : rev, created_by: PMO.id, created_by_name: PMO.username,
     created_at: `${identified}T07:00:00Z`, updated_at: `${tag === "story" ? "2026-10-08" : rev}T07:00:00Z`, _story: tag === "story" };
-});
+}).filter(x => !MEDIA_HOST_KEYS.some(k => byKey(k).id === x.project_id));
 const scored = (risks) => risks.map(x => { const p = projects.find(q => q.id === x.project_id);
   const { _story, ...y } = x; return { ...y, project_name: p.name, project_code: p.code, project_campus: p.campus, severity: sevOf(x.probability, x.impact) }; });
 const storyRisk = project_risks.find(x => x._story);
@@ -490,22 +496,23 @@ const suTotal = suList.reduce((s, x) => s + x.amount, 0);
 const cfTotal = cfAmts.reduce((s, x) => s + x, 0);
 
 /* ── Past projects: earlier fiscal years, real managers on their real campuses ─ */
-// Every real manager's past projects are neutral (In Progress, a snag or an invoice, or closed); none
-// shows "No progress" and none is chased. The guest-with-assignments slot has only projects under a year
+// Every real manager's past projects are neutral (In Progress released within the last year, or closed);
+// none shows "No progress", none is chased and none is open over a year (red on the page) except the
+// story PM's own (review 15 Oct 2026). The guest-with-assignments slot has only projects under a year
 // old. The story PM has the one follow-up thread, with his unread reply.
 // code, name, campus slot, fy, approved, released, pm slot, status, reason, release, start, imported last follow-up, notes
 const PAST = [
   ["EU.239101-02", "Reading Room Shelving", "C06", "FY 23-24", 2400000, 2400000, "P08", "closed", "Closed/PCD Received", "2023-11-20", "2023-12-01", "2026-08-30", null],
   ["EU.259104-05", "Lecture Room Whiteboards", "C07", "FY 25-26", 3850000, 3850000, "P13", "open", "In Progress", "2026-01-12", "2026-01-26", "2026-09-21", null],
   ["ET.259301-06", "Reception Area Seating", "C07", "FY 25-26", 2900000, 2900000, "P13", "open", "In Progress", "2026-04-20", "2026-05-04", "2026-10-02", null],
-  ["EU.249101-03", "Seminar Hall Acoustics", "C06", "FY 24-25", 6850000, 6850000, "P08", "open", "In Progress", "2024-11-12", "2024-12-01", "2026-09-30", null],
+  ["EU.249101-03", "Seminar Hall Acoustics", "C06", "FY 24-25", 6850000, 6850000, "P08", "closed", "Closed/PCD Received", "2024-11-12", "2024-12-01", "2026-09-30", null],
   ["ET.249201-02", "Seminar Room Display Screens", "C01", "FY 24-25", 4600000, 4370000, "P12", "open", "In Progress", "2025-01-20", "2025-02-05", "2026-09-01", null],
-  ["EU.249102-04", "Wireless Controller Licences", "C04", "FY 24-25", 5250000, 5250000, "P01", "open", "In Progress", "2025-03-03", "2025-03-10", "2026-10-06", null],
+  ["EU.249102-04", "Wireless Controller Licences", "C04", "FY 24-25", 5250000, 5250000, "P01", "closed", "Closed/PCD Received", "2025-03-03", "2025-03-10", "2026-10-06", null],
   ["ET.249202-01", "Campus Public Address System", "C01", "FY 24-25", 5100000, 5100000, "P12", "closed", "Closed/PCD Received", "2024-10-07", "2024-10-20", "2026-08-15", null],
-  ["EU.249106-02", "Dental Lab Compressors", "C03", "FY 24-25", 2650000, 2650000, "P10", "open", "Awaiting final invoice", "2025-04-14", "2025-04-28", "2026-08-12", null],
+  ["EU.249106-02", "Dental Lab Compressors", "C03", "FY 24-25", 2650000, 2650000, "P10", "closed", "Closed/PCD Received", "2025-04-14", "2025-04-28", "2026-08-12", null],
   ["EU.259104-01", "Rooftop Water Tank Replacement", "C03", "FY 25-26", 3150000, 3150000, "P10", "open", "In Progress", "2025-11-10", "2025-11-24", "2026-10-05", null],
   ["EU.259105-02", "Language Lab Headsets", "C06", "FY 25-26", 11800000, 11800000, "P08", "open", "In Progress", "2025-12-15", "2026-01-10", "2026-09-18", null],
-  ["EU.259106-01", "Microbiology Lab Benches", "C08", "FY 25-26", 4600000, 4600000, "P11", "open", "In Progress", "2025-09-01", "2025-09-15", "2026-09-18", null],
+  ["EU.259106-01", "Microbiology Lab Benches", "C08", "FY 25-26", 4600000, 4600000, "P11", "open", "In Progress", "2025-11-03", "2025-11-17", "2026-09-18", null],
   ["EU.259107-02", "Generator Canopy and Fuel Tank", "C08", "FY 25-26", 2780000, 2780000, "P11", "open", "In Progress", "2026-05-11", "2026-05-20", null, null],
   ["ET.259301-03", "Staff Room Air Conditioning", "C11", "FY 25-26", 7900000, 6320000, "P04", "open", "In Progress", "2026-04-02", "2026-04-20", "2026-09-05", null],
   ["ET.259001-01", "Pharmacy Lab Balances", "C04", "FY 25-26", 3600000, 3600000, "P01", "open", "In Progress", "2026-06-02", "2026-06-15", null, null],
@@ -1059,9 +1066,12 @@ chk("risks: one per project, 0 critical, 8 of 9 matrix cells used (high x high e
   && Object.entries(cells).filter(([k, n]) => n > 0).length === 8 && cells["high-high"] === 0);
 chk("risks: high severity only on the story project or on projects without a PM", project_risks.filter(x => sevOf(x.probability, x.impact) === "high").every(x => x.project_id === story.id || !pmOf.has(x.project_id)));
 chk("risks: all open or monitoring", project_risks.every(x => ["open", "monitoring"].includes(x.status)) && open.length === project_risks.length);
-chk("risks: date_identified varied, <= last reviewed <= today; owner is the project's PM, or the PMO without one", new Set(project_risks.map(x => x.date_identified)).size >= 15 && project_risks.every(x => x.date_identified <= x.date_last_reviewed && x.date_last_reviewed <= TODAY)
+chk("risks: date_identified varied, <= last reviewed <= today; owner is the story PM on the story project, else the PMO", new Set(project_risks.map(x => x.date_identified)).size >= 15 && project_risks.every(x => x.date_identified <= x.date_last_reviewed && x.date_last_reviewed <= TODAY)
   && project_risks.every(x => x.owner === ownerOf(projects.find(q => q.id === x.project_id))));
 chk(`story risk is High (${RISK_CELL}), vendor/shipping, owned by the story PM, created by the PMO account`, sevOf(storyRisk.probability, storyRisk.impact) === "high" && storyRisk.category === "vendor" && storyRisk.owner === PT(STORY_PM) && storyRisk.created_by_name === PMO.username);
+chk("risks: no real manager other than the story PM owns a risk (only the story risk names a person)", project_risks.every(x => x.owner === "Project Management Office" || (x.project_id === story.id && x.owner === PT(STORY_PM))));
+chk("risks: no media host project carries a risk", !project_risks.some(x => MEDIA_HOST_KEYS.some(k => byKey(k).id === x.project_id))
+  && MEDIA_HOSTS.map(h => h.key).sort().join() === [...MEDIA_HOST_KEYS].sort().join());
 // 6. Compare demonstration (real campus list)
 const cr = (s) => compareRows.find(x => x.slot === s);
 chk("Compare: every campus with CAPEX in production appears (11 rows, investment-only campus absent)", compareRows.length === 11 && !compareRows.some(x => x.slot === "C12"));
@@ -1097,7 +1107,9 @@ chk("Updates: is_read_by_pmo agrees with the PMO's comment_reads", comments.filt
 chk("Updates: story thread agrees with WBS, deliverables and risk (30 Nov customs, 4 of 8 items, +20d, 29 Dec handover)", slipTask.end_date === "2026-11-30" && day(slipTask.end_date) - day(slipTask.baseline_end) === 20
   && storyReply.body.includes("4 of 8") && storyReply.body.includes("30 November") && storyReply.body.includes("20 days") && storyReply.body.includes("29 December") && story.end_date === "2026-12-29");
 chk("past: FY spelled as production ('FY 24-25'), 3 fiscal years", past_projects.every(p => /^FY \d\d-\d\d$/.test(p.fiscal_year)) && new Set(past_projects.map(p => p.fiscal_year)).size === 3);
-chk("past: open projects in all three age bands", Object.values(out.s12_past.ages).every(n => n >= 2));
+chk("past: open projects in all three age bands", Object.values(out.s12_past.ages).every(n => n >= 1));
+chk("past: an open project over a year old (red on the page) belongs only to the story PM", pOpen.filter(p => ageKey(p) === "over a year").every(p => p._pm === STORY_PM));
+chk("past: every other manager's open project is In Progress and had its budget released within the last year", pOpen.filter(p => p._pm !== STORY_PM).every(p => p.reason_open === "In Progress" && day(TODAY) - day(p.budget_release_date) <= 365));
 chk("past: no 'No progress' anywhere (no past project lacks a PM)", past_projects.every(p => p.reason_open !== "No progress"));
 chk("past: the guest-with-assignments slot has only open projects under a year old, In Progress, with no messages", past_projects.filter(p => p._pm === GUEST_PM).every(p => p.status === "open" && p.reason_open === "In Progress" && day(TODAY) - day(p.budget_release_date) < 365)
   && ![...past_project_updates, ...past_pm_messages].some(m => past_projects.find(p => p.id === m.past_project_id)?._pm === GUEST_PM || m.pm_user_id === PM[GUEST_PM].id));
