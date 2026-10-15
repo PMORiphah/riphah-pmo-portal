@@ -1,6 +1,6 @@
 # PMO Simulation: the two-minute presentation
 
-Status: **proposed 14 Oct 2026, for discussion with the PMO.** Nothing is built in the app yet. **Revised the same day for decision 2a** (real campus, PM and PMO-team names and the real Gallery media; everything else fictional): see **§5a**. §2's story and figures will be reissued once the story PM is chosen (§11); until then its lines and figures are the earlier fictional version.
+Status: **built and live on /preview/ on 15 Oct 2026** (commits `e9a11c8`, `6afe110`; production untouched). See CLAUDE.md, "PMO Simulation", for what was verified and what is still open (labelled exports, lite mode, real-voice and laptop rehearsal, production promotion). The sections below are the design as approved; the story now uses the Al-Mizan slot's "Postgraduate Study Hub Refit".
 the 5-minute main presentation in `pmo-simulation.md`; that document's isolation design (§6) still applies,
 with the additions below. Its deep-dive chapters are out of scope for now.
 
