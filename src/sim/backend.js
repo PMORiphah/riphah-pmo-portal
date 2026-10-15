@@ -43,6 +43,7 @@ export const MSG = Object.freeze({
   NO_PASSWORD: "Passwords are not changed in the simulation.",
   ASK: "In the simulation the assistant answers from prepared questions only.",
   NO_FILE: "This file is not part of the simulation.",
+  NO_PAST_RECORD: "Not available in the simulation: past project records are not imported or rewritten here.",
 });
 
 const BASE = (() => {
@@ -424,9 +425,20 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
   const seen = (key) => { st.endpoints[key] = (st.endpoints[key] || 0) + 1; };
 
   // ── row access ──
+  // Views the seed may leave out, computed from their base table (so a lesson or benefit added
+  // during the run shows up): the base row plus its project's name, code and campus.
+  const projectCols = (r) => {
+    const p = r && r.project_id != null ? index("projects").get(String(r.project_id)) : null;
+    return { project_name: p ? p.name : null, project_code: p ? p.code : null, campus: p ? p.campus : null };
+  };
+  const DERIVED = { lessons_learned_full: ["lessons_learned", projectCols], benefits_realized_full: ["benefits_realized", projectCols] };
   const rowsOf = (t) => {
     if (ALWAYS_EMPTY.has(t) || NO_ACCESS.has(t)) return [];
     const r = tables[t];
+    if (!Array.isArray(r) && DERIVED[t] && Array.isArray(tables[DERIVED[t][0]])) {
+      const [base, extra] = DERIVED[t];
+      return tables[base].map((x) => ({ ...x, ...extra(x) }));
+    }
     if (Array.isArray(r)) return OWN_ROWS.has(t) ? r.filter((x) => x.user_id === me.id) : r;
     if (KNOWN.has(t)) { st.emptyTables[t] = (st.emptyTables[t] || 0) + 1; return []; }
     return null;
@@ -631,6 +643,15 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
     if (method === "POST" && /^(past_)?project_tasks$/.test(table) && /return=representation/.test(prefer)) return MSG.NO_IMPORT;
     if (method === "DELETE" && /^(past_)?project_tasks$/.test(table) && !entries.some(([k]) => k === "id")) return MSG.NO_IMPORT;
     if (table === "user_profiles" && method !== "PATCH") return MSG.NO_ACCOUNTS;
+    // Accounts stand for real people (names from the hand-over): only the signed-in PMO's own
+    // preferences change (tutorial marks, notifications); another account's phone, status or role never.
+    if (table === "user_profiles" && !(entries.length === 1 && entries[0][0] === "id" && entries[0][1] === "eq." + me.id)) return MSG.NO_ACCOUNTS;
+    // Past Projects › Import ("Update them and add new ones") rewrites each matched row with a full
+    // record before its bulk insert (which is refused above), so a sheet from this computer would
+    // land under fictional labels. Edit project sends the same full record, so it is refused too;
+    // small changes (why still open, status, follow-up dates) still work.
+    if (table === "past_projects" && method === "PATCH" && body && typeof body === "object"
+      && ["code", "name", "approved_amount", "released_amount"].every((k) => k in body)) return MSG.NO_PAST_RECORD;
     if (["push_subscriptions", "user_webauthn_credentials", "webauthn_challenges", "epdd_state", "pmo_active_session"].includes(table)) return MSG.NA;
     return null;
   }
@@ -770,6 +791,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
         severity: sevOf(r.probability, r.impact) };
     });
     if (table === "past_projects") mirror("past_project_summary", "past_projects", ids, pastSummaryExtra);
+    for (const [view, [base, extra]] of Object.entries(DERIVED)) if (table === base) mirror(view, base, ids, extra);
     if (kind === "insert" && (table === "past_project_updates" || table === "past_pm_messages")) {
       // Following up from the PMO records the date on the past project (as the database trigger does).
       const touched = new Set();

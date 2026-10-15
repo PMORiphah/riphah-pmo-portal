@@ -35,7 +35,9 @@ export function buildScenes(meta = {}, cast = null) {
 
   // ── shared targets ─────────────────────────────────────────────────────────────────────────────
   const list = "#dash-project-list";
+  // The story project's row inside a container ("" = anywhere); storyTr: its Projects table row.
   const storyRow = (scope = "") => `${scope} ${attr("data-project-id", SID)}`.trim();
+  const storyTr = `tr${attr("data-project-id", SID)}`;
   const storyOpen = () => !!q('[data-tab="documents"]') && hasText(q('[data-tour="detail-hero"]'), meta.storyProjectCode);
   const projectRows = () => qa("tr[data-project-id]");
   const compareRows = () => qa('[data-tour="compare-table"] tr[data-campus]');
@@ -77,7 +79,7 @@ export function buildScenes(meta = {}, cast = null) {
   const openStoryProject = [
     { nav: "proj", ready: '[data-tour="projects-search"]', when: () => !storyOpen() },
     { type: '[data-tour="projects-search"]', text: meta.storySearch, when: () => !storyOpen() },
-    { click: storyRow("tr"), when: () => !storyOpen(), label: "story project row" },
+    { click: storyTr, when: () => !storyOpen(), label: "story project row" },
     { wait: '[data-tab="documents"]', label: "story project open" },
   ];
 
@@ -167,10 +169,10 @@ export function buildScenes(meta = {}, cast = null) {
         { nav: "proj", ready: '[data-tour="projects-search"]' },
         { spot: [() => widen(q('[data-tour="projects-search"]'), 260)] },
         { type: '[data-tour="projects-search"]', text: meta.storySearch, cps: 15 },
-        { test: () => projectRows().length === +ex(6, "searchRows", "1") && !!q(storyRow("tr")), label: "one row left" },
-        { spot: [storyRow("tr")] },
+        { test: () => projectRows().length === +ex(6, "searchRows", "1") && !!q(storyTr), label: "one row left" },
+        { spot: [storyTr] },
         { hold: 0.9, short: 0.5 },
-        { click: storyRow("tr"), unless: storyOpen, label: "story project row" },
+        { click: storyTr, unless: storyOpen, label: "story project row" },
         { wait: '[data-tab="documents"]', label: "project tabs" },
         { spot: ['[data-tour="detail-hero"]'] },
       ],
@@ -180,7 +182,7 @@ export function buildScenes(meta = {}, cast = null) {
       setup: openStoryProject,
       beats: [
         { say: "s07" },
-        { tab: "documents" },
+        { tab: "documents", ready: '[data-tour="detail-documents"]' },
         { wait: '[data-tour="doc-card"]', count: (X[7]?.files || []).length || undefined, min: 1, label: "document cards" },
         { spot: ['[data-tour="detail-documents"]'] },
         { hold: 0.8, short: 0.5 },
@@ -296,6 +298,7 @@ export function buildScenes(meta = {}, cast = null) {
         { hold: 1.8, short: 1.2 },
         { click: () => h2hCol(assignCampus)?.querySelector('[data-tour="h2h-open"]'), label: "Open on the campus" },
         { test: () => sel('[data-view="sites"]') && !!q('[data-tour="assign-pm"]') && !q('[data-tour="assign-pm"]').disabled, label: "sites view" },
+        { scroll: () => widen(q('[data-tour="assign-pm"]'), 900), block: "start", margin: 70 },
         { spot: [() => widen(q('[data-tour="assign-pm"]'), 900)] },
         { say: "s13b" },
         { click: '[data-tour="assign-pm"]', unless: () => !!q('[data-tour="bulk-preview"]') },

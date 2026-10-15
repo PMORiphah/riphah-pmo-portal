@@ -3,8 +3,13 @@
 //
 //   node scripts/sim/backend-test.mjs [--work <dir>] [--no-build] [--real-simroot] [--headed]
 //                                     [--playwright <path to playwright's index.js>] [--shots <dir>]
+//                                     [--unit-only]
 //
-// What it does, all outside the repo:
+// First, in a separate Node process (--unit-only runs only this), about 60 contract checks of the
+// backend on its own: PostgREST reads, filters, embeds, order, counts, writes and their refusals,
+// RPCs, storage, functions, auth, snapshot/restore/reset and the synthetic session.
+//
+// Then, all outside the repo:
 //   1. copies the repo (without node_modules, .git, dist*) to <work>/app and links node_modules;
 //   2. unless --real-simroot, writes a stub src/sim/SimRoot.jsx there that mounts the App straight
 //      away (the backend is what is tested here, not the director);
@@ -39,6 +44,259 @@ const PW = opt("--playwright", process.env.SIM_PLAYWRIGHT || null);
 
 const log = (...a) => console.log("[backend-test]", ...a);
 const die = (msg) => { console.error("[backend-test] " + msg); process.exit(2); };
+
+// ── 0: contract checks in Node (child process: browser-like globals stay out of this one) ──────
+async function unitChecks() {
+  const results = [];
+  const check = (name, cond, info = "") => { results.push({ name, ok: !!cond, info: cond ? "" : String(info).slice(0, 200) }); };
+  const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)),
+    removeItem: (k) => m.delete(k), clear: () => m.clear(), get length() { return m.size; } }; };
+  globalThis.window = globalThis;
+  globalThis.location = new URL("http://127.0.0.1:9/riphah-pmo-portal/preview/simulation.html");
+  globalThis.sessionStorage = mem(); globalThis.localStorage = mem();
+  const sameSite = [];
+  // The only "real" fetch here: anything the backend passes through must be this page's own address.
+  window.fetch = async (u) => { sameSite.push(String(u)); return new Response("same-site", { status: 200 }); };
+  const { resolveTokens } = await import(path.join(REPO, "src/sim/data/tokens.js"));
+  const seed = JSON.parse(fs.readFileSync(path.join(REPO, "src/sim/data/seed.json"), "utf8"));
+  const cast = JSON.parse(fs.readFileSync(path.join(REPO, "src/sim/data/sample-cast.json"), "utf8"));
+  const store = resolveTokens(seed, cast);
+  const M = store.meta || {};
+  const B = await import(path.join(REPO, "src/sim/backend.js"));
+  const un = [];
+  const be = B.installBackend({ store, mediaUrls: { m01: "blob:http://127.0.0.1:9/media-1" }, onUnhandled: (i) => un.push(i) });
+  const sess = B.prepareSession(store);
+  const SB = "https://prmxkecomqqngvrmytcj.supabase.co";
+  const H = { apikey: "anon", Authorization: "Bearer " + sess.access_token, "Content-Type": "application/json" };
+  const call = async (method, p, body, h = {}) => {
+    const r = await fetch(SB + p, { method, headers: { ...H, ...h }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const t = await r.text();
+    let b = t; try { b = t ? JSON.parse(t) : null; } catch { /* text */ }
+    return { s: r.status, b, cr: r.headers.get("content-range") };
+  };
+  const get = (p, h) => call("GET", p, undefined, h);
+  const T = store.tables;
+  const capex = T.projects.filter((x) => x.portfolio === "capex");
+
+  // session
+  const raw = JSON.parse(sessionStorage.getItem("pmo_session") || "null");
+  const now = Math.floor(Date.now() / 1000);
+  check("session: written to sessionStorage as the PMO", raw && raw.role === "pmo" && raw.user_id === sess.user_id && !raw.remember);
+  check("session: expires within 8 h (renewal timer stays far below 2^31 ms)", raw && raw.expires_at > now + 3600 && raw.expires_at <= now + 8 * 3600 + 5);
+  check("session: nothing left in localStorage", localStorage.getItem("pmo_session") === null);
+
+  // reads
+  let r = await get("/rest/v1/projects?portfolio=eq.capex&select=id");
+  check("GET filter eq", r.s === 200 && r.b.length === capex.length, r.b && r.b.length);
+  r = await get("/rest/v1/user_profiles?select=username,role&order=role.asc,username.asc");
+  const rk = { pmo: 0, project_manager: 1, guest: 2 };
+  check("order: role enum order pmo < project_manager < guest", r.s === 200 && r.b.every((u, i) => i === 0 || rk[u.role] >= rk[r.b[i - 1].role]) && r.b[0].role === "pmo");
+  r = await get("/rest/v1/projects?portfolio=eq.capex&select=code,df_recommended_amount&order=df_recommended_amount.desc.nullslast,code.asc&limit=5");
+  check("order: numeric desc + limit", r.s === 200 && r.b.length === 5 && r.b.every((x, i) => i === 0 || (x.df_recommended_amount ?? -1) <= (r.b[i - 1].df_recommended_amount ?? -1)));
+  r = await get("/rest/v1/project_assignments?select=user_id,project_id,projects(code,name)&limit=3");
+  check("embed many-to-one (projects)", r.s === 200 && r.b.length === 3 && r.b.every((x) => x.projects && x.projects.code));
+  r = await get("/rest/v1/comments?select=id,author_role,user_profiles!comments_author_id_fkey(role)&order=created_at.desc&limit=3");
+  check("embed with fkey hint", r.s === 200 && r.b.every((x) => x.user_profiles && x.user_profiles.role));
+  r = await get(`/rest/v1/projects?id=eq.${M.storyProjectId}&select=id,project_attachments(count)`);
+  const nAtt = T.project_attachments.filter((a) => a.project_id === M.storyProjectId).length;
+  check("embed count", r.s === 200 && r.b[0].project_attachments[0].count === nAtt, JSON.stringify(r.b));
+  r = await get(`/rest/v1/projects?id=eq.${M.storyProjectId}&select=id,project_tasks(id,name)&project_tasks.order=sort_order.asc&project_tasks.limit=2`);
+  check("embed one-to-many with order/limit", r.s === 200 && r.b[0].project_tasks.length === 2);
+  r = await get("/rest/v1/project_attachments?select=id,projects!inner(campus)&projects.campus=eq.__nowhere__");
+  check("embed !inner filters the parent", r.s === 200 && r.b.length === 0);
+  r = await get(`/rest/v1/projects?id=eq.${M.storyProjectId}&select=id,name,cost_centers(name)`, { Accept: "application/vnd.pgrst.object+json" });
+  check("single object Accept", r.s === 200 && r.b && !Array.isArray(r.b) && r.b.id === M.storyProjectId);
+  r = await get("/rest/v1/projects?select=id", { Accept: "application/vnd.pgrst.object+json" });
+  check("single object with many rows → 406 PGRST116", r.s === 406 && r.b.code === "PGRST116");
+  r = await get("/rest/v1/projects?select=id", { Prefer: "count=exact", Range: "0-4" });
+  check("Range + count=exact → Content-Range", r.s === 200 && r.b.length === 5 && r.cr === `0-4/${T.projects.length}`, r.cr);
+  r = await call("HEAD", "/rest/v1/projects?select=id", undefined, { Prefer: "count=exact" });
+  check("HEAD with count", r.s === 200 && !r.b && r.cr && r.cr.endsWith("/" + T.projects.length), r.cr);
+  r = await get("/rest/v1/projects?select=id,workflow_stage&or=(workflow_stage.eq.mt_review,workflow_stage.eq.ed_review)");
+  check("or=(…)", r.s === 200 && r.b.length === T.projects.filter((x) => ["mt_review", "ed_review"].includes(x.workflow_stage)).length && r.b.every((x) => ["mt_review", "ed_review"].includes(x.workflow_stage)));
+  r = await get("/rest/v1/projects?select=id&workflow_stage=not.in.(pdd_not_submitted,approved)");
+  check("not.in", r.s === 200 && r.b.length === T.projects.filter((x) => !["pdd_not_submitted", "approved"].includes(x.workflow_stage)).length);
+  r = await get(`/rest/v1/projects?select=name&name=ilike.*${encodeURIComponent(String(M.storySearch || "").toLowerCase())}*`);
+  check("ilike", r.s === 200 && r.b.length >= 1 && r.b.some((x) => x.name === M.storyProjectName), JSON.stringify(r.b).slice(0, 120));
+  r = await get("/rest/v1/projects?select=id&actual_end_date=is.null");
+  check("is.null", r.s === 200 && r.b.length === T.projects.filter((x) => x.actual_end_date == null).length);
+  r = await get("/rest/v1/projects?select=id&amount_released=gt.0");
+  check("gt on numbers", r.s === 200 && r.b.length === T.projects.filter((x) => Number(x.amount_released) > 0).length);
+  r = await get("/rest/v1/activity_log?select=created_at&created_at=gte.2026-10-01T00:00:00&order=created_at.desc");
+  check("gte on timestamps", r.s === 200 && r.b.every((x) => x.created_at >= "2026-10-01"));
+  r = await get("/rest/v1/settings?select=key,value&key=in.(dashboard_kpis,team_config)");
+  check("in.(…)", r.s === 200 && r.b.length >= 1 && r.b.every((x) => ["dashboard_kpis", "team_config"].includes(x.key)));
+  r = await get("/rest/v1/board_reports?select=id,label:figures->>period&order=period.desc&limit=1");
+  check("alias + JSON path", r.s === 200 && r.b.length === 1 && "label" in r.b[0]);
+  for (const v of ["portfolio_dashboard", "project_metrics", "investment_metrics", "project_risks_scored", "past_project_summary"]) {
+    r = await get(`/rest/v1/${v}?select=*`);
+    check(`view ${v} served`, r.s === 200 && r.b.length === (T[v] || []).length && r.b.length > 0);
+  }
+  for (const v of ["at_risk_projects", "pdd_pending_projects"]) {
+    r = await get(`/rest/v1/${v}?select=*`);
+    check(`view ${v} always empty (no sign-in pop-ups)`, r.s === 200 && Array.isArray(r.b) && r.b.length === 0);
+  }
+  r = await get("/rest/v1/epdd_state?select=*");
+  check("backend-only table reads as empty", r.s === 200 && r.b.length === 0);
+  const unBefore = un.length;
+  r = await get("/rest/v1/no_such_table?select=*");
+  check("unknown table → 501 and reported", r.s === 501 && un.length === unBefore + 1 && r.b.message === B.MSG.NA);
+
+  // RPCs
+  r = await call("POST", "/rest/v1/rpc/session_start", {});
+  check("rpc session_start → null (nothing logged)", r.s === 200 && r.b === null);
+  r = await call("POST", "/rest/v1/rpc/is_past_viewer", {});
+  check("rpc is_past_viewer", r.s === 200 && r.b === false);
+  r = await call("POST", "/rest/v1/rpc/project_has_deliverables", { p: M.storyProjectId });
+  check("rpc project_has_deliverables (story)", r.s === 200 && r.b === true);
+  r = await call("POST", "/rest/v1/rpc/resolve_login_email", { p_username: "pmo" });
+  check("rpc resolve_login_email → null", r.s === 200 && r.b === null);
+  r = await call("POST", "/rest/v1/rpc/get_gemini_keys", {});
+  check("unknown rpc → 501", r.s === 501);
+
+  // writes kept in memory
+  const snap0 = be.snapshot();
+  const reply = M.updatesStoryReplyId || T.comments[0].id;
+  const P = { Prefer: "resolution=ignore-duplicates,return=minimal" };
+  r = await call("POST", "/rest/v1/comment_reads", [{ user_id: sess.user_id, comment_id: reply }], P);
+  const r2 = await call("POST", "/rest/v1/comment_reads", [{ user_id: sess.user_id, comment_id: reply }], P);
+  const reads = await get("/rest/v1/comment_reads?select=comment_id");
+  check("insert comment_reads; duplicate ignored", r.s === 201 && r2.s === 201 && reads.b.length === 1);
+  r = await call("POST", "/rest/v1/comment_reads", [{ user_id: sess.user_id, comment_id: reply }], { Prefer: "return=minimal" });
+  check("duplicate without resolution → 409", r.s === 409 && r.b.code === "23505");
+  r = await call("PATCH", `/rest/v1/comments?project_id=eq.${M.updatesStoryProjectId}&is_read_by_pmo=eq.false`, { is_read_by_pmo: true }, { Prefer: "return=representation" });
+  check("PATCH with representation", r.s === 200 && Array.isArray(r.b) && r.b.every((x) => x.is_read_by_pmo === true));
+  r = await call("POST", "/rest/v1/past_chat_reads?on_conflict=user_id,thread", { user_id: sess.user_id, thread: "project:x", read_at: "2026-10-15T05:00:00Z" }, { Prefer: "resolution=merge-duplicates,return=minimal" });
+  const r3 = await call("POST", "/rest/v1/past_chat_reads?on_conflict=user_id,thread", { user_id: sess.user_id, thread: "project:x", read_at: "2026-10-15T06:00:00Z" }, { Prefer: "resolution=merge-duplicates,return=minimal" });
+  const pr = (await get("/rest/v1/past_chat_reads?thread=eq.project:x&select=read_at")).b;
+  check("upsert merge-duplicates on (user_id, thread)", r.s === 201 && r3.s === 201 && pr.length === 1 && pr[0].read_at === "2026-10-15T06:00:00Z");
+  r = await call("POST", "/rest/v1/comments?select=id,body,is_read_by_pmo", { project_id: M.storyProjectId, body: "note", author_id: sess.user_id, author_role: "pmo" }, { Prefer: "return=representation" });
+  const cid = r.b && r.b[0] && r.b[0].id;
+  check("POST with representation: id and defaults", r.s === 201 && cid && r.b[0].is_read_by_pmo === false);
+  await call("POST", "/rest/v1/comments", { project_id: M.storyProjectId, body: "reply", parent_id: cid, author_id: sess.user_id, author_role: "pmo" }, { Prefer: "return=minimal" });
+  r = await call("DELETE", `/rest/v1/comments?id=eq.${cid}`, undefined, { Prefer: "return=minimal" });
+  check("DELETE cascades to replies", r.s === 204 && !T.comments.some((c) => c.id === cid || c.parent_id === cid));
+  const past = T.past_projects.find((x) => x.id === M.storyPastId) || T.past_projects[0];
+  await call("POST", "/rest/v1/past_project_updates", { past_project_id: past.id, body: "chase", author_id: sess.user_id, author_role: "pmo" }, { Prefer: "return=minimal" });
+  const sum = (await get(`/rest/v1/past_project_summary?id=eq.${past.id}&select=update_count,last_update_role`)).b[0];
+  check("past follow-up updates past_project_summary", sum && sum.last_update_role === "pmo" && sum.update_count === T.past_project_updates.filter((u) => u.past_project_id === past.id).length, JSON.stringify(sum));
+  await call("POST", "/rest/v1/lessons_learned", { project_id: M.storyProjectId, title: "A lesson", category: "process" }, { Prefer: "return=minimal" });
+  r = await get(`/rest/v1/lessons_learned_full?project_id=eq.${M.storyProjectId}&select=*`);
+  check("lessons_learned_full follows its base table", r.s === 200 && r.b.length === 1 && r.b[0].project_name === M.storyProjectName);
+
+  // refused: nothing from this computer comes in
+  const ref0 = be.stats().refusedCount;
+  const refusedCalls = [
+    ["POST", "/rest/v1/snapshots", { label: "pre_import" }],
+    ["DELETE", "/rest/v1/projects?id=not.is.null", undefined],
+    ["POST", "/rest/v1/projects", [{ name: "x" }, { name: "y" }]],
+    ["POST", "/rest/v1/past_projects", [{ name: "x" }]],
+    ["POST", "/rest/v1/project_tasks", { project_id: M.storyProjectId, name: "n" }, { Prefer: "return=representation" }],
+    ["DELETE", "/rest/v1/project_tasks?project_id=eq." + M.storyProjectId, undefined],
+    ["POST", "/rest/v1/user_profiles", { username: "x" }],
+    ["PATCH", "/rest/v1/projects", { name: "everything" }],
+    ["POST", "/storage/v1/object/project-attachments/x/y.pdf", undefined],
+    ["PATCH", `/rest/v1/user_profiles?id=eq.${T.user_profiles.find((u) => u.role === "project_manager").id}`, { is_active: false }],
+    ["PATCH", `/rest/v1/past_projects?id=eq.${M.storyPastId}`, { code: "X", name: "Y", campus: "Z", fiscal_year: "FY 24-25", approved_amount: 1, released_amount: 1, pm_user_id: null, status: "open", reason_open: null }],
+  ];
+  for (const [m, p, b, h] of refusedCalls) {
+    r = await call(m, p, b, h || {});
+    check(`refused: ${m} ${p.slice(0, 50)}`, r.s === 403 || r.s === 400, `${r.s} ${JSON.stringify(r.b).slice(0, 100)}`);
+  }
+  check("refusals are counted", be.stats().refusedCount - ref0 >= refusedCalls.length - 1);
+  r = await call("PATCH", `/rest/v1/past_projects?id=eq.${M.storyPastId}`, { reason_open: "Waiting for the vendor", status: "open" }, { Prefer: "return=minimal" });
+  r = await call("PATCH", `/rest/v1/user_profiles?id=eq.${sess.user_id}`, { tutorial_last_step: 3 }, { Prefer: "return=minimal" });
+  check("the PMO's own profile preferences still change", r.s === 204);
+  check("small past-project change still kept in memory", r.s === 204 && T.past_projects.find((x) => x.id === M.storyPastId)?.reason_open === "Waiting for the vendor");
+
+  // storage
+  const doc = T.project_attachments.find((a) => !/^sim-media\//.test(a.file_path));
+  r = await call("POST", "/storage/v1/object/sign/project-attachments/" + doc.file_path.split("/").map(encodeURIComponent).join("/"), { expiresIn: 60 });
+  check("sign a fictional document → same-site path", r.s === 200 && /^\/sim\/files\//.test(r.b.signedURL), JSON.stringify(r.b));
+  r = await call("POST", "/storage/v1/object/sign/project-attachments/sim-media/m01", { expiresIn: 60 });
+  check("sign handed-over media → blob:", r.s === 200 && r.b.signedURL === "blob:http://127.0.0.1:9/media-1");
+  r = await call("POST", "/storage/v1/object/sign/project-attachments", { paths: [doc.file_path, "nope.pdf"], expiresIn: 60 });
+  check("batch sign", r.s === 200 && r.b.length === 2 && r.b[0].signedURL && r.b[1].error);
+  r = await call("POST", "/storage/v1/object/sign/project-attachments/nope.pdf", { expiresIn: 60 });
+  check("sign unknown file → 400 with a plain message", r.s === 400 && r.b.error === B.MSG.NO_FILE);
+  r = await call("POST", "/storage/v1/object/sign/avatars/x.png", { expiresIn: 60 });
+  check("other bucket refused", r.s === 400);
+  const ss0 = sameSite.length;
+  r = await get("/storage/v1/object/project-attachments/" + doc.file_path);
+  check("GET object → this page's own file", r.s === 200 && sameSite.length === ss0 + 1 && sameSite[ss0].startsWith(location.origin + "/sim/files/"), sameSite[ss0]);
+
+  // functions
+  r = await call("POST", "/functions/v1/ask", { question: "Where do we stand overall?" });
+  check("ask answers locally", r.s === 200 && typeof r.b.answer === "string" && r.b.answer.length > 0);
+  for (const f of ["notify-comment", "notify-past", "board-report-notify", "send-push", "send-deadline-email", "send-welcome-email", "send-pdd-reminders"]) {
+    r = await call("POST", "/functions/v1/" + f, {});
+    check(`${f} → not sent`, r.s === 403 && r.b.ok === false && r.b.simulated === true && r.b.error === B.MSG.NOT_SENT);
+  }
+  for (const f of ["invite-user", "reset-user-password", "delete-user", "epdd-sync", "deliverables-extract", "webauthn"]) {
+    r = await call("POST", "/functions/v1/" + f + (f === "epdd-sync" ? "?forceFunctionRegion=ap-southeast-1" : ""), {});
+    check(`${f} → refused with a message`, r.s === 403 && r.b.simulated === true && typeof r.b.error === "string");
+  }
+  r = await call("POST", "/functions/v1/zzz", {});
+  check("unknown function → 501", r.s === 501);
+
+  // auth
+  r = await call("POST", "/auth/v1/token?grant_type=refresh_token", { refresh_token: sess.refresh_token });
+  check("auth refresh → synthetic tokens", r.s === 200 && /^sim-access\./.test(r.b.access_token) && r.b.expires_at > now);
+  r = await call("POST", "/auth/v1/token?grant_type=password", { email: "a@b", password: "x" });
+  check("auth password grant refused", r.s === 400 && /simulation/i.test(r.b.error_description));
+  r = await get("/auth/v1/user");
+  check("auth user", r.s === 200 && r.b.id === sess.user_id);
+  r = await call("PUT", "/auth/v1/user", { password: "x" });
+  check("password change refused", r.s === 422);
+  r = await call("POST", "/auth/v1/recover", { email: "a@b" });
+  check("recover refused", r.s === 400);
+  r = await call("POST", "/auth/v1/logout?scope=local");
+  check("logout", r.s === 204);
+
+  // other sites
+  const out0 = be.stats().outsideCount;
+  const ex = await fetch("https://example.com/x");
+  check("another site → 501, reported, never fetched", ex.status === 501 && be.stats().outsideCount === out0 + 1 && !sameSite.some((u) => u.includes("example.com")));
+  const own = await fetch(location.origin + "/riphah-pmo-portal/preview/sim/files/x.pdf");
+  check("this page's own files go through", own.status === 200);
+  if (typeof WebSocket === "function") {
+    let threw = false; let ws;
+    try { ws = new WebSocket("wss://prmxkecomqqngvrmytcj.supabase.co/realtime/v1/websocket"); } catch { threw = true; }
+    check("realtime socket: quiet, never connects", !threw && ws && ws.readyState === 0);
+    try { ws?.close(); } catch { /* ignore */ }
+  }
+
+  // checkpoints
+  const before = T.comments.length;
+  await call("POST", "/rest/v1/comments", { project_id: M.storyProjectId, body: "x", author_id: sess.user_id, author_role: "pmo" }, { Prefer: "return=minimal" });
+  const mid = be.snapshot();
+  await call("POST", "/rest/v1/comments", { project_id: M.storyProjectId, body: "y", author_id: sess.user_id, author_role: "pmo" }, { Prefer: "return=minimal" });
+  be.restore(mid);
+  check("restore(snapshot) returns to that point", store.tables.comments.length === before + 1);
+  r = await get("/rest/v1/comments?select=id");
+  check("reads after restore see the restored rows", r.b.length === before + 1);
+  be.restore(snap0);
+  check("restore(first snapshot)", store.tables.comments.length === snap0.tables.comments.length && store.tables.comment_reads.length === 0);
+  be.reset();
+  const st = be.stats();
+  check("reset() → initial data and zeroed stats", st.calls === 0 && st.unhandledCount === 0 && store.tables.comments.length === seed.tables.comments.length);
+  check("only same-site addresses were fetched for real", sameSite.every((u) => u.startsWith(location.origin)), sameSite.join(" "));
+
+  const failed = results.filter((x) => !x.ok);
+  console.log(JSON.stringify({ total: results.length, failed }));
+  return failed.length === 0;
+}
+if (flag("--unit-child")) { const ok = await unitChecks(); process.exit(ok ? 0 : 1); }
+{
+  const u = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--unit-child"], { encoding: "utf8" });
+  const last = (u.stdout || "").trim().split("\n").pop();
+  let res = null; try { res = JSON.parse(last); } catch { /* below */ }
+  if (!res) { console.error(u.stdout, u.stderr); die("contract checks crashed"); }
+  log(`contract checks ${res.total - res.failed.length}/${res.total} ok`);
+  for (const f of res.failed) log("  check failed:", f.name, f.info);
+  if (res.failed.length) die("contract checks failed");
+  if (flag("--unit-only")) process.exit(0);
+}
 
 // ── 1-3: copy and build ────────────────────────────────────────────────────────────────────────
 const SKIP = new Set(["node_modules", ".git", "dist", "dist-preview"]);
@@ -99,6 +357,10 @@ log("serving", DIST, "at", ORIGIN + BASE);
 // ── 5: drive the App ───────────────────────────────────────────────────────────────────────────
 // Ids of the story's records, from the public seed (no names in it).
 const META = JSON.parse(fs.readFileSync(path.join(REPO, "src/sim/data/seed.json"), "utf8")).meta || {};
+// The test runs with "Run with sample names", so campus slots resolve through the sample cast.
+const SAMPLE = JSON.parse(fs.readFileSync(path.join(REPO, "src/sim/data/sample-cast.json"), "utf8"));
+const campusOf = (tok) => { const m = /^\{\{C:(C\d\d)\}\}$/.exec(String(tok || "")); return m ? SAMPLE.campuses?.[m[1]]?.name || null : tok || null; };
+const cssq = (v) => String(v).replace(/["\\]/g, "\\$&");
 let pw;
 try { pw = PW ? createRequire(import.meta.url)(PW) : createRequire(import.meta.url)("playwright"); }
 catch { die("Playwright not found: pass --playwright <path to playwright/index.js> or set SIM_PLAYWRIGHT"); }
@@ -161,6 +423,21 @@ async function step(name, fn) {
   }
 }
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
+// The figures the seed promises for a scene (META.expect) are on screen: the backend served the
+// right rows, filters, counts and order. Waits briefly for count-ups to finish.
+const EXP = META.expect || {};
+async function shows(text, sel = "body", timeout = 4000) {
+  if (!text) return;
+  const t0 = Date.now();
+  let seenText = "";
+  while (Date.now() - t0 < timeout) {
+    // Compared without spaces: "PKR" and the figure are separate inline elements on the hero.
+    seenText = (await page.locator(sel).first().innerText().catch(() => "")).replace(/\s+/g, "");
+    if (seenText.toLowerCase().includes(String(text).replace(/\s+/g, "").toLowerCase())) return;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`"${text}" not on screen`);
+}
 const click = (sel, o = {}) => page.locator(sel).first().click({ timeout: 6000, ...o });
 const visible = (sel, timeout = 6000) => page.locator(sel).first().waitFor({ state: "visible", timeout });
 async function nav(id) {
@@ -182,7 +459,13 @@ await step("open simulation.html (sample names)", async () => {
 });
 
 // Capex Dashboard and its tabs
-await step("dashboard", async () => { await nav("cmd"); await visible('[data-tour="hero"]'); });
+await step("dashboard", async () => {
+  await nav("cmd");
+  await visible('[data-tour="hero"]');
+  await shows(EXP["1"]?.total, '[data-tour="hero"]');
+  await shows(EXP["1"]?.heroVerdict, '[data-tour="hero"]');
+  return `${EXP["1"]?.total} on the hero`;
+});
 for (const tab of ["investments", "pipeline", "execution", "financials", "budgeting"]) {
   await step(`dashboard tab ${tab}`, async () => {
     const btn = page.locator(`[data-tour="tab-strip"] [data-tab="${tab}"]`);
@@ -195,6 +478,8 @@ await step("dashboard: PDD Status, MT Review list", async () => {
   await page.waitForTimeout(400);
   // The pipeline strip's tiles carry the card keys (in_mt), not the stage names.
   await click('[data-stage="in_mt"], [data-stage="mt_review"]');
+  await shows(EXP["3"]?.listHeader);
+  return EXP["3"]?.listHeader;
 });
 
 // Every PMO page
@@ -210,6 +495,7 @@ await step("projects: search filters the list", async () => {
   await page.waitForTimeout(600);
   const n = await page.locator("tr[data-project-id]").count();
   must(n >= 1, "the search left no rows");
+  must(!EXP["6"]?.searchRows || n === Number(EXP["6"].searchRows), `the search left ${n} rows, expected ${EXP["6"]?.searchRows}`);
   await s.fill("");
   return `${n} row(s) for "${META.storySearch}"`;
 });
@@ -261,22 +547,47 @@ await step("campus: compare (all campuses)", async () => {
   await nav("camp");
   await click('[data-tour="campus-view"] [data-view="compare"]');
   await visible('[data-tour="compare-table"]', 8000);
-  return `${await page.locator('[data-tour="compare-table"] [data-campus]').count()} campus rows`;
+  const n = await page.locator('[data-tour="compare-table"] tr[data-campus]').count();
+  must(!EXP["12"]?.rows || n === Number(EXP["12"].rows), `${n} campus rows, expected ${EXP["12"]?.rows}`);
+  return `${n} campus rows`;
 });
 await step("campus: sort by Released", async () => {
   const h = page.locator('[data-tour="compare-table"] [data-col="released"]');
   must(await h.count(), "no Released column header");
   await h.first().click();
+  await page.waitForTimeout(300);
+  const first = await page.locator('[data-tour="compare-table"] tr[data-campus]').first().getAttribute("data-campus");
+  const want = campusOf(EXP["12"]?.firstAfterSort);
+  must(!want || first === want, `first row after sorting: ${first}, expected ${want}`);
+  return `first: ${first}`;
+});
+const third = campusOf(META.h2hThirdCampus);
+const assignCampus = campusOf(META.assignCampus);
+await step("campus: tick the third campus", async () => {
+  must(third, "no h2hThirdCampus in the seed meta");
+  const box = page.locator(`[data-tour="compare-table"] tr[data-campus="${cssq(third)}"] input[type="checkbox"]`).first();
+  must(await box.count(), `no Compare row for ${third}`);
+  if (!(await box.isChecked())) await box.check();
+  return third;
 });
 await step("campus: head to head", async () => {
   await click('[data-tour="compare-mode"] [data-mode="h2h"], [data-mode="h2h"]');
   await visible('[data-tour="compare-h2h-grid"]', 8000);
+  const cols = await page.locator('[data-tour="compare-h2h-grid"] [data-tour="h2h-open"]').count();
+  must(cols === (META.h2hCampuses || []).length || !META.h2hCampuses, `head to head shows ${cols} columns`);
   await shot("campus head to head (open)");
-  return `${await page.locator('[data-tour="h2h-pms"]').count()} manager blocks`;
+  return `${cols} columns, ${await page.locator('[data-tour="h2h-pms"]').count()} manager blocks`;
 });
-await step("campus: open a site from head to head", async () => {
-  await click('[data-tour="h2h-open"]');
+await step("campus: open the Assign PM campus from head to head", async () => {
+  const col = page.locator(`[data-tour="compare-h2h-grid"] [data-campus="${cssq(assignCampus)}"] [data-tour="h2h-open"]`);
+  if (assignCampus && await col.count()) await col.first().click();
+  else {
+    // Surface may not pass data-campus through: pick the column by its place in META.h2hCampuses.
+    const i = (META.h2hCampuses || []).map(campusOf).indexOf(assignCampus);
+    await page.locator('[data-tour="h2h-open"]').nth(Math.max(0, i)).click({ timeout: 6000 });
+  }
   await visible('[data-tour="assign-pm"]', 8000);
+  return assignCampus;
 });
 await step("campus: Assign PM preview, then cancel", async () => {
   const btn = page.locator('[data-tour="assign-pm"]').first();
@@ -289,13 +600,16 @@ await step("campus: Assign PM preview, then cancel", async () => {
   await opts.first().waitFor({ state: "visible", timeout: 6000 });
   const values = (await opts.evaluateAll((os) => os.map((o) => o.getAttribute("data-value")))).filter(Boolean);
   must(values.length, "no project managers to pick");
+  must(!META.assignPmUserId || values.includes(META.assignPmUserId), "the Assign PM picker lacks the story's manager");
   const want = values.includes(META.assignPmUserId) ? META.assignPmUserId : values[0];
   await page.locator(`[role="listbox"] [role="option"][data-value="${want}"]`).first().click();
   await visible('[data-tour="bulk-preview"]', 6000);
-  const text = (await page.locator('[data-tour="bulk-preview"]').first().innerText()).replace(/\s+/g, " ").slice(0, 120);
+  await page.waitForTimeout(400);
+  const text = (await page.locator('[data-tour="bulk-preview"]').first().innerText()).replace(/\s+/g, " ");
+  for (const line of (META.assignPreview && META.assignPreview.lines) || []) must(text.includes(line), `preview lacks "${line}": ${text.slice(0, 160)}`);
   await shot("assign pm preview (open)");
   await page.getByRole("button", { name: /^Cancel$/ }).first().click({ timeout: 6000 });
-  return text;
+  return text.slice(0, 120);
 });
 
 // Board report viewer
@@ -337,8 +651,11 @@ await step("past: open the story's past project (marks it read)", async () => {
 // Updates thread (marks read in memory; the badge counts down)
 await step("updates: open the story thread", async () => {
   await nav("upd");
-  await click(META.updatesStoryProjectId ? `[data-tour="updates-list"] [data-project-id="${META.updatesStoryProjectId}"]` : '[data-tour="updates-list"] [data-project-id]');
+  const row = META.updatesStoryProjectId ? `[data-tour="updates-list"] [data-project-id="${META.updatesStoryProjectId}"]` : '[data-tour="updates-list"] [data-project-id]';
+  await shows(EXP["15"]?.storyNew, row);
+  await click(row);
   await visible('[data-tour="updates-thread"]', 8000);
+  await shows(EXP["15"]?.reply, '[data-tour="updates-thread"]');
   await settle(800);
   const s = await stats();
   must(s.writes >= 1, "reading the thread wrote no read marks");
@@ -384,10 +701,27 @@ await step("timeline: hover a bar", async () => {
 await step("risks: click the story's matrix cell", async () => {
   await nav("risks");
   await click(`[data-tour="risk-matrix"] [data-cell="${META.riskCell || "high-medium"}"]`);
+  await shows(EXP["11"]?.listCount);
+  return EXP["11"]?.listCount;
 });
 await step("performance: delayed filter", async () => {
   await nav("perf");
   await click('[data-tour="perf-filters"] [data-filter="delayed"]');
+  await shows(EXP["9"]?.showing);
+  return EXP["9"]?.showing;
+});
+await step("users: every account, ordered PMO, managers, guests", async () => {
+  await nav("users");
+  await visible('[data-tour="users-table"] [data-user]', 6000);
+  const names = await page.locator('[data-tour="users-table"] [data-user]').evaluateAll((els) => els.map((e) => e.getAttribute("data-user")));
+  const uniq = [...new Set(names)];
+  must(!EXP["14"]?.users || uniq.length === Number(EXP["14"].users), `${uniq.length} users, expected ${EXP["14"]?.users}`);
+  const seed = JSON.parse(fs.readFileSync(path.join(REPO, "src/sim/data/seed.json"), "utf8"));
+  const roleOf = Object.fromEntries((seed.tables.user_profiles || []).map((u) => [u.username, u.role]));
+  const rank = { pmo: 0, project_manager: 1, guest: 2 };
+  const ranks = uniq.map((u) => rank[roleOf[u]] ?? 9);
+  must(ranks.every((r, i) => i === 0 || r >= ranks[i - 1]), "users are not ordered PMO, managers, guests");
+  return `${uniq.length} users in role order`;
 });
 
 // Header: notifications drawer and global search; the assistant

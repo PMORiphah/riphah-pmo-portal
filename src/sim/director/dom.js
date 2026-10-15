@@ -131,10 +131,12 @@ export function settled({ quiet = 300, timeout = 8000, root = appRoot() } = {}) 
   });
 }
 
-/** Climbs from an element to its nearest ancestor at least `minWidth` px wide (a card or panel). */
-export function widen(el, minWidth) {
+/** Climbs from an element to its nearest ancestor at least `minWidth` px wide (a card or panel),
+ *  never past one taller than `maxHeight` (that would be the page, not the panel). */
+export function widen(el, minWidth, maxHeight = 360) {
   let n = el;
-  while (n && n.parentElement && n.getBoundingClientRect().width < minWidth) n = n.parentElement;
+  while (n && n.parentElement && n.getBoundingClientRect().width < minWidth
+    && n.parentElement.getBoundingClientRect().height <= maxHeight) n = n.parentElement;
   return n;
 }
 

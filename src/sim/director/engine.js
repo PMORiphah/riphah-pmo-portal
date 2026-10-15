@@ -196,7 +196,7 @@ export class Director {
     rec.rate = +this.narrator.rate.toFixed(3);
     rec.wpm = Math.round(this.narrator.wpm);
     this._set({ scene: i, sceneN: sc.n, chapter: ch ? ch.n : 0, short, note: "",
-      kicker: sc.kicker || (ch ? `${ch.title} · chapter ${ch.n} of ${this.chapters.length}` : "") });
+      kicker: sc.kicker || (ch ? `${ch.n}/${this.chapters.length} · ${ch.title}` : "") });
     for (let attempt = 0; attempt < 2; attempt++) {
       rec.tries = attempt + 1;
       const ctx = { signal, short, rec, line: null, scene: sc };
@@ -296,6 +296,7 @@ export class Director {
       if (this.state.lineId === id) this._set({ speaking: false });
       return r;
     });
+    line.p.catch(() => { /* aborted with the scene: whoever awaits it sees the abort */ });
     ctx.line = line;
     (ctx.rec.lines ||= []).push(id);
     await nextFrame();                       // speak first, act in the next frame
@@ -428,9 +429,11 @@ export class Director {
   async _tab(b, ctx) {
     const sel = D.attr("data-tab", b.tab);
     const el = await this._need(sel, ctx, `tab ${b.tab}`);
-    if (!D.isTabActive(el)) el.click();
-    await this._wait({ test: () => D.isTabActive(document.querySelector(sel)), label: `tab ${b.tab} selected` }, ctx);
+    if (D.isTabActive(el)) return;
+    el.click();
+    // The tab's own content is the proof it opened (its bold label eases in over a few hundred ms).
     if (b.ready) await this._wait({ wait: b.ready, text: b.text, count: b.count, min: b.min, label: b.label || `tab ${b.tab} ready` }, ctx);
+    else await this._wait({ test: () => D.isTabActive(document.querySelector(sel)), label: `tab ${b.tab} selected` }, ctx);
   }
 
   async _click(b, ctx) {
