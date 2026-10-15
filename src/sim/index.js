@@ -131,7 +131,8 @@ export async function start() {
     }
     if (items.length) addRows(store, "project_attachments", data.buildMediaRows(store, items));
 
-    const starters = starterList(narration);
+    // The narration is resolved as an array of lines; the starters live in the seed's meta.
+    const starters = starterList(narration) || (Array.isArray(store.meta?.starters) ? store.meta.starters : null);
     if (starters) sim.starters = starters;
 
     const B = await import("./backend.js");

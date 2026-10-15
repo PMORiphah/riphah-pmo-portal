@@ -144,7 +144,9 @@ export function buildScenes(meta = {}, cast = null) {
         // A plain click (element.click(): no hover, so no tooltip over the list).
         { click: '[data-kpi="budget_released"]', unless: () => hasText(q(list), "budget released"),
           then: { wait: list, text: ex(4, "listHeader", "projects") } },
-        { hold: 0.15 },
+        // The list opens below the flow; it is brought up only after "… million released" has been
+        // said, so on a short screen the card with the figure stays in view while it is spoken.
+        { hold: 1.3, short: 0.3 },
         { scroll: list, block: "start", force: true },
         { spot: [list] },
       ],

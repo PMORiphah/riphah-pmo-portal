@@ -128,7 +128,9 @@ let started = false;
  * (codes: no-nonce, used, timeout, invalid-*, protocol, too-many, too-large, count-mismatch).
  * onProgress({ phase: 'waiting' | 'media' | 'done', received, expect }) reports media as it arrives.
  */
-export function waitForCast({ timeoutMs = 10000, mediaIdleMs = 30000, totalMs = 180000, onProgress } = {}) {
+// mediaIdleMs / totalMs leave room for the PMO's real videos (up to 50 MB each, four prepared at a
+// time by the portal) on slow Wi-Fi: the idle timer restarts on every message.
+export function waitForCast({ timeoutMs = 10000, mediaIdleMs = 90000, totalMs = 600000, onProgress } = {}) {
   const sim = window.__PMO_SIM__;
   const nonce = sim && sim.ok ? sim.nonce : null;
   if (!nonce) return Promise.reject(new HandoffError("no-nonce", "No hand-over in the address"));

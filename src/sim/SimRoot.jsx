@@ -237,6 +237,7 @@ export default function SimRoot({ backend, narration, meta = {}, cast = null, mo
     director.stop();
     setMenu(false);
     setConfirm(false);
+    pausedForConfirm.current = false;
     setLeaving(false);
     try { backend?.reset?.(); } catch { /* ignore */ }
     try { window.__PMO_SIM__?.clock?.reset?.(); } catch { /* ignore */ }
@@ -252,7 +253,18 @@ export default function SimRoot({ backend, narration, meta = {}, cast = null, mo
     if (onExit) onExit(); else { try { window.close(); } catch { /* ignore */ } }
   }, [director, onExit]);
 
-  const askExit = useCallback(() => { setMenu(false); setConfirm(true); }, []);
+  // Asking to exit holds the run (voice and clock) until the presenter answers; "Keep presenting"
+  // resumes it only if the confirm was what paused it.
+  const pausedForConfirm = useRef(false);
+  const askExit = useCallback(() => {
+    setMenu(false);
+    if (director.state.phase === "running" && !director.paused) { director.pause(); pausedForConfirm.current = true; }
+    setConfirm(true);
+  }, [director]);
+  const cancelExit = useCallback(() => {
+    setConfirm(false);
+    if (pausedForConfirm.current) { pausedForConfirm.current = false; director.resume(); }
+  }, [director]);
 
   // Keys: trusted presses only (the director's own key presses are dispatched, never trusted).
   useEffect(() => {
@@ -262,7 +274,7 @@ export default function SimRoot({ backend, narration, meta = {}, cast = null, mo
       if (phase === "begin") return;
       const k = e.key;
       if (confirm) {
-        if (k === "Escape") { e.preventDefault(); e.stopPropagation(); setConfirm(false); }
+        if (k === "Escape") { e.preventDefault(); e.stopPropagation(); cancelExit(); }
         return;
       }
       // The Gallery's full-screen view listens for Escape and the arrows on window: leave them to it.
@@ -285,7 +297,7 @@ export default function SimRoot({ backend, narration, meta = {}, cast = null, mo
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [director, confirm, menu, restart, askExit]);
+  }, [director, confirm, menu, restart, askExit, cancelExit]);
 
   const badge = (mode === "sample" ? meta.sampleBadge : meta.badge)
     || (mode === "sample" ? "Simulation · sample names · fictional data · nothing is sent"
@@ -320,7 +332,7 @@ export default function SimRoot({ backend, narration, meta = {}, cast = null, mo
         <ClosingCard caption={st.caption} chapters={chapters} report={director.report}
           onChapter={(n) => director.chapter(n)} onRestart={restart} onExit={askExit} />
       )}
-      {confirm && <ConfirmExit onCancel={() => setConfirm(false)} onExit={exit} />}
+      {confirm && <ConfirmExit onCancel={cancelExit} onExit={exit} />}
       <Badge text={badge} />
     </>
   );
