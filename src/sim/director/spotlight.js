@@ -1,0 +1,112 @@
+// PMO Simulation director: the spotlight.
+//
+// One full-screen SVG above the App. A dim layer (about 45 %) is cut by a mask holding one rounded
+// hole per target, so several things can be lit at once (a row and its hover card, three manager
+// blocks). Each lit area also gets a gold ring. In ring mode there is no dim at all, only the rings:
+// for the Assign PM dialog and the Gallery picture, which sit below the dim layer's z-index.
+//
+// Targets are measured every frame (they move as pages scroll and animate) and the holes glide to
+// them, so the light follows rather than jumps. A target that is not on screen simply has no hole;
+// with no hole at all the dim fades out instead of darkening an empty page.
+import { all, visibleRect } from "./dom.js";
+
+const MAX = 10;                  // holes / rings drawn at most
+const EASE = 0.24;               // share of the remaining distance covered per 16 ms frame
+const DIM = "rgba(5, 13, 26, 0.45)";
+
+export class Spotlight {
+  constructor() {
+    this.targets = [];
+    this.opts = { mode: "off", pad: 8, radius: 12 };
+    this.cur = [];                 // [{ x, y, w, h, a }] as drawn
+    this.dimA = 0;                 // dim opacity as drawn
+    this.nodes = null;
+    this.raf = 0;
+    this.last = 0;
+    this._frame = this._frame.bind(this);
+  }
+
+  /** Called by the overlay with its SVG parts: { dim, holes:[rect], rings:[rect] }. */
+  attach(nodes) {
+    this.nodes = nodes;
+    if (nodes && !this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(this._frame); }
+    if (!nodes && this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
+  }
+
+  /**
+   * Lights the targets. targets: selectors, elements or functions (resolved every frame).
+   * opts.mode: "dim" (dim + holes + rings) | "ring" (rings only) | "off".
+   */
+  set(targets, opts = {}) {
+    this.targets = Array.isArray(targets) ? targets : targets ? [targets] : [];
+    this.opts = { mode: "dim", pad: 8, radius: 12, ...opts };
+    if (!this.targets.length && this.opts.mode !== "dim-all") this.opts.mode = "off";
+  }
+  clear() { this.targets = []; this.opts = { ...this.opts, mode: "off" }; }
+
+  /** The rectangles currently aimed at (for tests and the run report). */
+  aimed() { return this._measure(); }
+
+  _measure() {
+    const { pad } = this.opts;
+    const out = [];
+    for (const el of all(this.targets)) {
+      const r = visibleRect(el);
+      if (!r) continue;
+      out.push({ x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 });
+      if (out.length >= MAX) break;
+    }
+    return out;
+  }
+
+  _frame(now) {
+    this.raf = requestAnimationFrame(this._frame);
+    const n = this.nodes;
+    if (!n) return;
+    const dt = Math.min(64, now - this.last);
+    this.last = now;
+    const k = 1 - Math.pow(1 - EASE, dt / 16.7);
+    const mode = this.opts.mode;
+    const goal = mode === "off" ? [] : this._measure();
+
+    // Holes glide to their targets; a new hole opens from its target's centre; a dropped one closes.
+    const cur = this.cur;
+    for (let i = 0; i < Math.max(goal.length, cur.length); i++) {
+      const g = goal[i];
+      if (!cur[i]) cur[i] = g ? { x: g.x + g.w / 2, y: g.y + g.h / 2, w: 0, h: 0, a: 0 } : null;
+      const c = cur[i];
+      if (!c) continue;
+      if (g) {
+        c.x += (g.x - c.x) * k; c.y += (g.y - c.y) * k; c.w += (g.w - c.w) * k; c.h += (g.h - c.h) * k;
+        c.a += (1 - c.a) * k;
+      } else {
+        c.x += (c.w / 2) * k; c.y += (c.h / 2) * k; c.w -= c.w * k; c.h -= c.h * k; c.a -= c.a * k;
+      }
+    }
+    while (cur.length > goal.length && (!cur[cur.length - 1] || cur[cur.length - 1].a < 0.02)) cur.pop();
+
+    const dimGoal = mode === "dim" ? (goal.length ? 1 : 0) : mode === "dim-all" ? 1 : 0;
+    this.dimA += (dimGoal - this.dimA) * k;
+    n.dim.setAttribute("fill", DIM);
+    n.dim.style.opacity = this.dimA.toFixed(3);
+
+    const rr = this.opts.radius;
+    for (let i = 0; i < MAX; i++) {
+      const c = cur[i];
+      const hole = n.holes[i], ring = n.rings[i];
+      if (!c || c.w < 1 || c.h < 1) {
+        hole.setAttribute("width", "0"); hole.setAttribute("height", "0");
+        ring.setAttribute("width", "0"); ring.setAttribute("height", "0");
+        continue;
+      }
+      for (const el of [hole, ring]) {
+        el.setAttribute("x", c.x.toFixed(1)); el.setAttribute("y", c.y.toFixed(1));
+        el.setAttribute("width", c.w.toFixed(1)); el.setAttribute("height", c.h.toFixed(1));
+        el.setAttribute("rx", rr); el.setAttribute("ry", rr);
+      }
+      ring.style.opacity = (mode === "off" ? 0 : c.a).toFixed(3);
+    }
+  }
+}
+
+export const SPOT_MAX = MAX;

@@ -42,6 +42,7 @@ export const MSG = Object.freeze({
   NO_SIGNIN: "Sign-in is not available in the simulation.",
   NO_PASSWORD: "Passwords are not changed in the simulation.",
   ASK: "In the simulation the assistant answers from prepared questions only.",
+  NO_FILE: "This file is not part of the simulation.",
 });
 
 const BASE = (() => {
@@ -839,7 +840,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
       if (!["project-attachments", "epdd-files"].includes(bucket)) throw new SimError(400, "Bucket not found", { code: "404", error: "Bucket not found" });
       if (sign[2]) {
         const r = signedFor(bucket, decPath(sign[2]));
-        if (!r) throw new SimError(400, "Object not found", { code: "404", error: "not_found" });
+        if (!r) throw new SimError(400, MSG.NO_FILE, { code: "404", error: MSG.NO_FILE });
         seen("POST storage sign");
         return { status: 200, body: r };
       }
@@ -854,7 +855,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
     const obj = /^\/storage\/v1\/object\/(?:sign\/|public\/|authenticated\/)?([^/]+)\/(.+)$/.exec(path);
     if (obj && (method === "GET" || method === "HEAD")) {
       const r = signedFor(decodeURIComponent(obj[1]), decPath(obj[2]));
-      if (!r) throw new SimError(400, "Object not found", { code: "404", error: "not_found" });
+      if (!r) throw new SimError(400, MSG.NO_FILE, { code: "404", error: MSG.NO_FILE });
       seen("GET storage object");
       return { passthrough: new URL(r.signedURL, location.href).href };
     }
