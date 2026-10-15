@@ -103,8 +103,14 @@ export function useSpeech() {
     if (!synth) return;
     // Voices load asynchronously and the first getVoices() is often empty.
     const pick = () => {
-      const all = synth.getVoices() || [];
+      let all = synth.getVoices() || [];
       if (!all.length) return;
+      // In the PMO Simulation only on-device voices may speak (a network voice sends the text to
+      // Google or Microsoft); with none, Listen is not offered. The portal itself is unchanged.
+      if (typeof window !== "undefined" && window.__PMO_SIM__ && window.__PMO_SIM__.ok) {
+        all = all.filter((v) => v.localService === true && !/Google|Online/i.test(String(v.name || "")));
+        if (!all.length) { voice.current = null; setReady(false); return; }
+      }
       const en = all.filter((v) => /^en/i.test(v.lang));
       const pool = en.length ? en : all;
       voice.current = [...pool].sort((a, b) => score(b) - score(a))[0] || null;

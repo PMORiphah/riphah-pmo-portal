@@ -48,10 +48,37 @@ export class Spotlight {
   /** The rectangles currently aimed at (for tests and the run report). */
   aimed() { return this._measure(); }
 
+  /** The screen edges and the sidebar's right edge (measured at most every 500 ms). */
+  _bounds() {
+    const now = performance.now();
+    if (!this._b || now - this._b.t > 500) {
+      let sbRight = 0;
+      let sb = document.querySelector('[data-nav="cmd"]');
+      while (sb && sb.parentElement && sb.getBoundingClientRect().height < window.innerHeight - 4) sb = sb.parentElement;
+      if (sb && sb !== document.body && sb !== document.documentElement) {
+        const r = sb.getBoundingClientRect();
+        if (r.width > 40 && r.width <= 400 && r.left < 50) sbRight = r.right;
+      }
+      this._b = { t: now, sbRight, w: window.innerWidth, h: window.innerHeight };
+    }
+    return this._b;
+  }
+
   _measure() {
     const { pad } = this.opts;
     const out = [];
-    const add = (r) => { if (r && out.length < MAX) out.push({ x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 }); };
+    // Each lit area stays 4 px inside the screen, and a target in the page (right of the sidebar)
+    // never rings into the sidebar: a full-width row or a toolbar at the top edge is drawn whole.
+    const M = 4;
+    const add = (r) => {
+      if (!r || out.length >= MAX) return;
+      const B = this._bounds();
+      const minX = B.sbRight && r.left >= B.sbRight - 1 ? B.sbRight + M : M;
+      const x1 = Math.max(r.left - pad, minX), y1 = Math.max(r.top - pad, M);
+      const x2 = Math.min(r.left + r.width + pad, B.w - M), y2 = Math.min(r.top + r.height + pad, B.h - M);
+      if (x2 - x1 < 2 || y2 - y1 < 2) return;
+      out.push({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
+    };
     for (const t of this.targets) {
       // { union: target } lights everything it finds as one area (one hole, one ring).
       if (t && typeof t === "object" && !t.nodeType && "union" in t) {

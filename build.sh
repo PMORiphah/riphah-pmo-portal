@@ -25,4 +25,17 @@ if [ -z "$OUT" ]; then
   OUT=$(grep -oE "outDir:[[:space:]]*['\"][^'\"]+['\"]" "$CONFIG" | head -1 | sed -E "s/outDir:[[:space:]]*['\"]([^'\"]+)['\"]/\1/")
   OUT=${OUT:-dist}
 fi
-node scripts/sim/make-sim-html.mjs "$OUT"
+# The simulation is approved for /preview/ only (PMO, 15 Oct 2026): a production build does not get
+# simulation.html (and the portal hides the Simulation button outside /preview/, see SIM_ENABLED in
+# src/App.jsx). Once the PMO approves production, build with SIM_PROD=1 and change SIM_ENABLED too.
+BASE=$(grep -oE "base:[[:space:]]*['\"][^'\"]+['\"]" "$CONFIG" | head -1 | sed -E "s/base:[[:space:]]*['\"]([^'\"]+)['\"]/\1/")
+case "$BASE" in
+  */preview/) node scripts/sim/make-sim-html.mjs "$OUT" ;;
+  *)
+    if [ "${SIM_PROD:-}" = "1" ]; then
+      node scripts/sim/make-sim-html.mjs "$OUT"
+    else
+      rm -f "$OUT/simulation.html"
+      echo "build.sh: simulation.html not written for base ${BASE:-?} (preview only; SIM_PROD=1 overrides)"
+    fi ;;
+esac

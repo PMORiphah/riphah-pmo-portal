@@ -34,6 +34,7 @@ export function selfTest() {
   add("device", () => !("PushManager" in window) && !window.PublicKeyCredential && navigator.credentials === undefined
     && (!window.Notification || window.Notification.permission === "denied"));
   add("open", () => !isNative(window.open));
+  add("speech", () => !window.SpeechSynthesis || !isNative(SpeechSynthesis.prototype.speak));
   add("exports", () => typeof window.saveAs === "function");
   add("fonts", () => {
     const l = document.createElement("link");

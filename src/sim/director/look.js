@@ -38,7 +38,10 @@ export const CSS = `
 .sim-dir-btn:focus-visible { outline: 2px solid ${GOLD}; outline-offset: 2px; }
 .sim-dir-btn:disabled { cursor: not-allowed; opacity: .45; }
 .sim-dir-caption-text { transition: opacity .25s ease; }
-body.pmo-sim-run [data-tour="assistant-launcher"] { visibility: hidden !important; }
+/* The portal's own assistant launcher is out of the way during the run, but stays rendered: the
+   caption's avatar shares its SVG ids, and a hidden copy (visibility: hidden) leaves the visible
+   avatar without its eyes. */
+body.pmo-sim-run [data-tour="assistant-launcher"] { visibility: visible !important; opacity: 0 !important; pointer-events: none !important; }
 [data-sim-ui="sample-chip"] { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   [data-sim-ui] * { animation-duration: .01ms !important; transition-duration: .01ms !important; }

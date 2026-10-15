@@ -22,7 +22,7 @@
   'use strict';
   var W = window, D = document;
   var P = 'pmo-sim:';
-  var CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'none'; frame-src 'self'; child-src 'self'; object-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'self'"; // @sim-csp
+  var CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'none'; frame-src 'none'; child-src 'none'; object-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'self'"; // @sim-csp
   var fails = [];
   var checks = [];
   function check(name, ok, detail) { checks.push({ name: name, ok: !!ok, detail: detail || '' }); if (!ok) fails.push(name); }
@@ -121,12 +121,21 @@
   attempt('channels', function () {
     var NBC = W.BroadcastChannel;
     if (!NBC) { check('channels', true, 'none'); return; }
-    var SimBC = class BroadcastChannel extends NBC {
-      constructor(name) { name = String(name); super(name === HAND ? name : P + name); }
-    };
+    // A proxy, not a subclass: Object.getPrototypeOf(BroadcastChannel) and
+    // BroadcastChannel.prototype.constructor never lead back to the native constructor (which
+    // could open the real portal's 'pmo-session' channel).
+    var SimBC = new Proxy(NBC, {
+      apply: function () { throw new TypeError("Failed to construct 'BroadcastChannel': Please use the 'new' operator"); },
+      construct: function (t, args, nt) {
+        var name = String(args[0]);
+        return Reflect.construct(t, [name === HAND ? name : P + name], nt === SimBC ? t : nt);
+      },
+    });
+    try { Object.defineProperty(NBC.prototype, 'constructor', { value: SimBC, writable: true, configurable: true, enumerable: false }); } catch (e) { /* checked below */ }
     W.BroadcastChannel = SimBC;
     var probe = new W.BroadcastChannel('probe');
-    check('channels', probe.name === P + 'probe');
+    check('channels', probe.name === P + 'probe' && W.BroadcastChannel.prototype.constructor === SimBC
+      && Object.getPrototypeOf(W.BroadcastChannel) !== NBC);
     probe.close();
   });
   attempt('locks', function () {
@@ -180,6 +189,29 @@
     ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel'].forEach(function (k) { try { delete W[k]; } catch (e) { /* ignore */ } });
     check('device', !('PushManager' in W) && !W.PublicKeyCredential && navigator.credentials === undefined
       && W.Notification.permission === 'denied');
+  });
+
+  // Speech: on-device voices only (PMO decision 2, 14 Oct 2026). A network voice (Chrome's
+  // "Google ...", Edge's "... Online (Natural)") sends the spoken text to Google or Microsoft, outside
+  // this page's policy. An utterance with no voice set could be given one by the browser, so it is
+  // refused too. The director always sets an eligible voice; the assistant's Listen picks one in
+  // src/speech.js, and anything else ends here with an error event and a toast.
+  var NET_VOICE = /Google|Online/i;
+  function voiceOk(v) { return !!v && v.localService === true && !NET_VOICE.test(String(v.name || '')); }
+  attempt('speech', function () {
+    if (!W.SpeechSynthesis || !SpeechSynthesis.prototype.speak) { check('speech', true, 'none'); return; }
+    var SS = SpeechSynthesis.prototype, nativeSpeak = SS.speak;
+    SS.speak = function speak(u) {
+      var v = null;
+      try { v = u && u.voice; } catch (e) { v = null; }
+      if (voiceOk(v)) return nativeSpeak.call(this, u);
+      toast('Only on-device voices are used in the simulation');
+      setTimeout(function () {
+        try { u.dispatchEvent(new SpeechSynthesisErrorEvent('error', { utterance: u, error: 'not-allowed' })); }
+        catch (e) { try { if (u && typeof u.onerror === 'function') u.onerror({ type: 'error', error: 'not-allowed', utterance: u }); } catch (e2) { /* ignore */ } }
+      }, 0);
+    };
+    check('speech', SS.speak !== nativeSpeak);
   });
 
   // ── (e) clock: Thu 15 Oct 2026 10:30 PKT (05:30Z), advancing normally ─────────────────────────
@@ -351,9 +383,15 @@
     }, true);
     W.addEventListener('keydown', function (e) {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); toast(NA); }
-      // A reload from the keyboard goes ahead without the leave-page prompt (Chrome asks
-      // beforeunload before it fires 'navigate' for a reload it starts itself).
-      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'r' || e.key === 'R'))) reloading = true;
+      // A reload would drop the names and photos (they live only in this page's memory). While the
+      // simulation holds them (guard.holdReload, set by the director), F5 / Ctrl+R / Shift+F5, which a
+      // presentation clicker can send by mistake, are refused with a toast. Otherwise a reload from the
+      // keyboard goes ahead without the leave-page prompt (Chrome asks beforeunload before it fires
+      // 'navigate' for a reload it starts itself).
+      if (e.key === 'F5' || e.key === 'BrowserRefresh' || ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'r' || e.key === 'R'))) {
+        if (holdReload && !allowUnload) { e.preventDefault(); e.stopImmediatePropagation(); toast('Reload is off during the simulation: it would lose the names. Use Restart (Home) instead.'); }
+        else reloading = true;
+      }
     }, true);
     // A form nothing else handled would leave the page (the policy refuses it anyway): stop it here.
     W.addEventListener('submit', function (e) { if (!e.defaultPrevented) { e.preventDefault(); toast(NA); } });
@@ -412,16 +450,45 @@
     check('open', W.open !== nativeOpen);
   });
 
-  // Navigation: only same-document changes and reloads; everything else stays on this page.
-  var allowUnload = false, reloading = false;
+  // Navigation: only reloads and same-document changes that keep this page's own path; everything
+  // else stays on this page. A same-document change to another path (history.pushState /
+  // replaceState to the portal's address) is refused too: a reload after it would load the real
+  // portal in this tab.
+  var allowUnload = false, reloading = false, holdReload = false;
+  var SIM_PATH = location.pathname;
+  function samePath(url) {
+    try { return new URL(String(url), location.href).pathname === SIM_PATH && new URL(String(url), location.href).origin === location.origin; }
+    catch (e) { return false; }
+  }
+  attempt('history', function () {
+    var HP = History.prototype, push = HP.pushState, repl = HP.replaceState;
+    HP.pushState = function (st, t, url) {
+      if (url != null && !samePath(url)) { toast(NA); return; }
+      return push.apply(this, arguments);
+    };
+    HP.replaceState = function (st, t, url) {
+      if (url != null && !samePath(url)) { toast(NA); return; }
+      return repl.apply(this, arguments);
+    };
+    check('history', HP.pushState !== push && HP.replaceState !== repl);
+  });
   attempt('navigation', function () {
     var nav = W.navigation;
     if (nav && nav.addEventListener) {
       nav.addEventListener('navigate', function (e) {
         if (allowUnload) return;
-        if (e.navigationType === 'reload') { reloading = true; return; }
-        if (e.hashChange || (e.destination && e.destination.sameDocument)) return;
+        if (e.navigationType === 'reload') {
+          // A reload started by code (the portal reloads once when a page chunk is missing) would
+          // drop the names: refused while the simulation holds them.
+          if (holdReload && e.cancelable) { e.preventDefault(); toast(NA); return; }
+          reloading = true; return;
+        }
         var dest = e.destination ? e.destination.url : '';
+        if (e.hashChange || (e.destination && e.destination.sameDocument)) {
+          if (samePath(dest)) return;
+          if (e.cancelable) { e.preventDefault(); toast(NA); }
+          return;
+        }
         if (e.downloadRequest != null) {
           if (classify(dest) === 'sim-file') return;
           if (e.cancelable) { e.preventDefault(); toast(EXPORTS); }
@@ -596,6 +663,9 @@
       isProtected: isProtected,
       classify: classify,
       allowUnload: function () { allowUnload = true; },
+      // On while the simulation holds the names (Begin screen, run, closing card): keyboard reloads
+      // are refused, and a reload from the browser asks first.
+      holdReload: function (on) { holdReload = !!on; if (on) reloading = false; },
       NOT_AVAILABLE: NA,
       EXPORTS_BLOCKED: EXPORTS,
     }),

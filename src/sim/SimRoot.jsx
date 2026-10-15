@@ -87,6 +87,70 @@ async function portalReady(meta, alive) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+// Files and prints (PMO decision 15 Oct 2026, plan §5a rule 7): real project-manager names become
+// "Project manager (simulation)" in anything printed or saved as PDF (Ctrl+P, the Board report's Save
+// as PDF). Campus and PMO-team names stay. The page's text is swapped just before printing and put
+// back after; a text node the App redrew meanwhile is left as the App drew it.
+export const PRINT_PM = "Project manager (simulation)";
+export function pmNamesOf(cast) {
+  const clean = (n) => String(n || "").replace(/\s+/g, " ").trim();
+  // A short form that is also a word of a campus or PMO-team name (a shared first name) is left out,
+  // so a team member or a campus is never half-replaced; the full name still is.
+  const words = new Set([...Object.values(cast?.team || {}).map((t) => (t && typeof t === "object" ? t.name : t)),
+    ...Object.values(cast?.campuses || {}).map((c) => c?.name)].flatMap((n) => clean(n).toLowerCase().split(" ")));
+  const out = new Set();
+  for (const p of Object.values(cast?.pms || {})) {
+    const full = clean(p?.name), short = clean(p?.short);
+    if (full.replace(/[^\p{L}]/gu, "").length >= 2) out.add(full);
+    if (short && short.replace(/[^\p{L}]/gu, "").length >= 2 && !(short.indexOf(" ") < 0 && words.has(short.toLowerCase()))) out.add(short);
+  }
+  return [...out].sort((a, b) => b.length - a.length);
+}
+export function pmNameRegex(names) {
+  if (!names.length) return null;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s+");
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${names.map(esc).join("|")})(?![\\p{L}\\p{N}])`, "giu");
+}
+function usePrintNames(cast, mode) {
+  useEffect(() => {
+    if (mode !== "cast") return undefined;
+    const re = pmNameRegex(pmNamesOf(cast));
+    if (!re) return undefined;
+    let swapped = [];
+    const before = () => {
+      if (swapped.length) return;
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const v = n.nodeValue;
+        if (!v || v.length < 2) continue;
+        re.lastIndex = 0;
+        if (!re.test(v)) continue;
+        re.lastIndex = 0;
+        const nv = v.replace(re, PRINT_PM);
+        swapped.push([n, v, nv]);
+        n.nodeValue = nv;
+      }
+      // Attributes a print can show (an image's alt text, a tooltip title) are left alone: no
+      // print stylesheet prints them.
+    };
+    const after = () => {
+      for (const [n, v, nv] of swapped) { if (n.isConnected && n.nodeValue === nv) n.nodeValue = v; }
+      swapped = [];
+    };
+    const mq = window.matchMedia ? window.matchMedia("print") : null;
+    const onMq = (e) => { if (e.matches) before(); else after(); };
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
+    try { mq?.addEventListener("change", onMq); } catch { /* old engines */ }
+    return () => {
+      window.removeEventListener("beforeprint", before);
+      window.removeEventListener("afterprint", after);
+      try { mq?.removeEventListener("change", onMq); } catch { /* ignore */ }
+      after();
+    };
+  }, [cast, mode]);
+}
+
 /** Decodes every handed-over picture now, so the Gallery never waits for one. */
 async function decodeMedia(backend) {
   let urls = [];
@@ -105,6 +169,14 @@ async function decodeMedia(backend) {
 
 export default function SimRoot({ backend, narration, meta = {}, cast = null, mode = "cast", onExit }) {
   useDirectorStyles();
+  usePrintNames(cast, mode);
+  // While this page holds the names and photos, a reload (F5, a clicker's slideshow key, a reload
+  // started by code) is refused: it would lose them (public/sim-boot.js).
+  useEffect(() => {
+    const g = window.__PMO_SIM__?.guard;
+    try { g?.holdReload?.(true); } catch { /* ignore */ }
+    return () => { try { g?.holdReload?.(false); } catch { /* ignore */ } };
+  }, []);
   const lines = Array.isArray(narration) ? narration : (narration?.lines || []);
   const chapters = meta.chapters || narration?.meta?.chapters || [];
 

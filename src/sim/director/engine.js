@@ -46,6 +46,7 @@ export class Director {
     this.hovered = null;
     this.cutTimer = 0;
     this.report = null;
+    this.target = null;            // the scene a jump is heading for, until it starts
     this.state = { phase: "begin", scene: -1, sceneN: 0, chapter: 0, caption: "", kicker: "", speaking: false,
       mini: false, short: false, paused: false, note: "", busy: false };
   }
@@ -93,8 +94,11 @@ export class Director {
   }
   togglePause() { if (this.paused) this.resume(); else this.pause(); }
 
-  next() { if (this.state.phase !== "begin") this.jumpTo(Math.min(this.state.scene + 1, this.scenes.length - 1)); }
-  prev() { if (this.state.phase !== "begin") this.jumpTo(Math.max(0, this.state.scene - 1)); }
+  // Counted from a jump still being set up (Next pressed several times in a row moves that many
+  // scenes), else from the scene on screen.
+  _base() { return this.target != null ? this.target : this.state.scene; }
+  next() { if (this.state.phase !== "begin") this.jumpTo(Math.min(this._base() + 1, this.scenes.length - 1)); }
+  prev() { if (this.state.phase !== "begin") this.jumpTo(Math.max(0, this._base() - 1)); }
   chapter(n) {
     const ch = this.chapters.find((c) => c.n === n);
     if (!ch) return;
@@ -106,6 +110,7 @@ export class Director {
   jumpTo(i) {
     if (!this.report) this._newReport();
     i = Math.max(0, Math.min(this.scenes.length - 1, i));
+    this.target = i;
     this._abort();
     this.narrator.cancel();
     const snap = this.snaps.get(i);
@@ -123,6 +128,7 @@ export class Director {
   /** Stops everything (Restart and Exit). */
   stop() {
     this._abort();
+    this.target = null;
     this.epoch = null;
     this.narrator.cancel();
     clearInterval(this.cutTimer);
@@ -203,6 +209,7 @@ export class Director {
     rec.short = short;
     rec.rate = +this.narrator.rate.toFixed(3);
     rec.wpm = Math.round(this.narrator.wpm);
+    if (this.target === i) this.target = null;
     this._set({ scene: i, sceneN: sc.n, chapter: ch ? ch.n : 0, short,
       kicker: sc.kicker || (ch ? `${ch.n}/${this.chapters.length} · ${ch.title}` : "") });
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -246,10 +253,16 @@ export class Director {
     const rec = { n: sc.n, start: r2(this.clock.now()), waits: [], notes: cut ? ["hard cut"] : [], tries: 1 };
     this.spot.clear();
     if (this.hovered) { D.unhover(this.hovered); this.hovered = null; }
+    if (this.target === k) this.target = null;
     const short = cut ? true : this._govern(k);
     rec.short = short;
     const ch = this.chapterOf(sc.n);
     this._set({ phase: "closing", scene: k, sceneN: sc.n, chapter: ch ? ch.n : 0, mini: false, paused: false });
+    // The closing line must also end inside the limit: when it would not (presenter pauses late in
+    // the run), its caption shows without being spoken, as after the hard cut.
+    const L0 = this.lines.get((sc.lines || [])[0]);
+    const need = L0 ? Math.max(this._hold(L0, short), this.narrator.estimate(countWords(this._text(L0, short).speech))) : 0;
+    if (!cut && this.clock.now() + need > CUT_AT) { cut = true; rec.notes.push("closing line shown, not spoken (time)"); }
     if (!cut) {
       const ctx = { signal, short, rec, line: null, scene: sc };
       await this._steps(sc.beats || [], ctx, false);

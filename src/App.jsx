@@ -389,6 +389,11 @@ function SidebarTourButton({ T }) {
   );
 }
 
+// PMO Simulation: approved for /preview/ only (PMO, 15 Oct 2026). The button shows only in the
+// preview build; build.sh writes simulation.html only for the preview build (SIM_PROD=1 overrides
+// it once the PMO approves production). Change both together.
+const SIM_ENABLED = /\/preview\/$/.test(import.meta.env.BASE_URL || "");
+
 // PMO Simulation (PMO, desktop only): the launcher window, loaded only when opened. After a
 // deploy an open tab may ask for a file that no longer exists: reload once, like CampusCompare.
 const SimLauncher = lazy(() => import("./SimLauncher.jsx").catch(() => {
@@ -656,7 +661,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
         {(session?.role === "guest" || session?.role === "project_manager") && !mini && !isCompact && (
           <SidebarTourButton T={T} />
         )}
-        {session?.role === "pmo" && !mini && !isCompact && (
+        {SIM_ENABLED && session?.role === "pmo" && !mini && !isCompact && (
           <SidebarSimButton T={T} session={session} />
         )}
       </div>
@@ -6462,7 +6467,7 @@ function PerformancePage({ T, session, onSelectProject }) {
     setLoading(true); setErr(null);
     try {
       const data = await supa(
-        "/rest/v1/project_metrics?select=code,name,workflow_stage,priority,is_carry_forward," +
+        "/rest/v1/project_metrics?select=id,code,name,workflow_stage,priority,is_carry_forward," +
         "pct_complete,bac,amount_released,earned_value,planned_value,time_elapsed_fraction," +
         "cpi,spi,eac,cost_variance,schedule_variance,schedule_flag,budget_flag,start_date,end_date" +
         "&workflow_stage=in.(approved,closed)&order=code.asc",
