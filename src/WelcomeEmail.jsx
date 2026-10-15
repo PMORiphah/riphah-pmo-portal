@@ -20,7 +20,11 @@ import { composeWelcome } from "../supabase/functions/send-welcome-email/email.t
 // `welcome_email` ({cc: [...], password}), never in this public code.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const PORTAL = "https://pmoriphah.github.io/riphah-pmo-portal/";
+// In the PMO Simulation (simulation.html, window.__PMO_SIM__ set by public/sim-boot.js) the preview
+// must show nothing real: no link to the production portal and the simulation's own screenshots
+// (public/sim/files/email/) instead of public/email/. In the portal both are exactly as before.
+const IN_SIM = typeof window !== "undefined" && !!(window.__PMO_SIM__ && window.__PMO_SIM__.ok);
+const PORTAL = IN_SIM ? "#" : "https://pmoriphah.github.io/riphah-pmo-portal/";
 const when = (s) => new Date(s).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Asia/Karachi" });
 
 export function WelcomeEmailModal({ T, session, supa, users, assignCount, initialUserId, onClose, isMobile }) {
@@ -84,7 +88,7 @@ export function WelcomeEmailModal({ T, session, supa, users, assignCount, initia
     return () => { live = false; };
   }, [uid, supa, session.access_token]);
 
-  const imgBase = useMemo(() => new URL(import.meta.env.BASE_URL || "/", window.location.origin).href, []);
+  const imgBase = useMemo(() => new URL((import.meta.env.BASE_URL || "/") + (IN_SIM ? "sim/files/" : ""), window.location.origin).href, []);
   const email = useMemo(() => person ? composeWelcome({
     name: person.full_name || person.username, username: person.username, projects: data.projects,
     past: data.past, password: withPw ? pw : null, note, imgBase, portalUrl: PORTAL,

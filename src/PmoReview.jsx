@@ -5,6 +5,7 @@ import { ClipboardCheck, Search, ArrowLeft, ExternalLink, RefreshCw, FileText, P
          ShieldCheck, Sparkles, Printer, FolderPlus, FolderKanban } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
+import { storageUrl } from "./storageUrl.js";
 
 // Always run epdd-sync in Singapore, like the 5-minute pg_cron run. Called from the
 // browser it would run in the region nearest the PMO (Mumbai), where the E-PDD
@@ -24,7 +25,7 @@ const EPDD_SYNC = "/functions/v1/epdd-sync?forceFunctionRegion=ap-southeast-1";
    the epdd-files bucket).
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const SUPA_URL = "https://prmxkecomqqngvrmytcj.supabase.co";
+// Signed file links are built by storageUrl() (./storageUrl.js), the one place that adds /storage/v1.
 
 const fmtM = (n) => {
   const v = parseFloat(n);
@@ -495,7 +496,7 @@ function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack
       const res = await supa(`/storage/v1/object/sign/epdd-files/${encodeStoragePath(f.storage_path)}`,
         { method:"POST", body: JSON.stringify({ expiresIn: 120 }) }, session.access_token);
       if (!res.signedURL) throw new Error("Could not create a link for this file");
-      let url = SUPA_URL + "/storage/v1" + res.signedURL;
+      let url = storageUrl(res.signedURL);
       if (download) url += (url.includes("?") ? "&" : "?") + "download=" + encodeURIComponent(f.file_name);
       if (w) w.location.href = url; else window.location.href = url;
     } catch (e) { if (w) w.close(); setFileErr(e.message); }
@@ -516,7 +517,7 @@ function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack
       const res = await supa(`/storage/v1/object/sign/epdd-files/${encodeStoragePath(f.storage_path)}`,
         { method:"POST", body: JSON.stringify({ expiresIn: 120 }) }, session.access_token);
       if (!res.signedURL) throw new Error("Could not create a link for the charter");
-      const html = await (await fetch(SUPA_URL + "/storage/v1" + res.signedURL)).text();
+      const html = await (await fetch(storageUrl(res.signedURL))).text();
       if (!w) throw new Error("Allow pop-ups to print the charter");
       // Its images and styles live on the E-PDD portal; the base tag points them there.
       w.document.open();

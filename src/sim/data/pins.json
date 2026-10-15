@@ -1,0 +1,56 @@
+{
+ "v": 1,
+ "pinnedAt": "2026-10-15",
+ "note": "Production row ids only (no names). Slots follow the alphabetical order of the real names on the pinning date. At launch the portal reads each pinned row's current name under the PMO's session; a pin that no longer resolves locks the simulation.",
+ "campuses": {
+  "C01": "1d793ead-53f7-44a7-acb0-d316d114857f",
+  "C02": "832ec8e8-f9d6-4a08-82bf-598907d644f2",
+  "C03": "8d629430-7668-40bc-8376-c0902c328990",
+  "C04": "5dd9f279-8e82-421c-a453-d6da4c2c652f",
+  "C05": "28ee8a16-eb05-493a-afb6-518438182919",
+  "C06": "a8ad2d02-bf6b-46ec-b76d-f4de96c8d297",
+  "C07": "461268a0-0584-4700-834e-086b7fd8f3f2",
+  "C08": "19b1ab00-584c-4ae5-a8ec-3bc5448a71e3",
+  "C09": "48bb3fb1-02c8-407f-a924-d2220b2ed377",
+  "C10": "e8cc6ef2-dea7-480e-a0c8-ff2d5648b3c3",
+  "C11": "3cc428da-aac9-4736-8859-5ca7ce35da51",
+  "C12": "0aec5251-4677-4791-8da2-86c3c3e89b50"
+ },
+ "pms": {
+  "P01": "237ff7af-060a-4dc7-9370-e3708d01b88f",
+  "P02": "ae480980-efaa-42bd-8827-e076a04fcf3e",
+  "P03": "43c1a866-325e-4bbf-88cc-37f583146695",
+  "P04": "12f13717-f79e-4a38-84de-bb46ccb2cc26",
+  "P05": "30b2a556-4a6e-4cab-918f-e832fa76e43b",
+  "P06": "840c69e7-00eb-4ea1-af81-14a8aee7ae5d",
+  "P07": "55a7a2b9-a2e8-49c5-9105-cda818d4999e",
+  "P08": "2e5091db-d422-422b-8ef7-95e810e95b33",
+  "P09": "bc66719a-d0ea-4714-bb4f-dc79b566e3e6",
+  "P10": "66235e4f-388d-4fcb-9f12-a0893c88ca2d",
+  "P11": "7faef9d2-d8e1-4e5d-9a65-8e25f46db064",
+  "P12": "e8855352-e0a2-4b7c-a343-3481df20581e",
+  "P13": "30780403-1d71-4d93-b88a-c2b30e1adc19"
+ },
+ "pmRoles": { "P13": "guest" },
+ "storyPm": "P12",
+ "storyCampus": "C01",
+ "hosts": {
+  "f6102a12-7881-43cd-8b83-00290ad1d315": { "host": "H1", "campusSlot": "C01", "excludeByDefault": false },
+  "ccdbbe0c-58b7-48b3-b09c-bd5a3e9b3251": { "host": "H1", "campusSlot": "C01", "excludeByDefault": false },
+  "10a58a26-6685-49d2-952c-8224656ff1d6": { "host": "H2", "campusSlot": "C01", "excludeByDefault": false },
+  "b93d262f-3fb4-4617-bdc8-1b38addc93b5": { "host": "H3", "campusSlot": "C07", "excludeByDefault": false },
+  "bf328381-c820-4ab2-b243-cbfbb608a4b0": { "host": "H4", "campusSlot": "C07", "excludeByDefault": false },
+  "c2ce7fc0-80d1-42c2-b4dd-995a3567d585": { "host": "H5", "campusSlot": "C08", "excludeByDefault": false },
+  "f83a40dc-a53a-4980-9214-4d37d87e60fc": { "host": "H6", "campusSlot": "C03", "excludeByDefault": true, "why": "screen captures" },
+  "0680e717-2b82-46ba-b687-c6ad0997b680": { "host": "H7", "campusSlot": "C12", "excludeByDefault": true, "why": "investment project media" }
+ },
+ "teamKeys": ["head_pmo", "manager_pmo", "deputy_pmo", "exec_pmo", "po1", "po2"],
+ "teamAccounts": {
+  "head_pmo": "d4ca3099-be65-47f2-92be-73e853c158b6",
+  "manager_pmo": null,
+  "deputy_pmo": "30780403-1d71-4d93-b88a-c2b30e1adc19",
+  "exec_pmo": "c64198a1-f658-4340-96ef-3effbb2c340f",
+  "po1": "dbab464f-e108-4ce0-bf30-f2c4c078c668",
+  "po2": "846b94b9-336f-4814-96bb-6ebd2749ae2f"
+ }
+}

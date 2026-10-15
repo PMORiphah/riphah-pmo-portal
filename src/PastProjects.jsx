@@ -783,7 +783,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
     outline:"none", width:"100%", boxSizing:"border-box" };
 
   return (
-    <div style={{ maxWidth:820 }}>
+    <div data-tour="past-thread" style={{ maxWidth:820 }}>
       {/* Why it is still open — PMO's field. A PM reads it and answers below. */}
       <div style={{ marginBottom:SP.lg }}>
         <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:6 }}>
@@ -1690,7 +1690,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               onRead={refreshUnread} />
           ) : (<>
           {/* Summary strip — PMO only; a project manager sees just their own projects. */}
-          {seeAll && <div style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
+          {seeAll && <div data-tour="past-cards" style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
             gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(5, minmax(0,1fr))" }}>
             {[
               { k:"Still open",       v:totals.openCount, sub:`${totals.old} open over a year`, c:DATA.danger, Icon:History },
@@ -1778,7 +1778,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                 {pms.map(n => <option key={n} value={n}>{n}</option>)}
               </Select>
             )}
-            <button type="button" className="pmo-focusable pmo-btn" aria-pressed={onlyUnread}
+            <button type="button" className="pmo-focusable pmo-btn" aria-pressed={onlyUnread} data-tour="past-unread"
               disabled={!unreadProjects}
               title={unreadProjects ? "Only projects with messages you haven't read" : "No unread messages"}
               onClick={() => setOnlyUnread(v => !v)}
@@ -1874,7 +1874,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                       const meta = [groupBy !== "campus" && r.campus, groupBy !== "pm" && (r.pm_name || "No project manager"),
                                     groupBy !== "fy" && r.fiscal_year].filter(Boolean);
                       return (
-                        <div key={r.id} {...on} onClick={() => setOpenId(r.id)}
+                        <div key={r.id} data-past={r.id} {...on} onClick={() => setOpenId(r.id)}
                           className="past-row" style={{ animationDelay:`${Math.min(i,8)*40 + gi*60}ms`,
                             position:"relative", overflow:"hidden", cursor:"pointer",
                             display:"flex", alignItems:"stretch", gap:SP.md,

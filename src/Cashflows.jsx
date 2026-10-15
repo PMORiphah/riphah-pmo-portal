@@ -74,7 +74,7 @@ const axisStyle = (T) => ({ fontSize: 10.5, fontFamily: TYPE.body.fontFamily, fi
    page has no use for: proximity lift + cursor light on the same node, a
    sheen sweep on hover, an icon micro-animation, a hover insight, and a
    real count-up rather than a number that just appears. */
-function StatTile({ T, label, value, sub, colour, Icon, insight, index = 0, iconAnim = "pmo-ico-glow" }) {
+function StatTile({ T, label, value, sub, colour, Icon, insight, index = 0, iconAnim = "pmo-ico-glow", hook }) {
   const [hover, setHover] = useState(false);
   const cl = useCursorLight(true);
   const nearRef = useNear();
@@ -82,7 +82,7 @@ function StatTile({ T, label, value, sub, colour, Icon, insight, index = 0, icon
   const c = colour || BRAND.blue;
 
   const body = (
-    <div
+    <div data-tour={hook}
       ref={(n) => { cl.ref.current = n; nearRef.current = n; }}
       onMouseMove={cl.onMouseMove}
       onMouseEnter={() => setHover(true)}
@@ -350,7 +350,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
                 + (Math.abs(unphased) >= 50000
                     ? `; PKR ${fmtM(Math.abs(unphased))} ${unphased > 0 ? "is not yet phased into months" : "more is phased than the portfolio total"}.`
                     : ".")} />
-          <StatTile T={T} index={1} label="of which PMDC" value={`PKR ${fmtM(totals.pmdc)}`}
+          <StatTile T={T} index={1} hook="cf-pmdc" label="of which PMDC" value={`PKR ${fmtM(totals.pmdc)}`}
             sub={`${pctPmdc.toFixed(1)}% of CAPEX`} colour={DATA.warning} Icon={Layers}
             iconAnim="pmo-ico-shift"
             insight="Counted inside the CAPEX total above, and broken out here because it concentrates in a handful of months rather than running across the year." />
@@ -396,7 +396,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
 
         {/* ── Monthly profile ──────────────────────────────────────────── */}
         <Reveal>
-        <Section T={T} tone={BRAND.blue} pad={SP.lg}>
+        <Section T={T} tone={BRAND.blue} pad={SP.lg} data-tour="cf-monthly">
           <SectionTitle T={T} icon={BarChart3} title="Monthly cashflow profile"
             sub="Planned spend by month, with the running cumulative across the fiscal year" />
           <div style={{ height: isCompact ? 250 : 300 }}>

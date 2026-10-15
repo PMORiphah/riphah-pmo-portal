@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment, lazy, Suspense } from "react";
 import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
+import { storageUrl } from "./storageUrl.js";
 import { PhotoWallPage } from "./PhotoWall.jsx";
 import { RiskRegisterPage, ProjectRisksPanel } from "./RiskRegister.jsx";
 import { ProjectLessonsPanel } from "./LessonsLearned.jsx";
@@ -37,7 +38,7 @@ import {
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
   Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
-  PackageCheck, FileBarChart,
+  PackageCheck, FileBarChart, MonitorPlay,
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -388,6 +389,34 @@ function SidebarTourButton({ T }) {
   );
 }
 
+// PMO Simulation (PMO, desktop only): the launcher window, loaded only when opened. After a
+// deploy an open tab may ask for a file that no longer exists: reload once, like CampusCompare.
+const SimLauncher = lazy(() => import("./SimLauncher.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch { /* ignore */ }
+  return { SimLauncher: () => null };
+}).then(m => ({ default: m.SimLauncher })));
+
+// Same place and look as Take the tour, which the PMO does not have.
+function SidebarSimButton({ T, session }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="pmo-focusable" data-tour="sim-launch"
+        title="Present the portal on fictional data" style={{
+        width:"100%", marginTop:7, padding:"8px 12px", borderRadius:R.sm, cursor:"pointer",
+        background:"transparent", border:`1px solid ${T.sidebarBorder}`,
+        color:T.sidebarFg, fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+        display:"flex", alignItems:"center", justifyContent:"center", gap:7,
+      }}><MonitorPlay size={12} /> Simulation</button>
+      {open && (
+        <Suspense fallback={null}>
+          <SimLauncher T={T} session={session} supa={supa} onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
+    </>
+  );
+}
+
 function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false, reportsNew = 0, onChangePassword,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
                   fyLabel = "FY 2026-27", navStats = null }) {
@@ -422,7 +451,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
     // so hovering navigation tells you something rather than restating the label.
     const stat = navStats?.[id] || null;
     const row = (
-      <div
+      <div data-nav={id}
         onClick={() => { setPage(id); if (isCompact) setMobileOpen(false); }}
         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
         role="button" tabIndex={0}
@@ -626,6 +655,9 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
             card and the offer-effect below. */}
         {(session?.role === "guest" || session?.role === "project_manager") && !mini && !isCompact && (
           <SidebarTourButton T={T} />
+        )}
+        {session?.role === "pmo" && !mini && !isCompact && (
+          <SidebarSimButton T={T} session={session} />
         )}
       </div>
 
@@ -1262,6 +1294,9 @@ function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlert
 // Figures the PMO publishes from outside the plan (all 272 SU proposals), so a
 // typed value there is the intended one, not drift from the data.
 const PUBLISHED_ONLY_KPIS = new Set(["su_requested", "budget_reduction"]);
+// data-kpi hook names for the simulation director (attribute only; no behaviour).
+const KPI_HOOK = { approved_projects:"approved", budgeted_projects:"budgeted", non_budgeted_projects:"non_budgeted" };
+
 function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false, trendPoints = null, liveValue, liveSub }) {
   const vpK = useViewport();
   const [editing, setEditing] = useState(false);
@@ -1353,7 +1388,7 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
   const valSize = long > 9 ? "metricSm" : long > 6 ? "metric" : "metricXL";
 
   return (
-    <div
+    <div data-kpi={KPI_HOOK[kpiKey] || kpiKey}
       className={onCardClick && !editing ? "pmo-in pmo-lift" : "pmo-in"}
       style={{ animationDelay:(160 + index*55)+"ms",
         flex: vpK.isCompact ? "0 0 auto" : (featured ? 1.22 : 1),
@@ -1962,7 +1997,7 @@ function ApprovalPipeline({ T, d, activeCard, onPick, isCompact }) {
           const dim = activeCard && !on;
           return (
             <button className="pmo-focusable pmo-btn"
-              key={st.key} onClick={() => onPick(st.key)}
+              key={st.key} data-stage={st.key} onClick={() => onPick(st.key)}
               className="pmo-focusable"
               title={`${st.label} — ${st.value} project${st.value === 1 ? "" : "s"} (${pct.toFixed(1)}%)`}
               style={{
@@ -3069,7 +3104,7 @@ function DashProjectList({ T, projects, tab, activeCard, onSelectProject }) {
           </thead>
           <tbody>
             {ordered.map((p, i) => (
-              <tr key={p.id}
+              <tr key={p.id} data-project-id={p.id}
                 onClick={() => onSelectProject && onSelectProject(p.id)}
                 style={{ cursor:"pointer", transition:"background .12s" }}
                 onMouseEnter={e => e.currentTarget.style.background = T.border+"50"}
@@ -3614,7 +3649,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       )}
 
       {/* ── PROJECT LIST ── (§13 target for the causality pulse) */}
-      <div id="dash-project-list" data-filter-target>
+      <div id="dash-project-list" data-tour="dash-list" data-filter-target>
         {showList && activeTab === "budgeting" && activeCard === "carry_forward" && (
           <CarryForwardList T={T} session={session} />
         )}
@@ -4991,6 +5026,7 @@ function ProjectsPage({ T, session, onSelectProject,
       }}>
         <Input T={T} icon={Search} value={search} onChange={e => setSearch(e.target.value)}
           onClear={() => setSearch("")} placeholder="Search name or project ID…"
+          data-tour="projects-search"
           style={{ flex:"1 1 210px", maxWidth:280 }} />
 
         {vpP.isCompact && (
@@ -5227,7 +5263,7 @@ function ProjectsPage({ T, session, onSelectProject,
                 const pClr = PRIORITY_META[p.priority]?.color || T.dim;
                 const n = (pageSafe - 1) * perPage + i + 1;
                 return (
-                  <tr key={p.id}
+                  <tr key={p.id} data-project-id={p.id}
                     onClick={() => onSelectProject && onSelectProject(p.id)}
                     onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId(null)}
                     style={{
@@ -5595,7 +5631,7 @@ function BulkAssignPMModal({ T, session, campus, campusRows, filteredRows, onClo
         <>
           <div style={{ marginBottom: SP.md }}>
             <div style={{ ...TYPE.label, color:T.muted, marginBottom:6 }}>Project manager</div>
-            <Select T={T} value={pmId} onChange={e => setPmId(e.target.value)} style={{ width:"100%" }}>
+            <Select T={T} value={pmId} onChange={e => setPmId(e.target.value)} style={{ width:"100%" }} data-tour="pm-select">
               <option value="">— Select a project manager —</option>
               {pms.map(p => (
                 <option key={p.id} value={p.id}>{p.full_name || p.username} (@{p.username})</option>
@@ -5626,7 +5662,7 @@ function BulkAssignPMModal({ T, session, campus, campusRows, filteredRows, onClo
 
           {/* Preview. Recomputes as the options change, so the count on the
               confirm button is always the count that will actually be written. */}
-          <div style={{ marginTop:SP.md, padding:"12px 14px", borderRadius:R.md,
+          <div data-tour="bulk-preview" style={{ marginTop:SP.md, padding:"12px 14px", borderRadius:R.md,
             background:T.card2, border:`1px solid ${T.border}` }}>
             <div style={{ ...TYPE.label, color:T.muted, marginBottom:8 }}>What will happen</div>
             <div style={{ fontSize:13, fontWeight:700, color:plan.targets.length ? T.text : T.dim }}>
@@ -5844,9 +5880,9 @@ function CampusPage({ T, session, onSelectProject,
   const [campusView, setCampusViewRaw] = useState(() => { try { return canCompare && sessionStorage.getItem("pmo-campus-view") === "compare" ? "compare" : "sites"; } catch (_) { return "sites"; } });
   const setCampusView = (v) => { setCampusViewRaw(v); try { sessionStorage.setItem("pmo-campus-view", v); } catch (_) { /* ignore */ } };
   const viewSwitch = canCompare && (
-    <div role="tablist" aria-label="Campus view" style={{ display:"flex", padding:2, borderRadius:R.pill, border:`1px solid ${T.border}`, background:T.surface, flexShrink:0 }}>
+    <div role="tablist" aria-label="Campus view" data-tour="campus-view" style={{ display:"flex", padding:2, borderRadius:R.pill, border:`1px solid ${T.border}`, background:T.surface, flexShrink:0 }}>
       {[["sites","Sites"],["compare","Compare"]].map(([v,l]) => (
-        <button key={v} role="tab" aria-selected={campusView === v} className="pmo-focusable pmo-btn" onClick={() => setCampusView(v)}
+        <button key={v} role="tab" data-view={v} aria-selected={campusView === v} className="pmo-focusable pmo-btn" onClick={() => setCampusView(v)}
           style={{ padding:"6px 14px", borderRadius:R.pill, border:"none", cursor:"pointer", fontSize:12.5, fontFamily:TYPE.body.fontFamily,
             background: campusView === v ? `${BRAND.blue}22` : "transparent", color: campusView === v ? T.textOf(BRAND.blue) : T.muted, fontWeight: campusView === v ? 700 : 500 }}>{l}</button>
       ))}
@@ -5890,7 +5926,7 @@ function CampusPage({ T, session, onSelectProject,
             onClear={()=>setQ("")} placeholder="Search projects…"
             style={{flex:"0 1 340px", minWidth:180}} />
           {isPMOUser && (
-            <Button T={T} variant="ghost" icon={Users} disabled={!sel}
+            <Button T={T} variant="ghost" icon={Users} disabled={!sel} data-tour="assign-pm"
               onClick={() => setBulkOpen(true)}
               title={sel ? `Assign a project manager across ${sel}`
                          : "Select a campus first, then assign a PM across it"}>
@@ -6534,9 +6570,9 @@ function PerformancePage({ T, session, onSelectProject }) {
       </div>
 
       {/* ── Filter bar ── */}
-      <div style={{ padding:"10px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:6, flexShrink:0, alignItems:"center" }}>
+      <div data-tour="perf-filters" style={{ padding:"10px 24px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, display:"flex", gap:6, flexShrink:0, alignItems:"center" }}>
         {FILTERS.map(f => (
-          <button className="pmo-focusable pmo-btn" key={f.id} onClick={() => setFilter(f.id)} style={{
+          <button className="pmo-focusable pmo-btn" key={f.id} data-filter={{ ontime:"on_schedule", over:"over_budget" }[f.id] || f.id} onClick={() => setFilter(f.id)} style={{
             padding:"4px 12px", borderRadius:R.pill, border:`1px solid ${filter===f.id ? GOLD : T.border}`,
             background: filter===f.id ? "rgba(216,152,64,0.12)" : T.card2,
             color: filter===f.id ? GOLD : T.muted,
@@ -6583,7 +6619,7 @@ function PerformancePage({ T, session, onSelectProject }) {
         </div>
       ) : (
         <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }), overflowX: vpD.isCompact ? "auto" : "visible" }}>
-          <table style={{ ...tableStyles(T).tableFixed, minWidth: vpD.isCompact ? 900 : undefined }}>
+          <table data-tour="perf-table" style={{ ...tableStyles(T).tableFixed, minWidth: vpD.isCompact ? 900 : undefined }}>
             <colgroup>
               {[220,86,76,76,76,76,66,66,76,86,86,104,104].map((w,i)=>{
                 const tot=1198;
@@ -6612,7 +6648,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                 const rowBg = i % 2 === 0 ? "transparent" : T.tableRow;
                 const stickyBg = i % 2 === 0 ? T.mainBg : T.card;
                 return (
-                  <tr key={r.id}
+                  <tr key={r.id} data-project-id={r.id}
                     onClick={() => onSelectProject && onSelectProject(r.id)}
                     onMouseEnter={() => setHoverId(r.id)}
                     onMouseLeave={() => setHoverId(null)}
@@ -6853,7 +6889,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
     // "requested path is invalid". Verified against the live bucket:
     //   without /storage/v1 → 404
     //   with    /storage/v1 → 200 application/pdf
-    const url = SUPA_URL + "/storage/v1" + res.signedURL;
+    const url = storageUrl(res.signedURL);
     return forceDownload
       ? url + (url.includes("?") ? "&" : "?") + "download=" + encodeURIComponent(att.file_name)
       : url;
@@ -7013,7 +7049,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
             : ["ppt","pptx"].includes(ext)                   ? { c:DATA.warning,  t:"Slides" }
             :                                                  { c:T.textOf(DATA.neutral),  t:ext ? ext.toUpperCase() : "File" };
             return (
-            <div key={att.id} className="pmo-in pmo-lift" style={{
+            <div key={att.id} data-tour="doc-card" data-file={att.file_name} className="pmo-in pmo-lift" style={{
                 display:"flex", alignItems:"flex-start", gap:SP.md, minWidth:0,
                 padding:`${SP.md}px ${SP.md}px`, borderRadius:R.lg, cursor:"pointer",
                 background:T.surface, border:`1px solid ${T.border}`, boxShadow:T.shadow,
@@ -8370,7 +8406,7 @@ function UserManagementPage({ T, session }) {
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:T.textOf(ROSE), fontSize:13 }}>{err}</div>
       ) : (
         <div className="pmo-scroll" style={{ ...pageBody(T, { pad:false }), overflowX: vpD.isCompact ? "auto" : "visible" }}>
-          <table style={{ ...tableStyles(T).table, minWidth: vpD.isCompact ? 800 : undefined }}>
+          <table data-tour="users-table" style={{ ...tableStyles(T).table, minWidth: vpD.isCompact ? 800 : undefined }}>
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <SortHeader T={T} label="Username" sortKey="username" sort={usort} onToggle={utoggle} />
@@ -8389,7 +8425,7 @@ function UserManagementPage({ T, session }) {
                 const assigns = getUserAssignments(u.id);
                 const me = isMe(u.id);
                 return (
-                  <tr key={u.id} style={{ background: i%2===0 ? "transparent" : T.tableRow }}>
+                  <tr key={u.id} data-user={u.username} style={{ background: i%2===0 ? "transparent" : T.tableRow }}>
                     <td style={td}>
                       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                         <div style={{ width:30, height:30, borderRadius:"50%", background:`linear-gradient(135deg,${NAVY},#0A3060)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>
@@ -9273,7 +9309,7 @@ function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
   const deleted = !name;
   const init = deleted ? "✕" : name[0].toUpperCase();
   return (
-    <div style={{ marginLeft: depth ? 36 : 0, marginBottom:10 }}>
+    <div data-comment={comment.id} style={{ marginLeft: depth ? 36 : 0, marginBottom:10 }}>
       <div style={{ background:T.card2, borderRadius:R.md, padding:"11px 14px", border:`1px solid ${T.border}` }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
           <div style={{ width:26, height:26, borderRadius:"50%", background:NAVY, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>{init}</div>
@@ -9536,7 +9572,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
     <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
 
       {/* ── Left sidebar ── */}
-      <div ref={listNear} className="pmo-near pmo-in" style={{ position:"relative", "--near-light":`${BRAND.blue}14`,
+      <div ref={listNear} data-tour="updates-list" className="pmo-near pmo-in" style={{ position:"relative", "--near-light":`${BRAND.blue}14`,
         width: vpD.isCompact ? "100%" : 280, flexShrink:0, display: vpD.isCompact && selId ? "none" : "flex",
         flexDirection:"column", borderRight:`1px solid ${T.border}`, overflow:"hidden" }}>
         {/* Tabs */}
@@ -9578,7 +9614,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
             const cm = commentsByProject[p.id] || { total:0, unread:0 };
             const selected = selId === p.id;
             return (
-              <div key={p.id} onClick={() => selectProject(p)} style={{
+              <div key={p.id} data-project-id={p.id} onClick={() => selectProject(p)} style={{
                 padding:"11px 14px", cursor:"pointer", borderBottom:`1px solid ${T.border}`,
                 background: selected ? `${NAVY}22` : "transparent",
                 borderLeft:`3px solid ${selected ? GOLD : "transparent"}`,
@@ -9606,7 +9642,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       </div>
 
       {/* ── Right: thread ── */}
-      <div ref={convNear} className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.gold}10`,
+      <div ref={convNear} data-tour="updates-thread" className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.gold}10`,
         flex:1, display: vpD.isCompact && !selId ? "none" : "flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         <div key={vpD.isCompact ? (selId || "empty") : "static"}
           className={vpD.isCompact ? "pmo-slide-r" : ""}
@@ -9785,7 +9821,7 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
   const c = ORG_ACCENT[roleId] || BRAND.blue;
 
   return (
-    <div
+    <div data-member={roleId}
       onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
       style={{
         position:"relative", overflow:"hidden",
@@ -10017,7 +10053,7 @@ function TeamPage({ T, session }) {
         </div>
 
         {/* ── Our Team ── */}
-        <div className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.blue}16`, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px" }}>
+        <div data-tour="team-org" className="pmo-near" style={{ position:"relative", "--near-light":`${BRAND.blue}16`, background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg, boxShadow:T.shadow, padding:"22px 26px" }}>
           <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:18, paddingBottom:12, borderBottom:`1px solid ${T.border}` }}>
             Our Team {isPMO && <span style={{ fontSize:10, color:T.dim, fontWeight:400, marginLeft:6 }}>· click the ✏ icon on any card to edit</span>}
           </div>

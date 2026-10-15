@@ -1,0 +1,359 @@
+{
+ "v": 1,
+ "meta": {
+  "wpm": 135,
+  "startDelay": 0.3,
+  "chapters": [
+   {
+    "n": 1,
+    "title": "Portfolio",
+    "start": 0,
+    "end": 29.6,
+    "scenes": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   {
+    "n": 2,
+    "title": "Inside a project",
+    "start": 29.6,
+    "end": 44.5,
+    "scenes": [
+     6,
+     7,
+     8
+    ]
+   },
+   {
+    "n": 3,
+    "title": "Delivery",
+    "start": 44.5,
+    "end": 58.9,
+    "scenes": [
+     9,
+     10,
+     11
+    ]
+   },
+   {
+    "n": 4,
+    "title": "Sites and people",
+    "start": 58.9,
+    "end": 86,
+    "scenes": [
+     12,
+     13,
+     14
+    ]
+   },
+   {
+    "n": 5,
+    "title": "Follow-up",
+    "start": 86,
+    "end": 101.7,
+    "scenes": [
+     15,
+     16,
+     17
+    ]
+   },
+   {
+    "n": 6,
+    "title": "Reporting and team",
+    "start": 101.7,
+    "end": 114.8,
+    "scenes": [
+     18,
+     19,
+     20
+    ]
+   }
+  ],
+  "starters": [
+   "What are the risks on the Postgraduate Study Hub Refit?",
+   "Where do we stand overall?",
+   "Which projects are at MT review?",
+   "How much has been released this year?"
+  ]
+ },
+ "lines": [
+  {
+   "id": "s01",
+   "scene": 1,
+   "chapter": 1,
+   "caption": "The real portal: real names, fictional projects. Capex dashboard: 473.7 million rupees.",
+   "speech": "The real portal: real names, fictional projects. Capex dashboard: four hundred seventy-three point seven million rupees.",
+   "short": null,
+   "minHold": 9.1,
+   "sample": {
+    "caption": "The real portal, on fictional data. Capex dashboard: 473.7 million rupees.",
+    "speech": "The real portal, on fictional data. Capex dashboard: four hundred seventy-three point seven million rupees."
+   }
+  },
+  {
+   "id": "s02",
+   "scene": 2,
+   "chapter": 1,
+   "caption": "Investments sit apart, never counted in Capex.",
+   "speech": "Investments sit apart, never counted in Capex.",
+   "short": {
+    "caption": "Investments sit apart.",
+    "speech": "Investments sit apart."
+   },
+   "minHold": 4.3
+  },
+  {
+   "id": "s03",
+   "scene": 3,
+   "chapter": 1,
+   "caption": "PDD Status: five wait with the Managing Trustee.",
+   "speech": "P D D Status: five wait with the Managing Trustee.",
+   "short": {
+    "caption": "Five wait with the Managing Trustee.",
+    "speech": "Five wait with the Managing Trustee."
+   },
+   "minHold": 4
+  },
+  {
+   "id": "s04",
+   "scene": 4,
+   "chapter": 1,
+   "caption": "Payments Status: 103.1 million released, project by project.",
+   "speech": "Payments Status: one hundred three point one million released, project by project.",
+   "short": {
+    "caption": "103.1 million released.",
+    "speech": "one hundred three point one million released."
+   },
+   "minHold": 6
+  },
+  {
+   "id": "s05",
+   "scene": 5,
+   "chapter": 1,
+   "caption": "Cashflows: the monthly plan, PMDC shown apart.",
+   "speech": "Cashflows: the monthly plan, P M D C shown apart.",
+   "short": {
+    "caption": "Cashflows: the monthly plan.",
+    "speech": "Cashflows: the monthly plan."
+   },
+   "minHold": 4
+  },
+  {
+   "id": "s06",
+   "scene": 6,
+   "chapter": 2,
+   "caption": "Projects filters as you type. Let's open the Study Hub.",
+   "speech": "Projects filters as you type. Let's open the Study Hub.",
+   "short": {
+    "caption": "Let's open the Study Hub.",
+    "speech": "Let's open the Study Hub."
+   },
+   "minHold": 4
+  },
+  {
+   "id": "s07",
+   "scene": 7,
+   "chapter": 2,
+   "caption": "Every document for the project, in one place.",
+   "speech": "Every document for the project, in one place.",
+   "short": {
+    "caption": "Every document, in one place.",
+    "speech": "Every document, in one place."
+   },
+   "minHold": 4.3
+  },
+  {
+   "id": "s08",
+   "scene": 8,
+   "chapter": 2,
+   "caption": "The work breakdown shows the study pods twenty days behind baseline.",
+   "speech": "The work breakdown shows the study pods twenty days behind baseline.",
+   "short": {
+    "caption": "The study pods: twenty days behind baseline.",
+    "speech": "The study pods: twenty days behind baseline."
+   },
+   "minHold": 4.3
+  },
+  {
+   "id": "s09",
+   "scene": 9,
+   "chapter": 3,
+   "caption": "Performance: two projects delayed, the Study Hub among them.",
+   "speech": "Performance: two projects delayed, the Study Hub among them.",
+   "short": {
+    "caption": "Performance: two delayed.",
+    "speech": "Performance: two delayed."
+   },
+   "minHold": 4
+  },
+  {
+   "id": "s10",
+   "scene": 10,
+   "chapter": 3,
+   "caption": "Timeline and Schedule puts every project on one calendar.",
+   "speech": "Timeline and Schedule puts every project on one calendar.",
+   "short": {
+    "caption": "Every project on one calendar.",
+    "speech": "Every project on one calendar."
+   },
+   "minHold": 4.5
+  },
+  {
+   "id": "s11",
+   "scene": 11,
+   "chapter": 3,
+   "caption": "The Risk Register: this cell holds the study pod risk.",
+   "speech": "The Risk Register: this cell holds the study pod risk.",
+   "short": {
+    "caption": "This cell holds the study pod risk.",
+    "speech": "This cell holds the study pod risk."
+   },
+   "minHold": 4.3
+  },
+  {
+   "id": "s12a",
+   "scene": 12,
+   "chapter": 4,
+   "caption": "Compare puts all eleven campuses side by side.",
+   "speech": "Compare puts all eleven campuses side by side.",
+   "short": {
+    "caption": "All eleven campuses, side by side.",
+    "speech": "All eleven campuses, side by side."
+   },
+   "minHold": 3.3
+  },
+  {
+   "id": "s12b",
+   "scene": 12,
+   "chapter": 4,
+   "caption": "Ranked by share released, {{C:C08}} leads at 80 percent.",
+   "speech": "Ranked by share released, {{C:C08:say}} leads at eighty percent.",
+   "short": {
+    "caption": "Ranked by share released.",
+    "speech": "Ranked by share released."
+   },
+   "minHold": 3.2
+  },
+  {
+   "id": "s12c",
+   "scene": 12,
+   "chapter": 4,
+   "caption": "Head to head: {{C:C01}} leads approved, {{C:C03}} released.",
+   "speech": "Head to head: {{C:C01:say}} leads approved, {{C:C03:say}} released.",
+   "short": {
+    "caption": "Head to head, side by side.",
+    "speech": "Head to head, side by side."
+   },
+   "minHold": 4.5
+  },
+  {
+   "id": "s13a",
+   "scene": 13,
+   "chapter": 4,
+   "caption": "Each site lists its managers.",
+   "speech": "Each site lists its managers.",
+   "short": null,
+   "minHold": 4.6
+  },
+  {
+   "id": "s13b",
+   "scene": 13,
+   "chapter": 4,
+   "caption": "Assign PM previews first: two to assign, eight left alone.",
+   "speech": "Assign P M previews first: two to assign, eight left alone.",
+   "short": {
+    "caption": "Assign PM previews the change.",
+    "speech": "Assign P M previews the change."
+   },
+   "minHold": 4.4
+  },
+  {
+   "id": "s14",
+   "scene": 14,
+   "chapter": 4,
+   "caption": "User Management: accounts, roles and assigned projects.",
+   "speech": "User Management: accounts, roles and assigned projects.",
+   "short": {
+    "caption": "Accounts, roles and projects.",
+    "speech": "Accounts, roles and projects."
+   },
+   "minHold": 4.3
+  },
+  {
+   "id": "s15",
+   "scene": 15,
+   "chapter": 5,
+   "caption": "In Updates, {{P:P12:short}} replies: handover on 29 December still holds.",
+   "speech": "In Updates, {{P:P12:say}} replies: handover on twenty-nine December still holds.",
+   "short": {
+    "caption": "{{P:P12:short}} replies: handover still holds.",
+    "speech": "{{P:P12:say}} replies: handover still holds."
+   },
+   "minHold": 4.5
+  },
+  {
+   "id": "s16",
+   "scene": 16,
+   "chapter": 5,
+   "caption": "Past Projects follows up older projects; Unread finds {{P:P12:short}}'s reply.",
+   "speech": "Past Projects follows up older projects; Unread finds {{P:P12:say}}'s reply.",
+   "short": {
+    "caption": "Unread finds {{P:P12:short}}'s reply.",
+    "speech": "Unread finds {{P:P12:say}}'s reply."
+   },
+   "minHold": 6
+  },
+  {
+   "id": "s17",
+   "scene": 17,
+   "chapter": 5,
+   "caption": "The Gallery: site-visit pictures, newest first.",
+   "speech": "The Gallery: site-visit pictures, newest first.",
+   "short": {
+    "caption": "Site-visit pictures, newest first.",
+    "speech": "Site-visit pictures, newest first."
+   },
+   "minHold": 4.2
+  },
+  {
+   "id": "s18",
+   "scene": 18,
+   "chapter": 6,
+   "caption": "Board Reports: month-end figures, shared as a report.",
+   "speech": "Board Reports: month-end figures, shared as a report.",
+   "short": {
+    "caption": "Month-end board reports.",
+    "speech": "Month-end board reports."
+   },
+   "minHold": 5
+  },
+  {
+   "id": "s19",
+   "scene": 19,
+   "chapter": 6,
+   "caption": "Team and About: who we are, how to reach us.",
+   "speech": "Team and About: who we are, how to reach us.",
+   "short": {
+    "caption": "Who we are, how to reach us.",
+    "speech": "Who we are, how to reach us."
+   },
+   "minHold": 4.6
+  },
+  {
+   "id": "s20",
+   "scene": 20,
+   "chapter": 6,
+   "caption": "That's the portal. Thank you.",
+   "speech": "That's the portal. Thank you.",
+   "short": {
+    "caption": "Thank you.",
+    "speech": "Thank you."
+   },
+   "minHold": 3
+  }
+ ]
+}

@@ -1043,7 +1043,7 @@ export function Select({ T, value, onChange, children, size = "md", full, active
             const on  = String(it.value) === String(value);
             const cur = i === cursor;
             return (
-              <div key={`${it.value}-${i}`} data-i={i} role="option" aria-selected={on}
+              <div key={`${it.value}-${i}`} data-i={i} data-value={it.value} role="option" aria-selected={on}
                 onMouseEnter={() => setCursor(i)}
                 onClick={() => pick(it)}
                 style={{
@@ -1686,11 +1686,15 @@ export function WithInsight({ T, title, line, stat, tone, side, align, width, ch
 //   · carries its own atmospheric gradient (§17), painted behind the content at
 //     very low opacity. Per-section rather than one page-wide wash, which is
 //     what gives the dashboard depth instead of a flat tint.
-export function Section({ T, tone, children, style, pad = SP.lg, glow = true, className = "" }) {
+// Only data-* attributes are forwarded (hooks for the simulation director); any other stray prop
+// stays ignored exactly as before.
+export const dataProps = (o) => Object.fromEntries(Object.entries(o || {}).filter(([k]) => k.startsWith("data-")));
+
+export function Section({ T, tone, children, style, pad = SP.lg, glow = true, className = "", ...rest }) {
   const [hot, setHot] = useState(false);
   const c = tone || T.blue;
   return (
-    <div
+    <div {...dataProps(rest)}
       onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
       className={className}
       style={{

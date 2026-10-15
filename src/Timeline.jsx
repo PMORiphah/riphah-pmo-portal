@@ -121,7 +121,7 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
   if (rows === null) return <div style={{ padding:SP.xxl, color:T.muted, fontSize:13 }}>Loading timeline…</div>;
 
   return (
-    <div style={{ padding: isCompact ? SP.md : SP.lg, minWidth:0 }}>
+    <div data-tour="timeline" style={{ padding: isCompact ? SP.md : SP.lg, minWidth:0 }}>
       {/* ── Controls ─────────────────────────────────────────────────────── */}
       <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", alignItems:"center", marginBottom:SP.md }}>
         <Input T={T} icon={Search} value={q} onChange={e => setQ(e.target.value)}
@@ -240,7 +240,7 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
                           onMouseMove:(e) => setHover(h => h && h.id === r.id ? { ...h, x:e.clientX, y:e.clientY } : h),
                           onMouseLeave:() => setHover(null) } : {};
                         return (
-                          <div key={r.id} {...on} onClick={() => onSelectProject?.(r.id)}
+                          <div key={r.id} data-project-id={r.id} {...on} onClick={() => onSelectProject?.(r.id)}
                             style={{ display:"flex", cursor:"pointer", position:"relative",
                               background: hover?.id === r.id ? T.surfaceRaised : "transparent",
                               transition:`background ${MOTION.fast}` }}>
@@ -291,7 +291,7 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
                                 )}
                               </div>
                               {hover?.id === r.id && (
-                                <div className="pmo-scale" style={{ position:"fixed", zIndex:60,
+                                <div data-tour="timeline-card" className="pmo-scale" style={{ position:"fixed", zIndex:60,
                                   left: Math.min(hover.x + 16, window.innerWidth - 268),
                                   top:  Math.min(hover.y + 14, window.innerHeight - 190),
                                   width:250,

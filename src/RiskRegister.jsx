@@ -73,7 +73,7 @@ function MatrixCell({ T, prob, impact, sev, count, isActive, onClick }) {
   const [hover, setHover] = useState(false);
   const pulse = sev === "critical" && count > 0;
   return (
-    <button ref={near} className="pmo-near pmo-focusable"
+    <button ref={near} className="pmo-near pmo-focusable" data-cell={`${prob}-${impact}`}
       onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
         "--near-light": `${meta.color}2A`,
@@ -113,7 +113,7 @@ function RiskMatrix({ T, risks, onCellClick, activeCell }) {
   const cellRisks = (prob, impact) => risks.filter(r => r.probability === prob && r.impact === impact && r.status !== "closed");
 
   return (
-    <div>
+    <div data-tour="risk-matrix">
       <div style={{ display: "grid", gridTemplateColumns: "70px repeat(3, 1fr)", gap: 6 }}>
         <div />
         {PROBS.map(p => (
@@ -150,7 +150,7 @@ function RiskRow({ T, risk, onEdit, onDelete, showProject, index = 0 }) {
   const meta = SEVERITY_META[risk.severity];
   const [hover, setHover] = useState(false);
   return (
-    <tr className="pmo-card-in" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+    <tr className="pmo-card-in" data-risk={risk.id} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{ borderBottom: `1px solid ${T.border}`, background: hover ? `${meta.color}0A` : "transparent",
         transition: `background ${MOTION.base}`, animationDelay: `${Math.min(index, 12) * 45}ms` }}>
       <td style={{ padding: "10px 12px" }}>
@@ -504,7 +504,7 @@ export function RiskRegisterPage({ T, session, supa }) {
           )}
         </div>
 
-        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: R.lg, boxShadow: T.shadow, overflow: "hidden" }}>
+        <div data-tour="risk-table" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: R.lg, boxShadow: T.shadow, overflow: "hidden" }}>
           <div style={{ padding: `${SP.sm}px ${SP.lg}px`, borderBottom: `1px solid ${T.border}`, display: "flex",
             alignItems: "center", gap: SP.sm, flexWrap: "wrap" }}>
             <Select T={T} size="sm" value={fCategory} onChange={e => setFCategory(e.target.value)} active={!!fCategory}>

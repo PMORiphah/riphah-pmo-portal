@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Camera, Play, Download, X, ChevronLeft, ChevronRight, ArrowUpRight, ImageOff, ArrowUpDown, Filter } from "lucide-react";
 import { TYPE, SP, R, MOTION } from "./theme.js";
 import { Select, useViewport } from "./ui.jsx";
+import { storageUrl } from "./storageUrl.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHOTO WALL
@@ -21,7 +22,7 @@ import { Select, useViewport } from "./ui.jsx";
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const isVideo = (m) => /^video\//.test(m?.mime_type || "") || /\.(mp4|mov|webm|m4v)$/i.test(m?.file_name || "");
-const SUPA_URL = "https://prmxkecomqqngvrmytcj.supabase.co";
+// Signed links are built by storageUrl() (./storageUrl.js), the one place that adds /storage/v1.
 // Storage paths are "<uuid>/<uuid>-filename.ext" — encoding the whole string
 // with encodeURIComponent would also escape the "/" itself and break the
 // path. Each segment has to be encoded independently, then rejoined.
@@ -98,7 +99,7 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
       // Supabase's signedURL is relative ("/object/sign/…") — omitting the
       // /storage/v1 prefix here previously caused live 404s across this
       // portal until it was traced and fixed; matching that exact fix here.
-      const full = SUPA_URL + "/storage/v1" + res.signedURL;
+      const full = storageUrl(res.signedURL);
       urlsRef.current[item.id] = full;
       setUrls(u => ({ ...u, [item.id]: full }));
       return full;
@@ -259,7 +260,7 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
         </div>
       )}
 
-      <div style={{
+      <div data-tour="gallery-grid" style={{
         padding: `${SP.md}px ${SP.xl}px ${SP.xxl}px`,
         display: "grid", gap: SP.md,
         gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))",
@@ -269,7 +270,7 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
             <div key={i} style={{ aspectRatio: "1/1", borderRadius: R.md, background: T.surfaceRaised }} />
           ))
         ) : sortedItems.map((item, i) => (
-          <button key={item.id} className="pmo-focusable pmo-lift" onClick={() => setLightboxIdx(i)}
+          <button key={item.id} data-attachment={item.id} className="pmo-focusable pmo-lift" onClick={() => setLightboxIdx(i)}
             style={{ position: "relative", aspectRatio: "1/1", borderRadius: R.md, overflow: "hidden",
               border: `1px solid ${T.border}`, background: "#05080F", cursor: "pointer", padding: 0,
               textAlign: "left" }}>
@@ -328,7 +329,7 @@ function Lightbox({ T, items, idx, urls, getUrl, onClose, onNav, onDownload, onV
   }, [onClose, onNav]);
 
   return (
-    <div onMouseDown={(e) => e.target === e.currentTarget && onClose()} style={{
+    <div data-tour="lightbox" onMouseDown={(e) => e.target === e.currentTarget && onClose()} style={{
       position: "fixed", inset: 0, zIndex: 1600, background: "rgba(3,7,15,.95)",
       backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
       display: "flex", alignItems: "center", justifyContent: "center", padding: "4vh 4vw",

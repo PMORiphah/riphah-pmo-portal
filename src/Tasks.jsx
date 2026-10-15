@@ -831,7 +831,7 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
       ) : (
         <div className="pmo-scroll" style={{ overflowX:"auto", border:`1px solid ${T.border}`,
           borderRadius:R.md, background:T.surface }}>
-          <table style={{ borderCollapse:"collapse", width:"100%", minWidth: isCompact ? 520 : 860 }}>
+          <table data-tour="wbs-table" style={{ borderCollapse:"collapse", width:"100%", minWidth: isCompact ? 520 : 860 }}>
             <thead>
               <tr>
                 <th style={{ ...th, minWidth:230 }}>Task</th>
@@ -855,11 +855,11 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
                 const w = axis && r._start && r._end
                   ? Math.max(3, ((d0(r._end) - d0(r._start))/DAY)/axis.span*BAR) : 0;
                 return (
-                  <tr key={r.id} style={{ background: kids ? T.card2 : "transparent" }}>
+                  <tr key={r.id} data-wbs-row={r.id} style={{ background: kids ? T.card2 : "transparent" }}>
                     <td style={{ ...td, paddingLeft: 10 + r._depth*18 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
                         {kids ? (
-                          <button className="pmo-focusable pmo-btn"
+                          <button className="pmo-focusable pmo-btn" data-tour="wbs-toggle" data-task-id={r.id}
                             onClick={() => setOpen(o => ({ ...o, [r.id]: shut }))}
                             style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, padding:0, lineHeight:0 }}>
                             {shut ? <ChevronRight size={13} /> : <ChevronDown size={13} />}

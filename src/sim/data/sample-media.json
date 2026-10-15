@@ -1,0 +1,98 @@
+[
+ {
+  "key": "s01",
+  "host": "H1",
+  "mime": "image/jpeg",
+  "size": 41308,
+  "order": 0,
+  "url": "sim/files/sample-media/s01.jpg"
+ },
+ {
+  "key": "s02",
+  "host": "H5",
+  "mime": "image/jpeg",
+  "size": 42020,
+  "order": 1,
+  "url": "sim/files/sample-media/s02.jpg"
+ },
+ {
+  "key": "s03",
+  "host": "H3",
+  "mime": "image/jpeg",
+  "size": 89466,
+  "order": 2,
+  "url": "sim/files/sample-media/s03.jpg"
+ },
+ {
+  "key": "s04",
+  "host": "H1",
+  "mime": "image/jpeg",
+  "size": 60407,
+  "order": 3,
+  "url": "sim/files/sample-media/s04.jpg"
+ },
+ {
+  "key": "s05",
+  "host": "H2",
+  "mime": "image/jpeg",
+  "size": 89245,
+  "order": 4,
+  "url": "sim/files/sample-media/s05.jpg"
+ },
+ {
+  "key": "s06",
+  "host": "H5",
+  "mime": "image/jpeg",
+  "size": 46914,
+  "order": 5,
+  "url": "sim/files/sample-media/s06.jpg"
+ },
+ {
+  "key": "s07",
+  "host": "H4",
+  "mime": "image/jpeg",
+  "size": 35278,
+  "order": 6,
+  "url": "sim/files/sample-media/s07.jpg"
+ },
+ {
+  "key": "s08",
+  "host": "H3",
+  "mime": "image/jpeg",
+  "size": 42477,
+  "order": 7,
+  "url": "sim/files/sample-media/s08.jpg"
+ },
+ {
+  "key": "s09",
+  "host": "H1",
+  "mime": "image/jpeg",
+  "size": 49985,
+  "order": 8,
+  "url": "sim/files/sample-media/s09.jpg"
+ },
+ {
+  "key": "s10",
+  "host": "H5",
+  "mime": "image/jpeg",
+  "size": 28904,
+  "order": 9,
+  "url": "sim/files/sample-media/s10.jpg"
+ },
+ {
+  "key": "s11",
+  "host": "H2",
+  "mime": "image/jpeg",
+  "size": 38929,
+  "order": 10,
+  "url": "sim/files/sample-media/s11.jpg"
+ },
+ {
+  "key": "s12",
+  "host": "H4",
+  "mime": "image/jpeg",
+  "size": 28602,
+  "order": 11,
+  "url": "sim/files/sample-media/s12.jpg"
+ }
+]

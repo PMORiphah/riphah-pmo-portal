@@ -82,7 +82,7 @@ self.addEventListener("notificationclick", (event) => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of all) {
       // Never take over a simulation tab: it runs on fictional data.
-      if (new URL(client.url).pathname.endsWith("simulation.html")) continue;
+      if (/\/simulation(\.html)?$/.test(new URL(client.url).pathname)) continue;
       if (client.url.startsWith(self.registration.scope)) {
         await client.focus();
         if ("navigate" in client && target !== client.url) {

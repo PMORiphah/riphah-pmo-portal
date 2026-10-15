@@ -150,7 +150,7 @@ function AllCampuses({ T, rows, sortKey, setSortKey, dir, setDir, picked, toggle
   const td = { ...TYPE.bodySm, color: T.text, padding: "9px 8px", borderBottom: `1px solid ${T.border}`, textAlign: "right", verticalAlign: "middle", whiteSpace: "nowrap" };
   const cols = showPast ? [...COLS, { key: "pastOpen", label: "Past projects open", sort: r => r.pastOpen || 0, show: r => r.pastOpen ?? "—", tip: "Projects from earlier fiscal years still open at the campus" }] : COLS;
   const head = (c) => (
-    <th key={c.key} style={th} title={c.tip} onClick={() => { if (sortKey === c.key) setDir(d => d === "desc" ? "asc" : "desc"); else { setSortKey(c.key); setDir("desc"); } }}>
+    <th key={c.key} data-col={c.key} style={th} title={c.tip} onClick={() => { if (sortKey === c.key) setDir(d => d === "desc" ? "asc" : "desc"); else { setSortKey(c.key); setDir("desc"); } }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>{c.label}
         {sortKey === c.key ? (dir === "desc" ? <ArrowDown size={11} /> : <ArrowUp size={11} />) : <ArrowUpDown size={11} style={{ opacity: .4 }} />}</span>
     </th>
@@ -196,17 +196,17 @@ function AllCampuses({ T, rows, sortKey, setSortKey, dir, setDir, picked, toggle
   );
 
   return (
-    <div className="pmo-scroll" style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: R.lg, background: T.surface }}>
+    <div data-tour="compare-table" className="pmo-scroll" style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: R.lg, background: T.surface }}>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isCompact ? 980 : 0 }}>
         <thead><tr>
-          <th style={{ ...th, textAlign: "left", cursor: "default", width: 34 }} title="Tick up to three to compare head to head" />
-          <th style={{ ...th, textAlign: "left", cursor: "default" }}>Campus / site</th>
-          <th style={{ ...th, textAlign: "left", cursor: "default" }}>Stages</th>
+          <th data-col="pick" style={{ ...th, textAlign: "left", cursor: "default", width: 34 }} title="Tick up to three to compare head to head" />
+          <th data-col="campus" style={{ ...th, textAlign: "left", cursor: "default" }}>Campus / site</th>
+          <th data-col="stages" style={{ ...th, textAlign: "left", cursor: "default" }}>Stages</th>
           {cols.map(head)}
         </tr></thead>
         <tbody>
           {sorted.map((r, i) => (
-            <tr key={r.campus} style={{ background: picked.includes(r.campus) ? `${BRAND.blue}14` : i % 2 ? T.tableRow : "transparent" }}>
+            <tr key={r.campus} data-campus={r.campus} style={{ background: picked.includes(r.campus) ? `${BRAND.blue}14` : i % 2 ? T.tableRow : "transparent" }}>
               <td style={{ ...td, textAlign: "left" }}>
                 <input type="checkbox" aria-label={`Compare ${r.campus}`} checked={picked.includes(r.campus)}
                   disabled={!picked.includes(r.campus) && picked.length >= 3} onChange={() => togglePick(r.campus)} />
@@ -266,12 +266,12 @@ function HeadToHead({ T, rows, picked, togglePick, onOpenCampus, onSelectProject
       {sel.length < 2 ? (
         <div style={{ border: `1px dashed ${T.border}`, borderRadius: R.lg, padding: SP.xxl, textAlign: "center", color: T.muted, fontSize: 13.5 }}>Pick two or three campuses above.</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: isCompact ? `repeat(${sel.length}, minmax(240px, 1fr))` : `repeat(${sel.length}, minmax(0, 1fr))`, gap: SP.md, overflowX: isCompact ? "auto" : "visible" }}>
+        <div data-tour="compare-h2h-grid" style={{ display: "grid", gridTemplateColumns: isCompact ? `repeat(${sel.length}, minmax(240px, 1fr))` : `repeat(${sel.length}, minmax(0, 1fr))`, gap: SP.md, overflowX: isCompact ? "auto" : "visible" }}>
           {sel.map(r => (
-            <Surface key={r.campus} T={T} pad={SP.lg} style={{ minWidth: 0 }}>
+            <Surface key={r.campus} data-campus={r.campus} T={T} pad={SP.lg} style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
                 <div style={{ ...TYPE.h2, color: T.text, flex: 1 }}>{r.campus}</div>
-                <button type="button" className="pmo-focusable" onClick={() => onOpenCampus(r.campus)} style={{ border: 0, background: "none", color: T.textOf(BRAND.blue), fontSize: 12, cursor: "pointer" }}>Open</button>
+                <button type="button" data-tour="h2h-open" className="pmo-focusable" onClick={() => onOpenCampus(r.campus)} style={{ border: 0, background: "none", color: T.textOf(BRAND.blue), fontSize: 12, cursor: "pointer" }}>Open</button>
               </div>
               <StageBar stages={r.stages} total={r.projects} height={10} />
               <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px", marginTop: 6 }}>
@@ -304,10 +304,12 @@ function HeadToHead({ T, rows, picked, togglePick, onOpenCampus, onSelectProject
                   <span style={{ fontSize: 12, color: T.muted, whiteSpace: "nowrap" }}>{fmtM(p.df_recommended_amount)}</span>
                 </button>
               ))}
+              <div data-tour="h2h-pms">
               <div style={{ ...TYPE.label, color: T.muted, marginTop: SP.md, marginBottom: 4 }}>Project managers</div>
               <div style={{ fontSize: 12, color: T.text, lineHeight: 1.6 }}>
                 {r.pms.length ? r.pms.map(([n, c]) => `${n} (${c})`).join(" · ") : <span style={{ color: T.muted }}>None assigned</span>}
                 {r.noPm > 0 && <span style={{ color: T.textOf(T.warning || "#E8A63C") }}> · {r.noPm} without a PM</span>}
+              </div>
               </div>
               {r.pastOpen != null && <div style={{ fontSize: 12, color: T.muted, marginTop: SP.sm }}>Projects from earlier fiscal years still open: <b style={{ color: T.text }}>{r.pastOpen}</b></div>}
             </Surface>
@@ -351,9 +353,9 @@ export function CampusCompare({ T, session, supa, isCompact, onOpenCampus, onSel
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: SP.md, flexWrap: "wrap", marginBottom: SP.md }}>
-        <div role="tablist" style={{ display: "flex", padding: 2, borderRadius: R.pill, border: `1px solid ${T.border}`, background: T.surface }}>
-          <button role="tab" aria-selected={mode === "all"} className="pmo-focusable" style={seg(mode === "all")} onClick={() => setMode("all")}>All campuses</button>
-          <button role="tab" aria-selected={mode === "h2h"} className="pmo-focusable" style={seg(mode === "h2h")} onClick={() => setMode("h2h")}>Head to head{picked.length ? ` (${picked.length})` : ""}</button>
+        <div role="tablist" data-tour="compare-mode" style={{ display: "flex", padding: 2, borderRadius: R.pill, border: `1px solid ${T.border}`, background: T.surface }}>
+          <button role="tab" data-mode="all" aria-selected={mode === "all"} className="pmo-focusable" style={seg(mode === "all")} onClick={() => setMode("all")}>All campuses</button>
+          <button role="tab" data-mode="h2h" aria-selected={mode === "h2h"} className="pmo-focusable" style={seg(mode === "h2h")} onClick={() => setMode("h2h")}>Head to head{picked.length ? ` (${picked.length})` : ""}</button>
         </div>
         <span style={{ ...TYPE.caption, color: T.muted, flex: 1, minWidth: 200 }}>
           {rows.length} campuses · {totals.projects} CAPEX projects · DF PKR {fmtM(totals.df)} · {totals.approved} approved · released PKR {fmtM(totals.released)}

@@ -64,7 +64,7 @@ const Page = ({ children, n, total, title, period }) => (
     padding:"36px 44px 30px", boxShadow:"0 8px 30px rgba(0,0,0,.28)", display:"flex", flexDirection:"column", fontFamily:F, color:C.body }}>
     <div style={{ flex:1 }}>{children}</div>
     <div style={{ marginTop:18, paddingTop:8, borderTop:`1px solid ${C.line}`, display:"flex", fontSize:9.5, color:C.muted }}>
-      <span>Riphah International University · Project Management Office · {title}</span>
+      <span><span data-org>Riphah International University</span> · Project Management Office · {title}</span>
       <span style={{ marginLeft:"auto" }}>{period} · page {n} of {total}</span>
     </div>
   </section>
@@ -137,14 +137,14 @@ export function ReportDocument({ rep }) {
     <div>
       {pg(1, <>
         <div style={{ background:C.navy, color:"#fff", margin:"-36px -44px 0", padding:"26px 44px 22px" }}>
-          <div style={{ fontSize:9.5, letterSpacing:3, opacity:.6, textTransform:"uppercase" }}>Riphah International University · Project Management Office</div>
+          <div style={{ fontSize:9.5, letterSpacing:3, opacity:.6, textTransform:"uppercase" }}><span data-org>Riphah International University</span> · Project Management Office</div>
           <div style={{ fontSize:26, fontWeight:700, marginTop:8 }}>{title}</div>
           <div style={{ fontSize:15, marginTop:2, color:"#F3C877", fontWeight:600 }}>{f.period}</div>
           <div style={{ fontSize:10.5, opacity:.75, marginTop:8 }}>FY 2026-27 capital projects (CAPEX) · DF Recommended basis · figures {asAtText}</div>
         </div>
         <div style={{ height:4, background:C.gold, margin:"0 -44px 22px" }} />
         <H sub="The five figures the Board follows each month">Executive summary</H>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+        <div data-tour="report-summary" style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
           <Tile label="Total CAPEX portfolio" value={`PKR ${fmtM(h.df_total)}`} sub={`${h.capex_count} projects · DF Recommended`} delta={<Delta v={d?.df_total} money since={since} />} />
           <Tile label="Approved" value={`PKR ${fmtM(h.approved_bac)}`} sub={`${h.approved_count} projects · ${h.approved_in_execution} in execution, ${h.approved_closed} closed`} delta={<Delta v={d?.approved_bac} money since={since} />} />
           <Tile label="Released" value={`PKR ${fmtM(h.released_total)}`} sub={`${fmtPct(h.released_pct_of_df)} of DF Recommended · ${h.released_projects} projects`} delta={<Delta v={d?.released_total} money since={since} />} />
@@ -440,9 +440,9 @@ function ReportViewer({ T, session, supa, rep, recipients, onClose, onChanged, i
 
   const chip = rep.kind === "reconstructed" ? ["Baseline · reconstructed", T.muted] : draft ? ["Draft · only the PMO sees it", "#D89840"] : ["Published", T.positive];
   return createPortal(
-    <div className="br-print-root" style={{ position:"fixed", inset:0, zIndex:1300, background:T.page, display:"flex", flexDirection:"column" }}>
-      <div className="br-toolbar" style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", padding:`${SP.md}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}`, background:T.surface }}>
-        <Button T={T} variant="ghost" icon={ArrowLeft} onClick={onClose}>Back</Button>
+    <div className="br-print-root" data-tour="report-viewer" style={{ position:"fixed", inset:0, zIndex:1300, background:T.page, display:"flex", flexDirection:"column" }}>
+      <div className="br-toolbar" data-tour="report-toolbar" style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", padding:`${SP.md}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}`, background:T.surface }}>
+        <Button T={T} variant="ghost" icon={ArrowLeft} onClick={onClose} data-tour="report-back">Back</Button>
         <div style={{ minWidth:0, flex: isMobile ? "1 1 calc(100% - 110px)" : 1 }}>
           <div style={{ ...TYPE.h3, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{rep.title}</div>
           <div style={{ ...TYPE.caption, color:T.muted }}><span style={{ color:chip[1], fontWeight:700 }}>{chip[0]}</span>
@@ -613,7 +613,7 @@ export function BoardReportsPage({ T, session, supa, isCompact, initialReport = 
               const mine = !isPMO && rc.find(x => x.user_id === session.user_id);
               const tag = r.kind === "reconstructed" ? ["Baseline · reconstructed", T.muted] : r.status === "draft" ? ["Draft", "#D89840"] : ["Published", T.positive];
               return (
-                <button key={r.id} type="button" className="pmo-focusable pmo-btn" onClick={() => setOpenId(r.id)}
+                <button key={r.id} data-report={r.id} type="button" className="pmo-focusable pmo-btn" onClick={() => setOpenId(r.id)}
                   style={{ display:"flex", alignItems:"center", gap:SP.md, textAlign:"left", padding:`${SP.md}px ${SP.lg}px`, borderRadius:R.lg, cursor:"pointer",
                     background:T.surface, border:`1px solid ${mine && !mine.seen_at ? `${BRAND.gold}AA` : T.border}`, boxShadow:T.shadow, color:T.text }}>
                   <div style={{ width:38, height:38, borderRadius:R.md, background: r.kind === "reconstructed" ? `${T.muted}22` : `${BRAND.blue}22`,

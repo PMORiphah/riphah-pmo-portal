@@ -43,6 +43,14 @@ const STARTERS = [
   "What is planned for November?",
 ];
 
+// The PMO Simulation (simulation.html only) can replace the starter list with questions about its
+// fictional data, through window.__PMO_SIM__.starters. The portal never sets it, so the list above
+// is what every real user sees.
+const starters = () => {
+  const s = typeof window !== "undefined" ? window.__PMO_SIM__?.starters : null;
+  return Array.isArray(s) && s.length ? s.filter((x) => typeof x === "string") : STARTERS;
+};
+
 let cssIn = false;
 function useAskStyles() {
   useEffect(() => {
@@ -471,7 +479,7 @@ export function AskPanel({ T, session, supa, isCompact }) {
                   </div>
                   <div style={{ ...TYPE.label, color: T.muted, marginBottom: SP.sm }}>Try</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {(isPM ? PM_STARTERS : STARTERS).map((s) => (
+                    {(isPM ? PM_STARTERS : starters()).map((s) => (
                       <button key={s} onClick={() => send(s)} className="pmo-focusable pmo-btn"
                         style={{ textAlign: "left", padding: "8px 11px", borderRadius: R.md,
                           background: T.card2, border: `1px solid ${T.border}`,
