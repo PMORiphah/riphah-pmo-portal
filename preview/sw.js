@@ -74,11 +74,15 @@ self.addEventListener("push", (event) => {
 // spawning a second copy of the portal.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL(event.notification.data?.url || "./", self.location.origin + self.registration.scope).href;
+  // registration.scope is already a full URL; adding the origin in front of it
+  // made every relative link ("./?review=12") resolve to a host that does not exist.
+  const target = new URL(event.notification.data?.url || "./", self.registration.scope).href;
 
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of all) {
+      // Never take over a simulation tab: it runs on fictional data.
+      if (new URL(client.url).pathname.endsWith("simulation.html")) continue;
       if (client.url.startsWith(self.registration.scope)) {
         await client.focus();
         if ("navigate" in client && target !== client.url) {
