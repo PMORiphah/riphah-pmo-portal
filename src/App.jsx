@@ -294,7 +294,7 @@ const NAV = [
   { id:"past",     Icon:History,       label:"Past Projects", pastOnly:true },
   { id:"review",   Icon:ClipboardCheck, label:"PMO Review",   pmoOnly:true },
   // PMO, and anyone a board report has been shared with (8 Oct 2026).
-  { id:"reports",  Icon:FileBarChart,  label:"Board Reports", reportsOnly:true },
+  { id:"reports",  Icon:FileBarChart,  label:"Monthly Report", reportsOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
   { id:"photowall", Icon:Camera,     label:"Gallery" },
   { id:"team", Icon:Users,           label:"Team & About" },

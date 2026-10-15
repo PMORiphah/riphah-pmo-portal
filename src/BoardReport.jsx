@@ -520,14 +520,14 @@ function NewReportModal({ T, session, supa, reports, onClose, onBuilt, isMobile 
       supa("/rest/v1/activity_log", { method:"POST", headers:{ Prefer:"return=minimal" }, body: JSON.stringify({
         actor_id: session.user_id, actor_name: session.full_name || session.username, actor_role: session.role,
         action: "created", entity_type: "board_reports", entity_id: rep.id,
-        summary: `Built the board report for ${periodOf(ym).label}${missingBefore.length ? ` (and rebuilt ${missingBefore.map(m => periodOf(m).short).join(", ")} as baselines)` : ""}`,
+        summary: `Built the monthly report for ${periodOf(ym).label}${missingBefore.length ? ` (and rebuilt ${missingBefore.map(m => periodOf(m).short).join(", ")} as baselines)` : ""}`,
         details: { period: ym, baselines: missingBefore } }) }, session.access_token).catch(() => {});
       onBuilt(rep);
     } catch (e) { setErr(e.message); }
     setBusy(false);
   };
   return (
-    <Modal T={T} icon={FileBarChart} isMobile={isMobile} width={520} onClose={onClose} title="New board report"
+    <Modal T={T} icon={FileBarChart} isMobile={isMobile} width={520} onClose={onClose} title="New monthly report"
       sub="Builds the month's figures from the portal's data. It stays a draft, seen only by the PMO, until you publish it."
       footer={<><Button T={T} variant="ghost" onClick={onClose}>Cancel</Button><Button T={T} variant="primary" icon={FileBarChart} loading={busy} disabled={busy} onClick={build}>Build report</Button></>}>
       <div style={{ ...TYPE.label, color:T.muted, marginBottom:6 }}>Month</div>
@@ -594,7 +594,7 @@ export function BoardReportsPage({ T, session, supa, isCompact, initialReport = 
       <div style={{ padding: isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px`, maxWidth:1100, width:"100%", boxSizing:"border-box", margin:"0 auto" }}>
         <div style={{ display:"flex", alignItems:"center", gap:SP.md, marginBottom:SP.lg, flexWrap:"wrap" }}>
           <div style={{ flex:1, minWidth:220 }}>
-            <div style={{ ...TYPE.h1, color:T.text }}>Board reports</div>
+            <div style={{ ...TYPE.h1, color:T.text }}>Monthly Report</div>
             <div style={{ ...TYPE.bodySm, color:T.muted, marginTop:2 }}>
               {isPMO ? "Monthly reports for the Board and senior management. Build, check, then publish to the people you choose." : "Reports the PMO has shared with you."}
             </div>
@@ -658,7 +658,7 @@ export function BoardReportPopup({ T, reports, onOpen, onLater, isMobile }) {
   if (!reports?.length) return null;
   const r = reports[0];
   return (
-    <Modal T={T} icon={FileBarChart} width={460} isMobile={isMobile} onClose={onLater} title="New board report"
+    <Modal T={T} icon={FileBarChart} width={460} isMobile={isMobile} onClose={onLater} title="New monthly report"
       sub="The PMO has shared a report with you."
       footer={<><Button T={T} variant="ghost" onClick={onLater}>Later</Button><Button T={T} variant="primary" icon={Eye} onClick={() => onOpen(r.id)}>Open report</Button></>}>
       <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{r.title}</div>
