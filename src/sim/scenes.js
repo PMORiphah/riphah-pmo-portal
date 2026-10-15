@@ -59,10 +59,13 @@ export function buildScenes(meta = {}, cast = null) {
     const tiles = galleryTiles();
     if (!tiles.length) return false;
     const want = Math.min(+ex(17, "minTiles", "12") || 12, tiles.length);
+    // Only the first screenful counts, and a photo tile only once its picture has loaded. Tiles
+    // past the first 40 have no picture yet; counting them as ready let real photos (larger than
+    // the test ones) show as dark tiles for ~2.5 s. A video tile shows its own frame when ready.
     let ok = 0;
-    for (const t of tiles) {
+    for (const t of tiles.slice(0, want)) {
       const img = t.querySelector("img");
-      if (!img || (img.complete && img.naturalWidth > 0)) ok++;
+      if ((img && img.complete && img.naturalWidth > 0) || (!img && t.querySelector("video"))) ok++;
     }
     return ok >= want;
   };
@@ -382,7 +385,7 @@ export function buildScenes(meta = {}, cast = null) {
       beats: [
         { say: "s17" },
         { nav: "photowall", ready: '[data-tour="gallery-grid"]' },
-        { test: galleryLoaded, label: "gallery pictures" },
+        { test: galleryLoaded, label: "gallery pictures", timeout: 8 },
         { spot: ['[data-tour="gallery-grid"]'] },
         { hold: 1.4, short: 1.0 },
         // Full screen: no dim, and the assistant shrinks to a corner.
