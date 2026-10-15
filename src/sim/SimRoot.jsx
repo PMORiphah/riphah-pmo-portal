@@ -85,6 +85,8 @@ async function portalReady(meta, alive) {
   return { ok: false, detail };
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 /** Decodes every handed-over picture now, so the Gallery never waits for one. */
 async function decodeMedia(backend) {
   let urls = [];
@@ -188,7 +190,7 @@ export default function SimRoot({ backend, narration, meta = {}, cast = null, mo
     chunksOnce.current.then((ok) => alive && setCheck("pages", { status: ok ? "ok" : "fail", detail: ok ? null : "a page could not be loaded" }));
     mediaOnce.current ||= decodeMedia(backend);
     mediaOnce.current.then((m) => alive && setCheck("media", { status: "ok",
-      detail: m.total ? `${m.pics} pictures${m.total > m.pics ? `, ${m.total - m.pics} videos` : ""}` : "none handed over" }));
+      detail: m.total ? `${plural(m.pics, "picture")}${m.total > m.pics ? `, ${plural(m.total - m.pics, "video")}` : ""}` : "none handed over" }));
     portalReady(meta, isAlive).then((r) => alive && setCheck("portal", { status: r.ok ? "ok" : "fail", detail: r.detail }));
     return () => { alive = false; };
   }, [appKey]); // eslint-disable-line react-hooks/exhaustive-deps

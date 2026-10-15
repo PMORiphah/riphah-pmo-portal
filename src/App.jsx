@@ -451,7 +451,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
     // so hovering navigation tells you something rather than restating the label.
     const stat = navStats?.[id] || null;
     const row = (
-      <div data-nav={id}
+      <div data-nav={id} aria-current={active ? "page" : undefined}
         onClick={() => { setPage(id); if (isCompact) setMobileOpen(false); }}
         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
         role="button" tabIndex={0}

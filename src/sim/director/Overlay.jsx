@@ -108,12 +108,9 @@ export function CaptionDock({ state, voiceOn, progress }) {
           border: `1px solid ${GOLD}66`, boxShadow: "0 10px 30px rgba(0,0,0,.45)" }}>
           <AssistantAvatar size={52} boxScale={1.12} track={false} state={avatarState} />
         </div>
-        {/* With the voice off, the line still has to be readable. */}
-        {!voiceOn && (
-          <div style={{ maxWidth: 200, padding: "8px 11px", borderRadius: 10, background: "rgba(10,26,46,.92)",
-            border: `1px solid ${GOLD}55`, color: INK, font: `500 14px/1.4 ${SANS}` }}>{shown}</div>
-        )}
-        <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>{shown}</span>
+        {/* Captions are always shown (PMO decision 14 Oct 2026), also while the assistant is small. */}
+        <div className="sim-dir-caption-text" style={{ maxWidth: 210, padding: "8px 11px", borderRadius: 10, background: "rgba(10,26,46,.92)",
+          border: `1px solid ${GOLD}55`, color: INK, font: `500 14px/1.4 ${SANS}`, opacity: fade, transition: "opacity .16s ease" }}>{shown}</div>
       </div>
     );
   }
