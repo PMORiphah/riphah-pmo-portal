@@ -12,7 +12,7 @@
 // Protocol (src/sim/handoff.js is the receiving side):
 //   sim    → { type:'hello', v:1, nonce }                 (repeated until the cast arrives)
 //   portal → { type:'cast',  v:1, nonce, cast }
-//   portal → { type:'media', v:1, nonce, items:[...] }    (batches of up to 4)
+//   portal → { type:'media', v:1, nonce, items:[...] }    (one item per message as each is ready; 4 prepared at a time)
 //   portal → { type:'done',  v:1, nonce, count }
 //   sim    → { type:'ok',    v:1, nonce, count }           (receipt)
 import { storageUrl } from "./storageUrl.js";
@@ -133,27 +133,34 @@ async function handOver({ ch, nonce, session, supa, cast, ticked, hosts, onProgr
 
   const list = ticked.slice(0, COUNT_MAX);
   const skipped = ticked.slice(COUNT_MAX).map((r) => ({ id: r.id, reason: "more than 200 items" }));
-  let sent = 0, bytes = 0, done = 0;
+  let sent = 0, bytes = 0, done = 0, next = 0;
   report({ phase: "media", done, total: list.length, sent, bytes });
-  for (let i = 0; i < list.length; i += BATCH) {
-    const part = list.slice(i, i + BATCH);
-    const results = await Promise.all(part.map((row, j) => {
+  // Up to BATCH files are prepared at a time, and each one is posted as soon as it is ready, so the
+  // simulation tab keeps hearing from us (it gives up after a long silence) and no more than BATCH
+  // files are held here at once. The order field keeps the Gallery's newest-first order.
+  const worker = async () => {
+    while (next < list.length) {
+      const index = next++;
+      const row = list[index];
       const host = hosts[row.project_id]?.host;
-      if (!host) return Promise.resolve({ row, err: "not on a pinned project" });
-      return prepare({ row, index: i + j, host, session, supa }).then((item) => ({ row, item }), (e) => ({ row, err: e?.message || "failed" }));
-    }));
-    const items = [];
-    for (const r of results) {
+      let item = null, err = null;
+      if (!host) err = "not on a pinned project";
+      else {
+        try { item = await prepare({ row, index, host, session, supa }); } catch (e) { err = e?.message || "failed"; }
+      }
       done += 1;
-      if (r.err) { skipped.push({ id: r.row.id, reason: r.err }); continue; }
-      if (bytes + r.item.size > TOTAL_MAX) { skipped.push({ id: r.row.id, reason: "over the 150 MB total" }); continue; }
-      bytes += r.item.size;
-      items.push(r.item);
+      if (!err && bytes + item.size > TOTAL_MAX) err = "over the 150 MB total";
+      if (err) skipped.push({ id: row.id, reason: err });
+      else {
+        bytes += item.size;
+        ch.postMessage({ type: "media", v: 1, nonce, items: [item] });
+        sent += 1;
+      }
+      item = null;
+      report({ phase: "media", done, total: list.length, sent, bytes });
     }
-    if (items.length) { ch.postMessage({ type: "media", v: 1, nonce, items }); sent += items.length; }
-    items.length = 0;
-    report({ phase: "media", done, total: list.length, sent, bytes });
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(BATCH, list.length) }, worker));
 
   ch.postMessage({ type: "done", v: 1, nonce, count: sent });
   report({ phase: "confirming", done, total: list.length, sent, bytes });

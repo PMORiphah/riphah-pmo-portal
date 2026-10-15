@@ -73,7 +73,7 @@ const Flag = ({ T, tone, children }) => (
 function Slot({ T, label, name, flag, flagTone, note }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "4px 0", borderBottom: `1px solid ${T.border}`, minWidth: 0 }}>
-      <span style={{ ...TYPE.caption, color: T.dim, width: 34, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{label}</span>
+      {label && <span style={{ ...TYPE.caption, color: T.dim, width: 34, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{label}</span>}
       <span style={{ fontSize: 12.5, color: name ? T.text : T.dim, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {name || "—"}{note && <span style={{ color: T.muted }}> · {note}</span>}
       </span>
@@ -149,11 +149,10 @@ export function SimLauncher({ T, session, supa, onClose }) {
           teamConfig: (Array.isArray(team) && team[0]?.value) || {} });
         const list = Array.isArray(att) ? att : [];
         setMedia(list);
-        // First time on this computer: everything ticked except the groups pinned as left out by
-        // default. After that the saved ticks apply, so anything uploaded since starts unticked.
+        // Nothing is ticked until the PMO ticks it (PMO decision, 15 Oct 2026). The saved ticks
+        // apply after that, so anything uploaded since starts unticked.
         const saved = readTicks();
-        setTicks(saved ? new Set(list.filter((r) => saved.has(r.id)).map((r) => r.id))
-          : new Set(list.filter((r) => !P.hosts[r.project_id]?.excludeByDefault && isSupportedMedia(r)).map((r) => r.id)));
+        setTicks(saved ? new Set(list.filter((r) => saved.has(r.id)).map((r) => r.id)) : new Set());
         setState({ phase: "ready" });
       } catch (e) {
         if (alive.current) setState({ phase: "error", message: e?.message || "Could not read the names" });
@@ -226,8 +225,16 @@ export function SimLauncher({ T, session, supa, onClose }) {
   const tickable = useMemo(() => (media || []).filter((r) => !blockedWhy(r)), [media]);
   const setAndSave = (s) => { setTicks(s); writeLS(TICKS_KEY, JSON.stringify([...s])); };
   const toggle = (id) => { const s = new Set(ticks); if (s.has(id)) s.delete(id); else s.add(id); setAndSave(s); };
-  const tickAll = () => setAndSave(new Set(tickable.map((r) => r.id)));
+  // Tick all leaves out the groups pinned as left out by default (screen captures, investment
+  // media); those are ticked one by one or with their group's own Tick group.
+  const excluded = (r) => !!PINS?.hosts?.[r.project_id]?.excludeByDefault;
+  const tickAll = () => setAndSave(new Set([...(ticks || []), ...tickable.filter((r) => !excluded(r)).map((r) => r.id)]));
   const clearAll = () => setAndSave(new Set());
+  const tickGroup = (g, on) => {
+    const s = new Set(ticks || []);
+    g.items.filter((r) => !blockedWhy(r)).forEach((r) => (on ? s.add(r.id) : s.delete(r.id)));
+    setAndSave(s);
+  };
 
   const tickedRows = useMemo(() => (media || []).filter((r) => ticks?.has(r.id) && !blockedWhy(r)), [media, ticks]);
   const tickedBytes = tickedRows.reduce((a, r) => a + (Number(r.file_size) || 0), 0);
@@ -336,11 +343,12 @@ export function SimLauncher({ T, session, supa, onClose }) {
       <Block T={T} icon={ImageIcon} title="Photos and videos"
         right={<>
           <span style={{ ...TYPE.caption, color: T.muted }}>{tickedRows.length} of {tickable.length} ticked · {mb(tickedBytes)}</span>
-          <Button T={T} size="sm" variant="ghost" onClick={tickAll} disabled={running}>Tick all</Button>
+          <Button T={T} size="sm" variant="ghost" onClick={tickAll} disabled={running}
+            title="Ticks everything except the groups left out by default">Tick all</Button>
           <Button T={T} size="sm" variant="ghost" onClick={clearAll} disabled={running}>Clear</Button>
         </>}>
         <div style={{ ...TYPE.caption, color: T.muted, marginBottom: SP.sm, lineHeight: 1.55 }}>
-          Ticked items appear in the Gallery and Site Visit, on fictional projects at the same campus. Pictures are re-encoded first, which removes location and camera details. New uploads start unticked. The ticks are kept on this computer; nothing is saved to the portal.
+          Ticked items appear in the Gallery and Site Visit, on fictional projects at the same campus. Pictures are re-encoded first, which removes location and camera details. Nothing is ticked until you tick it, and new uploads start unticked. The ticks are kept on this computer; nothing is saved to the portal.
         </div>
         {tickedRows.length > COUNT_MAX && <div style={{ fontSize: 12, color: T.textOf(T.warning), marginBottom: SP.sm }}>Only the newest {COUNT_MAX} ticked items are sent.</div>}
         {tickedBytes > TOTAL_MAX && <div style={{ fontSize: 12, color: T.textOf(T.warning), marginBottom: SP.sm }}>More than {mb(TOTAL_MAX)} is ticked. Pictures shrink when re-encoded; anything still over the limit is left out.</div>}
@@ -352,6 +360,20 @@ export function SimLauncher({ T, session, supa, onClose }) {
               <span style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{g.campus}</span>
               <span style={{ ...TYPE.caption, color: T.dim }}>host {g.host} · {g.items.filter((r) => ticks?.has(r.id) && !blockedWhy(r)).length} of {g.items.length} ticked</span>
               {g.exclude && <Flag T={T} tone={T.warning}>left out by default{g.why ? `: ${g.why}` : ""}</Flag>}
+              <span style={{ flex: 1 }} />
+              {(() => {
+                const n = g.items.filter((r) => !blockedWhy(r)).length;
+                const on = g.items.filter((r) => ticks?.has(r.id) && !blockedWhy(r)).length;
+                if (!n) return null;
+                const all = on === n;
+                return (
+                  <button type="button" className="pmo-focusable" disabled={running} onClick={() => tickGroup(g, !all)}
+                    style={{ border: 0, background: "none", padding: 0, cursor: running ? "default" : "pointer",
+                      color: T.textOf(BRAND.blue), fontSize: 11.5, fontFamily: TYPE.body.fontFamily }}>
+                    {all ? "Clear group" : "Tick group"}
+                  </button>
+                );
+              })()}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))", gap: 6 }}>
               {g.items.map((r) => (

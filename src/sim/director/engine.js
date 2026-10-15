@@ -106,7 +106,7 @@ export class Director {
   jumpTo(i) {
     if (!this.report) this._newReport();
     i = Math.max(0, Math.min(this.scenes.length - 1, i));
-    this.epoch?.abort();
+    this._abort();
     this.narrator.cancel();
     const snap = this.snaps.get(i);
     if (snap) { try { this.backend.restore(snap); } catch { /* the scene's own steps re-establish the screen */ } }
@@ -122,7 +122,7 @@ export class Director {
 
   /** Stops everything (Restart and Exit). */
   stop() {
-    this.epoch?.abort();
+    this._abort();
     this.epoch = null;
     this.narrator.cancel();
     clearInterval(this.cutTimer);
@@ -148,6 +148,13 @@ export class Director {
       rate: this.narrator.log,
     };
     try { window.__PMO_SIM_REPORT__ = this.report; } catch { /* read-only global in an odd host */ }
+  }
+
+  /** Stops the scene in progress; it records the run time it stopped at, before the clock moves. */
+  _abort() {
+    if (!this.epoch) return;
+    try { this.epoch.signal.stoppedAt = r2(this.clock.now()); } catch { /* ignore */ }
+    this.epoch.abort();
   }
 
   _go(i, jumped) {
@@ -178,7 +185,7 @@ export class Director {
   _cut() {
     clearInterval(this.cutTimer);
     if (this.report) this.report.cut = r2(this.clock.now());
-    this.epoch?.abort();
+    this._abort();
     this.narrator.cancel();
     const ac = new AbortController();
     this.epoch = ac;
@@ -188,6 +195,7 @@ export class Director {
 
   async _scene(i, signal) {
     const sc = this.scenes[i];
+    const report = this.report;              // this run's report (a Restart starts a new one)
     const rec = { n: sc.n, start: r2(this.clock.now()), waits: [], notes: [], tries: 0 };
     try { this.snaps.set(i, this.backend.snapshot()); } catch { rec.notes.push("no snapshot"); }
     const short = this._govern(i);
@@ -206,7 +214,12 @@ export class Director {
         await this._finishLine(ctx);
         break;
       } catch (e) {
-        if (e instanceof Aborted) throw e;
+        if (e instanceof Aborted) {
+          // Stopped by a control or the hard cut: still in the report, marked as such.
+          rec.end = signal.stoppedAt ?? r2(this.clock.now()); rec.dur = r2(rec.end - rec.start); rec.notes.push("stopped");
+          report?.scenes.push(rec);
+          throw e;
+        }
         this.narrator.cancel();
         const what = e instanceof WaitTimeout ? e.what : `error: ${String(e && e.message || e).slice(0, 120)}`;
         if (!(e instanceof WaitTimeout)) console.warn("[simulation] scene", sc.n, e);
@@ -224,7 +237,7 @@ export class Director {
     if (this.hovered && sc.keepHover !== true) { D.unhover(this.hovered); this.hovered = null; }
     rec.end = r2(this.clock.now());
     rec.dur = r2(rec.end - rec.start);
-    this.report.scenes.push(rec);
+    report.scenes.push(rec);
   }
 
   async _close(k, signal, cut) {

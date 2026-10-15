@@ -19,7 +19,7 @@
 //     { when: fn } on any step skips it when fn() is false.
 //   Targets (t) are selectors, or functions returning elements, evaluated when used (spotlights:
 //   every frame).
-import { attr, one, all, hasText, leaves, widen, textOf } from "./director/dom.js";
+import { attr, one, hasText, leaves, widen, textOf } from "./director/dom.js";
 
 const q = (s) => document.querySelector(s);
 const qa = (s) => Array.from(document.querySelectorAll(s));
@@ -45,9 +45,12 @@ export function buildScenes(meta = {}, cast = null) {
   const h2hCol = (name) => h2hCols().find((e) => e.getAttribute("data-campus") === name) || null;
   const tickBox = (name) => () => one(`[data-tour="compare-table"] tr${attr("data-campus", name)} input[type="checkbox"]`);
   const sel = (s) => q(s)?.getAttribute("aria-selected") === "true";
-  // Approved and Released, each column: the label's block, when it carries a PKR figure.
-  const h2hMoney = () => h2hCols().flatMap((col) => leaves(col, /^(Approved|Released)$/i)
-    .map((l) => l.parentElement?.parentElement).filter((b) => b && /PKR/.test(b.textContent || "")));
+  // Approved and Released in one head-to-head column: the label's block, when it carries a PKR figure.
+  const h2hMoney = (i) => () => {
+    const col = h2hCols()[i];
+    return col ? leaves(col, /^(Approved|Released)$/i).map((l) => l.parentElement?.parentElement)
+      .filter((b) => b && /PKR/.test(b.textContent || "")) : [];
+  };
   const releasedDesc = () => !!q('th[data-col="released"] svg.lucide-arrow-down');
   const firstCompareCampus = () => compareRows()[0]?.getAttribute("data-campus") || "";
   const wbsRows = () => qa("[data-wbs-row]");
@@ -276,7 +279,7 @@ export function buildScenes(meta = {}, cast = null) {
         { say: "s12c" },
         { click: '[data-mode="h2h"]', unless: () => sel('[data-mode="h2h"]') },
         { wait: '[data-tour="compare-h2h-grid"] [data-campus]', count: +ex(12, "h2hColumns", "3") || 3, label: "head to head columns" },
-        { spot: [h2hMoney] },
+        { spot: [0, 1, 2].map((i) => ({ union: h2hMoney(i) })) },
         { hold: 4.5, short: 3.2 },
       ],
     },
@@ -295,11 +298,12 @@ export function buildScenes(meta = {}, cast = null) {
         { say: "s13a" },
         { scroll: '[data-tour="h2h-pms"]', block: "center" },
         { spot: ['[data-tour="h2h-pms"]'] },
-        { hold: 1.8, short: 1.2 },
+        { hold: 1.6, short: 1.2 },
         { click: () => h2hCol(assignCampus)?.querySelector('[data-tour="h2h-open"]'), label: "Open on the campus" },
         { test: () => sel('[data-view="sites"]') && !!q('[data-tour="assign-pm"]') && !q('[data-tour="assign-pm"]').disabled, label: "sites view" },
         { scroll: () => widen(q('[data-tour="assign-pm"]'), 900), block: "start", margin: 70 },
         { spot: [() => widen(q('[data-tour="assign-pm"]'), 900)] },
+        { hold: 2.3, short: 2.3 },                          // the Sites view stays up at least 2.3 s
         { say: "s13b" },
         { click: '[data-tour="assign-pm"]', unless: () => !!q('[data-tour="bulk-preview"]') },
         { wait: '[data-tour="pm-select"]', label: "Assign PM dialog" },
@@ -308,7 +312,7 @@ export function buildScenes(meta = {}, cast = null) {
           unless: () => !!assignPm && hasText(q('[data-tour="pm-select"]'), assignPm), show: 0.6, label: "PM picker" },
         { wait: '[data-tour="bulk-preview"]', text: ex(13, "preview", "will be assigned"), label: "assign preview" },
         // Only the first two preview lines are ringed: the dialog sits below the dim layer.
-        { spot: [previewLines], ring: true },
+        { spot: [{ union: previewLines }], ring: true },
         { endLine: true },
         { spot: null },
         { click: cancelButton, label: "Cancel" },             // never "Assign to 2 projects"

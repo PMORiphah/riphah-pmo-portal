@@ -3,7 +3,7 @@
 //   current chapter. The dock fades out while the run plays and comes back when the mouse moves; it
 //   stays up while paused or while a menu is open. Keys (bound in SimRoot): Space / . pause,
 //   → / PageDown next, ← / PageUp previous, C chapters, Home restart, Esc exit.
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pause, Play, SkipBack, SkipForward, ListOrdered, RotateCcw, X } from "lucide-react";
 import { NAVY, GOLD, GOLD_SOFT, INK, INK_SOFT, INK_DIM, SANS, SERIF, Z } from "./look.js";
 import { fmtClock } from "./clock.js";
@@ -16,7 +16,8 @@ const btn = {
 
 function Btn({ label, title, onClick, children, active, disabled }) {
   return (
-    <button type="button" className="sim-dir-btn" aria-label={label} title={title || label} onClick={onClick} disabled={disabled}
+    <button type="button" className="sim-dir-btn" aria-label={label} title={title || label} disabled={disabled}
+      onClick={(e) => { e.currentTarget.blur(); onClick?.(); }}
       style={{ ...btn, ...(active ? { borderColor: GOLD, background: "rgba(216,152,64,.16)" } : null) }}>
       {children}
     </button>

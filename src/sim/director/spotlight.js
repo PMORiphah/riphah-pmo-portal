@@ -34,7 +34,8 @@ export class Spotlight {
   }
 
   /**
-   * Lights the targets. targets: selectors, elements or functions (resolved every frame).
+   * Lights the targets. targets: selectors, elements or functions (resolved every frame), or
+   * { union: target } to light all of a target's elements as one area.
    * opts.mode: "dim" (dim + holes + rings) | "ring" (rings only) | "off".
    */
   set(targets, opts = {}) {
@@ -50,11 +51,18 @@ export class Spotlight {
   _measure() {
     const { pad } = this.opts;
     const out = [];
-    for (const el of all(this.targets)) {
-      const r = visibleRect(el);
-      if (!r) continue;
-      out.push({ x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 });
-      if (out.length >= MAX) break;
+    const add = (r) => { if (r && out.length < MAX) out.push({ x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 }); };
+    for (const t of this.targets) {
+      // { union: target } lights everything it finds as one area (one hole, one ring).
+      if (t && typeof t === "object" && !t.nodeType && "union" in t) {
+        const rs = all(t.union).map(visibleRect).filter(Boolean);
+        if (!rs.length) continue;
+        const left = Math.min(...rs.map((r) => r.left)), top = Math.min(...rs.map((r) => r.top));
+        const right = Math.max(...rs.map((r) => r.left + r.width)), bottom = Math.max(...rs.map((r) => r.top + r.height));
+        add({ left, top, width: right - left, height: bottom - top });
+        continue;
+      }
+      for (const el of all(t)) add(visibleRect(el));
     }
     return out;
   }

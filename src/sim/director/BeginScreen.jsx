@@ -4,7 +4,7 @@
 // (plays one line with the chosen on-device voice and reports its speed), the readiness checklist
 // and Start. Start stays disabled until every check has passed; pressing it is also the browser's
 // required gesture before speech.
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Check, Loader2, AlertTriangle, Volume2, VolumeX, Play } from "lucide-react";
 import { AssistantAvatar } from "../../AssistantAvatar.jsx";
 import { NAVY, GOLD, GOLD_SOFT, INK, INK_SOFT, INK_DIM, SERIF, SANS, Z, EASE } from "./look.js";

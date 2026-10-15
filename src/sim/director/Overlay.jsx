@@ -5,7 +5,7 @@
 //   - a transparent shield that stops stray clicks from changing the run (the controls stay usable);
 //   - the simulation badge, top centre, above everything, in every state (Badge, exported).
 // Nothing here is new to the App: it is its own layer and only reads the App's layout.
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AssistantAvatar } from "../../AssistantAvatar.jsx";
 import { SPOT_MAX } from "./spotlight.js";
 import { GOLD, GOLD_SOFT, INK, SANS, Z, EASE } from "./look.js";

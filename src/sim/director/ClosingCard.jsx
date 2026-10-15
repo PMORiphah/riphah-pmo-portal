@@ -1,6 +1,6 @@
 // PMO Simulation director: the closing card. "That's the portal. Thank you." with the six chapters
 // as buttons, Restart and Exit, and the run report for the presenter (collapsed).
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { RotateCcw, X } from "lucide-react";
 import { AssistantAvatar } from "../../AssistantAvatar.jsx";
 import { ChapterList } from "./Dock.jsx";

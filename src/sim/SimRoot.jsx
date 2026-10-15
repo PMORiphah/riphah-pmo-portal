@@ -8,7 +8,7 @@
 //
 // Props: { backend, narration (resolved lines), meta (resolved SEED.meta), cast, mode, onExit }.
 // Real names exist only in `cast`, `narration` and `meta`, in memory; they are rendered as text.
-import React, { Component, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { RunClock, sleepRun, tick } from "./director/clock.js";
 import { Director, LIMIT } from "./director/engine.js";
 import { Spotlight } from "./director/spotlight.js";
