@@ -1,56 +1,50 @@
-// PMO Simulation: the synthetic Supabase backend.
+// PMO Simulation: the synthetic Supabase backend, live mode (contract §G). Owner: B2.
 //
-// installBackend({ store, mediaUrls, onUnhandled }) wraps window.fetch (and XMLHttpRequest,
-// WebSocket and EventSource) so that every request the portal makes to its Supabase project is
-// answered here, in the page, from the in-memory store (the resolved seed). Nothing reaches the
-// network: requests to the Supabase host are answered from memory, requests to any other site are
-// refused, and only this page's own files (and blob:/data:) go to the browser's real fetch.
+// installBackend({ store, mediaUrls, responses, rpc, mode: "live", onUnhandled }) wraps window.fetch
+// (and XMLHttpRequest, WebSocket and EventSource) so that every request the portal makes to its
+// Supabase project is answered here, in the page, from the snapshot the PMO's portal tab handed
+// over. Nothing reaches the network: requests to the Supabase host are answered from memory,
+// requests to any other site are refused, and only this page's own files (and blob:/data:) go to
+// the browser's real fetch.
 //
-//   /rest/v1/<table|view>  a small PostgREST: select (columns, aliases, casts, JSON paths, embedded
-//                          resources with hints, !inner, count), filters (eq neq gt gte lt lte like
-//                          ilike match imatch in is isdistinct cs cd ov fts…, not., or/and trees),
-//                          order (several keys, nullsfirst/last, enum order), limit/offset, Range,
-//                          Prefer count=…, single-object Accept, HEAD; writes (POST, upsert, PATCH,
-//                          DELETE, PUT) kept in memory so read marks and badges count down.
-//   /rest/v1/rpc/<fn>      the functions the portal calls, answered plausibly.
-//   /storage/v1/…          sign requests answered with this page's own files (fictional documents
-//                          under BASE_URL + "sim/files/") or the blob: links of handed-over media;
-//                          uploads refused.
-//   /functions/v1/<fn>     ask answers locally; everything that would send or act is refused with
-//                          "Not sent: this is the simulation. Nothing leaves this page."
-//   /auth/v1/…             refresh answers with synthetic tokens; sign-in, recovery and password
-//                          changes are refused.
-// Anything not recognised is answered 501 {message: "Not available in the simulation"} and reported
-// through onUnhandled and stats().
+//   GET /rest/v1/<table|view>  1. replay: the response recorded in the portal tab for exactly this
+//                                 pathname + search (no Range, no Prefer count, no single-object Accept);
+//                              2. otherwise a small PostgREST over the snapshot tables: select (columns,
+//                                 aliases, casts, JSON paths, embeds with hints, !inner, count), filters
+//                                 (eq neq gt gte lt lte like ilike match imatch in is isdistinct cs cd ov
+//                                 fts…, not., or/and trees), order (several keys, nulls first/last, the
+//                                 database's enum order, en-US collation), limit/offset, Range, Prefer
+//                                 count, single-object Accept, HEAD.
+//   writes                     read-only presentation: only the read markers the portal writes when a
+//                              thread opens are accepted, and they are discarded (no table changes, so
+//                              badges stay as production has them). Everything else is refused, 403
+//                              "Read-only presentation: nothing is changed or sent", with a toast.
+//   /rest/v1/rpc/<fn>          the functions the portal calls, answered from the snapshot or as no-ops.
+//   /storage/v1/…              sign requests for "sim-media/<key>" answer the handed-over blob: link;
+//                              every other file is "not part of the simulation"; uploads and deletes refused.
+//   /functions/v1/<fn>         every edge function is refused (nothing is sent; the assistant is off).
+//   /auth/v1/…                 refresh answers synthetic tokens; sign-in and password changes are refused.
+// Anything not recognised is answered 501 and reported through onUnhandled and stats().
 //
-// Writes that would bring real data in under fictional labels are refused: storage uploads, the
-// projects import (its pre-import snapshot), wipe-all deletes, bulk inserts of projects / past
-// projects / WBS tasks and the WBS import's per-task inserts.
-//
+// The snapshot tables are frozen: nothing here (or in the portal) can change them during the run.
 // The repo is public: this file holds no names, keys or tokens. The Supabase address below is the
 // portal's own public project address (also in src/App.jsx and src/auth.js); it is only matched,
 // never contacted.
 import { authUser, issueTokens, isSimToken, prepareSession as writeSession, sessionUser, TTL_S } from "./session.js";
+import { TABLES, columnsOf } from "./live/schema.js";
 
 export const SUPA_ORIGIN = "https://prmxkecomqqngvrmytcj.supabase.co";
 
 export const MSG = Object.freeze({
   NA: "Not available in the simulation",
-  NOT_SENT: "Not sent: this is the simulation. Nothing leaves this page.",
-  NO_IMPORT: "Not available in the simulation: nothing from this computer is imported or uploaded here.",
-  NO_ACCOUNTS: "Not available in the simulation: accounts are not created, changed or removed here.",
+  READ_ONLY: "Read-only presentation: nothing is changed or sent",
+  ASK: "The assistant is not available in the presentation",
   NO_SIGNIN: "Sign-in is not available in the simulation.",
   NO_PASSWORD: "Passwords are not changed in the simulation.",
-  ASK: "In the simulation the assistant answers from prepared questions only.",
-  NO_FILE: "This file is not part of the simulation.",
-  NO_PAST_RECORD: "Not available in the simulation: past project records are not imported or rewritten here.",
+  NO_FILE: "This file is not part of the simulation",
 });
 
-const BASE = (() => {
-  try { return import.meta.env.BASE_URL || "/"; } catch { return "/"; }
-})();
-
-// ── tables the real database has (37 tables + views); a known one the seed leaves out reads as empty ──
+// ── tables the real database has (37 tables + views); a known one the snapshot leaves out reads as empty ──
 const KNOWN = new Set([
   "projects", "project_assignments", "project_cashflows", "project_risks", "project_raci", "project_tasks",
   "project_attachments", "project_deliverables", "comments", "comment_reads", "lessons_learned", "benefits_realized",
@@ -64,26 +58,17 @@ const KNOWN = new Set([
   "at_risk_projects", "pdd_pending_projects", "project_task_rollup", "project_risks_scored", "lessons_learned_full",
   "benefits_realized_full", "past_project_summary", "past_project_task_rollup", "session_summary", "tour_progress",
 ]);
-const VIEWS = new Set([
-  "portfolio_metrics", "portfolio_dashboard", "project_metrics", "investment_metrics", "cashflow_monthly",
-  "at_risk_projects", "pdd_pending_projects", "project_task_rollup", "project_risks_scored", "lessons_learned_full",
-  "benefits_realized_full", "past_project_summary", "past_project_task_rollup", "session_summary", "tour_progress",
-]);
-// Always empty in the simulation, whatever the seed holds: these drive the sign-in pop-ups
-// (deadline alerts, PDD reminders), which would block the run.
+// Always empty in the simulation: these drive the sign-in pop-ups (deadline alerts, PDD reminders),
+// which would block the run. The real pop-up still opens in the PMO's own portal tab.
 const ALWAYS_EMPTY = new Set(["at_risk_projects", "pdd_pending_projects"]);
 // The database has no policies on these for the browser.
 const NO_ACCESS = new Set(["epdd_state", "webauthn_challenges", "pmo_active_session"]);
 // Row-level security: these return only the caller's own rows.
 const OWN_ROWS = new Set(["comment_reads", "past_chat_reads", "push_subscriptions", "user_webauthn_credentials",
   "tour_events", "user_sessions"]);
-// Views whose rows mirror a base table (same id): for relationships and to follow writes.
+// Views whose rows mirror a base table (same id): for relationships.
 const VIEW_BASE = { project_metrics: "projects", project_risks_scored: "project_risks",
   past_project_summary: "past_projects", lessons_learned_full: "lessons_learned", benefits_realized_full: "benefits_realized" };
-
-const PK = { settings: ["key"], comment_reads: ["user_id", "comment_id"], past_chat_reads: ["user_id", "thread"],
-  board_report_recipients: ["report_id", "user_id"], epdd_state: ["key"], push_subscriptions: ["endpoint"] };
-const pkOf = (t) => PK[t] || ["id"];
 
 // Foreign keys: table -> { column: referenced table } (all reference the target's id).
 const PROJ_FK = { sector_id: "sectors", region_id: "regions", segment_id: "segments", cost_center_id: "cost_centers",
@@ -123,45 +108,65 @@ const SINGULAR = { campuses: "campus", user_profiles: "user", past_projects: "pa
   epdd_pdds: "pdd", cost_centers: "cost_center", user_sessions: "session", comments: "comment" };
 const singular = (t) => SINGULAR[t] || t.replace(/s$/, "");
 
-// Enum columns sort in declaration order, not alphabetically.
-const ENUM_ORDER = {
-  role: ["pmo", "project_manager", "guest"],
-  actor_role: ["pmo", "project_manager", "guest"],
-  author_role: ["pmo", "project_manager", "guest"],
-  raci_role: ["R", "A", "C", "I"],
-  workflow_stage: ["pdd_not_submitted", "identified", "pdd_submitted", "df_review", "ed_review", "mt_review", "approved", "closed"],
-};
-
-// Columns a new row gets when the insert leaves them out (what the database defaults or triggers do).
-const DEFAULTS = {
-  comments: { is_read_by_pmo: false, parent_id: null },
-  board_report_recipients: { removed: false, seen_at: null, emailed_at: null },
-  project_deliverables: { confirmed: true, superseded: false, status: "not_started" },
-  project_tasks: { is_milestone: false, pct_complete: 0, status: "not_started", parent_id: null },
-  past_project_tasks: { is_milestone: false, pct_complete: 0, status: "not_started", parent_id: null },
-  user_profiles: { is_active: true, notify_email: true, whatsapp_opt_in: false },
-  epdd_pdds: { is_history: false },
-  past_projects: { status: "open" },
-  board_reports: { status: "draft" },
-};
-const NOW_COLS = new Set(["created_at", "updated_at", "uploaded_at", "added_at", "assigned_at", "read_at"]);
+// Enum columns sort in the database's declaration order (pg_enum.enumsortorder, read 16 Oct 2026),
+// keyed by table and column (project_cashflows.priority, for one, is plain text).
+const ENUMS = Object.freeze({
+  user_role: ["pmo", "project_manager", "guest"],
+  raci_role: ["responsible", "accountable", "consulted", "informed"],
+  workflow_stage: ["pdd_not_submitted", "identified", "df_review", "ed_review", "mt_review", "approved", "closed"],
+  risk_level: ["low", "medium", "high"],
+  risk_status: ["open", "monitoring", "mitigated", "closed", "realized"],
+  risk_category: ["financial", "schedule", "technical", "vendor", "regulatory", "resource", "safety"],
+  past_status: ["open", "closing", "closed"],
+  project_priority: ["top_priority", "first_priority", "second_priority", "third_priority", "carry_forward"],
+  schedule_flag: ["not_started", "on_time", "delayed"],
+  budget_flag: ["not_started", "within", "over"],
+  cashflow_bucket: ["capex", "pmdc", "investment"],
+});
+const ENUM_COLS = Object.freeze({
+  "user_profiles.role": "user_role", "activity_log.actor_role": "user_role", "comments.author_role": "user_role",
+  "past_pm_messages.author_role": "user_role", "past_project_updates.author_role": "user_role",
+  "past_project_summary.last_update_role": "user_role",
+  "project_raci.raci_role": "raci_role",
+  "projects.workflow_stage": "workflow_stage", "project_metrics.workflow_stage": "workflow_stage",
+  "project_risks.probability": "risk_level", "project_risks.impact": "risk_level",
+  "project_risks_scored.probability": "risk_level", "project_risks_scored.impact": "risk_level",
+  "project_risks.status": "risk_status", "project_risks_scored.status": "risk_status",
+  "project_risks.category": "risk_category", "project_risks_scored.category": "risk_category",
+  "past_projects.status": "past_status", "past_project_summary.status": "past_status",
+  "projects.priority": "project_priority", "project_metrics.priority": "project_priority",
+  "project_metrics.schedule_flag": "schedule_flag", "projects.manual_schedule_flag": "schedule_flag",
+  "project_metrics.manual_schedule_flag": "schedule_flag",
+  "project_metrics.budget_flag": "budget_flag", "projects.manual_budget_flag": "budget_flag",
+  "project_metrics.manual_budget_flag": "budget_flag",
+  "project_cashflows.bucket": "cashflow_bucket",
+});
+const enumOf = (table, col) => { const e = ENUM_COLS[`${table}.${col}`]; return e ? ENUMS[e] : null; };
+// Column types from the allow-list (schema.js): numbers, dates and text sort as Postgres sorts them.
+const TYPES = new Map(Object.keys(TABLES).map((t) => [t, new Map(columnsOf(t).map((c) => [c.name, c.type]))]));
+const typeOf = (table, col) => TYPES.get(table)?.get(col) || null;
 
 const clone = (v) => {
   if (typeof structuredClone === "function") { try { return structuredClone(v); } catch { /* fall through */ } }
   return JSON.parse(JSON.stringify(v));
 };
-const nowIso = () => new Date().toISOString();
-const uuid = () => {
-  try { if (crypto.randomUUID) return crypto.randomUUID(); } catch { /* ignore */ }
-  const h = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
-  return `${h()}${h()}-${h()}-4${h().slice(1)}-a${h().slice(1)}-${h()}${h()}${h()}`;
+const deepFreeze = (v) => {
+  if (v && typeof v === "object" && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const k of Object.keys(v)) deepFreeze(v[k]);
+  }
+  return v;
 };
+const nowIso = () => new Date().toISOString();
+const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const toast = (msg) => { try { window.__PMO_SIM__?.guard?.toast?.(msg); } catch { /* ignore */ } };
 
 class SimError extends Error {
   constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra; }
 }
 const unsupported = (what) => new SimError(501, MSG.NA, { code: "SIM501", details: what, unhandled: true });
-const refused = (message, what) => new SimError(403, message, { code: "SIM403", details: what, refused: true });
+const refused = (what, message = MSG.READ_ONLY) => new SimError(403, message, { code: "SIM403", details: what, refused: true });
 const badRequest = (message, code = "PGRST100") => new SimError(400, message, { code });
 
 // ── parsing helpers ─────────────────────────────────────────────────────────────────────────────
@@ -234,7 +239,13 @@ function dateMs(s) {
   return Date.parse(t);
 }
 const NUM_RE = /^-?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i;
-const COLL = typeof Intl !== "undefined" && Intl.Collator ? new Intl.Collator("en", { sensitivity: "variant" }) : null;
+// Text order as the database sorts it: Postgres 17 with the ICU provider, locale en-US (checked
+// read-only on 16 Oct 2026: pg_database.datlocprovider 'i', datlocale 'en-US'). ICU's default en-US
+// collation is what Intl.Collator("en-US") does (spaces and punctuation count; "IT. 2…" sorts
+// before "IT.2…"); a deterministic collation breaks ICU ties by the bytes, so code-unit order last.
+// A stable sort keeps the server's order for full ties.
+const COLL = typeof Intl !== "undefined" && Intl.Collator ? new Intl.Collator("en-US") : null;
+const cmpText = (a, b) => (COLL && COLL.compare(a, b)) || (a < b ? -1 : a > b ? 1 : 0);
 
 // row value v against the filter text s: -1 / 0 / 1, or null when they can't be compared
 function cmpFilter(v, s) {
@@ -251,21 +262,25 @@ function cmpFilter(v, s) {
   if (NUM_RE.test(str) && NUM_RE.test(s)) { const x = Number(str), y = Number(s); return x < y ? -1 : x > y ? 1 : 0; }
   return str < s ? -1 : str > s ? 1 : 0;
 }
-// two row values, for ORDER BY
-function cmpSort(a, b, col) {
-  const en = ENUM_ORDER[col];
+// two row values, for ORDER BY: by the column's type in the allow-list when it is known (enum
+// order from the database, numbers, dates, booleans, collated text), else by what the values look like.
+function cmpSort(a, b, table, col) {
+  const en = enumOf(table, col);
   if (en && typeof a === "string" && typeof b === "string") {
     const ia = en.indexOf(a), ib = en.indexOf(b);
     if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0 || ib >= 0) return ia >= 0 ? -1 : 1;
   }
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "boolean" && typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0);
   const sa = typeof a === "object" ? JSON.stringify(a) : String(a);
   const sb = typeof b === "object" ? JSON.stringify(b) : String(b);
+  const type = typeOf(table, col);
+  if (type === "t" || type === "u" || type === "e") return cmpText(sa, sb);
   const da = dateMs(sa), db = dateMs(sb);
   if (!isNaN(da) && !isNaN(db)) return da - db;
-  if (NUM_RE.test(sa) && NUM_RE.test(sb)) return Number(sa) - Number(sb);
-  return COLL ? COLL.compare(sa, sb) : (sa < sb ? -1 : sa > sb ? 1 : 0);
+  if (type !== "d" && type !== "ts" && NUM_RE.test(sa) && NUM_RE.test(sb)) return Number(sa) - Number(sb);
+  return cmpText(sa, sb);
 }
 const likeRe = (pat, flags) => new RegExp("^" + pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/[*%]/g, ".*").replace(/_/g, ".") + "$", flags + "s");
 const asArray = (v) => {
@@ -396,27 +411,43 @@ let installed = null;
 let nativeFetch = null;            // the browser's own fetch, captured once (a re-install never wraps a wrapper)
 
 /**
- * Installs the synthetic backend. Returns { snapshot, restore, stats, reset }.
- * store: the resolved seed ({ tables, meta, … }); its tables are served and written in place.
- * mediaUrls: { <media key>: "blob:…" } for the handed-over (or sample) media.
+ * Installs the synthetic backend (live mode). Returns { snapshot, restore, stats, reset, uninstall, media }.
+ * store:     { tables, meta: { pmo: { id, username, full_name, email: null }, takenAt, plan } }; the tables
+ *            are frozen and never change.
+ * mediaUrls: { m001: "blob:…", … } for the handed-over site-visit media.
+ * responses: the snapshot's recorded responses [{ key, status, contentRange, body }] (replayed first).
+ * rpc:       { project_has_deliverables: [projectId, …] }.
  * onUnhandled(info): called for every request the backend does not recognise (and every request
  *   to another site), with { kind, method, path, detail }.
  */
-export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
+export function installBackend({ store, mediaUrls = {}, responses = [], rpc = {}, mode = "live", onUnhandled } = {}) {
+  if (mode !== "live") throw new Error("Simulation backend: only the live mode exists");
   if (!store || typeof store !== "object" || !store.tables || typeof store.tables !== "object") {
     throw new Error("Simulation backend: store.tables missing");
   }
   if (installed) installed.uninstall();
-  const tables = store.tables;
+  const tables = deepFreeze(store.tables);
   const me = sessionUser(store);
   const media = { ...mediaUrls };
+  const deliverables = new Set(Array.isArray(rpc?.project_has_deliverables) ? rpc.project_has_deliverables.map(String) : []);
+  // The replay map: exact pathname + search → { status, contentRange, body }.
+  const replay = new Map();
+  for (const r of Array.isArray(responses) ? responses : []) {
+    if (r && typeof r.key === "string" && !replay.has(r.key)) replay.set(r.key, { status: r.status, contentRange: r.contentRange ?? null, body: deepFreeze(r.body) });
+  }
 
   const freshStats = () => ({
     calls: 0, rest: 0, rpc: 0, storage: 0, functions: 0, auth: 0, local: 0,
     reads: 0, writes: 0, emptyTables: {}, refused: [], blocked: [], unhandled: [], outside: [],
     sockets: 0, endpoints: {},
+    accepted: { comment_reads: 0, comments_read_flag: 0, past_chat_reads: 0 },
+    rpcUnknown: [],
   });
   let st = freshStats();
+  let hits = 0;
+  let misses = new Map();          // key → n
+  let served = new Set();          // replay keys served at least once
+  let seq = 0;
   const cap = (arr, x) => { if (arr.length < 500) arr.push(x); };
   const report = (info) => {
     cap(st.unhandled, info);
@@ -425,29 +456,14 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
   const seen = (key) => { st.endpoints[key] = (st.endpoints[key] || 0) + 1; };
 
   // ── row access ──
-  // Views the seed may leave out, computed from their base table (so a lesson or benefit added
-  // during the run shows up): the base row plus its project's name, code and campus.
-  const projectCols = (r) => {
-    const p = r && r.project_id != null ? index("projects").get(String(r.project_id)) : null;
-    return { project_name: p ? p.name : null, project_code: p ? p.code : null, campus: p ? p.campus : null };
-  };
-  const DERIVED = { lessons_learned_full: ["lessons_learned", projectCols], benefits_realized_full: ["benefits_realized", projectCols] };
   const rowsOf = (t) => {
     if (ALWAYS_EMPTY.has(t) || NO_ACCESS.has(t)) return [];
     const r = tables[t];
-    if (!Array.isArray(r) && DERIVED[t] && Array.isArray(tables[DERIVED[t][0]])) {
-      const [base, extra] = DERIVED[t];
-      return tables[base].map((x) => ({ ...x, ...extra(x) }));
-    }
     if (Array.isArray(r)) return OWN_ROWS.has(t) ? r.filter((x) => x.user_id === me.id) : r;
     if (KNOWN.has(t)) { st.emptyTables[t] = (st.emptyTables[t] || 0) + 1; return []; }
     return null;
   };
-  const writable = (t) => {
-    if (!Array.isArray(tables[t])) tables[t] = [];
-    return tables[t];
-  };
-  const byId = new Map();          // table -> Map(id -> row), rebuilt lazily after writes
+  const byId = new Map();          // table -> Map(id -> row), built once (the tables never change)
   const index = (t) => {
     let m = byId.get(t);
     if (!m) {
@@ -457,7 +473,6 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
     }
     return m;
   };
-  const dirty = (t) => { byId.delete(t); const v = Object.keys(VIEW_BASE).find((k) => VIEW_BASE[k] === t); if (v) byId.delete(v); };
 
   // ── relationships ──
   function relationship(parent, rel, hint, sample) {
@@ -499,7 +514,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
   }
 
   // Applies filters (entries [[key, value]]) to rows; returns the kept rows.
-  function applyFilters(rows, entries, table) {
+  function applyFilters(rows, entries) {
     const preds = [];
     for (const [k, v] of entries) {
       if (k === "select" || k === "order" || k === "limit" || k === "offset" || k === "on_conflict" || k === "columns") continue;
@@ -514,7 +529,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
     if (!preds.length) return rows;
     return rows.filter((r) => preds.every((p) => p(r)));
   }
-  function applyOrder(rows, order) {
+  function applyOrder(rows, order, table) {
     if (!order) return rows;
     const keys = splitTop(order).map((term) => {
       const parts = term.split(".");
@@ -535,7 +550,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
         if (a == null && b == null) continue;
         if (a == null) return k.nulls === "first" ? -1 : 1;
         if (b == null) return k.nulls === "first" ? 1 : -1;
-        const c = cmpSort(a, b, parseColExpr(k.col).col);
+        const c = cmpSort(a, b, table, parseColExpr(k.col).col);
         if (c) return c * k.dir;
       }
       return x.i - y.i;
@@ -568,7 +583,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
         const id = row.id;
         kids = id == null ? [] : target.filter((k) => k[relInfo.col] != null && String(k[relInfo.col]) === String(id));
       }
-      kids = applyFilters(kids, sub.filter(([k]) => !k.includes(".")), it.rel);
+      kids = applyFilters(kids, sub.filter(([k]) => !k.includes(".")));
       const isCount = it.children.length === 1 && it.children[0].kind === "col" && it.children[0].expr === "count" && !("count" in (kids[0] || {}));
       if (isCount) {
         if (it.inner && !kids.length) return null;
@@ -576,7 +591,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
         continue;
       }
       const subOrder = (sub.find(([k]) => k === "order") || [])[1];
-      kids = applyOrder(kids, subOrder);
+      kids = applyOrder(kids, subOrder, it.rel);
       const so = intParam((sub.find(([k]) => k === "offset") || [])[1], "offset") || 0;
       const sl = intParam((sub.find(([k]) => k === "limit") || [])[1], "limit");
       if (so || sl != null) kids = kids.slice(so, sl != null ? so + sl : undefined);
@@ -593,13 +608,25 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
     return out;
   }
 
-  // ── PostgREST GET / HEAD ──
-  function restRead(table, params, headers, method) {
+  // ── PostgREST GET / HEAD: replay first, then the engine ──
+  const wantsObject = (headers) => /application\/vnd\.pgrst\.object\+json/.test(String(headers.get("accept") || ""));
+  function replayed(key, headers, method) {
+    const r = replay.get(key);
+    if (!r) return null;
+    if (headers.get("range") || /count=/.test(String(headers.get("prefer") || "")) || wantsObject(headers)) return null;
+    hits++;
+    served.add(key);
+    return { status: r.status, body: method === "HEAD" ? null : r.body, headers: r.contentRange ? { "Content-Range": r.contentRange } : {} };
+  }
+  function restRead(table, params, headers, method, key) {
+    const r = replayed(key, headers, method);
+    if (r) return r;
+    if (misses.size < 200 || misses.has(key)) misses.set(key, (misses.get(key) || 0) + 1);
     const src = rowsOf(table);
     if (src === null) throw unsupported(`table ${table}`);
     st.reads++;
-    let rows = applyFilters(src, [...params], table);
-    rows = applyOrder(rows, params.get("order"));
+    let rows = applyFilters(src, [...params]);
+    rows = applyOrder(rows, params.get("order"), table);
     let offset = intParam(params.get("offset"), "offset") || 0;
     let limit = intParam(params.get("limit"), "limit");
     const range = /^(\d+)-(\d*)$/.exec(String(headers.get("range") || "").trim());
@@ -611,8 +638,8 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
     const page = rows.slice(offset, limit != null ? offset + limit : undefined);
     const items = parseSelect(params.get("select"));
     const out = [];
-    for (const r of page) {
-      const o = project(r, table, items, params);
+    for (const row of page) {
+      const o = project(row, table, items, params);
       if (o) out.push(o);
     }
     const prefer = String(headers.get("prefer") || "");
@@ -628,241 +655,73 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
     }
     return { status: 200, body: method === "HEAD" ? null : out, headers: extra };
   }
-  const wantsObject = (headers) => /application\/vnd\.pgrst\.object\+json/.test(String(headers.get("accept") || ""));
 
-  // ── writes ──
-  const filterEntries = (params) => [...params].filter(([k]) => !["select", "order", "limit", "offset", "on_conflict", "columns"].includes(k) && !k.includes(".") || k === "not.or" || k === "not.and");
-  function refuseWrite(method, table, params, body, prefer) {
-    const entries = filterEntries(params);
-    const wipeAll = entries.some(([k, v]) => v === "not.is.null" && pkOf(table).includes(k));
-    if (table === "snapshots" && method !== "GET") return MSG.NO_IMPORT;
-    if (method === "DELETE" && wipeAll) return MSG.NO_IMPORT;
-    if ((method === "DELETE" || method === "PATCH") && entries.length === 0) return MSG.NA + ": every change names its rows";
-    const bulkTables = ["projects", "past_projects", "project_tasks", "past_project_tasks"];
-    if (method === "POST" && Array.isArray(body) && bulkTables.includes(table)) return MSG.NO_IMPORT;
-    if (method === "POST" && /^(past_)?project_tasks$/.test(table) && /return=representation/.test(prefer)) return MSG.NO_IMPORT;
-    if (method === "DELETE" && /^(past_)?project_tasks$/.test(table) && !entries.some(([k]) => k === "id")) return MSG.NO_IMPORT;
-    if (table === "user_profiles" && method !== "PATCH") return MSG.NO_ACCOUNTS;
-    // Accounts stand for real people (names from the hand-over): only the signed-in PMO's own
-    // preferences change (tutorial marks, notifications); another account's phone, status or role never.
-    if (table === "user_profiles" && !(entries.length === 1 && entries[0][0] === "id" && entries[0][1] === "eq." + me.id)) return MSG.NO_ACCOUNTS;
-    // Past Projects › Import ("Update them and add new ones") rewrites each matched row with a full
-    // record before its bulk insert (which is refused above), so a sheet from this computer would
-    // land under fictional labels. Edit project sends the same full record, so it is refused too;
-    // small changes (why still open, status, follow-up dates) still work.
-    if (table === "past_projects" && method === "PATCH" && body && typeof body === "object"
-      && ["code", "name", "approved_amount", "released_amount"].every((k) => k in body)) return MSG.NO_PAST_RECORD;
-    if (["push_subscriptions", "user_webauthn_credentials", "webauthn_challenges", "epdd_state", "pmo_active_session"].includes(table)) return MSG.NA;
-    return null;
-  }
-
-  function newRowDefaults(table, obj) {
-    const rows = Array.isArray(tables[table]) ? tables[table] : [];
-    const sample = rows[0] || {};
-    const pk = pkOf(table);
-    if (pk.length === 1 && pk[0] === "id" && obj.id == null) {
-      const numeric = rows.length && rows.every((r) => typeof r.id === "number");
-      obj.id = numeric ? rows.reduce((m, r) => Math.max(m, r.id), 0) + 1 : uuid();
-    }
-    if (OWN_ROWS.has(table) && obj.user_id == null) obj.user_id = me.id;
-    const d = DEFAULTS[table] || {};
-    for (const k of Object.keys(d)) if (!(k in obj)) obj[k] = d[k];
-    for (const k of Object.keys(sample)) {
-      if (k in obj) continue;
-      if (NOW_COLS.has(k)) obj[k] = nowIso();
-      else if (typeof sample[k] === "boolean") obj[k] = false;
-      else obj[k] = null;
-    }
-    for (const k of NOW_COLS) if (!(k in obj) && !rows.length && (k === "created_at")) obj[k] = nowIso();
-    return obj;
-  }
-
-  function restWrite(method, table, params, headers, body) {
-    if (!KNOWN.has(table) && !Array.isArray(tables[table])) throw unsupported(`write to table ${table}`);
-    if (VIEWS.has(table)) throw unsupported(`write to view ${table}`);
+  // ── writes: the read markers only, accepted and discarded (contract §G.3) ──
+  const onlyKeys = (o, keys) => isObj(o) && Object.keys(o).every((k) => keys.includes(k));
+  function liveWrite(method, table, params, headers, body) {
     const prefer = String(headers.get("prefer") || "");
-    const why = refuseWrite(method, table, params, body, prefer);
-    if (why) throw refused(why, `${method} ${table}`);
-    const rep = /return=representation/.test(prefer);
-    const items = parseSelect(params.get("select"));
-    const shape = (rows) => rows.map((r) => project(r, table, items, params)).filter(Boolean);
-    const list = writable(table);
-    let changed = [];
-    let status;
-    if (method === "POST" || method === "PUT") {
-      if (body == null || typeof body !== "object") throw badRequest("Empty or invalid json", "PGRST102");
-      const arr = Array.isArray(body) ? body : [body];
-      if (arr.length > 1) {
-        const k0 = Object.keys(arr[0]).sort().join(",");
-        if (arr.some((o) => Object.keys(o).sort().join(",") !== k0)) throw badRequest("All object keys must match", "PGRST102");
+    const entries = [...params];
+    const answer = (status) => { st.writes++; return { status, body: null }; };
+    if (method === "POST" && table === "comment_reads" && /resolution=ignore-duplicates/.test(prefer)
+      && entries.every(([k]) => k === "columns" || k === "on_conflict")) {
+      const rows = Array.isArray(body) ? body : [body];
+      if (rows.length >= 1 && rows.length <= 5000 && rows.every((r) => onlyKeys(r, ["user_id", "comment_id", "read_at"])
+        && r.user_id === me.id && typeof r.comment_id === "string" && UUID_RE.test(r.comment_id))) {
+        st.accepted.comment_reads++;
+        seen("POST comment_reads (read marker, discarded)");
+        return answer(201);
       }
-      const cols = params.get("columns") ? splitTop(params.get("columns")) : null;
-      const conflict = params.get("on_conflict") ? splitTop(params.get("on_conflict")) : pkOf(table);
-      const resolution = method === "PUT" ? "merge" : /resolution=merge-duplicates/.test(prefer) ? "merge"
-        : /resolution=ignore-duplicates/.test(prefer) ? "ignore" : null;
-      for (const raw of arr) {
-        const given = cols ? Object.fromEntries(cols.filter((c) => c in raw).map((c) => [c, raw[c]])) : { ...raw };
-        const hit = conflict.every((c) => given[c] != null)
-          ? list.find((r) => conflict.every((c) => r[c] != null && String(r[c]) === String(given[c]))) : null;
-        if (hit) {
-          if (resolution === "merge") { Object.assign(hit, given); if ("updated_at" in hit && !("updated_at" in given)) hit.updated_at = nowIso(); changed.push(hit); }
-          else if (resolution === "ignore") { /* left as it is */ }
-          else throw new SimError(409, `duplicate key value violates unique constraint "${table}_pkey"`, { code: "23505" });
-          continue;
-        }
-        const row = newRowDefaults(table, given);
-        list.push(row);
-        changed.push(row);
-      }
-      status = 201;
-      afterWrite("insert", table, changed);
-    } else if (method === "PATCH") {
-      if (body == null || typeof body !== "object" || Array.isArray(body)) throw badRequest("Empty or invalid json", "PGRST102");
-      const targets = applyFilters(list.filter((r) => !OWN_ROWS.has(table) || r.user_id === me.id), [...params], table);
-      for (const r of targets) {
-        Object.assign(r, body);
-        if ("updated_at" in r && !("updated_at" in body)) r.updated_at = nowIso();
-      }
-      changed = targets;
-      status = rep ? 200 : 204;
-      afterWrite("update", table, changed);
-    } else if (method === "DELETE") {
-      const targets = applyFilters(list.filter((r) => !OWN_ROWS.has(table) || r.user_id === me.id), [...params], table);
-      const gone = new Set(targets);
-      // ON DELETE CASCADE for self-references (replies, sub-tasks)
-      if (["comments", "project_tasks", "past_project_tasks"].includes(table)) {
-        let grew = true;
-        while (grew) {
-          grew = false;
-          for (const r of list) if (!gone.has(r) && r.parent_id != null && [...gone].some((g) => String(g.id) === String(r.parent_id))) { gone.add(r); grew = true; }
-        }
-      }
-      for (let i = list.length - 1; i >= 0; i--) if (gone.has(list[i])) list.splice(i, 1);
-      changed = targets;
-      status = rep ? 200 : 204;
-      afterWrite("delete", table, [...gone]);
-    } else throw unsupported(`${method} ${table}`);
-    st.writes++;
-    if (!rep) return { status: status === 200 ? 204 : status, body: null };
-    const shaped = shape(changed);
-    if (wantsObject(headers)) {
-      if (shaped.length !== 1) throw new SimError(406, "JSON object requested, multiple (or no) rows returned", { code: "PGRST116" });
-      return { status, body: shaped[0] };
     }
-    return { status, body: shaped };
-  }
-
-  // What the database's triggers and views would do after a write.
-  const sevOf = (pr, im) => (pr === "high" && im === "high" ? "critical"
-    : (pr === "high" && im === "medium") || (pr === "medium" && im === "high") ? "high"
-      : pr === "low" && im === "low" ? "low" : "medium");
-  function mirror(view, base, ids, extra) {
-    if (!Array.isArray(tables[view])) return;
-    const v = tables[view];
-    const baseRows = Array.isArray(tables[base]) ? tables[base] : [];
-    for (const id of ids) {
-      const b = baseRows.find((r) => String(r.id) === String(id));
-      const i = v.findIndex((r) => String(r.id) === String(id));
-      if (!b) { if (i >= 0) v.splice(i, 1); continue; }
-      const next = { ...(i >= 0 ? v[i] : {}), ...b, ...(extra ? extra(b) : {}) };
-      if (i >= 0) v[i] = next; else v.push(next);
+    if (method === "PATCH" && table === "comments" && entries.length === 2
+      && /^eq\.[0-9a-f-]{36}$/i.test(params.get("project_id") || "") && params.get("is_read_by_pmo") === "eq.false"
+      && isObj(body) && Object.keys(body).length === 1 && body.is_read_by_pmo === true) {
+      st.accepted.comments_read_flag++;
+      seen("PATCH comments is_read_by_pmo (discarded)");
+      return answer(204);
     }
-    byId.delete(view);
-  }
-  function pastSummaryExtra(p) {
-    const u = index("user_profiles").get(String(p.pm_user_id));
-    const ups = (tables.past_project_updates || []).filter((x) => String(x.past_project_id) === String(p.id))
-      .sort((a, b) => cmpSort(a.created_at, b.created_at, "created_at"));
-    const last = ups[ups.length - 1];
-    const day = (s) => Math.floor(dateMs(String(s).slice(0, 10)) / 864e5);
-    const today = new Date(); const t = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) / 864e5;
-    return { pm_name: u ? (u.full_name || u.username) : null, pm_email: u ? u.email : null, update_count: ups.length,
-      last_update_at: last ? last.created_at : null, last_update_role: last ? last.author_role : null,
-      days_since_followup: p.last_followed_up ? Math.round(t - day(p.last_followed_up)) : null };
-  }
-  function afterWrite(kind, table, rows) {
-    dirty(table);
-    if (!rows.length) return;
-    const ids = rows.map((r) => r.id);
-    if (table === "projects") mirror("project_metrics", "projects", ids);
-    if (table === "project_risks") mirror("project_risks_scored", "project_risks", ids, (r) => {
-      const p = index("projects").get(String(r.project_id));
-      return { project_name: p ? p.name : null, project_code: p ? p.code : null, project_campus: p ? p.campus : null,
-        severity: sevOf(r.probability, r.impact) };
-    });
-    if (table === "past_projects") mirror("past_project_summary", "past_projects", ids, pastSummaryExtra);
-    for (const [view, [base, extra]] of Object.entries(DERIVED)) if (table === base) mirror(view, base, ids, extra);
-    if (kind === "insert" && (table === "past_project_updates" || table === "past_pm_messages")) {
-      // Following up from the PMO records the date on the past project (as the database trigger does).
-      const touched = new Set();
-      for (const r of rows) {
-        if (!r.past_project_id) continue;
-        const p = index("past_projects").get(String(r.past_project_id));
-        if (p && r.author_role === "pmo" && "last_followed_up" in p) p.last_followed_up = nowIso().slice(0, 10);
-        touched.add(r.past_project_id);
+    if (method === "POST" && table === "past_chat_reads" && /resolution=merge-duplicates/.test(prefer)
+      && entries.length === 1 && params.get("on_conflict") === "user_id,thread") {
+      const rows = Array.isArray(body) ? body : [body];
+      if (rows.length >= 1 && rows.length <= 500 && rows.every((r) => onlyKeys(r, ["user_id", "thread", "read_at"])
+        && r.user_id === me.id && typeof r.thread === "string" && r.thread.length <= 200)) {
+        st.accepted.past_chat_reads++;
+        seen("POST past_chat_reads (read marker, discarded)");
+        return answer(201);
       }
-      if (touched.size) mirror("past_project_summary", "past_projects", [...touched], pastSummaryExtra);
     }
-    if (table === "user_profiles") { byId.delete("user_profiles"); }
+    toast(MSG.READ_ONLY);
+    throw refused(`${method} ${table}`);
   }
 
   // ── RPC ──
-  const pastViewerIds = () => {
-    const s = (tables.settings || []).find((x) => x.key === "past_viewers");
-    const v = s && (typeof s.value === "string" ? (() => { try { return JSON.parse(s.value); } catch { return null; } })() : s.value);
-    return Array.isArray(v?.user_ids) ? v.user_ids : [];
-  };
   const RPC = {
     session_start: () => null,      // no session record: nothing about this run is logged
     session_log: () => null, session_touch: () => null, session_end: () => null, bump_session: () => null,
-    is_past_viewer: () => pastViewerIds().includes(me.id),
-    is_past_pm: () => false,
-    is_pmo: () => true, is_pm: () => false, is_guest: () => false, current_user_role: () => "pmo",
-    is_assigned: () => false, can_view_project: () => true, can_view_past: () => true,
+    tour_save_progress: () => null, mark_tutorial_complete: () => null, dismiss_tutorial: () => null, reset_tutorial: () => null,
+    is_pmo: () => true, current_user_role: () => "pmo",
+    can_view_project: () => true, can_view_past: () => true,
+    is_past_viewer: () => false, is_past_pm: () => false, is_pm: () => false, is_guest: () => false, is_assigned: () => false,
+    tour_demo_project: () => null,
     resolve_login_email: () => null,
-    tour_save_progress: () => null, mark_tutorial_complete: () => null, dismiss_tutorial: () => null,
-    reset_tutorial: () => null,
-    tour_demo_project: () => store?.meta?.storyProjectId || null,
-    project_has_deliverables: (a) => {
-      const p = String(a.p ?? a.project_id ?? a.pid ?? "");
-      if (!p) return false;
-      if ((tables.project_deliverables || []).some((d) => String(d.project_id) === p && !d.superseded)) return true;
-      if ((tables.epdd_pdds || []).some((d) => String(d.linked_project_id) === p && /^(PMO|All) Approved$/i.test(String(d.epdd_status || "")))) return true;
-      return (tables.project_attachments || []).some((x) => String(x.project_id) === p && x.kind !== "site_visit"
-        && (/^(PDD|EPDD)/i.test(String(x.file_name || "")) || /charter/i.test(String(x.file_name || ""))));
-    },
+    project_has_deliverables: (a) => deliverables.has(String(a?.p ?? a?.project_id ?? a?.pid ?? "")),
   };
 
   // ── storage ──
-  const encPath = (p) => p.split("/").map((s) => encodeURIComponent(s)).join("/");
   const decPath = (p) => p.split("/").map((s) => { try { return decodeURIComponent(s); } catch { return s; } }).join("/");
   function signedFor(bucket, path) {
-    const p = String(path || "").replace(/^\/+/, "");
-    if (/^sim-media\//.test(p)) {
-      const key = p.slice("sim-media/".length);
-      return media[key] ? { signedURL: media[key] } : null;
-    }
-    if (bucket === "project-attachments") {
-      const known = (tables.project_attachments || []).some((a) => a.file_path === p);
-      if (!known) return null;
-      return { signedURL: BASE + "sim/files/" + encPath(p.replace(/^sim\/files\//, "")) };
-    }
-    if (bucket === "epdd-files") {
-      const known = (tables.epdd_files || []).some((f) => f.storage_path === p);
-      if (!known) return null;
-      return { signedURL: BASE + "sim/files/" + encPath(p.replace(/^sim\/files\//, "")) };
-    }
-    return null;
+    if (bucket !== "project-attachments") return null;
+    const m = /^sim-media\/(m\d{3})$/.exec(String(path || "").replace(/^\/+/, ""));
+    return m && media[m[1]] ? { signedURL: media[m[1]] } : null;
   }
-  async function storage(method, path, body, headers, realFetch) {
+  const noFile = () => new SimError(400, MSG.NO_FILE, { code: "404", error: MSG.NO_FILE });
+  async function storage(method, path, body) {
     st.storage++;
     const sign = /^\/storage\/v1\/object\/sign\/([^/]+)(?:\/(.+))?$/.exec(path);
     if (sign && method === "POST") {
       const bucket = decodeURIComponent(sign[1]);
-      if (!["project-attachments", "epdd-files"].includes(bucket)) throw new SimError(400, "Bucket not found", { code: "404", error: "Bucket not found" });
       if (sign[2]) {
         const r = signedFor(bucket, decPath(sign[2]));
-        if (!r) throw new SimError(400, MSG.NO_FILE, { code: "404", error: MSG.NO_FILE });
+        if (!r) throw noFile();
         seen("POST storage sign");
         return { status: 200, body: r };
       }
@@ -870,62 +729,35 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
       seen("POST storage sign (batch)");
       return { status: 200, body: paths.map((p) => {
         const r = signedFor(bucket, String(p));
-        return r ? { error: null, path: p, signedURL: r.signedURL } : { error: "Either the object does not exist or you do not have access to it", path: p, signedURL: null };
+        return r ? { error: null, path: p, signedURL: r.signedURL } : { error: MSG.NO_FILE, path: p, signedURL: null };
       }) };
     }
-    // GET of a signed or public object: this page's own file, or a handed-over blob
     const obj = /^\/storage\/v1\/object\/(?:sign\/|public\/|authenticated\/)?([^/]+)\/(.+)$/.exec(path);
     if (obj && (method === "GET" || method === "HEAD")) {
       const r = signedFor(decodeURIComponent(obj[1]), decPath(obj[2]));
-      if (!r) throw new SimError(400, MSG.NO_FILE, { code: "404", error: MSG.NO_FILE });
+      if (!r) throw noFile();
       seen("GET storage object");
-      return { passthrough: new URL(r.signedURL, location.href).href };
+      return { passthrough: r.signedURL };
     }
-    // The address the portal used to build before storageUrl(): SUPA + "/storage/v1" + signedURL
-    const legacy = path.indexOf("/storage/v1" + BASE + "sim/files/");
-    if (legacy === 0 && (method === "GET" || method === "HEAD")) {
-      seen("GET storage (same-site file)");
-      return { passthrough: location.origin + path.slice("/storage/v1".length) };
-    }
-    if (obj && (method === "POST" || method === "PUT")) throw refused(MSG.NO_IMPORT, "upload " + decodeURIComponent(obj[1]));
-    if ((obj || /^\/storage\/v1\/object\/[^/]+\/?$/.test(path)) && method === "DELETE") {
-      seen("DELETE storage object");
-      return { status: 200, body: [] };            // the row's own DELETE is what changes the list
+    if (/^\/storage\/v1\/object\//.test(path) && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+      toast(MSG.READ_ONLY);
+      throw refused(`${method} storage`);
     }
     throw unsupported(`storage ${method} ${path.slice(0, 80)}`);
   }
 
-  // ── edge functions ──
-  const SENDS = new Set(["notify-comment", "notify-past", "board-report-notify", "send-push", "send-deadline-alerts",
-    "send-deadline-email", "send-pdd-reminders", "send-welcome-email"]);
-  const ACCOUNTS = new Set(["invite-user", "reset-user-password", "delete-user"]);
-  const ACTIONS = new Set(["epdd-sync", "deliverables-extract", "webauthn", "pdd-docs-copy", "ask-test", "epdd-sync-test", "ask-v35-test"]);
-  function askAnswer(body) {
-    const q = String(body?.question || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!]+$/, "");
-    const prepared = store?.meta?.askAnswers;
-    if (prepared && typeof prepared === "object") {
-      for (const [k, a] of Object.entries(prepared)) {
-        if (String(k).trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!]+$/, "") === q && typeof a === "string") return a;
-      }
-    }
-    return MSG.ASK;
-  }
-  function fn(name, body) {
+  // ── edge functions: none runs in the presentation ──
+  function fn(name) {
     st.functions++;
-    if (name === "ask") { seen("POST functions/ask"); return { status: 200, body: { answer: askAnswer(body), headline: null, used: { simulated: true } } }; }
-    const blocked = (msg) => {
-      cap(st.blocked, { fn: name, at: nowIso() });
-      seen("POST functions/" + name + " (blocked)");
-      return { status: 403, body: { ok: false, simulated: true, error: msg, message: msg } };
-    };
-    if (SENDS.has(name)) return blocked(MSG.NOT_SENT);
-    if (ACCOUNTS.has(name)) return blocked(MSG.NO_ACCOUNTS);
-    if (ACTIONS.has(name)) return blocked(MSG.NA + ": this step runs only in the real portal.");
-    throw unsupported("function " + name);
+    const msg = name === "ask" ? MSG.ASK : MSG.READ_ONLY;
+    cap(st.blocked, { fn: name.slice(0, 60), at: nowIso() });
+    seen("POST functions/" + name.slice(0, 60) + " (blocked)");
+    toast(msg);
+    return { status: 403, body: { code: "SIM403", message: msg, error: msg, ok: false } };
   }
 
   // ── auth ──
-  function auth(method, path, params, body) {
+  function auth(method, path, params) {
     st.auth++;
     const sub = path.slice("/auth/v1/".length);
     const deny = (status, msg, code) => { throw new SimError(status, msg, { code, error: code || "simulation", error_description: msg, msg }); };
@@ -947,7 +779,7 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
   }
 
   // ── one request to the Supabase host ──
-  async function handle(method, url, headers, bodyText, realFetch) {
+  async function handle(method, url, headers, bodyText) {
     const path = url.pathname;
     let body = null;
     if (bodyText != null && bodyText !== "") {
@@ -956,7 +788,10 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
     if (path.startsWith("/rest/v1/rpc/")) {
       st.rpc++;
       const name = decodeURIComponent(path.slice("/rest/v1/rpc/".length));
-      if (!Object.prototype.hasOwnProperty.call(RPC, name)) throw unsupported("rpc " + name);
+      if (!Object.prototype.hasOwnProperty.call(RPC, name)) {
+        if (st.rpcUnknown.length < 100 && !st.rpcUnknown.includes(name.slice(0, 60))) st.rpcUnknown.push(name.slice(0, 60));
+        throw unsupported("rpc " + name.slice(0, 60));
+      }
       const args = method === "GET" ? Object.fromEntries(url.searchParams) : (body && typeof body === "object" ? body : {});
       seen(`POST rpc/${name}`);
       const r = RPC[name](args);
@@ -968,21 +803,20 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
       if (!table || table.includes("/")) throw unsupported("rest " + path.slice(0, 60));
       if (method === "GET" || method === "HEAD") {
         seen(`GET ${table}`);
-        return restRead(table, url.searchParams, headers, method);
+        return restRead(table, url.searchParams, headers, method, url.pathname + url.search);
       }
       if (["POST", "PATCH", "DELETE", "PUT"].includes(method)) {
-        if (body === undefined) throw badRequest("Empty or invalid json", "PGRST102");
         seen(`${method} ${table}`);
-        return restWrite(method, table, url.searchParams, headers, body);
+        return liveWrite(method, table, url.searchParams, headers, body);
       }
       throw unsupported(`${method} ${table}`);
     }
-    if (path.startsWith("/storage/v1/")) return storage(method, path, body, headers, realFetch);
+    if (path.startsWith("/storage/v1/")) return storage(method, path, body);
     if (path.startsWith("/functions/v1/")) {
       const name = decodeURIComponent(path.slice("/functions/v1/".length).split("/")[0]);
-      return fn(name, body);
+      return fn(name);
     }
-    if (path.startsWith("/auth/v1/")) return auth(method, path, url.searchParams, body);
+    if (path.startsWith("/auth/v1/")) return auth(method, path, url.searchParams);
     if (path.startsWith("/realtime/v1")) throw unsupported("realtime over http");
     throw unsupported(`${method} ${path.slice(0, 60)}`);
   }
@@ -1037,15 +871,15 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
         else if (isReq && method !== "GET" && method !== "HEAD") bodyText = await input.clone().text();
       } catch { bodyText = null; }
     }
-    const auth = String(headers.get("authorization") || "");
-    if (/^Bearer eyJ/i.test(auth) && !url.pathname.startsWith("/auth/v1/")) {
+    const authz = String(headers.get("authorization") || "");
+    if (/^Bearer eyJ/i.test(authz) && !url.pathname.startsWith("/auth/v1/")) {
       // A real (JWT) user token never exists in this page; the anon key goes in apikey, not here.
       report({ kind: "token", method, path: url.pathname.slice(0, 120), detail: "a JWT bearer token" });
-    } else if (auth && !isSimToken(auth.replace(/^Bearer\s+/i, "")) && !url.pathname.startsWith("/auth/v1/")) {
+    } else if (authz && !isSimToken(authz.replace(/^Bearer\s+/i, "")) && !url.pathname.startsWith("/auth/v1/")) {
       report({ kind: "token", method, path: url.pathname.slice(0, 120), detail: "an unknown bearer token" });
     }
     try {
-      const r = await handle(method, url, headers, bodyText, realFetch);
+      const r = await handle(method, url, headers, bodyText);
       if (r.passthrough) return realFetch.call(window, r.passthrough, { method: method === "HEAD" ? "HEAD" : "GET", signal: signal || undefined });
       return jsonResponse(r.status, r.body, r.headers || {});
     } catch (e) {
@@ -1114,32 +948,32 @@ export function installBackend({ store, mediaUrls = {}, onUnhandled } = {}) {
   if (RealWS) window.WebSocket = guardSocket(RealWS, "websocket");
   if (RealES) window.EventSource = guardSocket(RealES, "eventsource");
 
-  // ── checkpoints ──
-  const snapshot = () => ({ v: 1, tables: clone(tables) });
+  // ── checkpoints: nothing to keep (the tables never change in live mode) ──
+  const snapshot = () => ({ v: 2, seq: ++seq });
   const restore = (snap) => {
-    if (!snap || typeof snap !== "object" || !snap.tables) throw new Error("Simulation backend: not a snapshot");
-    const next = clone(snap.tables);
-    for (const k of Object.keys(tables)) delete tables[k];
-    Object.assign(tables, next);
-    byId.clear();
+    if (!snap || typeof snap !== "object" || snap.v !== 2) throw new Error("Simulation backend: not a checkpoint");
   };
-  const initial = snapshot();
   const stats = () => {
     const s = clone(st);
     s.unhandledCount = st.unhandled.length;
     s.refusedCount = st.refused.length;
     s.blockedCount = st.blocked.length;
     s.outsideCount = st.outside.length;
+    s.replay = {
+      hits,
+      misses: [...misses].map(([key, n]) => ({ key, n })).slice(0, 200),
+      unused: [...replay.keys()].filter((k) => !served.has(k)),
+    };
     return s;
   };
-  const reset = () => { restore(initial); st = freshStats(); };
+  const reset = () => { st = freshStats(); hits = 0; misses = new Map(); served = new Set(); };
   const uninstall = () => {
     // Supabase stays answered from memory (never the real fetch), so nothing still mounted can
     // reach production after this; only the other wrappers are put back.
     if (XHR) { XHR.prototype.open = xhrOpen; XHR.prototype.send = xhrSend; }
     if (RealWS) window.WebSocket = RealWS;
     if (RealES) window.EventSource = RealES;
-    installed = null;
+    if (installed === api) installed = null;
   };
   const api = { snapshot, restore, stats, reset, uninstall, media: () => ({ ...media }) };
   installed = api;

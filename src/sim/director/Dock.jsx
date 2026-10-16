@@ -1,5 +1,5 @@
-// PMO Simulation director: the presenter's controls (bottom-right).
-//   Previous · Pause/Resume · Next · Chapters · Restart · Exit, the run clock ("1:12 / 2:00") and the
+// PMO Simulation director: the presenter's controls (bottom-right). Owner: B3b (contract §H.6).
+//   Previous · Pause/Resume · Next · Chapters · Restart · Exit, the run clock ("1:12 / 2:30") and the
 //   current chapter. The dock fades out while the run plays and comes back when the mouse moves; it
 //   stays up while paused or while a menu is open. Keys (bound in SimRoot): Space / . pause,
 //   → / PageDown next, ← / PageUp previous, C chapters, Home restart, Esc exit.
@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { Pause, Play, SkipBack, SkipForward, ListOrdered, RotateCcw, X } from "lucide-react";
 import { NAVY, GOLD, GOLD_SOFT, INK, INK_SOFT, INK_DIM, SANS, SERIF, Z } from "./look.js";
 import { fmtClock } from "./clock.js";
+import { LIMIT } from "./engine.js";
 
 const btn = {
   display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, height: 34, minWidth: 34,
@@ -55,7 +56,7 @@ export function ConfirmExit({ onCancel, onExit }) {
         border: `1px solid ${GOLD}66`, boxShadow: "0 30px 80px rgba(0,0,0,.5)", color: INK, fontFamily: SANS }}>
         <div style={{ fontFamily: SERIF, fontSize: 24, marginBottom: 8 }}>Exit the simulation?</div>
         <div style={{ fontSize: 13.5, lineHeight: 1.55, color: INK_SOFT }}>
-          Its data and storage are cleared and this tab closes. The portal tab is not touched.
+          This tab's copy of the portal data is cleared and the tab closes. The portal tab is not touched.
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
           <button type="button" className="sim-dir-btn" onClick={onCancel} style={btn}>Keep presenting</button>
@@ -107,7 +108,7 @@ export function Dock({ state, clock, chapters, menu, setMenu, onPrev, onPause, o
         <Btn label="Exit" title="Exit (Esc)" onClick={onExit}><X size={15} /></Btn>
         <div style={{ padding: "0 8px 0 6px", minWidth: 104, lineHeight: 1.2 }}>
           <div data-sim-ui="clock" style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: state.paused ? GOLD_SOFT : INK }}>
-            {fmtClock(clock)} <span style={{ color: INK_DIM, fontWeight: 500 }}>/ 2:00</span>
+            {fmtClock(clock)} <span style={{ color: INK_DIM, fontWeight: 500 }}>/ {fmtClock(LIMIT)}</span>
           </div>
           <div style={{ fontSize: 10.5, color: INK_DIM, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
             {ch ? `${ch.n} · ${ch.title}` : ""}

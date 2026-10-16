@@ -283,7 +283,7 @@ function HeadToHead({ T, rows, picked, togglePick, onOpenCampus, onSelectProject
                   const v = num(m.v(r)), best = m.bad ? Math.min(...sel.map(x => num(m.v(x)))) : Math.max(...sel.map(x => num(m.v(x))));
                   const lead = !m.neutral && sel.length > 1 && v === best && sel.some(x => num(m.v(x)) !== v);
                   return (
-                    <div key={m.label} style={{ padding: "7px 0", borderTop: `1px solid ${T.border}` }}>
+                    <div key={m.label} data-metric={m.label} style={{ padding: "7px 0", borderTop: `1px solid ${T.border}` }}>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                         <span style={{ fontSize: 11.5, color: T.muted, flex: 1 }}>{m.label}</span>
                         <span style={{ fontSize: 14, fontWeight: 700, color: lead ? T.textOf(m.bad ? T.positive : T.positive) : T.text }}>{m.show(r)}</span>
@@ -357,7 +357,7 @@ export function CampusCompare({ T, session, supa, isCompact, onOpenCampus, onSel
           <button role="tab" data-mode="all" aria-selected={mode === "all"} className="pmo-focusable" style={seg(mode === "all")} onClick={() => setMode("all")}>All campuses</button>
           <button role="tab" data-mode="h2h" aria-selected={mode === "h2h"} className="pmo-focusable" style={seg(mode === "h2h")} onClick={() => setMode("h2h")}>Head to head{picked.length ? ` (${picked.length})` : ""}</button>
         </div>
-        <span style={{ ...TYPE.caption, color: T.muted, flex: 1, minWidth: 200 }}>
+        <span data-tour="compare-summary" style={{ ...TYPE.caption, color: T.muted, flex: 1, minWidth: 200 }}>
           {rows.length} campuses · {totals.projects} CAPEX projects · DF PKR {fmtM(totals.df)} · {totals.approved} approved · released PKR {fmtM(totals.released)}
         </span>
         <Button T={T} variant="ghost" icon={Download} onClick={download} title="Download this comparison as an Excel sheet">Download as Excel</Button>

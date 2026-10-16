@@ -786,7 +786,7 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
 
   return (
     <div>
-      <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:SP.md, flexWrap:"wrap" }}>
+      <div data-tour="wbs-header" style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:SP.md, flexWrap:"wrap" }}>
         <div style={{ ...TYPE.label, color:T.text }}>Work Breakdown</div>
         <span style={{ ...TYPE.caption, color:T.dim }}>
           {rows.length} task{rows.length === 1 ? "" : "s"}
@@ -819,7 +819,7 @@ export function ProjectTasks({ T, session, supa, projectId, canWrite, isPMO, isC
       {err && <div style={{ fontSize:12, color:T.textOf(DATA.danger), marginBottom:SP.sm }}>{err}</div>}
 
       {rows.length === 0 ? (
-        <div style={{ padding:SP.xl, textAlign:"center", background:T.surfaceRaised,
+        <div data-tour="wbs-empty" style={{ padding:SP.xl, textAlign:"center", background:T.surfaceRaised,
           border:`1px dashed ${T.borderStrong}`, borderRadius:R.md }}>
           <div style={{ fontSize:13, color:T.muted, marginBottom:6 }}>No tasks yet.</div>
           <div style={{ fontSize:12, color:T.dim, lineHeight:1.6, maxWidth:460, margin:"0 auto" }}>

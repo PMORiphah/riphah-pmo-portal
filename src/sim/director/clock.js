@@ -1,9 +1,8 @@
 // PMO Simulation director: the run clock and waits that respect Pause.
 //
-// The run clock counts seconds since Start with pauses left out. It reads performance.now(), never
-// Date: in the simulation Date is shifted to Thu 15 Oct 2026 10:30 PKT by public/sim-boot.js.
-// Every wait the director makes is measured on this clock, so a pause never makes a step time out
-// and the 2-minute budget only counts time the audience actually watched.
+// The run clock counts seconds since Start with pauses left out. It reads performance.now() (a
+// monotonic clock), never Date. Every wait the director makes is measured on this clock, so a pause
+// never makes a step time out and the 2:30 budget only counts time the audience actually watched.
 
 export class RunClock {
   constructor() { this.base = 0; this.since = 0; this.running = false; }
@@ -22,7 +21,7 @@ export class RunClock {
 export class Aborted extends Error {
   constructor() { super("aborted"); this.name = "Aborted"; }
 }
-/** A step's ready condition did not appear in time (4 s of run time). */
+/** A step's ready condition did not appear in time (5 s of run time; the Gallery 8 s). */
 export class WaitTimeout extends Error {
   constructor(what) { super(`not ready: ${what}`); this.name = "WaitTimeout"; this.what = what; }
 }

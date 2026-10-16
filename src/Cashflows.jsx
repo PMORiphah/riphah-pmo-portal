@@ -358,7 +358,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
             sub={`${pctDrawn.toFixed(1)}% drawn`} colour={DATA.positive} Icon={TrendingUp}
             iconAnim="pmo-ico-tick"
             insight={`${fmtM(totals.drawn)} released against ${fmtM(headTotal)} ${filtered || !port ? "planned" : "total CAPEX"} — from recorded budget release dates.`} />
-          <StatTile T={T} index={3} label="Peak month" value={totals.peak ? totals.peak.label : "—"}
+          <StatTile T={T} index={3} hook="cf-peak" label="Peak month" value={totals.peak ? totals.peak.label : "—"}
             sub={totals.peak ? `PKR ${fmtM(totals.peak.total)}` : ""} colour={BRAND.gold} Icon={CalendarRange}
             iconAnim="pmo-ico-glow"
             insight={totals.peak ? `The heaviest single month in the plan — ${totals.peak.count} project${totals.peak.count===1?"":"s"} draw against it.` : null} />

@@ -107,7 +107,7 @@ export function InvestmentsTab({
 
       {/* A statement of what this tab is, because a figure sitting beside the
           CAPEX dashboard needs to say plainly that it is not part of it. */}
-      <div style={{
+      <div data-tour="inv-banner" style={{
         display:"flex", alignItems:"flex-start", gap:SP.md,
         padding:`${SP.md}px ${SP.lg}px`, borderRadius:R.md,
         background:`${T.violet}${T.wash}`, borderLeft:`2px solid ${T.violet}`,
@@ -127,7 +127,7 @@ export function InvestmentsTab({
         <div style={{ display:"grid", gap:SP.md,
           gridTemplateColumns:"repeat(auto-fit, minmax(min(190px,100%), 1fr))" }}>
           {kpis.map((k, i) => (
-            <div key={k.label} className="pmo-in" style={{
+            <div key={k.label} data-inv={k.label} className="pmo-in" style={{
               background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg,
               padding:`${SP.md}px ${SP.lg}px`, boxShadow:T.shadow,
               animationDelay:`${i * 55}ms`,
@@ -156,7 +156,7 @@ export function InvestmentsTab({
       <div style={{ background:T.surface, border:`1px solid ${T.border}`,
         borderRadius:R.lg, boxShadow:T.shadow, overflow:"hidden" }}>
         <div style={{ padding:`${SP.md}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}` }}>
-          <div style={{ ...TYPE.label, color:T.muted }}>
+          <div data-tour="inv-register" style={{ ...TYPE.label, color:T.muted }}>
             Investment Register{rows.length ? ` (${rows.length})` : ""}
           </div>
         </div>

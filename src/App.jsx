@@ -401,13 +401,24 @@ const SimLauncher = lazy(() => import("./SimLauncher.jsx").catch(() => {
   return { SimLauncher: () => null };
 }).then(m => ({ default: m.SimLauncher })));
 
-// Same place and look as Take the tour, which the PMO does not have.
-function SidebarSimButton({ T, session }) {
+// The portal side of a hand-over (simBridge.js: channels and the refresh listener) outlives the
+// launcher window. It is loaded only through the launcher, so this flag says whether there can be
+// anything to stop. When the session ends it is stopped; nothing is imported if the launcher was
+// never opened, and in the production build (SIM_ENABLED false) never at all.
+let simBridgeUsed = false;
+function stopSimBridge() {
+  if (!SIM_ENABLED || !simBridgeUsed) return;
+  import("./simBridge.js").then((m) => m.stopAll?.()).catch(() => { /* not loaded: nothing to stop */ });
+}
+
+// Same place and look as Take the tour, which the PMO does not have. getSession returns the App's
+// current session (tokens renew in place while the tab is open), never a copy taken at opening.
+function SidebarSimButton({ T, session, getSession }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button onClick={() => setOpen(true)} className="pmo-focusable" data-tour="sim-launch"
-        title="Present the portal on fictional data" style={{
+      <button onClick={() => { simBridgeUsed = true; setOpen(true); }} className="pmo-focusable" data-tour="sim-launch"
+        title="Present the portal on its live data, read-only" style={{
         width:"100%", marginTop:7, padding:"8px 12px", borderRadius:R.sm, cursor:"pointer",
         background:"transparent", border:`1px solid ${T.sidebarBorder}`,
         color:T.sidebarFg, fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
@@ -415,14 +426,14 @@ function SidebarSimButton({ T, session }) {
       }}><MonitorPlay size={12} /> Simulation</button>
       {open && (
         <Suspense fallback={null}>
-          <SimLauncher T={T} session={session} supa={supa} onClose={() => setOpen(false)} />
+          <SimLauncher T={T} session={session} getSession={getSession} onClose={() => setOpen(false)} />
         </Suspense>
       )}
     </>
   );
 }
 
-function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false, reportsNew = 0, onChangePassword,
+function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false, reportsNew = 0, onChangePassword,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
                   fyLabel = "FY 2026-27", navStats = null }) {
   const roleFiltered = NAV.filter(n => {
@@ -569,7 +580,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
       </svg>
 
       {/* Brand */}
-      <div style={{
+      <div data-tour="brand" style={{
         padding: mini ? "18px 10px 14px" : "20px 18px 16px",
         borderBottom:`1px solid ${T.sidebarBorder}`, position:"relative",
         display:"flex", alignItems:"center", justifyContent: mini ? "center" : "space-between", gap:8,
@@ -662,7 +673,7 @@ function Sidebar({ page, setPage, session, unreadCount = 0, reviewCount = 0, pas
           <SidebarTourButton T={T} />
         )}
         {SIM_ENABLED && session?.role === "pmo" && !mini && !isCompact && (
-          <SidebarSimButton T={T} session={session} />
+          <SidebarSimButton T={T} session={session} getSession={getSession} />
         )}
       </div>
 
@@ -817,7 +828,7 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
         <IconButton T={T} icon={MenuIcon} onClick={onMenu} title="Open navigation" />
       )}
       <div style={{ flex:1, minWidth:0 }}>
-        <h1 style={{ ...TYPE.h1, color:T.text, margin:0, whiteSpace:"nowrap",
+        <h1 data-tour="page-title" style={{ ...TYPE.h1, color:T.text, margin:0, whiteSpace:"nowrap",
           overflow:"hidden", textOverflow:"ellipsis" }}>{title}</h1>
         {subtitle && !isCompact && (
           <div style={{ display:"flex", alignItems:"center", gap:7, marginTop:1 }}>
@@ -1874,7 +1885,7 @@ function FinancialFlow({ T, d, isCompact }) {
   const pending = +d.payments_pending_amount || 0;
 
   return (
-    <Section T={T} tone={T.gold} pad={SP.lg} style={{ flexShrink:0 }}>
+    <Section T={T} tone={T.gold} pad={SP.lg} style={{ flexShrink:0 }} data-tour="money-flow">
       <SectionTitle
         T={T} icon={Wallet}
         title="Where the money is"
@@ -3440,7 +3451,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
                 <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(status.color) }}>{status.label}</span>
               )}
             </div>
-            <div style={{ ...TYPE.caption, color:T.heroFgMuted, marginTop:3 }}>{hint}</div>
+            <div data-tour={`hero-${label.toLowerCase()}-hint`} style={{ ...TYPE.caption, color:T.heroFgMuted, marginTop:3 }}>{hint}</div>
           </div>
           </WithInsight>
         );
@@ -3516,7 +3527,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
               line={KPI_INSIGHT.total_capex(d)}
               stat={`${d.total_projects} projects · ${d.approved_count} approved · ${fmtM(d.budget_consumed)} released`}
               style={{ marginLeft: vp.isCompact ? 0 : "auto" }}>
-            <div style={{ textAlign: vp.isCompact ? "left" : "right", position:"relative", cursor:"help" }}>
+            <div data-tour="hero-total" style={{ textAlign: vp.isCompact ? "left" : "right", position:"relative", cursor:"help" }}>
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:6 }}>Total CAPEX portfolio</div>
               <div style={{ ...TYPE.metricXL, fontSize: vp.isCompact ? 26 : 32, color:T.heroAccent }}>
                 <span style={{ ...TYPE.caption, fontWeight:600, color:T.heroFgMuted, marginRight:6 }}>PKR</span>
@@ -4984,7 +4995,7 @@ function ProjectsPage({ T, session, onSelectProject,
       {/* ── SLICE SUMMARY ── */}
       {/* Restates the portfolio for whatever is filtered, so the register always
           answers "how much money is in what I'm looking at". */}
-      <div ref={summaryNear} className="pmo-fade pmo-near" style={{
+      <div ref={summaryNear} data-tour="projects-hero" className="pmo-fade pmo-near" style={{
         flexShrink:0, background:T.hero, position:"relative", overflow:"hidden",
         borderBottom:`1px solid ${T.heroBorder}`,
         "--near-light": `${BRAND.gold}12`,
@@ -5924,7 +5935,7 @@ function CampusPage({ T, session, onSelectProject,
         <div style={{display:"flex", gap:SP.sm, alignItems:"center", flexWrap:"wrap"}}>
           {viewSwitch}
           <Select T={T} value={sel} active={!!sel} onChange={e=>setSel(e.target.value)}
-            style={{minWidth:230}}>
+            style={{minWidth:230}} data-tour="sites-campus">
             <option value="">All campuses ({rows.length})</option>
             {campusOptions.map(name => (
               <option key={name} value={name}>{name} ({countByCampus[name]||0})</option>
@@ -6637,7 +6648,7 @@ function PerformancePage({ T, session, onSelectProject }) {
             <thead style={{ position:"sticky", top:0, zIndex:2 }}>
               <tr>
                 <th style={{ ...th, position:"sticky", left:0, zIndex:3, minWidth:220, borderRight:`1px solid ${T.border}` }}>Project</th>
-                <SortHeader T={T} label="% Done" sortKey="done" sort={psort} onToggle={ptoggle} align="center" />
+                <SortHeader T={T} label="% Done" sortKey="done" sort={psort} onToggle={ptoggle} align="center" data-col="pct" />
                 <SortHeader T={T} label="BAC" sortKey="bac" sort={psort} onToggle={ptoggle} align="right" />
                 <SortHeader T={T} label="EV" sortKey="ev" sort={psort} onToggle={ptoggle} align="right" />
                 <SortHeader T={T} label="PV" sortKey="pv" sort={psort} onToggle={ptoggle} align="right" />
@@ -6679,7 +6690,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                     </td>
 
                     {/* % complete */}
-                    <td style={{ ...td, textAlign:"center" }}>
+                    <td data-col="pct" style={{ ...td, textAlign:"center" }}>
                       {r.pct_complete > 0 ? (
                         <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
                           <div style={{ width:56, height:4, background:T.border, borderRadius:2 }}>
@@ -6708,7 +6719,7 @@ function PerformancePage({ T, session, onSelectProject }) {
                     <td style={tdr}>{fmtM(r.eac)}</td>
                     <td style={{ ...tdr, color:varClr(r.cost_variance) }}>{fmtMv(r.cost_variance)}</td>
                     <td style={{ ...tdr, color:varClr(r.schedule_variance) }}>{fmtMv(r.schedule_variance)}</td>
-                    <td style={td}><FlagBadge flag={r.schedule_flag} /></td>
+                    <td style={td} data-col="schedule"><FlagBadge flag={r.schedule_flag} /></td>
                     <td style={td}><FlagBadge flag={r.budget_flag} /></td>
                   </tr>
                 );
@@ -7485,7 +7496,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             </div>
             <h2 style={{ ...TYPE.display, fontSize: vpD.isCompact ? 21 : 27, color:T.heroFg,
               margin:0, lineHeight:1.2 }}>{evm.name}</h2>
-            <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:SP.md, flexWrap:"wrap" }}>
+            <div data-tour="detail-badges" style={{ display:"flex", alignItems:"center", gap:6, marginTop:SP.md, flexWrap:"wrap" }}>
               <Badge T={T} color={isClosed ? EMERALD : (STAGE_META[evm.workflow_stage]?.color || T.neutral)}>
                 {isClosed && <CheckCircle2 size={12} strokeWidth={2.5} />}
                 {STAGE_META[evm.workflow_stage]?.label || evm.workflow_stage || "—"}
@@ -7510,7 +7521,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>DF Recommended</div>
               <div style={{ ...TYPE.metricSm, color:T.heroFg }}>{fmtFull(details.df_recommended_amount)}</div>
             </div>
-            <div>
+            <div data-tour="detail-approved">
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>Approved budget</div>
               <div style={{ ...TYPE.metricSm, color: +evm.bac > 0 ? BRAND.gold : T.heroFgDim }}>
                 {fmtFull(evm.bac)}
@@ -7544,7 +7555,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           { label:"Schedule",  value:scheduleStatus,            c:scheduleColor, Icon: isClosed ? CheckCircle2 : null },
           { label:"Budget",    value:budgetStatus,              c:budgetColor,   Icon: isClosed ? CheckCircle2 : null },
         ].map(({ label, value, c, Icon }) => (
-          <div key={label}>
+          <div key={label} data-strip={label.toLowerCase()}>
             <div style={{ ...TYPE.label, color:T.muted, marginBottom:4 }}>{label}</div>
             <div style={{ ...TYPE.metricSm, fontSize:17, color:c, whiteSpace:"nowrap",
               display:"flex", alignItems:"center", gap:6 }}>
@@ -8397,7 +8408,7 @@ function UserManagementPage({ T, session }) {
 
       {/* Header */}
       <div className="pmo-in" style={{ ...pageBar(T), gap:SP.md }}>
-        <div style={{ ...TYPE.bodySm, color:T.muted }}>
+        <div data-tour="users-header" style={{ ...TYPE.bodySm, color:T.muted }}>
           {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
         </div>
         <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm }}>
@@ -8421,9 +8432,9 @@ function UserManagementPage({ T, session }) {
                 <SortHeader T={T} label="Full Name" sortKey="fullname" sort={usort} onToggle={utoggle} />
                 <SortHeader T={T} label="Email" sortKey="email" sort={usort} onToggle={utoggle} />
                 <th style={th}>WhatsApp No.</th>
-                <SortHeader T={T} label="Role" sortKey="role" sort={usort} onToggle={utoggle} />
+                <SortHeader T={T} label="Role" sortKey="role" sort={usort} onToggle={utoggle} data-col="role" />
                 <SortHeader T={T} label="Status" sortKey="status" sort={usort} onToggle={utoggle} />
-                <th style={th}>Assigned Projects</th>
+                <th style={th} data-col="assigned">Assigned Projects</th>
                 <th style={{ ...th, textAlign:"right" }}>Actions</th>
               </tr>
             </thead>
@@ -8434,7 +8445,7 @@ function UserManagementPage({ T, session }) {
                 const me = isMe(u.id);
                 return (
                   <tr key={u.id} data-user={u.username} style={{ background: i%2===0 ? "transparent" : T.tableRow }}>
-                    <td style={td}>
+                    <td style={td} data-col="username">
                       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                         <div style={{ width:30, height:30, borderRadius:"50%", background:`linear-gradient(135deg,${NAVY},#0A3060)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>
                           {(u.username||"?")[0].toUpperCase()}
@@ -8443,9 +8454,9 @@ function UserManagementPage({ T, session }) {
                         {me && <span style={{ fontSize:10, color:T.dim }}>(you)</span>}
                       </div>
                     </td>
-                    <td style={{ ...td, fontSize:13, color:T.text }}>{u.full_name || "—"}</td>
-                    <td style={{ ...td, fontSize:12, color:T.muted }}>{u.email || "—"}</td>
-                    <td style={{ ...td, fontSize:12, color:T.muted }}>
+                    <td style={{ ...td, fontSize:13, color:T.text }} data-col="fullname">{u.full_name || "—"}</td>
+                    <td style={{ ...td, fontSize:12, color:T.muted }} data-col="email">{u.email || "—"}</td>
+                    <td style={{ ...td, fontSize:12, color:T.muted }} data-col="phone">
                       {editPhoneId === u.id ? (
                         <input
                           autoFocus
@@ -8464,7 +8475,7 @@ function UserManagementPage({ T, session }) {
                         >{u.phone || "—"}</span>
                       )}
                     </td>
-                    <td style={td}>
+                    <td style={td} data-col="role">
                       <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:R.pill }}>{rc.label}</span>
                     </td>
                     <td style={td}>
@@ -8472,7 +8483,7 @@ function UserManagementPage({ T, session }) {
                         {u.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
-                    <td style={{ ...td, fontSize:12, color:T.muted }}>
+                    <td style={{ ...td, fontSize:12, color:T.muted }} data-col="assigned">
                       {u.role === "pmo"   ? <span style={{ color:(T.goldText || GOLD), fontSize:11, fontWeight:600 }}>All projects</span> :
                        u.role === "guest" ? (
                          assigns.length === 0
@@ -9317,7 +9328,7 @@ function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
   const deleted = !name;
   const init = deleted ? "✕" : name[0].toUpperCase();
   return (
-    <div data-comment={comment.id} style={{ marginLeft: depth ? 36 : 0, marginBottom:10 }}>
+    <div data-comment={comment.id} data-author-role={role || ""} style={{ marginLeft: depth ? 36 : 0, marginBottom:10 }}>
       <div style={{ background:T.card2, borderRadius:R.md, padding:"11px 14px", border:`1px solid ${T.border}` }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
           <div style={{ width:26, height:26, borderRadius:"50%", background:NAVY, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>{init}</div>
@@ -9591,7 +9602,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
           ] : [
             { id:"all", label:"My Projects" },
           ]).map(tab => (
-            <button className="pmo-focusable pmo-btn" key={tab.id} onClick={() => setView(tab.id)} style={{
+            <button className="pmo-focusable pmo-btn" key={tab.id} data-tour={`updates-tab-${tab.id}`} onClick={() => setView(tab.id)} style={{
               flex:1, padding:"11px 0", background:"none", border:"none", borderBottom:`2px solid ${view===tab.id?GOLD:"transparent"}`,
               color:view===tab.id?GOLD:T.muted, fontSize:12.5, fontWeight:view===tab.id?700:400,
               cursor:"pointer", fontFamily:TYPE.body.fontFamily, display:"flex", alignItems:"center", justifyContent:"center", gap:6,
@@ -11616,6 +11627,12 @@ function GlobalSearch({ T, session, open, onClose, onSelect, onQuick }) {
 export default function App() {
   const [dark, setDark] = useState(true);
   const [session, setSession] = useState(null);
+  // The current session for code that outlives a render (the Simulation launcher reads it at each
+  // request). Any end of the session also stops a simulation hand-over (no-op unless one ran).
+  const sessionRef = useRef(null);
+  sessionRef.current = session;
+  const getSession = useCallback(() => sessionRef.current, []);
+  useEffect(() => { if (!session) stopSimBridge(); }, [session]);
   // ?review=<id> (the PDD push notification and email link) opens that PDD
   // on PMO Review. Read once; PmoReviewPage removes it from the address bar.
   const deepReviewId = useRef(Number(new URLSearchParams(window.location.search).get("review")) || null);
@@ -11979,6 +11996,7 @@ export default function App() {
   }, []);
 
   const handleLogout = async () => {
+    stopSimBridge();
     // Await the close so the session gets a real ended_at. This is the only
     // moment we know for certain a session finished; every other ending is
     // inferred from the heartbeat going quiet.
@@ -12336,7 +12354,7 @@ export default function App() {
           ? "rgba(120,175,240,0.075)" : "rgba(44,123,196,0.055)",
       }} />
       <Sidebar
-        T={T} page={effectivePage} setPage={navigateToPage} session={session}
+        T={T} page={effectivePage} setPage={navigateToPage} session={session} getSession={getSession}
         unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} reportsAllowed={reportsAllowed} reportsNew={reportsUnseen.length} onChangePassword={() => setShowChangePassword(true)}
         collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}

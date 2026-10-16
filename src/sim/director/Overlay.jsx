@@ -1,16 +1,18 @@
 // PMO Simulation director: what the audience sees on top of the real App while the run plays.
+// Owner: B3b (contract §H.6).
 //   - the spotlight (an SVG drawn by spotlight.js: dim with holes, gold rings);
 //   - the caption, docked in the sidebar column with the assistant, or shrunk to the assistant alone
 //     in the top-left corner while a full-screen view (Board report, Gallery picture) is open;
 //   - a transparent shield that stops stray clicks from changing the run (the controls stay usable);
-//   - the simulation badge, top centre, above everything, in every state (Badge, exported).
+//   - the simulation badge, top centre, above everything, in every state (Badge, exported):
+//     "Live portal data as of HH:MM PKT · read-only · nothing is sent".
 // Nothing here is new to the App: it is its own layer and only reads the App's layout.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AssistantAvatar } from "../../AssistantAvatar.jsx";
 import { SPOT_MAX } from "./spotlight.js";
 import { GOLD, GOLD_SOFT, INK, SANS, Z, EASE } from "./look.js";
 
-/** The badge: "Simulation · real names, fictional projects and figures · nothing is sent". */
+/** The badge: "Live portal data as of HH:MM PKT · read-only · nothing is sent". */
 export function Badge({ text }) {
   return (
     <div data-sim-ui="badge" role="note" style={{
@@ -58,7 +60,7 @@ export function SpotLayer({ spotlight }) {
 }
 
 /** Where the caption docks: inside the sidebar column, at its foot. */
-function useSidebarBox(active) {
+export function useSidebarBox(active) {
   const [box, setBox] = useState({ left: 10, width: 224 });
   useEffect(() => {
     if (!active) return undefined;
@@ -79,9 +81,10 @@ function useSidebarBox(active) {
   return box;
 }
 
-/** The narrator: avatar + caption, in the sidebar column (or the avatar alone, top-left). */
+/** The narrator: avatar + caption, in the sidebar column (or the avatar alone, top-left). Not shown
+ *  while the opening's presenter card holds the caption. */
 export function CaptionDock({ state, voiceOn, progress }) {
-  const show = state.phase === "running" && !!state.caption;
+  const show = state.phase === "running" && !!state.caption && state.presenter !== "card";
   const box = useSidebarBox(state.phase === "running");
   const mini = state.mini;
   const avatarState = state.paused ? "idle" : state.speaking ? "speaking" : "answering";
