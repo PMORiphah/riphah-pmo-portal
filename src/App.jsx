@@ -391,7 +391,9 @@ function SidebarTourButton({ T }) {
 
 // PMO Simulation: approved for /preview/ (PMO, 15 Oct 2026) and for production (PMO, 19 Oct 2026).
 // build.sh writes simulation.html for both builds. To withdraw it from production again, set this
-// back to /\/preview\/$/.test(import.meta.env.BASE_URL || "") and build with SIM_PROD=0.
+// back to /\/preview\/$/.test(import.meta.env.BASE_URL || "") and build with SIM_PROD=0, and remove the
+// published copies at the repo root too (git rm simulation.html sim-boot.js; git rm -r sim): copying
+// dist/ over the root never deletes them. Or git revert the deploy commit, which does.
 const SIM_ENABLED = true;
 
 // PMO Simulation (PMO, desktop only): the launcher window, loaded only when opened. After a

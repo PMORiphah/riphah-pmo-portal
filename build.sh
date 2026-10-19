@@ -27,7 +27,8 @@ if [ -z "$OUT" ]; then
 fi
 # The simulation is approved for /preview/ (PMO, 15 Oct 2026) and for production (PMO, 19 Oct 2026),
 # so every build writes simulation.html. SIM_PROD=0 leaves it out of a production build (then set
-# SIM_ENABLED in src/App.jsx back to preview-only too, or the button opens a missing page).
+# SIM_ENABLED in src/App.jsx back to preview-only too, or the button opens a missing page, and
+# git rm the published simulation.html, sim-boot.js and sim/ at the repo root: cp never deletes them).
 BASE=$(grep -oE "base:[[:space:]]*['\"][^'\"]+['\"]" "$CONFIG" | head -1 | sed -E "s/base:[[:space:]]*['\"]([^'\"]+)['\"]/\1/")
 case "$BASE" in
   */preview/) node scripts/sim/make-sim-html.mjs "$OUT" ;;
