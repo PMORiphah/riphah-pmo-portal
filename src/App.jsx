@@ -389,10 +389,12 @@ function SidebarTourButton({ T }) {
   );
 }
 
-// PMO Simulation: approved for /preview/ only (PMO, 15 Oct 2026). The button shows only in the
-// preview build; build.sh writes simulation.html only for the preview build (SIM_PROD=1 overrides
-// it once the PMO approves production). Change both together.
-const SIM_ENABLED = /\/preview\/$/.test(import.meta.env.BASE_URL || "");
+// PMO Simulation: approved for /preview/ (PMO, 15 Oct 2026) and for production (PMO, 19 Oct 2026).
+// build.sh writes simulation.html for both builds. To withdraw it from production again, set this
+// back to /\/preview\/$/.test(import.meta.env.BASE_URL || "") and build with SIM_PROD=0, and remove the
+// published copies at the repo root too (git rm simulation.html sim-boot.js; git rm -r sim): copying
+// dist/ over the root never deletes them. Or git revert the deploy commit, which does.
+const SIM_ENABLED = true;
 
 // PMO Simulation (PMO, desktop only): the launcher window, loaded only when opened. After a
 // deploy an open tab may ask for a file that no longer exists: reload once, like CampusCompare.
@@ -404,7 +406,7 @@ const SimLauncher = lazy(() => import("./SimLauncher.jsx").catch(() => {
 // The portal side of a hand-over (simBridge.js: channels and the refresh listener) outlives the
 // launcher window. It is loaded only through the launcher, so this flag says whether there can be
 // anything to stop. When the session ends it is stopped; nothing is imported if the launcher was
-// never opened, and in the production build (SIM_ENABLED false) never at all.
+// never opened.
 let simBridgeUsed = false;
 function stopSimBridge() {
   if (!SIM_ENABLED || !simBridgeUsed) return;

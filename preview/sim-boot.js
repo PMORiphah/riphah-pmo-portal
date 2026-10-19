@@ -270,7 +270,7 @@
 
   // ── toast (shared by every guard) ─────────────────────────────────────────────────────────────
   var NA = 'Not available in the simulation';
-  var EXPORTS = 'Exports are not available in this preview of the simulation';
+  var EXPORTS = 'Exports are not available in the simulation';
   var PRINT_OFF = 'Printing is off in the presentation';
   var toastEl = null, toastTimer = 0, lastMsg = '', lastAt = 0;
   function toast(msg) {

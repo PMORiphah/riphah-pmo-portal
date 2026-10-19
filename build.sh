@@ -25,17 +25,18 @@ if [ -z "$OUT" ]; then
   OUT=$(grep -oE "outDir:[[:space:]]*['\"][^'\"]+['\"]" "$CONFIG" | head -1 | sed -E "s/outDir:[[:space:]]*['\"]([^'\"]+)['\"]/\1/")
   OUT=${OUT:-dist}
 fi
-# The simulation is approved for /preview/ only (PMO, 15 Oct 2026): a production build does not get
-# simulation.html (and the portal hides the Simulation button outside /preview/, see SIM_ENABLED in
-# src/App.jsx). Once the PMO approves production, build with SIM_PROD=1 and change SIM_ENABLED too.
+# The simulation is approved for /preview/ (PMO, 15 Oct 2026) and for production (PMO, 19 Oct 2026),
+# so every build writes simulation.html. SIM_PROD=0 leaves it out of a production build (then set
+# SIM_ENABLED in src/App.jsx back to preview-only too, or the button opens a missing page, and
+# git rm the published simulation.html, sim-boot.js and sim/ at the repo root: cp never deletes them).
 BASE=$(grep -oE "base:[[:space:]]*['\"][^'\"]+['\"]" "$CONFIG" | head -1 | sed -E "s/base:[[:space:]]*['\"]([^'\"]+)['\"]/\1/")
 case "$BASE" in
   */preview/) node scripts/sim/make-sim-html.mjs "$OUT" ;;
   *)
-    if [ "${SIM_PROD:-}" = "1" ]; then
-      node scripts/sim/make-sim-html.mjs "$OUT"
-    else
+    if [ "${SIM_PROD:-1}" = "0" ]; then
       rm -f "$OUT/simulation.html"
-      echo "build.sh: simulation.html not written for base ${BASE:-?} (preview only; SIM_PROD=1 overrides)"
+      echo "build.sh: simulation.html not written for base ${BASE:-?} (SIM_PROD=0)"
+    else
+      node scripts/sim/make-sim-html.mjs "$OUT"
     fi ;;
 esac

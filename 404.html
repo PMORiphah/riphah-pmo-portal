@@ -8,11 +8,33 @@
     // We use it to catch Supabase auth redirects (invite / password-recovery)
     // that land on paths that don't exist, and bounce them back to the
     // portal root with all the token information intact.
+    //
+    // PMO Simulation paths (simulation…, sim-boot…, sim/…) are never bounced: a mistyped or
+    // reloaded simulation address must not open the real, signed-in portal, and its one-time
+    // hand-over code (#k=…) must not travel anywhere. They get a locked page instead.
     var base   = '/riphah-pmo-portal/';
+    var path   = window.location.pathname;
     var search = window.location.search;   // e.g. ?code=xxx (PKCE)
     var hash   = window.location.hash;     // e.g. #access_token=xxx (implicit)
-    window.location.replace(base + search + hash);
+    var simPath = /\/(simulation[^\/]*|sim-boot[^\/]*)$/i.test(path) || /\/sim\//i.test(path);
+    if (simPath) {
+      document.title = 'PMO Portal Simulation';
+      try { history.replaceState(null, '', path); } catch (e) { /* the code stays only in this tab */ }
+    } else {
+      window.location.replace(base + search + hash);
+    }
   </script>
 </head>
-<body></body>
+<body style="margin:0;background:#0A1A2E">
+  <script>
+    if (simPath) {
+      var box = document.createElement('div');
+      box.setAttribute('role', 'alert');
+      box.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;'
+        + "background:#0A1A2E;color:rgba(255,255,255,.85);font:15px/1.6 Inter,'Segoe UI',Arial,sans-serif;text-align:center";
+      box.textContent = 'This simulation address does not exist or has expired. Close this tab, then sign in to the PMO portal as PMO and press Simulation in the sidebar.';
+      document.body.appendChild(box);
+    }
+  </script>
+</body>
 </html>
