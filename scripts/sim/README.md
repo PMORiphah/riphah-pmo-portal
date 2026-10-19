@@ -66,6 +66,32 @@ portal's data (`fixture-tables.json`, `fixture-responses.json`, `fixture-rpc.jso
 files into the repo; `.gitignore` also excludes `private/`, `*.local.json`, `*resolved*.json` and
 `real-names*`.
 
+| Test | What it checks | With `SIM_FIXTURE` |
+|---|---|---|
+| `scripts/sim/live/snapshot.test.mjs` | Portal-side snapshot read: masking, allowed columns, recorded requests, invariants, left-out and failed media, retries | adds the run over the captured data (required for most checks) |
+| `scripts/sim/live/bridge.test.mjs` | Portal side of the hand-over (protocol v2, `src/simBridge.js`) against a fake simulation tab on a real BroadcastChannel; refresh listener; `bye` | adds the full launch and refresh over the captured data |
+| `scripts/sim/live/canon.test.mjs` | Canonical JSON, SHA-256 and the snapshot code | not used |
+| `scripts/sim/live/validate.test.mjs` | Hand-over validator, fuzzed (unknown tables/columns, secrets, masks, sizes, fingerprint, freshness) | adds validation of the captured snapshot |
+| `scripts/sim/live/handoff.test.mjs` | Simulation side of the hand-over (`src/sim/handoff.js`): order, refusals, timeouts, refresh | adds a real `launch()` → receive → refresh round trip |
+| `scripts/sim/backend-test.mjs` | Synthetic backend in live mode (`src/sim/backend.js`) and session: replay, engine order, refused writes, storage, functions, auth | adds byte-for-byte replay of every recorded response |
+| `scripts/sim/live/select.test.mjs` | Scene-subject rules (`select.js`) and launcher overrides | adds the plan of the capture against its expected plan |
+| `scripts/sim/live/narration.test.mjs` | Generated lines, variants, timing and compaction (`lines.js`, `build.js`, `timing.js`) | adds the approved lines of the capture, word for word |
+| `scripts/sim/live/say.test.mjs` | Speech normaliser (`say.js`) | not used |
+| `scripts/sim/live/format.test.mjs` | `format.js` prints exactly what the App's own formatters print | not used |
+| `scripts/sim/live/engine.test.mjs` | Director engine without a browser: holds, anchors, governor, fallbacks, skips | adds the scenes built from the capture |
+| `scripts/sim/live/guard.test.mjs` | Director action allow-list (`director/guard.js`) | not used |
+| `scripts/sim/live/actions-test.mjs` | Every acting step of every scene is covered by `allowed-actions.json`; guard lists equal the file | adds the scenes of the capture |
+| `scripts/sim/live/hooks.test.mjs` | Every `data-*` hook the director relies on is in the portal source; removed fictional-data branches stay removed | not used |
+
+`scripts/sim/live/synthetic.mjs`, `b2-support.mjs` and `minidom.mjs` are shared helpers (invented
+data, a test snapshot builder and a small DOM), not tests. Run them all:
+
+```sh
+for t in scripts/sim/live/*.test.mjs scripts/sim/live/actions-test.mjs scripts/sim/backend-test.mjs; do
+  SIM_FIXTURE=<private dir> node "$t" || echo "FAILED: $t"
+done
+```
+
 Any headless run against production data must abort every database request except reads
 (GET `/rest/v1/*`), sign-in/refresh, `resolve_login_email`, `project_has_deliverables` and storage
 sign requests, and log each aborted request.

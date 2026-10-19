@@ -153,14 +153,21 @@ function MediaTile({ T, row, url, out, failedWhy, onToggle, disabled }) {
   );
 }
 
+// The App passes getSession (its current session, null after sign-out) and session (the object at
+// render time). getSession wins wherever both are given, so nothing here keeps a stale session.
+const sessionOf = (props) => (typeof props.getSession === "function" ? props.getSession() : null) ?? props.session ?? null;
+
 export function SimLauncher(props) {
   // PMO only: the button is PMO-only too, but the window checks again.
-  if (props.session?.role !== "pmo") return null;
+  if (sessionOf(props)?.role !== "pmo") return null;
   return <Launcher {...props} />;
 }
 
-function Launcher({ T, session, onClose }) {
-  const pmo = useMemo(() => ({ id: session.user_id, username: session.username ?? null, full_name: session.full_name ?? null }), [session]);
+function Launcher({ T, session: sessionProp, getSession, onClose }) {
+  const session = sessionOf({ session: sessionProp, getSession });
+  const uid = session?.user_id ?? null, uname = session?.username ?? null, fname = session?.full_name ?? null;
+  // Keyed on the person, not the session object: a token renewal must not re-read the data.
+  const pmo = useMemo(() => ({ id: uid, username: uname, full_name: fname }), [uid, uname, fname]);
   const get = useMemo(() => makeGet(), []);
   const [pv, setPv] = useState({ phase: "loading" });               // loading | error | ready
   const [view, setView] = useState(null);                            // { plan, candidates, tables, typedTexts }
@@ -175,10 +182,11 @@ function Launcher({ T, session, onClose }) {
   const [, setThumbTick] = useState(0);
   const alive = useRef(true);
 
+  // Mount and unmount only: a token renewal hands the App a new session object, and that must not
+  // cancel the media prefetch or drop the thumbnails while the window is open.
   useEffect(() => {
     alive.current = true;
     for (const k of OLD_KEYS) { try { localStorage.removeItem(k); } catch { /* ignore */ } }
-    setSessionFallback(session);
     return () => {
       alive.current = false;
       try { prefetch.current?.cancel(); } catch { /* ignore */ }
@@ -186,7 +194,9 @@ function Launcher({ T, session, onClose }) {
       for (const u of urls.current.values()) { try { URL.revokeObjectURL(u); } catch { /* ignore */ } }
       urls.current.clear();
     };
-  }, [session]);
+  }, []);
+  // The function itself is the fallback, so it reads null once the App has signed out.
+  useEffect(() => { setSessionFallback(typeof getSession === "function" ? getSession : sessionProp); }, [getSession, sessionProp]);
 
   // Remember me keeps the PMO's session in localStorage, which every tab of this site can read. The
   // simulation never uses it, but the safest presenting laptop does not have it there at all.

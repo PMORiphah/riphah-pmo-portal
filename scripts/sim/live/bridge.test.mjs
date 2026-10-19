@@ -117,6 +117,28 @@ await test("another build: only a bare manifest is sent, then the build message"
   sim.close();
 });
 
+await test("session fallback: the App's getSession is asked at each request (renewed token, null after sign-out); storage wins", async () => {
+  const realFetch = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async (url, opts = {}) => { seen.push(opts.headers?.Authorization); return { status: 200, headers: { get: () => "0-0/1" }, json: async () => [] }; };
+  try {
+    let cur = { user_id: "u1", role: "pmo", access_token: "tok-1" };
+    B.setSessionFallback(() => cur);
+    const get = B.makeGet();
+    await get("/rest/v1/projects?select=id");
+    cur = { ...cur, access_token: "tok-2" };           // the App renewed the token
+    await get("/rest/v1/projects?select=id");
+    cur = null;                                          // the App signed out
+    await assert.rejects(get("/rest/v1/projects?select=id"), (e) => e.code === "signed-out");
+    B.setSessionFallback({ user_id: "u1", role: "pmo", access_token: "tok-obj" });   // an object still works
+    await get("/rest/v1/projects?select=id");
+    sessionStorage.setItem("pmo_session", JSON.stringify({ user_id: "u2", role: "pmo", access_token: "tok-stored" }));
+    await get("/rest/v1/projects?select=id");
+    sessionStorage.removeItem("pmo_session");
+    assert.deepEqual(seen, ["Bearer tok-1", "Bearer tok-2", "Bearer tok-obj", "Bearer tok-stored"]);
+  } finally { B.setSessionFallback(null); globalThis.fetch = realFetch; }
+});
+
 assert.equal(network.length, 0, "no request made by the data-free checks");
 
 const dir = process.env.SIM_FIXTURE;
@@ -355,6 +377,30 @@ await test("signed out at Start: the launch stops with the sign-in message, not 
   assert.equal(network.length, before, "nothing requested without a session");
   sim.close();
   session();
+});
+
+await test("prefetch cancelled under a running Start (launcher unmounted): the files are prepared here, none silently left out", async () => {
+  // Photos need a browser canvas to re-encode, so this case leaves them out and checks the videos.
+  const videos = siteVisit.filter((a) => String(a.mime_type).startsWith("video/"));
+  const photos = siteVisit.filter((a) => !String(a.mime_type).startsWith("video/"));
+  if (!videos.length) return;
+  for (const v of videos) sizes.set(v.file_path, Number(v.file_size) || 16);
+  const cancelled = { ready: new Map(), failed: new Map(), done: Promise.resolve(), cancelled: true,
+    stats: () => ({ ready: 0, failed: 0, total: siteVisit.length, bytes: 0, done: true }), ensure: async () => null };
+  const p = B.launch({ pmo: ME, testAccounts: FT.meta.testAccountsDetected, leftOut: photos.map((a) => a.id), prefetch: cancelled, timing: { hello: 2000, ok: 4000 } });
+  const n = nonceOf(opened.at(-1));
+  const sim = fakeSim(n);
+  await sim.done;
+  const { man } = await assemble(sim.got);
+  const sent = sim.got.filter((m) => m.type === "media");
+  assert.equal(sent.length, videos.length, "every video sent");
+  assert.deepEqual(new Set(sent.map((m) => m.item.attachmentId)), new Set(videos.map((v) => v.id)));
+  sim.ch.postMessage({ type: "ok", v: 2, nonce: n, fingerprint: man.fingerprint });
+  const r = await p;
+  assert.equal(r.confirmed, true);
+  assert.equal(r.failed, 0);
+  sim.close();
+  B.stopAll();
 });
 
 B.stopAll();

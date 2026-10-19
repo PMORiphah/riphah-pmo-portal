@@ -75,9 +75,16 @@ setLaunch({});
 // ── session and requests ────────────────────────────────────────────────────
 // The session is read at each request: the portal renews the token in place and saves it.
 let fallbackSession = null;
-/** The launcher registers the App's session object as a fallback when storage is unavailable. */
-export function setSessionFallback(s) { fallbackSession = s || null; }
-const currentSession = () => loadSession() || fallbackSession;
+/** The launcher registers the App's getSession function (or, without it, the session object) as a
+ *  fallback when storage is unavailable. A function is called at each use, so it reads null once the
+ *  App has signed out; an object would keep the stale session. */
+export function setSessionFallback(s) { fallbackSession = typeof s === "function" ? s : (s || null); }
+const currentSession = () => {
+  const stored = loadSession();
+  if (stored) return stored;
+  if (typeof fallbackSession === "function") { try { return fallbackSession() || null; } catch { return null; } }
+  return fallbackSession;
+};
 
 /** The portal's own entry chunk name ("index-XXXXXXXX.js"), or "dev" under the dev server. */
 export function portalBuild() {
@@ -239,6 +246,8 @@ export function startPrefetch(rows, { onProgress, first = [] } = {}) {
   report();
   return {
     ready, failed, stats,
+    /** True once cancel() ran (the launcher window was closed or unmounted). */
+    get cancelled() { return cancelled; },
     get done() { return idle() || cancelled ? Promise.resolve() : new Promise((r) => waiters.push(r)); },
     /** Queues rows not seen yet (a re-read in the launcher found new uploads). */
     add(more) {
@@ -388,8 +397,10 @@ function mediaCallback({ prefetch, held, index = null, reuse = null }) {
           continue;
         }
         let item = null;
-        if (prefetch) { try { item = await prefetch.ensure(row); } catch { item = null; } }   // failed earlier: tried again
-        else {
+        if (prefetch && !prefetch.cancelled) { try { item = await prefetch.ensure(row); } catch { item = null; } }   // failed earlier: tried again
+        // No prefetch, or it was cancelled under a running Start (the launcher window unmounted, e.g. the
+        // portal window was made narrow): prepared here, so the photos are not silently left out.
+        if (!item && (!prefetch || prefetch.cancelled)) {
           for (let attempt = 0; attempt < 2 && !item; attempt++) { try { item = await prepareItem(row); } catch { item = null; } }
         }
         if (item) { held.set(row.id, item); out.set(row.id, { mime: item.mime, size: item.size, sha256: item.sha256 }); }
