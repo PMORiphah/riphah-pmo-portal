@@ -91,9 +91,10 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
     let raf = 0;
     const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(placeBand); };
     placeBand();
-    // The footer can change height (a longer message wraps), which moves the band's top.
+    // The footer can change height (a longer message wraps) and the column above it can grow or shrink
+    // (the checks fold into one line), which moves the band's top.
     const ro = typeof ResizeObserver === "function" && bandRef.current ? new ResizeObserver(onScroll) : null;
-    if (ro) ro.observe(bandRef.current);
+    if (ro) { ro.observe(bandRef.current); if (veil.firstElementChild) ro.observe(veil.firstElementChild); }
     veil.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     return () => {
@@ -101,6 +102,7 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
       veil.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll);
     };
   }, [overflowing, placeBand]);
+  useEffect(() => { if (overflowing) placeBand(); });
   const v = voice;
   const reh = d.rehearsal;
   // Once Start is ready and nothing failed, the rehearsal checks and the presenter's notes fold into one
