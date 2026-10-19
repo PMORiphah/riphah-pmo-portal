@@ -92,8 +92,8 @@ const Delta = ({ v, money, since }) => {
   const up = v > 0;
   return <span style={{ color: up ? C.teal : C.rose, fontWeight:600 }}>{up ? "+" : "−"}{money ? fmtM(Math.abs(v)) : Math.abs(v)} <span style={{ color:C.muted, fontWeight:400 }}>since {since}</span></span>;
 };
-const Tile = ({ label, value, sub, delta }) => (
-  <div className="br-avoid" style={{ border:`1px solid ${C.line}`, borderRadius:10, padding:"12px 14px", background:C.soft }}>
+const Tile = ({ label, value, sub, delta, hook }) => (
+  <div className="br-avoid" data-tile={hook} style={{ border:`1px solid ${C.line}`, borderRadius:10, padding:"12px 14px", background:C.soft }}>
     <div style={{ fontSize:9.5, fontWeight:700, letterSpacing:.8, textTransform:"uppercase", color:C.muted }}>{label}</div>
     <div style={{ fontSize:22, fontWeight:700, color:C.ink, marginTop:4, fontVariantNumeric:"tabular-nums" }}>{value}</div>
     <div style={{ fontSize:10.5, color:C.body, marginTop:2 }}>{sub}</div>
@@ -136,7 +136,7 @@ export function ReportDocument({ rep }) {
   return (
     <div>
       {pg(1, <>
-        <div style={{ background:C.navy, color:"#fff", margin:"-36px -44px 0", padding:"26px 44px 22px" }}>
+        <div data-tour="report-head" style={{ background:C.navy, color:"#fff", margin:"-36px -44px 0", padding:"26px 44px 22px" }}>
           <div style={{ fontSize:9.5, letterSpacing:3, opacity:.6, textTransform:"uppercase" }}><span data-org>Riphah International University</span> · Project Management Office</div>
           <div style={{ fontSize:26, fontWeight:700, marginTop:8 }}>{title}</div>
           <div style={{ fontSize:15, marginTop:2, color:"#F3C877", fontWeight:600 }}>{f.period}</div>
@@ -145,9 +145,9 @@ export function ReportDocument({ rep }) {
         <div style={{ height:4, background:C.gold, margin:"0 -44px 22px" }} />
         <H sub="The five figures the Board follows each month">Executive summary</H>
         <div data-tour="report-summary" style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
-          <Tile label="Total CAPEX portfolio" value={`PKR ${fmtM(h.df_total)}`} sub={`${h.capex_count} projects · DF Recommended`} delta={<Delta v={d?.df_total} money since={since} />} />
-          <Tile label="Approved" value={`PKR ${fmtM(h.approved_bac)}`} sub={`${h.approved_count} projects · ${h.approved_in_execution} in execution, ${h.approved_closed} closed`} delta={<Delta v={d?.approved_bac} money since={since} />} />
-          <Tile label="Released" value={`PKR ${fmtM(h.released_total)}`} sub={`${fmtPct(h.released_pct_of_df)} of DF Recommended · ${h.released_projects} projects`} delta={<Delta v={d?.released_total} money since={since} />} />
+          <Tile hook="capex" label="Total CAPEX portfolio" value={`PKR ${fmtM(h.df_total)}`} sub={`${h.capex_count} projects · DF Recommended`} delta={<Delta v={d?.df_total} money since={since} />} />
+          <Tile hook="approved" label="Approved" value={`PKR ${fmtM(h.approved_bac)}`} sub={`${h.approved_count} projects · ${h.approved_in_execution} in execution, ${h.approved_closed} closed`} delta={<Delta v={d?.approved_bac} money since={since} />} />
+          <Tile hook="released" label="Released" value={`PKR ${fmtM(h.released_total)}`} sub={`${fmtPct(h.released_pct_of_df)} of DF Recommended · ${h.released_projects} projects`} delta={<Delta v={d?.released_total} money since={since} />} />
           <Tile label="Approved, not yet released" value={`PKR ${fmtM(h.approved_not_released)}`} sub="approved budget less released, on approved projects" delta={<Delta v={d?.approved_not_released} money since={since} />} />
           <Tile label="Of which PMDC" value={`PKR ${fmtM(h.pmdc_df)}`} sub={`${h.pmdc_count} projects · inside CAPEX, shown separately`} />
           <Tile label="Investment (outside CAPEX)" value={`PKR ${fmtM(h.investment_df)}`} sub={`${h.investment_count} projects · PKR ${fmtM(h.investment_released)} released`} />
@@ -166,8 +166,8 @@ export function ReportDocument({ rep }) {
           </> : <li>PKR <b>{fmtM(thisMonth?.released || 0)}</b> released on {thisMonth?.released_count || 0} project{thisMonth?.released_count === 1 ? "" : "s"} (by budget release date).</li>}
           <li>{f.pdds.received} PDD{f.pdds.received === 1 ? "" : "s"} received by the PMO on E-PDD; {f.pdds.pmo_approved} approved by the PMO and {f.pdds.sent_back} sent back for changes (document stage; a project is sanctioned only after DF → ED → MT).</li>
         </ul>
-        <div style={{ marginTop:18 }}><H sub="Listed so they can be followed up">Needs attention</H></div>
-        <ul style={{ margin:"0 0 0 18px", padding:0, fontSize:11.5, lineHeight:1.75, color:C.ink }}>
+        <div data-tour="report-attention-head" style={{ marginTop:18 }}><H sub="Listed so they can be followed up">Needs attention</H></div>
+        <ul data-tour="report-attention" style={{ margin:"0 0 0 18px", padding:0, fontSize:11.5, lineHeight:1.75, color:C.ink }}>
           {att.approved_nothing_released.length > 0 && <li>Approved, nothing released yet: {att.approved_nothing_released.map((p, i) => <span key={p.id}>{i ? "; " : ""}<b>{p.name}</b> (PKR {fmtPKR(p.bac)})</span>)}.</li>}
           {att.released_before_approval.length > 0 && <li>Released before approval: {att.released_before_approval.map((p, i) => <span key={p.id}>{i ? "; " : ""}<b>{p.name}</b>, {STAGE_NAME[p.stage]}, PKR {fmtPKR(p.released)}</span>)}.</li>}
           {att.without_pm.length > 0 && <li>{att.without_pm.length} project{att.without_pm.length === 1 ? "" : "s"} without a project manager{att.without_pm.some(p => p.stage === "approved") ? `, ${att.without_pm.filter(p => p.stage === "approved").length} of them approved` : ""}.</li>}
@@ -445,7 +445,7 @@ function ReportViewer({ T, session, supa, rep, recipients, onClose, onChanged, i
         <Button T={T} variant="ghost" icon={ArrowLeft} onClick={onClose} data-tour="report-back">Back</Button>
         <div style={{ minWidth:0, flex: isMobile ? "1 1 calc(100% - 110px)" : 1 }}>
           <div style={{ ...TYPE.h3, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{rep.title}</div>
-          <div style={{ ...TYPE.caption, color:T.muted }}><span style={{ color:chip[1], fontWeight:700 }}>{chip[0]}</span>
+          <div style={{ ...TYPE.caption, color:T.muted }}><span data-tour="report-chip" style={{ color:chip[1], fontWeight:700 }}>{chip[0]}</span>
             {isPMO && rep.status === "published" && rep.kind !== "reconstructed" && <> · shared with {live.length} · opened by {live.filter(r => r.seen_at).length}</>}</div>
         </div>
         {isMobile && <div style={{ flexBasis:"100%", height:0 }} />}

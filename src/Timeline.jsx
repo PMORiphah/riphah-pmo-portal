@@ -127,7 +127,7 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
         <Input T={T} icon={Search} value={q} onChange={e => setQ(e.target.value)}
           onClear={() => setQ("")} placeholder="Search projects…"
           style={{ flex:"0 1 260px", minWidth:150 }} />
-        <Select T={T} value={campus} onChange={e => setCampus(e.target.value)}>
+        <Select T={T} value={campus} onChange={e => setCampus(e.target.value)} data-tour="timeline-campus">
           <option value="">All campuses</option>
           {campuses.map(c => <option key={c} value={c}>{c}</option>)}
         </Select>
@@ -148,7 +148,7 @@ export function PortfolioTimeline({ T, session, supa, onSelectProject, isCompact
               </span>
             </div>
           )}
-          <div style={{ ...TYPE.caption, color:T.muted }}>
+          <div data-tour="timeline-caption" style={{ ...TYPE.caption, color:T.muted }}>
             {scheduled.length} scheduled
             {unscheduled.length > 0 && <> · <span style={{ color:T.textOf(DATA.warning) }}>{unscheduled.length} without dates</span></>}
           </div>

@@ -1,0 +1,6 @@
+{ "v": 1, "note": "Spoken forms for the voice only, keyed by campus id. A campus without an entry is spoken as its name.",
+  "campuses": {
+    "1d793ead-53f7-44a7-acb0-d316d114857f": "Al Meezaan", "8d629430-7668-40bc-8376-c0902c328990": "G 7",
+    "5dd9f279-8e82-421c-a453-d6da4c2c652f": "G G C", "a8ad2d02-bf6b-46ec-b76d-f4de96c8d297": "Eye 14",
+    "48bb3fb1-02c8-407f-a924-d2220b2ed377": "M H H", "e8cc6ef2-dea7-480e-a0c8-ff2d5648b3c3": "P R H",
+    "3cc428da-aac9-4736-8859-5ca7ce35da51": "R I H", "0aec5251-4677-4791-8da2-86c3c3e89b50": "R M C" } }

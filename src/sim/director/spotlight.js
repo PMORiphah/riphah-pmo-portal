@@ -37,10 +37,11 @@ export class Spotlight {
    * Lights the targets. targets: selectors, elements or functions (resolved every frame), or
    * { union: target } to light all of a target's elements as one area.
    * opts.mode: "dim" (dim + holes + rings) | "ring" (rings only) | "off".
+   * opts.dim: how dark the dim is, 0–1 of the usual 45 % (the opening dims the dashboard lightly).
    */
   set(targets, opts = {}) {
     this.targets = Array.isArray(targets) ? targets : targets ? [targets] : [];
-    this.opts = { mode: "dim", pad: 8, radius: 12, ...opts };
+    this.opts = { mode: "dim", pad: 8, radius: 12, dim: 1, ...opts };
     if (!this.targets.length && this.opts.mode !== "dim-all") this.opts.mode = "off";
   }
   clear() { this.targets = []; this.opts = { ...this.opts, mode: "off" }; }
@@ -120,7 +121,8 @@ export class Spotlight {
     }
     while (cur.length > goal.length && (!cur[cur.length - 1] || cur[cur.length - 1].a < 0.02)) cur.pop();
 
-    const dimGoal = mode === "dim" ? (goal.length ? 1 : 0) : mode === "dim-all" ? 1 : 0;
+    const strength = Math.max(0, Math.min(1, Number(this.opts.dim ?? 1)));
+    const dimGoal = (mode === "dim" ? (goal.length ? 1 : 0) : mode === "dim-all" ? 1 : 0) * strength;
     this.dimA += (dimGoal - this.dimA) * k;
     n.dim.setAttribute("fill", DIM);
     n.dim.style.opacity = this.dimA.toFixed(3);

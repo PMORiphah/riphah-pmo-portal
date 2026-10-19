@@ -1,6 +1,6 @@
 # PMO Simulation: the two-minute presentation
 
-Status: **built and live on /preview/ on 15 Oct 2026** (commits `e9a11c8`, `6afe110`; production untouched). See CLAUDE.md, "PMO Simulation", for what was verified and what is still open (labelled exports, lite mode, real-voice and laptop rehearsal, production promotion). The sections below are the design as approved; the story now uses the Al-Mizan slot's "Postgraduate Study Hub Refit".
+Status: **built and live on /preview/ on 15 Oct 2026; to be superseded by the live-data redesign in `pmo-simulation-live.md` (planned 15 Oct, awaiting the PMO's decisions)** (commits `e9a11c8`, `6afe110`; production untouched). See CLAUDE.md, "PMO Simulation", for what was verified and what is still open (labelled exports, lite mode, real-voice and laptop rehearsal, production promotion). The sections below are the design as approved; the story now uses the Al-Mizan slot's "Postgraduate Study Hub Refit".
 the 5-minute main presentation in `pmo-simulation.md`; that document's isolation design (§6) still applies,
 with the additions below. Its deep-dive chapters are out of scope for now.
 

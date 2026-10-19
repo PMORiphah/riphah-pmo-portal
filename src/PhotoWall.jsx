@@ -41,10 +41,10 @@ function relTime(iso) {
 // second one invented just for this page. Options are hidden entirely once
 // there's only one (or zero) real values, since a filter that can't narrow
 // anything is just clutter.
-function FilterSelect({ T, value, onChange, label, options }) {
+function FilterSelect({ T, value, onChange, label, options, hook }) {
   if (!options || options.length < 2) return null;
   return (
-    <Select T={T} size="sm" value={value} active={!!value} onChange={(e) => onChange(e.target.value)}>
+    <Select T={T} size="sm" value={value} active={!!value} onChange={(e) => onChange(e.target.value)} data-tour={hook}>
       <option value="">{label}</option>
       {options.map(o => <option key={o} value={o}>{o}</option>)}
     </Select>
@@ -192,7 +192,7 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
         alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: SP.md }}>
         <div>
           <div style={{ ...TYPE.h2, color: T.text }}>Gallery</div>
-          <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>
+          <div data-tour="gallery-count" style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>
             {items === null ? "Loading…" : activeFilterCount > 0
               ? `${sortedItems.length} of ${items.length} photos and videos`
               : `${items.length} photo${items.length === 1 ? "" : "s"} and video${items.length===1?"":"s"} across the portfolio`}
@@ -224,7 +224,7 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
           <FilterSelect T={T} value={fOrg}        onChange={setFOrg}        label="All Organizations" options={filterOptions.fOrg} />
           <FilterSelect T={T} value={fSegment}    onChange={setFSegment}    label="All Segments" options={filterOptions.fSegment} />
           <FilterSelect T={T} value={fPriority}   onChange={setFPriority}   label="All Priorities" options={filterOptions.fPriority} />
-          <FilterSelect T={T} value={fCampus}     onChange={setFCampus}     label="All Campuses" options={filterOptions.fCampus} />
+          <FilterSelect T={T} value={fCampus}     onChange={setFCampus}     label="All Campuses" options={filterOptions.fCampus} hook="gallery-campus" />
           <FilterSelect T={T} value={fCostCentre} onChange={setFCostCentre} label="All Cost Centres" options={filterOptions.fCostCentre} />
           {activeFilterCount > 0 && (
             <button className="pmo-focusable pmo-btn" onClick={clearAllFilters}
@@ -270,7 +270,7 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
             <div key={i} style={{ aspectRatio: "1/1", borderRadius: R.md, background: T.surfaceRaised }} />
           ))
         ) : sortedItems.map((item, i) => (
-          <button key={item.id} data-attachment={item.id} className="pmo-focusable pmo-lift" onClick={() => setLightboxIdx(i)}
+          <button key={item.id} data-attachment={item.id} data-kind={isVideo(item) ? "video" : "photo"} className="pmo-focusable pmo-lift" onClick={() => setLightboxIdx(i)}
             style={{ position: "relative", aspectRatio: "1/1", borderRadius: R.md, overflow: "hidden",
               border: `1px solid ${T.border}`, background: "#05080F", cursor: "pointer", padding: 0,
               textAlign: "left" }}>

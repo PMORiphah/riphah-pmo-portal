@@ -2256,12 +2256,12 @@ export function useTableSort(rows, accessors, initial = null) {
   return { sorted, sort, toggle };
 }
 
-export function SortHeader({ T, label, sortKey, sort, onToggle, align = "left", style, minWidth }) {
+export function SortHeader({ T, label, sortKey, sort, onToggle, align = "left", style, minWidth, ...rest }) {
   const [hot, setHot] = useState(false);
   const on = sort?.key === sortKey;
   const dir = on ? sort.dir : null;
   return (
-    <th
+    <th {...dataProps(rest)}
       onClick={() => sortKey && onToggle(sortKey)}
       onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
       title={sortKey ? `Sort by ${label}${on ? (dir === "asc" ? " (descending)" : " (clear)") : ""}` : undefined}

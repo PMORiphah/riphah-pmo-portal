@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "note": "PMO Simulation (live data): every action the director may take (contract §H.4). Selector shapes and step labels only, no data. scripts/sim/live/actions-test.mjs fails on any scene step not covered here; the integration run compares window.__PMO_SIM_ACTIONS__ with the same list.",
+  "nav": ["cmd", "proj", "camp", "perf", "risks", "cashflow", "schedule", "past", "reports", "upd", "photowall", "team", "users"],
+  "tab": ["budgeting", "investments", "pipeline", "financials", "documents", "wbs"],
+  "click": [
+    "^\\[data-stage=\"in_(df|ed|mt)\"\\]$",
+    "^\\[data-cell=\"(low|medium|high)-(low|medium|high)\"\\]$",
+    "^\\[data-view=\"(compare|sites)\"\\]$",
+    "^\\[data-mode=\"(all|h2h)\"\\]$",
+    "^tr\\[data-project-id=\"[^\"]+\"\\]$",
+    "^\\[data-tour=\"updates-tab-all\"\\]$",
+    "^\\[data-tour=\"updates-list\"\\] \\[data-project-id=\"[^\"]+\"\\]$",
+    "^\\[data-past=\"[^\"]+\"\\]$",
+    "^\\[data-report=\"[^\"]+\"\\]$",
+    "^\\[data-tour=\"report-back\"\\]$",
+    "^\\[data-tour=\"assign-pm\"\\]$"
+  ],
+  "clickLabels": {
+    "tick a campus": "[data-tour=\"compare-table\"] tr[data-campus] input[type=\"checkbox\"]",
+    "untick a campus": "[data-tour=\"compare-table\"] tr[data-campus] input[type=\"checkbox\"]",
+    "Open on the campus": "[data-tour=\"compare-h2h-grid\"] [data-campus] [data-tour=\"h2h-open\"]",
+    "Cancel": "the button labelled exactly Cancel in the dialog holding [data-tour=\"bulk-preview\"]"
+  },
+  "type": ["^\\[data-tour=\"projects-search\"\\]$", "^\\[data-tour=\"past-search\"\\]$"],
+  "pick": ["^\\[data-tour=\"timeline-campus\"\\]$", "^\\[data-tour=\"gallery-campus\"\\]$", "^\\[data-tour=\"sites-campus\"\\]$"],
+  "option": ["^\\[role=\"listbox\"\\] \\[role=\"option\"\\]\\[data-value=\"[^\"]+\"\\]$"],
+  "key": ["Escape"],
+  "store": ["pmo-campus-view"],
+  "do": ["revealNav"],
+  "never": [
+    "[data-tour=\"pm-select\"]", "td[data-col=\"phone\"]", "[data-tab=\"deliverables\"]", "[data-filter=\"delayed\"]",
+    "[data-kpi]", "[data-attachment]", "[data-tour=\"lightbox\"]", "th[data-col]", "textarea", "[contenteditable]"
+  ]
+}

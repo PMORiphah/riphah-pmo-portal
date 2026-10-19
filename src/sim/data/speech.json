@@ -1,5 +1,0 @@
-{
- "v": 1,
- "note": "Public respellings for the voice only, keyed by campus slot. A slot without an entry is spoken as its name.",
- "campuses": { "C01": "Al Meezaan", "C03": "G 7", "C04": "G G C", "C06": "Eye 14", "C09": "M H H", "C10": "P R H", "C11": "R I H", "C12": "R M C" }
-}

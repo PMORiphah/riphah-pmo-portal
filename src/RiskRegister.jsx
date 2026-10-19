@@ -460,7 +460,7 @@ export function RiskRegisterPage({ T, session, supa }) {
         justifyContent: "space-between", flexWrap: "wrap", gap: SP.md }}>
         <div>
           <div style={{ ...TYPE.h2, color: T.text }}>Risk Register</div>
-          <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+          <div data-tour="risk-header" style={{ ...TYPE.caption, color: T.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
             {risks === null ? "Loading…" : (
               <>
                 {openCount} open ·
@@ -515,7 +515,7 @@ export function RiskRegisterPage({ T, session, supa }) {
               <option value="">All Statuses</option>
               {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </Select>
-            <span style={{ ...TYPE.caption, color: T.dim, marginLeft: "auto" }}>
+            <span data-tour="risk-count" style={{ ...TYPE.caption, color: T.dim, marginLeft: "auto" }}>
               {filtered ? `${filtered.length} of ${risks?.length ?? 0}` : ""}
             </span>
           </div>

@@ -1,4 +1,4 @@
-// PMO Simulation: checks and helpers around what public/sim-boot.js set up.
+// PMO Simulation: checks and helpers around what public/sim-boot.js set up. Owner: B2.
 // selfTest() is what start() runs before anything loads, and what the Begin screen can show.
 
 const isNative = (f) => typeof f === "function" && /\[native code\]/.test(Function.prototype.toString.call(f));
@@ -20,8 +20,20 @@ export function selfTest() {
       && m.getAttribute("content") === s.csp && /connect-src 'self'/.test(s.csp) && /script-src 'self'/.test(s.csp)
       && !/https?:|\*/.test(s.csp);
   });
-  add("storage", () => !isNative(Storage.prototype.getItem) && !isNative(Storage.prototype.setItem)
-    && !isNative(Storage.prototype.clear) && !isNative(Storage.prototype.key));
+  // Storage lives in memory: what the page writes never reaches the browser's own storage.
+  add("storage", () => {
+    const st = s.storage;
+    if (!st || st.kind !== "memory" || !st.isMemory(window.localStorage) || !st.isMemory(window.sessionStorage)) return false;
+    const before = st.nativeCount();
+    const k = "__pmo_sim_selftest";
+    localStorage.setItem(k, "1");
+    sessionStorage.setItem(k, "1");
+    const ok = localStorage.getItem(k) === "1" && sessionStorage.getItem(k) === "1" && !st.nativeHas(k);
+    localStorage.removeItem(k);
+    sessionStorage.removeItem(k);
+    const after = st.nativeCount();
+    return ok && before.local === after.local && before.session === after.session && localStorage.getItem(k) === null;
+  });
   add("channels", () => {
     if (!window.BroadcastChannel) return true;
     const c = new BroadcastChannel("selftest");
@@ -29,11 +41,15 @@ export function selfTest() {
     c.close();
     return ok;
   });
-  add("clock", () => Math.abs(Date.now() - s.clock.now()) < 1000 && Date.now() >= s.clockStart - 1000
-    && Date.now() < s.clockStart + 12 * 3600 * 1000);
+  // Real time (no pinned clock): Date is the browser's own and agrees with the monotonic clock.
+  // (A laptop that slept since this page loaded could drift; the page is opened just before this check.)
+  add("clock", () => isNative(Date) && isNative(Date.now) && s.clock && typeof s.clock.now === "function"
+    && Math.abs(Date.now() - (performance.timeOrigin + performance.now())) < 2000
+    && Math.abs(Date.now() - s.clock.now()) < 1000);
   add("device", () => !("PushManager" in window) && !window.PublicKeyCredential && navigator.credentials === undefined
     && (!window.Notification || window.Notification.permission === "denied"));
   add("open", () => !isNative(window.open));
+  add("print", () => !isNative(window.print));
   add("speech", () => !window.SpeechSynthesis || !isNative(SpeechSynthesis.prototype.speak));
   add("exports", () => typeof window.saveAs === "function");
   add("fonts", () => {
@@ -45,16 +61,28 @@ export function selfTest() {
       && !document.querySelector('link[href*="fonts.googleapis"],link[href*="fonts.gstatic"]');
   });
   add("top", () => window.top === window);
+  // No frame (an about:blank frame would have the browser's own storage and window.open).
+  add("frames", () => {
+    let refused = false;
+    try { document.createElement("iframe"); } catch { refused = true; }
+    return refused && !document.querySelector("iframe,frame,object,embed");
+  });
+  // Nothing persists on the portal's origin: no IndexedDB, Cache Storage or cookies.
+  add("persist", () => {
+    document.cookie = "__pmo_sim_selftest=1";
+    return document.cookie === "" && window.indexedDB === undefined && window.caches === undefined;
+  });
   const failed = checks.filter((c) => !c.ok).map((c) => c.name);
   return { ok: failed.length === 0, checks, failed };
 }
 
 export const toast = (msg) => sim()?.guard?.toast(msg);
 
-// Clears the simulation's own keys only ("pmo-sim:..."), and only while the namespacing is in
-// place: with native storage methods, clear() would wipe the real portal's storage.
+// Clears the simulation's in-memory storage. Only while the memory storage is in place: with the
+// browser's own storage, clear() would wipe the real portal's keys.
 export function clearSimStorage() {
-  if (isNative(Storage.prototype.clear)) return false;
+  const st = sim()?.storage;
+  if (!st || !st.isMemory(window.localStorage) || !st.isMemory(window.sessionStorage)) return false;
   try { localStorage.clear(); } catch { /* ignore */ }
   try { sessionStorage.clear(); } catch { /* ignore */ }
   return true;

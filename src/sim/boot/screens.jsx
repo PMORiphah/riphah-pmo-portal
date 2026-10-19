@@ -1,6 +1,8 @@
-// PMO Simulation: the screens shown before the run (locked, receiving, preparing, failed, ended).
-// No data and no names: only fixed text. Navy and gold, as the portal's sign-in page.
-import React, { useEffect, useRef } from "react";
+// PMO Simulation: the screens shown before the run (locked, receiving, checking, failed, ended).
+// Owner: B2. Spec: contract §G.6. No data and no names: only fixed text and counts. Every failure
+// says what went wrong and what to do; no stand-in data is ever shown instead. Navy and gold, as
+// the portal's sign-in page.
+import React from "react";
 
 const NAVY = "#0A1A2E";
 const GOLD = "#D89840";
@@ -12,19 +14,11 @@ const CSS = `
 @keyframes simBootSpin { to { transform: rotate(360deg); } }
 @keyframes simBootIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes simBootGlow { 0%,100% { opacity: .55; } 50% { opacity: .9; } }
-.sim-boot-btn { transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease; }
-.sim-boot-btn:hover { background: rgba(216,152,64,.14) !important; border-color: ${GOLD} !important; color: #fff !important; }
-.sim-boot-btn:active { transform: translateY(1px); }
-.sim-boot-btn:focus-visible { outline: 2px solid ${GOLD}; outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .sim-boot-card, .sim-boot-spin, .sim-boot-glow { animation: none !important; } }
 `;
 
-// The footer line says what the page holds at that moment: no names yet (locked, failed, ended),
-// the real cast arriving, or the invented sample names.
-const FOOT_NONE = "Simulation · fictional projects and figures · nothing is sent";
-const FOOT_REAL = "Simulation · real names, fictional projects and figures · nothing is sent";
-const FOOT_SAMPLE = "Simulation · sample names · fictional data · nothing is sent";
-const footDefault = () => (window.__PMO_SIM__?.mode === "sample" ? FOOT_SAMPLE : FOOT_REAL);
+// The footer line: what this page is and does.
+const FOOT = "PMO Portal · Simulation · live portal data · read-only · nothing is changed or sent";
 
 function Frame({ kicker = "PMO Portal · Simulation", title, children, footer = true, tone = "gold" }) {
   return (
@@ -50,7 +44,7 @@ function Frame({ kicker = "PMO Portal · Simulation", title, children, footer = 
         {footer && (
           <div style={{ marginTop: 26, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,.08)", fontSize: 11.5,
             color: "rgba(255,255,255,.5)", letterSpacing: ".02em" }}>
-            {typeof footer === "string" ? footer : footDefault()}
+            {typeof footer === "string" ? footer : FOOT}
           </div>
         )}
       </div>
@@ -58,49 +52,46 @@ function Frame({ kicker = "PMO Portal · Simulation", title, children, footer = 
   );
 }
 
-const Button = React.forwardRef(function Button({ children, onClick }, ref) {
+// Opened directly, reloaded, or without a hand-over: nothing to show, and no way on from here.
+export function LockedScreen() {
   return (
-    <button ref={ref} type="button" className="sim-boot-btn" onClick={onClick}
-      style={{ marginTop: 22, padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(216,152,64,.55)",
-        background: "transparent", color: "rgba(255,255,255,.9)", font: `500 13px ${SANS}`, cursor: "pointer" }}>
-      {children}
-    </button>
-  );
-});
-
-// Opened directly, reloaded, or after a hand-over that did not complete.
-export function LockedScreen({ reason, onSample }) {
-  const btn = useRef(null);
-  useEffect(() => { btn.current?.focus({ preventScroll: true }); }, []);
-  return (
-    <Frame title="Open the simulation from the PMO portal" footer={FOOT_NONE}>
-      {reason && (
-        <div role="alert" style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 10, background: "rgba(226,108,128,.12)",
-          border: "1px solid rgba(226,108,128,.35)", color: "#FFD9DF", fontSize: 13.5 }}>{reason}</div>
-      )}
-      <div>Sign in to the PMO portal as PMO and press <b style={{ color: "#fff" }}>Simulation</b> in the sidebar. The campus,
-        manager and team names arrive from there; this page holds none.</div>
-      {onSample && (
-        <>
-          <Button ref={btn} onClick={onSample}>Run with sample names</Button>
-          <div style={{ marginTop: 8, fontSize: 12.5, color: "rgba(255,255,255,.55)" }}>Every name is invented in this mode.</div>
-        </>
-      )}
+    <Frame title="Open the simulation from the PMO portal">
+      <div role="alert">This page runs only when the PMO presses <b style={{ color: "#fff" }}>Simulation</b> in the signed-in portal.</div>
+      <div style={{ marginTop: 10, fontSize: 13.5, color: "rgba(255,255,255,.6)" }}>It holds no data of its own: the portal hands its
+        current data to this tab when the simulation starts, and nothing is kept after it ends.</div>
     </Frame>
   );
 }
 
-// Receiving the hand-over, then preparing the data.
-export function ProgressScreen({ phase, received = 0, expect = null }) {
-  const preparing = phase === "preparing" || phase === "done";
-  const waiting = phase === "waiting";
-  const pct = expect ? Math.min(100, Math.round((received / Math.max(1, expect)) * 100)) : null;
-  const text = preparing ? "Preparing the simulation…"
-    : waiting ? "Waiting for the PMO portal…"
-    : expect ? `Receiving names and photos… ${received} of ${expect}`
-    : received ? `Receiving names and photos… ${received}` : "Receiving names and photos…";
+const MB = (n) => `${(n / 1048576).toFixed(n >= 10 * 1048576 ? 0 : 1)} MB`;
+// What the portal and this page are doing while the data comes across.
+function progressText({ phase, media, parts, items }) {
+  switch (phase) {
+    case "waiting": return { title: "Connecting to the PMO portal", text: "Waiting for the PMO portal…", pct: null };
+    case "portal-media": {
+      const t = media && media.total ? ` ${media.done} of ${media.total}${media.bytes ? " · " + MB(media.bytes) : ""}` : "";
+      return { title: "Connecting to the PMO portal", text: `The portal is preparing the photos and videos…${t}`,
+        pct: media && media.total ? media.done / media.total : null };
+    }
+    case "portal-reading": return { title: "Connecting to the PMO portal", text: "The portal is reading its current data…", pct: null };
+    case "portal-checking": return { title: "Connecting to the PMO portal", text: "The portal is checking its data…", pct: null };
+    case "receiving": {
+      const p = parts && parts.of ? `${parts.got} of ${parts.of} parts` : "";
+      const m = items && items.of ? `${items.got} of ${items.of} photos and videos` : "";
+      const done = (parts?.got || 0) + (items?.got || 0), all = (parts?.of || 0) + (items?.of || 0);
+      return { title: "Receiving the portal data", text: `Receiving the data… ${[p, m].filter(Boolean).join(" · ")}`, pct: all ? done / all : null };
+    }
+    case "validating": return { title: "Checking the data", text: "Checking everything that arrived…", pct: 1 };
+    default: return { title: "Getting the simulation ready", text: "Preparing the presentation…", pct: null };
+  }
+}
+
+// Receiving the hand-over, then preparing the presentation.
+export function ProgressScreen(props) {
+  const { title, text, pct } = progressText(props);
+  const preparing = props.phase === "preparing" || props.phase === "validating";
   return (
-    <Frame title={preparing ? "Getting the simulation ready" : "Connecting to the PMO portal"}>
+    <Frame title={title}>
       <div role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <span className="sim-boot-spin" aria-hidden="true" style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
           border: "2px solid rgba(255,255,255,.18)", borderTopColor: GOLD, animation: "simBootSpin .8s linear infinite" }} />
@@ -108,7 +99,7 @@ export function ProgressScreen({ phase, received = 0, expect = null }) {
       </div>
       {!preparing && (
         <div aria-hidden="true" style={{ marginTop: 16, height: 6, borderRadius: 6, background: "rgba(255,255,255,.08)", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: pct === null ? (waiting ? "8%" : "35%") : `${pct}%`, borderRadius: 6,
+          <div style={{ height: "100%", width: pct === null ? "8%" : `${Math.max(4, Math.min(100, Math.round(pct * 100)))}%`, borderRadius: 6,
             background: `linear-gradient(90deg, ${GOLD}, #F0C27A)`, transition: "width .3s ease" }} />
         </div>
       )}
@@ -119,13 +110,13 @@ export function ProgressScreen({ phase, received = 0, expect = null }) {
   );
 }
 
-// The isolation checks failed: nothing else is loaded, and there is no way on from here.
-export function FailScreen({ title = "The simulation could not start safely", reason }) {
+// Something stopped the start: what happened, what to do, and which check (by name, never data).
+export function FailScreen({ title = "The simulation could not start safely", reason, remedy, check }) {
   return (
-    <Frame title={title} tone="rose" footer={FOOT_NONE}>
-      <div role="alert">Nothing was loaded. Close this tab, then sign in to the PMO portal as PMO and press
-        Simulation in the sidebar again.</div>
-      {reason && <div style={{ marginTop: 12, fontSize: 12, color: "rgba(255,255,255,.45)" }}>Check failed: {reason}</div>}
+    <Frame title={title} tone="rose">
+      <div role="alert">{reason || "Nothing was loaded."}</div>
+      <div style={{ marginTop: 10 }}>{remedy || "Close this tab, then press Simulation in the signed-in portal again."}</div>
+      {check && <div style={{ marginTop: 12, fontSize: 12, color: "rgba(255,255,255,.45)" }}>Check failed: {check}</div>}
     </Frame>
   );
 }
@@ -133,20 +124,8 @@ export function FailScreen({ title = "The simulation could not start safely", re
 // After Exit, when the browser does not let the page close its own tab.
 export function EndedScreen() {
   return (
-    <Frame title="The simulation has ended" footer={FOOT_NONE}>
+    <Frame title="The simulation has ended">
       <div role="status">Its data and storage have been cleared. You can close this tab.</div>
     </Frame>
-  );
-}
-
-// Shown for the whole run in sample mode.
-export function SampleChip() {
-  return (
-    <div data-sim-ui="sample-chip" role="note" style={{ position: "fixed", top: 0, left: "50%", transform: "translateX(-50%)",
-      zIndex: 2147483000, pointerEvents: "none", padding: "2px 12px 3px", borderRadius: "0 0 9px 9px", background: "rgba(10,26,46,.94)",
-      border: `1px solid ${GOLD}`, borderTop: 0, color: "#F6D9A8", font: `600 10.5px/1.35 ${SANS}`, letterSpacing: ".06em",
-      boxShadow: "0 4px 12px rgba(0,0,0,.22)" }}>
-      Sample names · every name is invented
-    </div>
   );
 }

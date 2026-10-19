@@ -1,5 +1,5 @@
 // PMO Simulation director: shared look (navy and gold, as the simulation's boot screens) and the
-// one stylesheet the director layer needs. Every director element carries data-sim-ui, which the
+// one stylesheet the director layer needs. Owner: B3b (contract §H.6). Every director element carries data-sim-ui, which the
 // boot script's print stylesheet hides, so nothing of the director reaches a print or a PDF.
 
 export const NAVY = "#0A1A2E";
@@ -38,11 +38,20 @@ export const CSS = `
 .sim-dir-btn:focus-visible { outline: 2px solid ${GOLD}; outline-offset: 2px; }
 .sim-dir-btn:disabled { cursor: not-allowed; opacity: .45; }
 .sim-dir-caption-text { transition: opacity .25s ease; }
-/* The portal's own assistant launcher is out of the way during the run, but stays rendered: the
-   caption's avatar shares its SVG ids, and a hidden copy (visibility: hidden) leaves the visible
-   avatar without its eyes. */
-body.pmo-sim-run [data-tour="assistant-launcher"] { visibility: visible !important; opacity: 0 !important; pointer-events: none !important; }
-[data-sim-ui="sample-chip"] { display: none !important; }
+/* The portal's own assistant launcher is never shown in the simulation (the assistant is not
+   available in the presentation: its edge function is refused by the simulated backend). */
+html[data-pmo-sim] [data-tour="assistant-launcher"] { display: none !important; }
+/* The portal's own Simulation button has no use inside the simulation. */
+html[data-pmo-sim] [data-tour="sim-launch"] { display: none !important; }
+/* A chart tooltip with a backdrop blur is not painted inside a spotlight hole (seen in Chromium); its
+   background is opaque, so without the blur it looks the same. */
+html[data-pmo-sim] .recharts-tooltip-wrapper * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+/* The chart tooltip's entrance animation could leave it unpainted under a slow frame rate while its
+   ring is drawn: in the simulation it appears at once. */
+html[data-pmo-sim] .recharts-tooltip-wrapper .pmo-rise { animation: none !important; opacity: 1 !important; }
+/* The page title is lit as its text, not as the full width of its heading (it stays clear of the badge). */
+html[data-pmo-sim] [data-tour="page-title"] { width: fit-content; max-width: 100%; }
+@keyframes simDirFold { from { opacity: 1; transform: none; } to { opacity: 0; transform: var(--sim-fold, translate(-30vw, 30vh) scale(.35)); } }
 @media (prefers-reduced-motion: reduce) {
   [data-sim-ui] * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

@@ -1,24 +1,27 @@
 // PMO Simulation director: what the audience sees on top of the real App while the run plays.
+// Owner: B3b (contract §H.6).
 //   - the spotlight (an SVG drawn by spotlight.js: dim with holes, gold rings);
 //   - the caption, docked in the sidebar column with the assistant, or shrunk to the assistant alone
-//     in the top-left corner while a full-screen view (Board report, Gallery picture) is open;
+//     in the bottom-left corner while a full-screen view (Board report, Gallery picture) is open;
 //   - a transparent shield that stops stray clicks from changing the run (the controls stay usable);
-//   - the simulation badge, top centre, above everything, in every state (Badge, exported).
+//   - the simulation badge, top centre, above everything, in every state (Badge, exported):
+//     "Live portal data as of HH:MM PKT · read-only · nothing is sent".
 // Nothing here is new to the App: it is its own layer and only reads the App's layout.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AssistantAvatar } from "../../AssistantAvatar.jsx";
 import { SPOT_MAX } from "./spotlight.js";
 import { GOLD, GOLD_SOFT, INK, SANS, Z, EASE } from "./look.js";
 
-/** The badge: "Simulation · real names, fictional projects and figures · nothing is sent". */
+/** The badge: "Live portal data as of HH:MM PKT · read-only · nothing is sent". */
 export function Badge({ text }) {
   return (
     <div data-sim-ui="badge" role="note" style={{
       position: "fixed", top: 0, left: "50%", transform: "translateX(-50%)", zIndex: Z.badge,
-      pointerEvents: "none", padding: "3px 14px 4px", borderRadius: "0 0 10px 10px",
+      // Compact (about 18 px tall) so it clears the page title and the header buttons at 1366 px.
+      pointerEvents: "none", padding: "2px 12px 3px", borderRadius: "0 0 10px 10px",
       background: "rgba(10,26,46,.95)", border: `1px solid ${GOLD}`, borderTop: 0,
-      color: "#F6D9A8", font: `600 11px/1.35 ${SANS}`, letterSpacing: ".05em", whiteSpace: "nowrap",
-      boxShadow: "0 4px 14px rgba(0,0,0,.28)", maxWidth: "calc(100vw - 32px)", overflow: "hidden", textOverflow: "ellipsis",
+      color: "#F6D9A8", font: `600 10.5px/1.3 ${SANS}`, letterSpacing: ".02em", whiteSpace: "nowrap",
+      boxShadow: "0 2px 8px rgba(0,0,0,.25)", maxWidth: "calc(100vw - 32px)", overflow: "hidden", textOverflow: "ellipsis",
     }}>{text}</div>
   );
 }
@@ -58,7 +61,7 @@ export function SpotLayer({ spotlight }) {
 }
 
 /** Where the caption docks: inside the sidebar column, at its foot. */
-function useSidebarBox(active) {
+export function useSidebarBox(active) {
   const [box, setBox] = useState({ left: 10, width: 224 });
   useEffect(() => {
     if (!active) return undefined;
@@ -79,9 +82,10 @@ function useSidebarBox(active) {
   return box;
 }
 
-/** The narrator: avatar + caption, in the sidebar column (or the avatar alone, top-left). */
+/** The narrator: avatar + caption, in the sidebar column (or the avatar alone, top-left). Not shown
+ *  while the opening's presenter card holds the caption. */
 export function CaptionDock({ state, voiceOn, progress }) {
-  const show = state.phase === "running" && !!state.caption;
+  const show = state.phase === "running" && !!state.caption && state.presenter !== "card";
   const box = useSidebarBox(state.phase === "running");
   const mini = state.mini;
   const avatarState = state.paused ? "idle" : state.speaking ? "speaking" : "answering";
@@ -98,8 +102,9 @@ export function CaptionDock({ state, voiceOn, progress }) {
   if (!show) return null;
   if (mini) {
     return (
+      // Bottom-left: the report viewer's left gutter is empty there (at the top it covered a label).
       <div data-sim-ui="caption-mini" aria-live="polite" style={{
-        position: "fixed", top: 74, left: 16, zIndex: Z.caption, pointerEvents: "none",
+        position: "fixed", bottom: 16, left: 16, zIndex: Z.caption, pointerEvents: "none",
         display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6,
         animation: "simDirFade .3s ease both",
       }}>

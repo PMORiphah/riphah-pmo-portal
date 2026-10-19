@@ -1,219 +1,443 @@
-// PMO Simulation: receives the cast (real names) and approved media from the PMO's portal tab.
+// PMO Simulation: receives the live-data snapshot and the site-visit media from the PMO's signed-in
+// portal tab (protocol v2, contract §C), and asks that tab for a fresh one (Refresh data).
+// Owner: B2. The sending side is src/simBridge.js.
 //
-// Protocol (one-time channel 'pmo-sim-<nonce>', nonce from the address the portal opened):
-//   sim    → { type:'hello', v:1, nonce }                         repeated until the cast arrives
-//   portal → { type:'cast',  v:1, nonce, cast, expect? }           exactly one is accepted
-//   portal → { type:'media', v:1, nonce, items:[...] }             zero or more batches
-//   portal → { type:'done',  v:1, nonce, count }                   count = media items sent
-//   sim    → { type:'ok',    v:1, nonce, count }                   receipt (the portal may stop resending)
-// Everything is validated; anything unexpected rejects the whole hand-over (fail closed).
-// Names leave here only as plain strings, which the app renders as React text.
+// One-time channel 'pmo-sim-<nonce>' (HAND; the nonce comes from the address the portal opened).
+// Every message carries v:2 and the nonce; v1 messages are refused.
+//   sim    → { type:'hello', v:2, nonce, build }                     backoff 250 ms × 2^n (max 2 s) until the portal answers
+//   portal → { type:'progress', v:2, nonce, phase, media }            while the portal prepares (any number)
+//   portal → { type:'manifest', … }                                   exactly one
+//   portal → { type:'tables', part, of, tables } · { type:'responses', part, of, items } · { type:'rpc', … }
+//   portal → { type:'media', item }                                   one per item, key order (items marked reuse are not sent)
+//   portal → { type:'done', fingerprint, counts }
+//   sim    → { type:'ok', v:2, nonce, fingerprint } | { type:'refused', v:2, nonce, code, reason }
+// Refresh: the sim opens 'pmo-sim-<nonce>.<req>' first, then sends { type:'refresh', req, refreshKey } on
+// HAND; the portal answers the same sequence (from progress to done) on the .<req> channel, and the sim
+// answers ok/refused there. Exit sends { type:'bye', refreshKey } on HAND.
+//
+// Everything is checked as it arrives and once more as a whole (src/sim/live/validate.js); anything
+// unexpected rejects the whole hand-over (fail closed), and the portal is told why (codes and check
+// names only, never data). The data lives only in this page's memory.
+import { TABLES, CAPS } from "./live/schema.js";
+import { validateSnapshot, validateMediaItem, ValidationError, MEDIA_MIMES } from "./live/validate.js";
 
-export const LIMITS = Object.freeze({
-  nameMax: 80,
-  campuses: 40,
-  pms: 99,
-  items: 200,
-  itemBytes: 50 * 1024 * 1024,
-  totalBytes: 150 * 1024 * 1024,
+export { sniff } from "./live/validate.js";
+
+export const TIMEOUTS = Object.freeze({
+  first: 30000,          // the first portal message after the first hello (media may still be finishing)
+  idle: 90000,           // between portal messages
+  total: 600000,         // the whole hand-over
+  refreshFirst: 6000,    // the first message on the reply channel after 'refresh'
+  refreshTotal: 300000,  // the whole refresh
 });
-export const TEAM_KEYS = Object.freeze(["head_pmo", "manager_pmo", "deputy_pmo", "exec_pmo", "po1", "po2"]);
-export const MEDIA_MIMES = Object.freeze(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]);
-const SLOT_C = /^C\d\d$/;
-const SLOT_P = /^P\d\d$/;
-const KEY_RE = /^m\d{2,3}$/;
-const HOST_RE = /^H\d{1,3}$/;
-// '<', control characters, zero-width marks, line/paragraph separators, bidi overrides and
-// isolates, and the byte-order mark. (A code-point test: esbuild turns some escapes in a regex
-// literal into raw characters, and a raw line separator ends the regex.)
-function hasBadChar(s) {
+export const TEXT = Object.freeze({
+  timeout: "The data did not arrive from the PMO portal in time.",
+  portalGone: "The portal tab is closed or signed out. Close this tab and press Simulation in the portal again.",
+  build: "Reload the portal tab, then press Simulation again.",
+  review: "Something you approved in the launcher has changed. Press Simulation in the portal again to review it.",
+  busy: "A refresh is already running.",
+});
+
+export class HandoffError extends Error {
+  /** code: no-nonce | used | timeout | protocol | build | media-missing | portal-gone | portal-refused | no-handover | busy
+   *  | any validation code (schema, type, size, key, secret, mask, response, media, invariant, fingerprint, plan, stale).
+   *  portalCode: the portal's own code when it refused (signed-out, review-needed, busy, limit, failed). */
+  constructor(code, message, portalCode = null) {
+    super(message || code);
+    this.name = "HandoffError";
+    this.code = code;
+    this.portalCode = portalCode;
+  }
+}
+const fail = (code, msg) => { throw new HandoffError(code, msg); };
+
+const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const HEX64_RE = /^[0-9a-f]{64}$/;
+const MEDIA_KEY_RE = /^m\d{3}$/;
+const PARTS_MAX = 64;
+const TABLE_NAMES = Object.keys(TABLES);
+const nonNegInt = (v, max = Number.MAX_SAFE_INTEGER) => Number.isInteger(v) && v >= 0 && v <= max;
+const exactKeys = (m, keys, what) => {
+  for (const k of Object.keys(m)) if (!keys.includes(k)) fail("protocol", `${what}: field ${String(k).slice(0, 32)}`);
+  for (const k of keys) if (!Object.prototype.hasOwnProperty.call(m, k)) fail("protocol", `${what}: no ${k}`);
+};
+// A reason the portal sends with a refusal is shown only if it is short, plain text.
+function safeText(s, max = 300) {
+  if (typeof s !== "string" || s.length < 1 || s.length > max) return null;
   for (const ch of s) {
     const c = ch.codePointAt(0);
     if (c === 0x3c || c < 0x20 || (c >= 0x7f && c <= 0x9f) || (c >= 0x200b && c <= 0x200f)
-      || (c >= 0x2028 && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069) || c === 0xfeff) return true;
+      || (c >= 0x2028 && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069) || c === 0xfeff) return null;
   }
-  return false;
-}
-
-export class HandoffError extends Error {
-  constructor(code, message) { super(message || code); this.name = "HandoffError"; this.code = code; }
-}
-const bad = (code, msg) => { throw new HandoffError(code, msg); };
-const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
-
-export function cleanName(v, what) {
-  if (typeof v !== "string") bad("invalid-name", `${what}: not text`);
-  const s = v.normalize("NFC").replace(/\s+/g, " ").trim();
-  if (s.length < 1 || s.length > LIMITS.nameMax) bad("invalid-name", `${what}: length ${s.length}`);
-  if (hasBadChar(s)) bad("invalid-name", `${what}: character not allowed`);
   return s;
 }
-const optName = (v, what) => (v === undefined || v === null || v === "" ? undefined : cleanName(v, what));
 
-// A fresh, plain cast object holding only the validated fields.
-export function validateCast(raw) {
-  if (!isObj(raw)) bad("invalid-cast", "cast is not an object");
-  if (raw.v !== 1) bad("invalid-cast", "unknown cast version");
-  if (!isObj(raw.campuses) || !isObj(raw.pms) || !isObj(raw.team)) bad("invalid-cast", "cast lacks campuses, pms or team");
-  const cast = { v: 1, campuses: {}, pms: {}, team: {} };
-  const ck = Object.keys(raw.campuses);
-  if (ck.length < 1 || ck.length > LIMITS.campuses) bad("invalid-cast", `campus count ${ck.length}`);
-  for (const k of ck) {
-    if (!SLOT_C.test(k)) bad("invalid-slot", `campus slot ${k.slice(0, 8)}`);
-    const c = raw.campuses[k];
-    if (!isObj(c)) bad("invalid-cast", `campus ${k}`);
-    const o = { name: cleanName(c.name, `campus ${k}`) };
-    const say = optName(c.say, `campus ${k} say`); if (say) o.say = say;
-    const epdd = optName(c.epdd, `campus ${k} epdd`); if (epdd) o.epdd = epdd;
-    cast.campuses[k] = o;
-  }
-  const pk = Object.keys(raw.pms);
-  if (pk.length < 1 || pk.length > LIMITS.pms) bad("invalid-cast", `PM count ${pk.length}`);
-  for (const k of pk) {
-    if (!SLOT_P.test(k)) bad("invalid-slot", `PM slot ${k.slice(0, 8)}`);
-    const p = raw.pms[k];
-    if (!isObj(p)) bad("invalid-cast", `PM ${k}`);
-    const role = p.role === undefined ? "pm" : p.role;
-    if (role !== "pm" && role !== "guest") bad("invalid-cast", `PM ${k} role`);
-    const o = { name: cleanName(p.name, `PM ${k}`), role };
-    const short = optName(p.short, `PM ${k} short`); if (short) o.short = short;
-    const say = optName(p.say, `PM ${k} say`); if (say) o.say = say;
-    cast.pms[k] = o;
-  }
-  for (const k of Object.keys(raw.team)) {
-    if (!TEAM_KEYS.includes(k)) bad("invalid-slot", `team key ${k.slice(0, 16)}`);
-    const t = raw.team[k];
-    const name = isObj(t) ? t.name : t;
-    cast.team[k] = { name: cleanName(name, `team ${k}`) };
-  }
-  if (raw.code !== undefined) {
-    if (typeof raw.code !== "string" || !/^[A-Za-z0-9-]{1,32}$/.test(raw.code)) bad("invalid-cast", "cast code");
-    cast.code = raw.code;
-  }
-  return cast;
+const MANIFEST_KEYS = ["type", "v", "nonce", "build", "takenAt", "readMs", "tz", "pmo", "mask", "testAccounts", "overrides",
+  "leftOut", "failed", "counts", "bytes", "media", "plan", "invariants", "fingerprint", "code", "refreshKey", "parts"];
+const PORTAL_TYPES = new Set(["progress", "manifest", "tables", "responses", "rpc", "media", "done", "refused"]);
+const OWN_TYPES = new Set(["hello", "ok", "refresh", "bye"]);   // ours: never handled as portal messages
+const PROGRESS_PHASES = new Set(["media", "reading", "checking"]);
+
+/** The build this page runs: the basename of the entry chunk in <meta name="pmo-sim-entry">, else "dev". */
+export function simBuild() {
+  try {
+    const c = typeof document !== "undefined" ? document.querySelector('meta[name="pmo-sim-entry"]')?.getAttribute("content") : null;
+    if (c) return c.split("?")[0].split("/").pop();
+  } catch { /* ignore */ }
+  return "dev";
 }
 
-// First bytes of each allowed type, so a mislabelled file (an HTML page called image/png) is refused.
-async function sniff(blob, mime) {
-  const b = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
-  const at = (i, ...xs) => xs.every((x, j) => b[i + j] === x);
-  switch (mime) {
-    case "image/jpeg": return at(0, 0xff, 0xd8, 0xff);
-    case "image/png": return at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
-    case "image/webp": return at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50);
-    case "video/mp4": return at(4, 0x66, 0x74, 0x79, 0x70);
-    case "video/webm": return at(0, 0x1a, 0x45, 0xdf, 0xa3);
-    default: return false;
-  }
+// ── module state (one hand-over per page) ────────────────────────────────────
+const S = { nonce: null, hand: null, build: null, refreshKey: null, started: false, done: false, refreshing: false };
+const channels = new Set();
+function openChannel(name) {
+  const ch = new BroadcastChannel(name);
+  channels.add(ch);
+  return ch;
 }
-
-export async function validateMediaItem(raw) {
-  if (!isObj(raw)) bad("invalid-media", "item is not an object");
-  const { key, host, mime, size, order, blob } = raw;
-  if (typeof key !== "string" || !KEY_RE.test(key)) bad("invalid-media", "item key");
-  if (typeof host !== "string" || !HOST_RE.test(host)) bad("invalid-media", `${key}: host`);
-  if (!MEDIA_MIMES.includes(mime)) bad("invalid-media", `${key}: type`);
-  if (!Number.isInteger(size) || size < 1 || size > LIMITS.itemBytes) bad("invalid-media", `${key}: size`);
-  if (!Number.isInteger(order) || order < 0 || order >= LIMITS.items) bad("invalid-media", `${key}: order`);
-  if (!(blob instanceof Blob) || blob.size !== size) bad("invalid-media", `${key}: file does not match its size`);
-  if (!(await sniff(blob, mime))) bad("invalid-media", `${key}: file is not ${mime}`);
-  // Re-wrapped with the declared (allow-listed) type: an object URL never serves anything else.
-  return { key, host, mime, size, order, blob: new Blob([blob], { type: mime }) };
+function closeChannel(ch, later = 0) {
+  if (!ch) return;
+  const close = () => { channels.delete(ch); try { ch.onmessage = null; ch.onmessageerror = null; ch.close(); } catch { /* ignore */ } };
+  if (later) setTimeout(close, later); else close();
 }
-
-let started = false;
+const post = (ch, m) => { try { ch.postMessage(m); return true; } catch { return false; } };
+/** Posts one message on HAND from a short-lived channel object. */
+function postHand(m) {
+  if (!S.hand) return false;
+  const ch = openChannel(S.hand);
+  const ok = post(ch, m);
+  closeChannel(ch, 1000);                     // delivery is queued at post time; closed a little later anyway
+  return ok;
+}
 
 /**
- * Waits for the portal's hand-over. Resolves { cast, items, expect } or rejects with a HandoffError
- * (codes: no-nonce, used, timeout, invalid-*, protocol, too-many, too-large, count-mismatch).
- * onProgress({ phase: 'waiting' | 'media' | 'done', received, expect }) reports media as it arrives.
+ * The receiving state machine for one sequence (first hand-over or a refresh).
+ * held: Map(attachmentId → { key, attachmentId, mime, size, sha256, blob }) of items this page already has
+ * (empty for the first hand-over: then any 'reuse' entry is refused).
  */
-// mediaIdleMs / totalMs leave room for the PMO's real videos (up to 50 MB each, four prepared at a
-// time by the portal) on slow Wi-Fi: the idle timer restarts on every message.
-export function waitForCast({ timeoutMs = 10000, mediaIdleMs = 90000, totalMs = 600000, onProgress } = {}) {
-  const sim = window.__PMO_SIM__;
-  const nonce = sim && sim.ok ? sim.nonce : null;
+function receiver({ nonce, build, held, refreshKey, onProgress }) {
+  let manifest = null, rpc = null, finished = false;
+  const tables = {};
+  const gotTables = new Set(), gotResp = new Set();
+  const responses = [];
+  const media = new Map();                     // key → validated item (sent in this sequence)
+  let mediaBytes = 0;
+  let manifestMedia = [];                      // [{ attachmentId, key, mime, size, sha256 }] (reuse flag removed)
+  const reuseKeys = new Set();
+  const progress = (p) => { try { onProgress?.(p); } catch { /* ignore */ } };
+  const partsDone = () => manifest && gotTables.size === manifest.parts.tables && gotResp.size === manifest.parts.responses;
+  const sentMedia = () => manifestMedia.filter((m) => !reuseKeys.has(m.key));
+
+  function onManifest(m) {
+    if (manifest) fail("protocol", "a second manifest");
+    if (typeof m.build !== "string" || m.build !== build) fail("build", TEXT.build);
+    exactKeys(m, MANIFEST_KEYS, "manifest");
+    if (typeof m.refreshKey !== "string" || !UUID_RE.test(m.refreshKey)) fail("protocol", "manifest: refreshKey");
+    if (refreshKey && m.refreshKey !== refreshKey) fail("protocol", "manifest: another launch");
+    if (!isObj(m.parts)) fail("protocol", "manifest: parts");
+    exactKeys(m.parts, ["tables", "responses"], "manifest parts");
+    if (!nonNegInt(m.parts.tables, PARTS_MAX) || m.parts.tables < 1 || !nonNegInt(m.parts.responses, PARTS_MAX)) fail("protocol", "manifest: parts");
+    if (!isObj(m.counts)) fail("protocol", "manifest: counts");
+    exactKeys(m.counts, TABLE_NAMES, "manifest counts");
+    for (const t of TABLE_NAMES) if (!nonNegInt(m.counts[t], TABLES[t].rows)) fail("size", `manifest: ${t} rows`);
+    if (!Array.isArray(m.media) || m.media.length > CAPS.mediaCount) fail("media", "manifest: media list");
+    let bytes = 0;
+    manifestMedia = m.media.map((e, i) => {
+      if (!isObj(e)) fail("media", "manifest: media entry");
+      const keys = Object.keys(e);
+      for (const k of keys) if (!["attachmentId", "key", "mime", "size", "sha256", "reuse"].includes(k)) fail("media", "manifest: media field");
+      if (typeof e.key !== "string" || !MEDIA_KEY_RE.test(e.key) || typeof e.attachmentId !== "string" || !UUID_RE.test(e.attachmentId)
+        || !MEDIA_MIMES.includes(e.mime) || !Number.isInteger(e.size) || e.size < 1 || e.size > CAPS.mediaItem
+        || typeof e.sha256 !== "string" || !HEX64_RE.test(e.sha256)) fail("media", `manifest: media entry ${i + 1}`);
+      if (e.reuse !== undefined) {
+        if (e.reuse !== true) fail("media", "manifest: reuse");
+        const h = held.get(e.attachmentId);
+        if (!h || h.sha256 !== e.sha256 || h.mime !== e.mime || h.size !== e.size) {
+          fail("media-missing", "A photo or video the portal did not send again is not held here.");
+        }
+        reuseKeys.add(e.key);
+      }
+      bytes += e.size;
+      return { attachmentId: e.attachmentId, key: e.key, mime: e.mime, size: e.size, sha256: e.sha256 };
+    });
+    if (bytes > CAPS.mediaTotal) fail("media", "manifest: more than 150 MB");
+    manifest = m;
+    progress({ phase: "receiving", parts: { got: 0, of: m.parts.tables + m.parts.responses }, items: { got: 0, of: sentMedia().length } });
+  }
+
+  function onPart(m, kind) {
+    if (!manifest) fail("protocol", `${kind} before the manifest`);
+    const of = kind === "tables" ? manifest.parts.tables : manifest.parts.responses;
+    const got = kind === "tables" ? gotTables : gotResp;
+    exactKeys(m, ["type", "v", "nonce", "part", "of", kind === "tables" ? "tables" : "items"], kind);
+    if (m.of !== of || !Number.isInteger(m.part) || m.part < 1 || m.part > of || got.has(m.part)) fail("protocol", `${kind}: part`);
+    if (kind === "responses" && gotTables.size !== manifest.parts.tables) fail("protocol", "responses before every table");
+    if (rpc) fail("protocol", `${kind} after rpc`);
+    got.add(m.part);
+    if (kind === "tables") {
+      if (!isObj(m.tables)) fail("protocol", "tables: not an object");
+      for (const [t, rows] of Object.entries(m.tables)) {
+        if (!TABLES[t]) fail("schema", `unknown table ${String(t).slice(0, 40)}`);
+        if (Object.prototype.hasOwnProperty.call(tables, t)) fail("protocol", `table ${t} sent twice`);
+        if (!Array.isArray(rows) || rows.length !== manifest.counts[t]) fail("protocol", `table ${t}: rows differ from the manifest`);
+        tables[t] = rows;
+      }
+    } else {
+      if (!Array.isArray(m.items) || responses.length + m.items.length > CAPS.responses) fail("size", "responses");
+      responses.push(...m.items);
+    }
+    progress({ phase: "receiving", parts: { got: gotTables.size + gotResp.size, of: manifest.parts.tables + manifest.parts.responses },
+      items: { got: media.size, of: sentMedia().length } });
+  }
+
+  function onRpc(m) {
+    if (!manifest || !partsDone()) fail("protocol", "rpc before every part");
+    if (rpc) fail("protocol", "a second rpc");
+    exactKeys(m, ["type", "v", "nonce", "project_has_deliverables"], "rpc");
+    if (!Array.isArray(m.project_has_deliverables)) fail("schema", "rpc");
+    rpc = { project_has_deliverables: m.project_has_deliverables };
+  }
+
+  async function onMedia(m) {
+    if (!rpc) fail("protocol", "media before rpc");
+    exactKeys(m, ["type", "v", "nonce", "item"], "media");
+    const it = m.item;
+    if (!isObj(it) || typeof it.key !== "string") fail("media", "item");
+    const e = manifestMedia.find((x) => x.key === it.key);
+    if (!e) fail("media", `${it.key.slice(0, 8)}: not listed`);
+    if (reuseKeys.has(it.key)) fail("media", `${it.key}: marked as already held`);
+    if (media.has(it.key)) fail("media", `${it.key}: sent twice`);
+    const partial = { media: manifestMedia, tables: { project_attachments: tables.project_attachments || [] } };
+    const ok = await validateMediaItem(it, partial);
+    mediaBytes += ok.size;
+    if (mediaBytes > CAPS.mediaTotal) fail("media", "more than 150 MB");
+    media.set(ok.key, ok);
+    progress({ phase: "receiving", parts: { got: gotTables.size + gotResp.size, of: manifest.parts.tables + manifest.parts.responses },
+      items: { got: media.size, of: sentMedia().length } });
+  }
+
+  async function onDone(m) {
+    if (!rpc) fail("protocol", "done before rpc");
+    exactKeys(m, ["type", "v", "nonce", "fingerprint", "counts"], "done");
+    if (m.fingerprint !== manifest.fingerprint) fail("fingerprint", "the end of the hand-over names another snapshot");
+    if (!isObj(m.counts)) fail("protocol", "done: counts");
+    exactKeys(m.counts, ["tables", "responses", "media"], "done counts");
+    if (m.counts.tables !== Object.keys(tables).length || m.counts.tables !== TABLE_NAMES.length) fail("protocol", "done: tables count");
+    if (m.counts.responses !== responses.length) fail("protocol", "done: responses count");
+    if (m.counts.media !== media.size) fail("protocol", "done: media count");
+    for (const e of sentMedia()) if (!media.has(e.key)) fail("media", `${e.key}: did not arrive`);
+    progress({ phase: "validating" });
+    const snapshot = {
+      v: 2, build: manifest.build, takenAt: manifest.takenAt, readMs: manifest.readMs, tz: manifest.tz, pmo: manifest.pmo,
+      mask: manifest.mask, testAccounts: manifest.testAccounts, overrides: manifest.overrides, leftOut: manifest.leftOut,
+      failed: manifest.failed, tables, responses, rpc, media: manifestMedia, plan: manifest.plan, invariants: manifest.invariants,
+      fingerprint: manifest.fingerprint, code: manifest.code, bytes: manifest.bytes,
+    };
+    const clean = await validateSnapshot(snapshot, { build, now: Date.now() });
+    // Every item of the snapshot, by its key in this snapshot: the ones just sent and the ones held.
+    const items = new Map();
+    for (const e of clean.media) {
+      if (reuseKeys.has(e.key)) {
+        const h = held.get(e.attachmentId);
+        items.set(e.key, { key: e.key, attachmentId: e.attachmentId, mime: h.mime, size: h.size, sha256: h.sha256, blob: h.blob });
+      } else items.set(e.key, media.get(e.key));
+    }
+    finished = true;
+    return { snapshot: clean, items, refreshKey: manifest.refreshKey };
+  }
+
+  /** Handles one message; resolves the result after 'done', else null. */
+  async function handle(m) {
+    if (finished) return null;
+    if (!isObj(m) || m.nonce !== nonce || typeof m.type !== "string") return null;   // not for this hand-over
+    if (OWN_TYPES.has(m.type)) return null;
+    if (m.v !== 2) fail("protocol", "an older version of the hand-over (v1) is refused");
+    if (!PORTAL_TYPES.has(m.type)) fail("protocol", `unknown message ${m.type.slice(0, 24)}`);
+    switch (m.type) {
+      case "progress": {
+        if (manifest) return null;
+        exactKeys(m, ["type", "v", "nonce", "phase", "media"], "progress");
+        if (!PROGRESS_PHASES.has(m.phase) || !isObj(m.media)) fail("protocol", "progress");
+        const md = m.media;
+        if (!nonNegInt(md.done, 100000) || !nonNegInt(md.total, 100000) || !nonNegInt(md.bytes)) fail("protocol", "progress: media");
+        progress({ phase: "portal-" + m.phase, media: { done: md.done, total: md.total, bytes: md.bytes } });
+        return null;
+      }
+      case "manifest": onManifest(m); return null;
+      case "tables": onPart(m, "tables"); return null;
+      case "responses": onPart(m, "responses"); return null;
+      case "rpc": onRpc(m); return null;
+      case "media": await onMedia(m); return null;
+      case "done": return onDone(m);
+      case "refused": {
+        const code = typeof m.code === "string" ? m.code.slice(0, 32) : "failed";
+        throw new HandoffError("portal-refused", safeText(m.reason) || "The portal stopped the hand-over.", code);
+      }
+      default: return null;
+    }
+  }
+  return { handle };
+}
+
+const codeOf = (e) => (e instanceof HandoffError || e instanceof ValidationError ? e.code : "protocol");
+const reasonOf = (e) => (e instanceof ValidationError ? e.reason : e?.message || "the hand-over failed");
+/** Turns any error into a HandoffError (validation codes are kept). */
+function asHandoffError(e) {
+  if (e instanceof HandoffError) return e;
+  if (e instanceof ValidationError) return Object.assign(new HandoffError(e.code, e.reason), { check: e.reason });
+  return new HandoffError("protocol", String(e?.message || e || "the hand-over failed").slice(0, 200));
+}
+
+/**
+ * Waits for the portal's hand-over. Resolves { snapshot (validated), items: Map(key → item with blob),
+ * refreshKey } or rejects with a HandoffError (the portal has been sent 'refused' with the code first).
+ * onProgress({ phase: waiting | portal-media | portal-reading | portal-checking | receiving | validating, media?, parts?, items? })
+ * Options nonce / build / timeouts exist for tests; the page uses window.__PMO_SIM__.nonce and simBuild().
+ */
+export function waitForSnapshot({ onProgress, timeouts = {}, nonce: nonceOpt, build: buildOpt } = {}) {
+  const sim = typeof window !== "undefined" ? window.__PMO_SIM__ : null;
+  const nonce = nonceOpt || (sim && sim.ok ? sim.nonce : null);
   if (!nonce) return Promise.reject(new HandoffError("no-nonce", "No hand-over in the address"));
-  if (started) return Promise.reject(new HandoffError("used", "The hand-over has already been used"));
-  started = true;
+  if (S.started) return Promise.reject(new HandoffError("used", "This page has already received its data once."));
+  S.started = true;
+  S.nonce = nonce;
+  S.hand = "pmo-sim-" + nonce;
+  S.build = buildOpt || simBuild();
+  const T = { ...TIMEOUTS, ...timeouts };
 
   return new Promise((resolve, reject) => {
-    const ch = new BroadcastChannel("pmo-sim-" + nonce);
-    let cast = null, expect = null, finished = false, queue = Promise.resolve();
-    const items = [], keys = new Set();
-    let bytes = 0;
-    const timers = { cast: 0, idle: 0, total: 0, hello: 0 };
-    const progress = (phase) => { try { onProgress?.({ phase, received: items.length, expect }); } catch { /* ignore */ } };
+    const ch = openChannel(S.hand);
+    const timers = { first: 0, idle: 0, total: 0, hello: 0 };
+    let finished = false, heard = false, queue = Promise.resolve();
+    const rx = receiver({ nonce, build: S.build, held: new Map(), refreshKey: null, onProgress });
     const end = (err, value) => {
       if (finished) return;
       finished = true;
       Object.values(timers).forEach(clearTimeout);
-      try { ch.close(); } catch { /* ignore */ }
-      if (err) reject(err); else resolve(value);
+      if (err) {
+        post(ch, { type: "refused", v: 2, nonce, code: err.code, reason: String(err.message || err.code).slice(0, 300) });
+        closeChannel(ch, 1000);
+        reject(err);
+      } else {
+        S.refreshKey = value.refreshKey;
+        S.done = true;
+        post(ch, { type: "ok", v: 2, nonce, fingerprint: value.snapshot.fingerprint });
+        closeChannel(ch, 1000);
+        resolve(value);
+      }
     };
-    const fail = (code, msg) => end(new HandoffError(code, msg));
-    const armIdle = () => { clearTimeout(timers.idle); timers.idle = setTimeout(() => fail("timeout", "The photos stopped arriving"), mediaIdleMs); };
-
-    timers.cast = setTimeout(() => fail("timeout", "The names did not arrive"), timeoutMs);
-    timers.total = setTimeout(() => fail("timeout", "The hand-over took too long"), totalMs);
+    const timeout = () => end(new HandoffError("timeout", TEXT.timeout));
+    const armIdle = () => { clearTimeout(timers.idle); timers.idle = setTimeout(timeout, T.idle); };
+    timers.total = setTimeout(timeout, T.total);
     let helloN = 0;
     const hello = () => {
-      if (cast || finished) return;
-      try { ch.postMessage({ type: "hello", v: 1, nonce }); } catch { /* ignore */ }
+      if (heard || finished) return;
+      post(ch, { type: "hello", v: 2, nonce, build: S.build });
+      if (helloN === 0) timers.first = setTimeout(() => { if (!heard) timeout(); }, T.first);
       helloN += 1;
-      timers.hello = setTimeout(hello, Math.min(2000, 250 * 2 ** helloN));
+      timers.hello = setTimeout(hello, Math.min(2000, 250 * 2 ** (helloN - 1)));   // 250, 500, 1000, 2000 ms …
     };
-
-    const handle = async (m) => {
-      if (finished) return;
-      if (!isObj(m) || m.v !== 1 || m.nonce !== nonce || typeof m.type !== "string") return;
-      if (m.type === "hello" || m.type === "ok") return;
-      if (m.type === "cast") {
-        if (cast) return;                     // exactly one cast per document; repeats are ignored
-        cast = validateCast(m.cast);
-        if (m.expect !== undefined) {
-          if (!Number.isInteger(m.expect) || m.expect < 0 || m.expect > LIMITS.items) bad("protocol", "expect");
-          expect = m.expect;
-        }
-        clearTimeout(timers.cast);
-        clearTimeout(timers.hello);
-        armIdle();
-        progress("media");
-        return;
-      }
-      if (!cast) bad("protocol", `${m.type} before the cast`);
-      if (m.type === "media") {
-        if (!Array.isArray(m.items) || m.items.length > LIMITS.items) bad("protocol", "media batch");
-        for (const raw of m.items) {
-          const it = await validateMediaItem(raw);
-          if (keys.has(it.key)) bad("invalid-media", `${it.key}: sent twice`);
-          keys.add(it.key);
-          items.push(it);
-          bytes += it.size;
-          if (items.length > LIMITS.items) bad("too-many", `more than ${LIMITS.items} items`);
-          if (bytes > LIMITS.totalBytes) bad("too-large", "more than 150 MB");
-        }
-        armIdle();
-        progress("media");
-        return;
-      }
-      if (m.type === "done") {
-        if (!Number.isInteger(m.count) || m.count !== items.length) bad("count-mismatch", `${items.length} received, ${m.count} sent`);
-        if (expect !== null && expect !== items.length) bad("count-mismatch", `${items.length} received, ${expect} expected`);
-        try { ch.postMessage({ type: "ok", v: 1, nonce, count: items.length }); } catch { /* ignore */ }
-        progress("done");
-        end(null, { cast, items: items.slice().sort((a, b) => a.order - b.order), expect });
-      }
-      // Any other type is ignored.
-    };
-
-    // Messages are handled one at a time, in order (media checks are asynchronous).
     ch.onmessage = (e) => {
-      queue = queue.then(() => handle(e.data)).catch((err) =>
-        fail(err instanceof HandoffError ? err.code : "protocol", err?.message || "hand-over failed"));
+      const m = e.data;
+      if (finished) return;
+      if (isObj(m) && m.nonce === nonce && PORTAL_TYPES.has(m.type)) {
+        if (!heard) { heard = true; clearTimeout(timers.first); clearTimeout(timers.hello); }
+        armIdle();
+      }
+      queue = queue.then(() => rx.handle(m)).then((r) => { if (r) end(null, r); }, (err) => end(asHandoffError(err)));
     };
-    ch.onmessageerror = () => fail("protocol", "a message could not be read");
-    progress("waiting");
+    ch.onmessageerror = () => end(new HandoffError("protocol", "a message could not be read"));
+    try { onProgress?.({ phase: "waiting" }); } catch { /* ignore */ }
     hello();
   });
 }
+
+/**
+ * Asks the portal tab for a fresh snapshot (contract §C.2). held: Map(attachmentId → item with blob)
+ * of the media this page holds now (reused when unchanged). Resolves { snapshot, items } (validated;
+ * items keyed by the new snapshot's keys) or rejects with a HandoffError; the current snapshot is
+ * never touched here.
+ */
+export function requestRefresh({ held = new Map(), onProgress, timeouts = {} } = {}) {
+  if (!S.done || !S.refreshKey || !S.hand) return Promise.reject(new HandoffError("no-handover", TEXT.portalGone));
+  if (S.refreshing) return Promise.reject(new HandoffError("busy", TEXT.busy));
+  S.refreshing = true;
+  const T = { ...TIMEOUTS, ...timeouts };
+  const nonce = S.nonce;
+  const req = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    // The reply channel first, so nothing the portal sends on it is missed.
+    const reply = openChannel(S.hand + "." + req);
+    const timers = { first: 0, idle: 0, total: 0 };
+    let finished = false, heard = false, queue = Promise.resolve();
+    const rx = receiver({ nonce, build: S.build, held, refreshKey: S.refreshKey, onProgress });
+    const end = (err, value) => {
+      if (finished) return;
+      finished = true;
+      S.refreshing = false;
+      Object.values(timers).forEach(clearTimeout);
+      if (err) {
+        if (err.code !== "portal-refused" && err.code !== "portal-gone") {
+          post(reply, { type: "refused", v: 2, nonce, code: err.code, reason: String(err.message || err.code).slice(0, 300) });
+        }
+        closeChannel(reply, 1000);
+        reject(err);
+      } else {
+        post(reply, { type: "ok", v: 2, nonce, fingerprint: value.snapshot.fingerprint });
+        closeChannel(reply, 1000);
+        resolve({ snapshot: value.snapshot, items: value.items });
+      }
+    };
+    const gone = () => end(new HandoffError("portal-gone", TEXT.portalGone));
+    timers.first = setTimeout(() => { if (!heard) gone(); }, T.refreshFirst);
+    timers.total = setTimeout(gone, T.refreshTotal);
+    reply.onmessage = (e) => {
+      const m = e.data;
+      if (finished) return;
+      if (isObj(m) && m.nonce === nonce && PORTAL_TYPES.has(m.type)) {
+        heard = true;
+        clearTimeout(timers.first);
+        clearTimeout(timers.idle);
+        timers.idle = setTimeout(gone, T.idle);
+      }
+      queue = queue.then(() => rx.handle(m)).then((r) => { if (r) end(null, r); }, (err) => {
+        const h = asHandoffError(err);
+        if (h.code === "portal-refused") {
+          // The portal's own refusals, in this page's words where the cause is known.
+          const pc = h.portalCode;
+          const msg = pc === "signed-out" ? TEXT.portalGone : pc === "review-needed" ? TEXT.review : pc === "busy" ? TEXT.busy : h.message;
+          end(new HandoffError("portal-refused", msg, pc));
+        } else end(h);
+      });
+    };
+    reply.onmessageerror = () => end(new HandoffError("protocol", "a message could not be read"));
+    try { onProgress?.({ phase: "waiting" }); } catch { /* ignore */ }
+    if (!postHand({ type: "refresh", v: 2, nonce, req, refreshKey: S.refreshKey })) gone();
+  });
+}
+
+/** Tells the portal tab this launch is over (it stops its refresh listener). Safe to call more than once. */
+export function sendBye() {
+  if (!S.done || !S.refreshKey) return false;
+  const ok = postHand({ type: "bye", v: 2, nonce: S.nonce, refreshKey: S.refreshKey });
+  S.refreshKey = null;
+  return ok;
+}
+
+/** Closes every channel this page opened (Exit). */
+export function closeAll() {
+  for (const ch of [...channels]) closeChannel(ch);
+}
+
+/** For tests: the channel names and flags (no data). */
+export const _stateForTests = () => ({ nonce: S.nonce, hand: S.hand, build: S.build, started: S.started, done: S.done,
+  refreshing: S.refreshing, hasRefreshKey: !!S.refreshKey });
+
+/** For tests: forget the module state (the page itself never calls this). */
+export function _resetForTests() {
+  closeAll();
+  Object.assign(S, { nonce: null, hand: null, build: null, refreshKey: null, started: false, done: false, refreshing: false });
+}
+
+export { codeOf, reasonOf };

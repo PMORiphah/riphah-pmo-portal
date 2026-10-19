@@ -9,6 +9,11 @@
 // Speed control (plan §4): every line is timed from onstart to onend against its spoken words. The
 // voice's natural speed is learned from that, and the next line's rate is nudged so a slow voice is
 // brought up to about 140 words a minute (and a very fast one down a little), within 0.95–1.15.
+//
+// Word anchors (contract §H.7): speak(text, { onBoundary }) forwards the voice's word boundary events
+// ({ charIndex }), so a step can wait for the word it belongs to. A voice that never reports them is
+// timed from its estimate instead (engine.js). Test hook: window.__PMO_SIM_TEST__.readWpm (60–400),
+// set by a test's init script, replaces the captions-only reading pace.
 
 const NETWORK = /Google|Online/i;
 const LANG_RANK = ["en-IN", "en-GB", "en-US"];
@@ -17,6 +22,14 @@ export const RATE_MAX = 1.15;
 export const TARGET_WPM = 140;   // a voice slower than this is sped up
 export const FAST_WPM = 185;     // a voice faster than this is slowed toward 175
 export const READ_WPM = 150;     // captions-only reading pace
+/** The captions-only reading pace (a test may set window.__PMO_SIM_TEST__.readWpm, 60–400). */
+export function readWpm() {
+  try {
+    const t = window.__PMO_SIM_TEST__?.readWpm;
+    if (typeof t === "number" && t >= 60 && t <= 400) return t;
+  } catch { /* ignore */ }
+  return READ_WPM;
+}
 export const START_DELAY = 0.3;  // seconds a line takes to start, in the estimates
 
 export const countWords = (s) => String(s || "").trim().split(/\s+/).filter(Boolean).length;
@@ -78,16 +91,17 @@ export class Narrator {
     this.log = [];
     this._cancelled = new WeakSet();
     this._current = null;
+    this.boundaries = false;      // the voice has reported word boundaries at least once
   }
   get voiceOn() { return !!(this.enabled && this.voice && this.synth); }
   /** Words a minute the next line is expected to take (for the deadline governor). */
-  get wpm() { return this.voiceOn ? (this.natural || 135) * this.rate : READ_WPM; }
+  get wpm() { return this.voiceOn ? (this.natural || 135) * this.rate : readWpm(); }
   /** Seconds a line of `words` words is expected to take, start delay included. */
   estimate(words) { return words * 60 / Math.max(60, this.wpm) + START_DELAY; }
 
   setVoice(voice) { this.voice = voice; this.natural = null; this.rate = 1; }
 
-  speak(text, { signal } = {}) {
+  speak(text, { signal, onBoundary } = {}) {
     const words = countWords(text);
     if (!this.voiceOn) {
       const sec = this.estimate(words);
@@ -115,6 +129,11 @@ export class Narrator {
         resolve({ interrupted: cut, ms, words, rate: u.rate, stuck });
       };
       u.onstart = () => { t0 = performance.now(); };
+      u.onboundary = (e) => {
+        if (!e || (e.name && e.name !== "word") || typeof e.charIndex !== "number") return;
+        this.boundaries = true;
+        try { onBoundary?.({ charIndex: e.charIndex }); } catch { /* a listener never stops the voice */ }
+      };
       u.onend = () => finish(false);
       u.onerror = (e) => finish(true, !(e && /interrupted|canceled/i.test(e.error || "")));
       // Chrome now and then never reports the end of a line: carry on after twice its length.

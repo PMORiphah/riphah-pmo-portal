@@ -828,7 +828,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
         )}
       </div>
 
-      <div style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>
+      <div data-tour="past-thread-head" style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>
         Follow-up {msgs?.length ? `· ${msgs.length} message${msgs.length===1?"":"s"}` : ""}
       </div>
 
@@ -846,7 +846,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
             const pmo  = m.author_role === "pmo";
             const asker = !pmo && m.author_id !== row.pm_user_id;   // one of the two viewers
             return (
-              <div key={m.id} style={{ display:"flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
+              <div key={m.id} data-msg={m.id} data-author-role={m.author_role} style={{ display:"flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
                 <div style={{ maxWidth:"82%", padding:"10px 13px", borderRadius:R.md,
                   background: pmo ? `${BRAND.blue}1A` : asker ? `${BRAND.gold}14` : T.card2,
                   border:`1px solid ${pmo ? `${BRAND.blue}3D` : asker ? `${BRAND.gold}4D` : T.border}` }}>
@@ -1702,7 +1702,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                 onClick: totals.noProgress ? () => setProg(p => p === "No progress" ? "" : "No progress") : null, on: prog === "No progress" },
               { k:"Not chased",       v:totals.stale, sub:"over 30 days", c:T.muted, Icon:Clock },
             ].map(({k,v,sub,c,Icon,bar,onClick,on}, i, all) => (
-              <div key={k} className="past-row" onClick={onClick || undefined} role={onClick ? "button" : undefined}
+              <div key={k} className="past-row" data-card={k.toLowerCase().replace(/\s+/g, "-")} onClick={onClick || undefined} role={onClick ? "button" : undefined}
                 title={onClick ? (on ? "Show all" : `Show only these`) : undefined}
                 style={{ animationDelay:`${i*50}ms`, cursor: onClick ? "pointer" : "default",
                 outline: on ? `2px solid ${c}` : "none",
@@ -1743,7 +1743,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
             marginBottom:SP.md }}>
             <Input T={T} icon={Search} value={q} onChange={e => setQ(e.target.value)}
               onClear={() => setQ("")} placeholder="Search name, ID, campus or manager…"
-              style={{ flex:"0 1 280px", minWidth:160 }} />
+              style={{ flex:"0 1 280px", minWidth:160 }} data-tour="past-search" />
             {view !== "pms" && (
               <Select T={T} value={groupBy} onChange={e => setGroupBy(e.target.value)} aria-label="Group by">
                 <option value="campus">Group by campus</option>

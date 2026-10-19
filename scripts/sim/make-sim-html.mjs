@@ -5,6 +5,7 @@
 //   node scripts/sim/make-sim-html.mjs dist-preview    (preview build)
 //
 // build.sh runs it after every build, so the simulation always loads the same bundle as the portal.
+// Owner: B2 (title: contract §G.7, decision 6).
 // The page differs from index.html only in what it lets the browser do:
 //   - the Content-Security-Policy meta is the FIRST element in <head> (the page talks only to itself);
 //     its text is read from sim-boot.js, so the policy and the boot script's self-test never disagree;
@@ -61,7 +62,7 @@ const top = [
   `<meta name="referrer" content="no-referrer">`,
   `<meta name="robots" content="noindex, nofollow">`,
   `<meta name="pmo-sim-entry" content="${esc(entry)}">`,
-  `<title>PMO Portal Simulation · real names, fictional projects</title>`,
+  `<title>PMO Portal · Simulation</title>`,
   `<script src="./sim-boot.js"></script>`,
   `<link rel="stylesheet" href="./sim/fonts/fonts.css">`,
 ].join("\n    ");
