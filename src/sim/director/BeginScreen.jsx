@@ -60,6 +60,20 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
   const d = data;
   const ready = !!d.startable;
   useEffect(() => { if (ready) startRef.current?.focus({ preventScroll: true }); }, [ready]);
+  // The footer's background band is only needed when the page is taller than the screen and the footer
+  // sticks to the bottom; on a screen where everything fits it would float mid-page and show an edge.
+  const veilRef = useRef(null);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const el = veilRef.current;
+    if (!el) return undefined;
+    const check = () => setOverflowing(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(check) : null;
+    if (ro) { ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild); }
+    window.addEventListener("resize", check);
+    return () => { ro?.disconnect(); window.removeEventListener("resize", check); };
+  }, []);
   const v = voice;
   const reh = d.rehearsal;
   // Once Start is ready and nothing failed, the rehearsal checks and the presenter's notes fold into one
@@ -71,7 +85,7 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
   const nWarn = d.checks.filter((c) => c.status === "warn").length;
   const rehDetail = d.checks.find((c) => c.key === "rehearsal")?.detail || "";
   return (
-    <div data-sim-ui="begin" onKeyDown={(e) => e.stopPropagation()} style={{
+    <div ref={veilRef} data-sim-ui="begin" onKeyDown={(e) => e.stopPropagation()} style={{
       position: "fixed", inset: 0, zIndex: Z.veil, overflow: "auto", overflowX: "hidden", display: "flex", alignItems: "flex-start", justifyContent: "center",
       padding: "40px 16px", fontFamily: SANS, color: INK, boxSizing: "border-box",
       background: VEIL_BG,
@@ -257,8 +271,8 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
           marginTop: 10, flexWrap: "wrap", padding: "14px 0 54px",
           marginLeft: "calc(50% - 50vw)", marginRight: "calc(50% - 50vw)",
           paddingLeft: "max(16px, calc(50vw - 450px))", paddingRight: "max(16px, calc(50vw - 450px))" }}>
-          <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, pointerEvents: "none",
-            background: VEIL_BG, backgroundAttachment: "fixed", WebkitMaskImage: FOOT_MASK, maskImage: FOOT_MASK }} />
+          {overflowing && <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, pointerEvents: "none",
+            background: VEIL_BG, backgroundAttachment: "fixed", WebkitMaskImage: FOOT_MASK, maskImage: FOOT_MASK }} />}
           <button type="button" className="sim-dir-btn" data-sim-refresh="" onClick={onRefresh} disabled={d.refreshing || !d.canRefresh} style={ghost}>
             <RefreshCw size={14} style={d.refreshing ? { animation: "simDirSpin .9s linear infinite" } : null} />
             {d.refreshing ? "Reading the portal again…" : "Refresh data"}
