@@ -16,6 +16,8 @@
 //   sim    → { type:'ok', v:2, nonce, fingerprint } | { type:'refused', v:2, nonce, code, reason }
 //   sim    → { type:'refresh', v:2, nonce, req, refreshKey }  answered on 'pmo-sim-<nonce>.<req>'
 //   sim    → { type:'bye', v:2, nonce, refreshKey }           ends this launch's refresh listener
+// The manifest says mode 'live' (share null). A copy the PMO shared with guests is sent by
+// src/simShare.js from its stored files with the same messages, mode 'shared', and no listener.
 // Nothing is stored in browser storage, here or in the simulation tab.
 import { loadSession, isFresh } from "./auth.js";
 import { readSnapshot, sameReview } from "./sim/live/snapshot.js";
@@ -339,8 +341,12 @@ function groupParts(entries, sizeOf) {
 }
 
 /** The messages for one snapshot, in protocol order. `held`: Map(attachmentId → item with blob);
- *  `reuse`: Set of attachment ids the simulation already holds (refresh delta). */
-export function messagesFor(snapshot, { nonce, refreshKey, held, reuse = new Set() }) {
+ *  `reuse`: Set of attachment ids the simulation already holds (refresh delta). `mode`: "live" (the
+ *  PMO's own read; `share` null) or "shared" (a copy the PMO shared with guests, sent from the stored
+ *  files by src/simShare.js; `share` = { id, sharedAt, expiresAt, voice }). */
+export function messagesFor(snapshot, { nonce, refreshKey, held, reuse = new Set(), mode = "live", share = null }) {
+  if (mode !== "live" && mode !== "shared") throw new TypeError("messagesFor: mode must be live or shared");
+  if ((mode === "shared") !== isObj(share)) throw new TypeError("messagesFor: a shared hand-over carries its share, a live one none");
   const tableParts = groupParts(Object.entries(snapshot.tables), ([t, rows]) => JSON.stringify(rows).length + t.length + 8)
     .map((g) => Object.fromEntries(g));
   const respParts = groupParts(snapshot.responses, (r) => JSON.stringify(r).length + 2);
@@ -352,6 +358,7 @@ export function messagesFor(snapshot, { nonce, refreshKey, held, reuse = new Set
     leftOut: snapshot.leftOut, failed: snapshot.failed, counts, bytes: snapshot.bytes, media, plan: snapshot.plan,
     invariants: snapshot.invariants, fingerprint: snapshot.fingerprint, code: snapshot.code, refreshKey,
     parts: { tables: tableParts.length, responses: respParts.length },
+    mode, share: mode === "shared" ? { id: share.id, sharedAt: share.sharedAt, expiresAt: share.expiresAt, voice: share.voice } : null,
   }];
   tableParts.forEach((tables, i) => out.push({ type: "tables", v: 2, nonce, part: i + 1, of: tableParts.length, tables }));
   respParts.forEach((items, i) => out.push({ type: "responses", v: 2, nonce, part: i + 1, of: respParts.length, items }));
@@ -411,6 +418,13 @@ function mediaCallback({ prefetch, held, index = null, reuse = null }) {
     return out;
   };
 }
+
+/** For src/simShare.js (a shared copy: stored files instead of a fresh read, no refresh listener):
+ *  the same channels (stopAll() closes them too), progress, receipt and media preparation. */
+export const shareKit = Object.freeze({
+  origin: SUPA_ORIGIN, anonKey: SUPA_KEY, helloMs: HELLO_MS, okMs: OK_MS,
+  openChannel, closeChannel, post, progressSender, receipt, mediaCallback,
+});
 
 const indexOf = (snapshot, held) => new Map(snapshot.media.map((m) => {
   const it = held.get(m.attachmentId);

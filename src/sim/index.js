@@ -7,7 +7,8 @@
 //              blob: links → synthetic backend → synthetic PMO session → narration → <SimRoot/>.
 //   refresh(): asks the portal tab for a fresh snapshot (Begin screen or closing card); on success
 //              the backend is reinstalled and SimRoot remounts with the new data; on failure the old
-//              snapshot stays and the reason is returned.
+//              snapshot stays and the reason is returned. Live only: a copy the PMO shared with guests
+//              (mode "shared") keeps its data, plays from its own start screen and has no Refresh.
 //   exit():    unmount, revoke the media links, reset the backend, clear the in-memory storage, tell
 //              the portal tab, close the tab.
 // Every failure shows an honest error (what happened, what to do, which check); nothing else is
@@ -16,22 +17,24 @@
 // No names or data here: the data exists only in memory, from the hand-over.
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { waitForSnapshot, requestRefresh, sendBye, closeAll, HandoffError, TEXT } from "./handoff.js";
-import { freshness } from "./live/validate.js";
+import { waitForSnapshot, requestRefresh, sendBye, closeAll, HandoffError, TEXT, AGAIN, describeFailure } from "./handoff.js";
+import { freshnessFor } from "./live/validate.js";
 import { buildNarration } from "./live/build.js";
 import { selfTest, clearSimStorage } from "./boot/guards.js";
 import { LockedScreen, ProgressScreen, FailScreen, EndedScreen } from "./boot/screens.jsx";
+
+export { describeFailure };
 
 const h = React.createElement;
 let root = null;
 let backendRef = null;
 let state = "idle";              // idle | starting | running | ended
-let current = null;              // { snapshot, items: Map(key → item), urls: Map(attachmentId|sha256 → blob: url) }
+let current = null;              // { snapshot, items: Map(key → item), urls: Map(attachmentId|sha256 → blob: url), mode, share }
 let refreshing = false;
 const unhandled = [];
 
 // For the harness and the director: where the simulation is (SimRoot sets rehearsing, begin, running, closing).
-const STATE = { phase: "handoff", reason: null, asOf: null, code: null };
+const STATE = { phase: "handoff", reason: null, asOf: null, code: null, mode: null };
 try { Object.defineProperty(window, "__PMO_SIM_STATE__", { configurable: true, enumerable: false, value: STATE }); } catch { /* ignore */ }
 /** Updates window.__PMO_SIM_STATE__ (SimRoot uses it for its own phases). */
 export function setSimState(patch) { Object.assign(STATE, patch); }
@@ -41,49 +44,11 @@ function show(el) {
   root.render(el);
 }
 
-// ── honest errors ────────────────────────────────────────────────────────────
-const AGAIN = "Close this tab, then press Simulation in the signed-in portal again.";
-const CHECKS = {
-  protocol: "the hand-over did not follow the expected steps",
-  schema: "a table, column or setting the simulation does not accept",
-  type: "a value of the wrong kind",
-  size: "more data than the simulation accepts",
-  key: "a missing or repeated record key",
-  secret: "something that looks like a password, key, token or signed link",
-  mask: "contact details that are not hidden",
-  response: "a recorded screen the simulation does not expect",
-  media: "a photo or video that does not match its list",
-  "media-missing": "a photo or video this tab no longer holds",
-  invariant: "figures that do not agree with each other",
-  fingerprint: "data that does not match its fingerprint",
-  plan: "a different choice of what each scene shows",
-};
-/** { title, reason, remedy, check } for a failed start or refresh. */
-export function describeFailure(e) {
-  const code = e?.code || "protocol";
-  const detail = typeof e?.message === "string" ? e.message.slice(0, 200) : "";
-  switch (code) {
-    case "no-nonce": return null;
-    case "used": return { title: "This page has already been used", reason: "It received its data once; a page is used for one launch only.", remedy: AGAIN };
-    case "timeout": return { title: "The data did not arrive", reason: TEXT.timeout, remedy: "Keep the portal tab open and signed in. " + AGAIN };
-    case "build": return { title: "The portal tab runs another version", reason: TEXT.build, remedy: "Then close this tab." };
-    // This screen has no Refresh button: the freshness text's own "Press Refresh data." is left out.
-    case "stale": return { title: "The portal data is too old", reason: (detail || "The data was read too long ago.").replace(/\s*Press Refresh data\.$/, ""), remedy: AGAIN, check: "stale" };
-    case "portal-gone": return { title: "The portal tab did not answer", reason: TEXT.portalGone, remedy: "" };
-    case "portal-refused": return { title: "The portal stopped the hand-over", reason: detail, remedy: AGAIN, check: e.portalCode || null };
-    case "prepare": return { title: "The simulation could not be prepared", reason: "Nothing is shown. The data arrived, but this page could not set it up.",
-      remedy: AGAIN, check: detail || null };
-    default: {
-      const what = CHECKS[code] || "a check of the data";
-      return { title: "The portal data was refused", reason: `Nothing is shown: the hand-over contained ${what}.`, remedy: AGAIN,
-        check: detail ? `${code} · ${detail}` : code };
-    }
-  }
-}
+// ── honest errors (describeFailure lives in handoff.js) ──────────────────────
 
 function failed(e, phase = "refused") {
   const view = describeFailure(e);
-  setSimState({ phase, reason: e?.code || "protocol" });
+  setSimState({ phase, reason: e?.code || "protocol", ...(e?.mode ? { mode: e.mode } : null) });
   if (view) show(h(FailScreen, view));
   else show(h(LockedScreen));
   state = "ended";
@@ -117,10 +82,10 @@ function revoke(list) {
 }
 
 // ── install: backend, session, narration, SimRoot ────────────────────────────
-async function install(snapshot, items, old) {
+async function install(snapshot, items, old, { mode = "live", share = null } = {}) {
   const links = makeLinks(items, old);
   try {
-    const narration = buildNarration(snapshot);
+    const narration = buildNarration(snapshot, { shared: !!share });
     const store = {
       tables: snapshot.tables,
       meta: { pmo: { id: snapshot.pmo.id, username: snapshot.pmo.username, full_name: snapshot.pmo.full_name, email: null },
@@ -136,15 +101,17 @@ async function install(snapshot, items, old) {
       },
     });
     B.prepareSession(store);
-    try { window.__PMO_SIM__.setAsOf(snapshot.takenAt); } catch { /* ignore */ }
+    try { window.__PMO_SIM__.setAsOf(snapshot.takenAt, !!share); } catch { /* ignore */ }
     backendRef = backend;
-    const next = { snapshot, items, urls: links.urls };
+    const next = { snapshot, items, urls: links.urls, mode, share };
     // The links the previous snapshot used and this one does not.
     const keep = new Set(links.urls.values());
     const stale = old ? [...old.urls.values()].filter((u) => !keep.has(u)) : [];
     current = next;
-    setSimState({ asOf: snapshot.takenAt, code: snapshot.code, reason: null });
-    show(h(SimRoot, { key: snapshot.fingerprint, snapshot, narration, backend, onExit: exit, onRefresh: refresh }));
+    setSimState({ asOf: snapshot.takenAt, code: snapshot.code, reason: null, mode });
+    // A shared copy plays from its own start screen and is never refreshed.
+    show(h(SimRoot, { key: snapshot.fingerprint, snapshot, narration, backend, share, onExit: exit,
+      onRefresh: mode === "live" ? refresh : null }));
     // Revoked once the new SimRoot has replaced the old one (no broken picture in between).
     if (stale.length) setTimeout(() => revoke(stale), 3000);
     return next;
@@ -188,18 +155,20 @@ export async function start() {
     failed(e);
     return;
   }
-  setSimState({ phase: "validating" });
+  const mode = got.mode === "shared" ? "shared" : "live";
+  const share = mode === "shared" ? got.share : null;
+  setSimState({ phase: "validating", mode });
   // Validated at receipt (freshness included); checked once more just before the data is used.
-  const f = freshness(got.snapshot.takenAt, Date.now());
-  if (f.state === "refused") { failed(new HandoffError("stale", f.text)); return; }
+  const f = freshnessFor(got.snapshot.takenAt, Date.now(), share);
+  if (f.state === "refused") { failed(Object.assign(new HandoffError("stale", f.text), { mode })); return; }
 
   show(h(ProgressScreen, { phase: "preparing" }));
   try {
     state = "running";
-    await install(got.snapshot, got.items, null);
+    await install(got.snapshot, got.items, null, { mode, share });
   } catch (e) {
     console.error("[simulation] could not be prepared:", e);
-    failed(new HandoffError("prepare", String(e?.message || e).slice(0, 160)), "refused");
+    failed(Object.assign(new HandoffError("prepare", String(e?.message || e).slice(0, 160)), { mode }), "refused");
   }
 }
 
@@ -211,14 +180,15 @@ export async function start() {
  */
 export async function refresh() {
   if (state !== "running" || !current) return { ok: false, error: "The simulation is not running." };
+  if (current.mode !== "live") return { ok: false, error: TEXT.sharedNoRefresh };
   if (refreshing) return { ok: false, error: TEXT.busy };
   refreshing = true;
   try {
     const held = new Map([...current.items.values()].map((it) => [it.attachmentId, it]));
     const got = await requestRefresh({ held });
-    const f = freshness(got.snapshot.takenAt, Date.now());
+    const f = freshnessFor(got.snapshot.takenAt, Date.now(), null);
     if (f.state === "refused") return { ok: false, error: f.text };
-    await install(got.snapshot, got.items, current);
+    await install(got.snapshot, got.items, current, { mode: "live", share: null });
     return { ok: true, code: got.snapshot.code, asOf: got.snapshot.takenAt };
   } catch (e) {
     console.warn("[simulation] refresh failed:", e?.code, e?.message);

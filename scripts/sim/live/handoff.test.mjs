@@ -53,13 +53,13 @@ const syn = await H.syntheticSnapshot({ now: Date.now() });
 const S0 = syn.snapshot;
 const build = S0.build;
 
-async function handOver(snapshot, blobs, { mutate = (m) => m, before = [], nonce = nonceOf(), timeouts = FAST } = {}) {
+async function handOver(snapshot, blobs, { mutate = (m) => m, before = [], nonce = nonceOf(), timeouts = FAST, mode, share } = {}) {
   _resetForTests();
   const refreshKey = crypto.randomUUID();
   const portal = fakePortal(nonce, async (ch) => {
     ch.postMessage({ type: "progress", v: 2, nonce, phase: "media", media: { done: 1, total: 2, bytes: 10 } });
     send(ch, before);
-    const { messages } = BR.messagesFor(snapshot, { nonce, refreshKey, held: heldOf(snapshot, blobs) });
+    const { messages } = BR.messagesFor(snapshot, { nonce, refreshKey, held: heldOf(snapshot, blobs), ...(mode ? { mode, share } : {}) });
     send(ch, mutate(messages, { nonce }));
   });
   const progress = [];
@@ -87,6 +87,9 @@ await test("hand-over: hello v2 → progress → manifest, parts, rpc, media, do
   assert.deepEqual(portal.saw("ok").map((m) => m.fingerprint), [S0.fingerprint]);
   assert.equal(portal.saw("refused").length, 0);
   for (const ph of ["waiting", "portal-media", "receiving", "validating"]) assert.ok(progress.includes(ph), ph);
+  assert.equal(r.mode, "live", "a live hand-over says so");
+  assert.equal(r.share, null);
+  assert.equal(HO._stateForTests().mode, "live");
   portal.close();
 });
 
@@ -242,8 +245,125 @@ await test("refresh: refusals and silence keep the old snapshot (portal signed o
   L.close();
 });
 
+// ── a copy the PMO shared with guests (mode "shared") ─────────────────────────
+const DAY = 86400000;
+const shareOf = (takenAt, over = {}) => ({ id: crypto.randomUUID(), sharedAt: takenAt + 60000, expiresAt: takenAt + 7 * DAY, voice: "on", ...over });
+const old = await H.syntheticSnapshot({ now: Date.now() - 3 * DAY });
+const S3 = old.snapshot;
+const manifestOnly = (f) => (ms) => ms.map((m) => (m.type === "manifest" ? f(m) : m));
+
+await test("shared: a 3-day-old copy is accepted with its share; the same copy as live is refused as stale", async () => {
+  const share = shareOf(S3.takenAt, { voice: "off" });
+  let { p, portal } = await handOver(S3, old.blobs, { mode: "shared", share });
+  const r = await p;
+  assert.equal(r.snapshot.fingerprint, S3.fingerprint);
+  assert.equal(r.mode, "shared");
+  assert.deepEqual(r.share, share);
+  assert.equal(r.items.size, S3.media.length);
+  await sleep(30);
+  assert.deepEqual(portal.saw("ok").map((m) => m.fingerprint), [S3.fingerprint]);
+  portal.close();
+  // A shared copy has no listener behind it: nothing to refresh, and the page says why.
+  const err = await expectRefusal(requestRefresh({ held: new Map(), timeouts: FAST }), "no-handover");
+  assert.equal(err.message, TEXT.sharedNoRefresh);
+  ({ p, portal } = await handOver(S3, old.blobs));
+  await expectRefusal(p, "stale");
+  portal.close();
+});
+
+await test("shared: an expired copy (or one beyond 8 days) is refused as stale, with the withdrawal wording", async () => {
+  let { p, portal } = await handOver(S3, old.blobs, { mode: "shared", share: shareOf(S3.takenAt, { expiresAt: Date.now() - 1000 }) });
+  let err = await expectRefusal(p, "stale");
+  assert.match(err.message, /^The PMO has stopped sharing this simulation: it was shared until /);
+  assert.equal(err.mode, "shared");
+  assert.equal(HO.describeFailure(err).title, "This shared simulation cannot play");
+  portal.close();
+  const s9 = await H.syntheticSnapshot({ now: Date.now() - 9 * DAY });
+  const S9 = s9.snapshot;
+  ({ p, portal } = await handOver(S9, s9.blobs, { mode: "shared", share: shareOf(S9.takenAt, { expiresAt: Date.now() + DAY }) }));
+  err = await expectRefusal(p, "stale");
+  assert.match(err.message, /^The shared data is too old/);
+  portal.close();
+});
+
+await test("shared: the manifest's mode and share are checked exactly", async () => {
+  const good = shareOf(S0.takenAt);
+  const cases = [
+    ["a live manifest carrying a share", { mutate: manifestOnly((m) => ({ ...m, share: good })) }],
+    ["a shared manifest without its share", { mode: "shared", share: good, mutate: manifestOnly((m) => ({ ...m, share: null })) }],
+    ["an unknown mode", { mutate: manifestOnly((m) => ({ ...m, mode: "replay" })) }],
+    ["no mode", { mutate: manifestOnly((m) => { const { mode, ...rest } = m; return rest; }) }],          // eslint-disable-line no-unused-vars
+    ["an extra share field", { mode: "shared", share: good, mutate: manifestOnly((m) => ({ ...m, share: { ...m.share, recipients: 3 } })) }],
+    ["a missing share field", { mode: "shared", share: good, mutate: manifestOnly((m) => { const { voice, ...s } = m.share; return { ...m, share: s }; }) }],  // eslint-disable-line no-unused-vars
+    ["a share id that is not a uuid", { mode: "shared", share: { ...good, id: "share-1" } }],
+    ["a share voice that is neither on nor off", { mode: "shared", share: { ...good, voice: "loud" } }],
+    ["share times as text", { mode: "shared", share: good, mutate: manifestOnly((m) => ({ ...m, share: { ...m.share, expiresAt: String(m.share.expiresAt) } })) }],
+    ["an expiry before the share", { mode: "shared", share: { ...good, expiresAt: good.sharedAt - 1 } }],
+    ["an expiry before the read", { mode: "shared", share: { ...good, sharedAt: S0.takenAt - 5000, expiresAt: S0.takenAt - 1000 } }],
+  ];
+  for (const [label, opt] of cases) {
+    let r;
+    try { r = await handOver(S0, syn.blobs, opt); } catch (e) { throw new Error(`${label}: ${e.message}`); }
+    await expectRefusal(r.p, "protocol").catch((e) => { throw new Error(label + ": " + e.message); });
+    await sleep(20);
+    assert.equal(r.portal.saw("refused").length, 1, `${label}: the portal is told`);
+    r.portal.close();
+  }
+});
+
+await test("shared: the portal's withdrawn, expired and build-share reach the screen in this page's words", async () => {
+  for (const [code, title, text] of [["withdrawn", "This simulation is no longer shared", TEXT.withdrawn],
+    ["expired", "This simulation is no longer shared", TEXT.withdrawn], ["build-share", "The portal has been updated", TEXT.buildShare]]) {
+    _resetForTests();
+    const nonce = nonceOf();
+    const portal = fakePortal(nonce, async (ch) => {
+      ch.postMessage({ type: "progress", v: 2, nonce, phase: "media", media: { done: 0, total: 79, bytes: 0 } });
+      ch.postMessage({ type: "refused", v: 2, nonce, code, reason: "<b>not shown</b>" });
+    });
+    const err = await expectRefusal(waitForSnapshot({ nonce, build, timeouts: FAST }), "portal-refused");
+    assert.equal(err.portalCode, code);
+    assert.equal(err.message, text, "the page's own text, never the portal's");
+    assert.equal(err.mode, "shared");
+    const view = HO.describeFailure(err);
+    assert.equal(view.title, title); assert.equal(view.reason, text);
+    portal.close();
+  }
+  assert.equal(TEXT.withdrawn, "The PMO has stopped sharing this simulation.");
+});
+
+await test("live refresh: a refresh that answers with a shared manifest is refused", async () => {
+  const { p, nonce, refreshKey, portal } = await handOver(S0, syn.blobs);
+  const first = await p;
+  portal.close();
+  const held = new Map([...first.items.values()].map((it) => [it.attachmentId, it]));
+  const L = fakeListener(nonce, async (reply) => {
+    const { messages } = BR.messagesFor(S0, { nonce, refreshKey, held: new Map(), reuse: new Set(S0.media.map((x) => x.attachmentId)),
+      mode: "shared", share: shareOf(S0.takenAt) });
+    send(reply, messages);
+  });
+  await expectRefusal(requestRefresh({ held, timeouts: FAST }), "protocol");
+  L.close();
+});
+
 const dir = process.env.SIM_FIXTURE;
 if (!dir) { _resetForTests(); BR.stopAll(); console.log(`SKIP fixture checks (SIM_FIXTURE unset) · ${passed} data-free checks passed`); process.exit(0); }
+
+await test("fixture: a shared copy read 6 days ago plays; the same copy past its expiry or 8 days is refused", async () => {
+  const at = (days) => Date.now() - days * DAY;
+  const f6 = await H.fixtureSnapshot(dir, { now: at(6) });
+  let { p, portal } = await handOver(f6.snapshot, f6.blobs, { mode: "shared", share: shareOf(f6.snapshot.takenAt) });
+  const r = await p;
+  assert.equal(r.mode, "shared");
+  assert.equal(r.snapshot.code, f6.snapshot.code);
+  portal.close();
+  ({ p, portal } = await handOver(f6.snapshot, f6.blobs, { mode: "shared", share: shareOf(f6.snapshot.takenAt, { expiresAt: Date.now() - 1 }) }));
+  await expectRefusal(p, "stale");
+  portal.close();
+  const f9 = await H.fixtureSnapshot(dir, { now: at(8.01) });
+  ({ p, portal } = await handOver(f9.snapshot, f9.blobs, { mode: "shared", share: shareOf(f9.snapshot.takenAt, { expiresAt: Date.now() + DAY }) }));
+  await expectRefusal(p, "stale");
+  portal.close();
+});
 
 // ── end to end over the private fixture: src/simBridge.js launch() → this receiver → refresh ──
 const read = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));

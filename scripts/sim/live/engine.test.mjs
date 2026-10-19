@@ -45,8 +45,8 @@ function director({ lines, scenes, plan, mode = "run", wpm = 135, clock }) {
     spotlight: fakeSpot(), clock, mode, guard: { check: () => true } });
 }
 
-async function suite(snapshot, label) {
-  const narration = buildNarration(snapshot);
+async function suite(snapshot, label, opts = {}) {
+  const narration = buildNarration(snapshot, opts);
   const lines = narration.lines;
   const meta = { tables: { campuses: snapshot.tables.campuses, user_profiles: snapshot.tables.user_profiles }, say: {} };
   const scenes = buildScenes({ plan: snapshot.plan, lines, meta });
@@ -87,7 +87,9 @@ async function suite(snapshot, label) {
 
   // With every line in its main form, an anchor may be missing only where the scene says so: the
   // short-line anchors ("side", "critical" in s11, "draft", "payments" #2 with a percent said).
-  const optional = /^(12:s12a:side|11:s11:critical|18:s18:draft|4:s04:payments|3:s03:await)$/;
+  // A shared copy says the data's date, not "current": its badge step (ifWord) does not fire.
+  const optional = opts.shared ? /^(12:s12a:side|11:s11:critical|18:s18:draft|4:s04:payments|3:s03:await|0:o2:current)$/
+    : /^(12:s12a:side|11:s11:critical|18:s18:draft|4:s04:payments|3:s03:await)$/;
   ok(missing.every((m) => optional.test(m)), `${label}: every main anchor is said (${missing.join(", ")})`);
   // Phrase and nth.
   const L = { text: "We'll see current portal data: money, projects, sites, people, reports. Money first.", toks: [] };
@@ -142,8 +144,105 @@ async function suite(snapshot, label) {
 
 const { snapshot: syn } = await H.syntheticSnapshot({ now: null });
 await suite(syn, "synthetic");
+// A copy the PMO shared: the same anchors are found in its texts (o2's "current" step is ifWord).
+await suite(syn, "synthetic shared", { shared: true });
+
+// ── the narrator when the browser refuses speech (a shared copy that starts by itself) ─────────
+{
+  const S = await import(new URL("sim/director/speech.js", SRC));
+  globalThis.__PMO_SIM_TEST__ = { readWpm: 400 };              // a fast captions pace keeps the waits short
+  class Utt { constructor(text) { this.text = text; this.volume = 1; } }
+  globalThis.SpeechSynthesisUtterance = Utt;
+  const VOICE = { name: "Test voice", lang: "en-GB", localService: true };
+  /** A fake speechSynthesis: `mode` decides what a spoken line does (ok | not-allowed | silent | late). */
+  const fakeSynth = (mode) => {
+    const s = { mode, spoken: [], current: null, speaking: false, pending: false,
+      speak(u) {
+        s.spoken.push({ text: u.text, volume: u.volume, voice: u.voice });
+        s.current = u;
+        const m = s.mode;
+        if (m === "not-allowed") setTimeout(() => u.onerror?.({ error: "not-allowed" }), 5);
+        else if (m === "ok" || m === "late") {
+          setTimeout(() => {
+            if (s.current !== u) return;
+            u.onstart?.();
+            setTimeout(() => { if (s.current === u) { s.current = null; u.onend?.(); } }, 120);
+          }, m === "late" ? 2300 : 10);
+        }
+      },
+      cancel() { const u = s.current; s.current = null; if (u) setTimeout(() => u.onerror?.({ error: "canceled" }), 0); },
+    };
+    return s;
+  };
+  const sleep = (sec) => new Promise((r) => setTimeout(r, sec * 1000));
+  const LINE = "one two three four five six seven eight nine ten eleven twelve";       // 12 words
+  const timed = async (p) => { const t0 = performance.now(); const r = await p; return { r, ms: performance.now() - t0 }; };
+
+  // 'not-allowed': the line waits its reading pace (not at once), the voice is off from here on.
+  let syn = fakeSynth("not-allowed");
+  let nar = new S.Narrator({ synth: syn, voice: VOICE, sleep, watchStart: true });
+  const est = 12 * 60 / 400 + S.START_DELAY;                                                       // 2.1 s at the test pace
+  let { r, ms } = await timed(nar.speak(LINE));
+  ok(r.read === true && r.blocked === "not-allowed" && !r.interrupted, "not-allowed: the line is read, not cut");
+  ok(ms >= est * 1000 - 60, `not-allowed: the line waits at least its estimate (${Math.round(ms)} ms of ${Math.round(est * 1000)})`);
+  ok(nar.blocked === true && nar.voiceOn === false && nar.enabled === true, "not-allowed: blocked; voiceOn false although enabled");
+  ok(nar.wpm === 400, "blocked: the governor reads the captions pace");
+  const before = syn.spoken.length;
+  ({ r } = await timed(nar.speak("two words")));
+  ok(r.read === true && syn.spoken.length === before, "blocked: the next line is captions only, nothing spoken");
+
+  // Unblocked inside a click: a silent line now, the voice from the next line.
+  syn.mode = "ok";
+  nar.unblock();
+  const silent = syn.spoken.at(-1);
+  ok(nar.blocked === false && silent.text === " " && silent.volume === 0 && silent.voice === VOICE, "unblock: a silent line with the voice, inside the click");
+  ({ r } = await timed(nar.speak(LINE)));
+  ok(!r.read && !r.interrupted && !r.stuck && syn.spoken.at(-1).text === LINE && nar.started, "unblock: the next line is spoken");
+
+  // A voice that never starts (iOS-style silent drop): captions after 2 s, with watchStart.
+  syn = fakeSynth("silent");
+  nar = new S.Narrator({ synth: syn, voice: VOICE, sleep, watchStart: true });
+  ({ r, ms } = await timed(nar.speak(LINE)));
+  ok(r.read === true && r.blocked === "silent" && nar.blocked, "silent: falls back to captions");
+  ok(ms >= S.START_WATCH_MS - 30 && ms < S.START_WATCH_MS + 900, `silent: after about 2 s (${Math.round(ms)} ms)`);
+
+  // The PMO's live path: no start watch, a slow first start is still spoken; a working voice is unchanged.
+  syn = fakeSynth("late");
+  nar = new S.Narrator({ synth: syn, voice: VOICE, sleep });
+  ok(nar.watchStart === false, "live: no start watch by default");
+  ({ r, ms } = await timed(nar.speak(LINE)));
+  ok(!r.read && !r.stuck && !r.interrupted && !nar.blocked && ms > 2300, `live: a start after 2.3 s is still the voice (${Math.round(ms)} ms)`);
+  syn = fakeSynth("ok");
+  nar = new S.Narrator({ synth: syn, voice: VOICE, sleep });
+  ({ r } = await timed(nar.speak(LINE)));
+  ok(!r.read && !r.stuck && !r.interrupted && r.words === 12 && !nar.blocked && nar.voiceOn, "live: a working voice speaks as before");
+  // Watched, a line that starts in time is not affected; once a line has started the watch is off.
+  syn = fakeSynth("ok");
+  nar = new S.Narrator({ synth: syn, voice: VOICE, sleep, watchStart: true });
+  ({ r } = await timed(nar.speak(LINE)));
+  syn.mode = "late";
+  ({ r } = await timed(nar.speak(LINE)));
+  ok(!r.read && !nar.blocked, "watched: after one line has started, a slow start is still the voice");
+  // Cancelled before it starts (a pause or a jump): ended as interrupted, not taken as refused.
+  syn = fakeSynth("silent");
+  nar = new S.Narrator({ synth: syn, voice: VOICE, sleep, watchStart: true });
+  const pc = nar.speak(LINE);
+  setTimeout(() => nar.cancel(), 100);
+  r = await pc;
+  ok(r.interrupted === true && !nar.blocked, "watched: a cancelled line is interrupted, the voice stays on");
+
+  // The probe before a countdown start: refused, allowed, and silent (no AudioContext here: no).
+  const probe = async (mode) => S.probeVoice(VOICE, { synth: fakeSynth(mode), timeoutMs: 300 });
+  ok((await probe("not-allowed")).ok === false && (await probe("not-allowed")).how === "not-allowed", "probe: not-allowed is a no");
+  ok((await probe("ok")).ok === true, "probe: a line that starts is a yes");
+  const ps = await probe("silent");
+  ok(ps.ok === false && ps.how === "timeout" && ps.audio === null, "probe: silence with no AudioContext is a no");
+  ok((await S.probeVoice(null, { synth: fakeSynth("ok") })).ok === false, "probe: no voice is a no");
+  globalThis.__PMO_SIM_TEST__ = undefined;
+}
 const dir = process.env.SIM_FIXTURE;
 if (!dir) { console.log(`engine.test: ${n} checks passed on invented data; SKIP fixture (SIM_FIXTURE unset)`); process.exit(0); }
 const { snapshot: fx } = await H.fixtureSnapshot(dir);
 await suite(fx, "fixture");
+await suite(fx, "fixture shared", { shared: true });
 console.log(`engine.test: PASS ${n} checks (invented data and fixture)`);

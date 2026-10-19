@@ -43,18 +43,19 @@ export const TEXT = Object.freeze({
   busy: "A refresh is already running.",
   // A shared copy (guests).
   withdrawn: "The PMO has stopped sharing this simulation.",
+  replaced: "The PMO has shared a newer copy of this simulation. Close this tab and press Simulation in the portal again.",
   buildShare: "This simulation was shared before the latest portal update, so it cannot play on this version. The PMO will share it again.",
   sharedAgain: "Close this tab and press Simulation in the portal again. If it keeps failing, tell the PMO.",
   sharedNoRefresh: "A shared simulation keeps the data it was shared with.",
 });
 /** The portal's refusals of a shared launch, in this page's words. */
-export const SHARED_REFUSALS = Object.freeze({ withdrawn: TEXT.withdrawn, expired: TEXT.withdrawn, "build-share": TEXT.buildShare });
+export const SHARED_REFUSALS = Object.freeze({ withdrawn: TEXT.withdrawn, expired: TEXT.withdrawn, replaced: TEXT.replaced, "build-share": TEXT.buildShare });
 
 export class HandoffError extends Error {
   /** code: no-nonce | used | timeout | protocol | build | media-missing | portal-gone | portal-refused | no-handover | busy
    *  | any validation code (schema, type, size, key, secret, mask, response, media, invariant, fingerprint, plan, stale).
    *  portalCode: the portal's own code when it refused (signed-out, review-needed, busy, limit, failed; for a shared
-   *  copy also withdrawn, expired, build-share). mode: "live" | "shared" once the manifest said so, else null. */
+   *  copy also withdrawn, expired, replaced, build-share). mode: "live" | "shared" once the manifest said so, else null. */
   constructor(code, message, portalCode = null) {
     super(message || code);
     this.name = "HandoffError";
@@ -364,11 +365,13 @@ export function waitForSnapshot({ onProgress, timeouts = {}, nonce: nonceOpt, bu
       finished = true;
       Object.values(timers).forEach(clearTimeout);
       if (err) {
+        if (err instanceof HandoffError && !err.mode) err.mode = rx.mode();
         post(ch, { type: "refused", v: 2, nonce, code: err.code, reason: String(err.message || err.code).slice(0, 300) });
         closeChannel(ch, 1000);
         reject(err);
       } else {
         S.refreshKey = value.refreshKey;
+        S.mode = value.mode;
         S.done = true;
         post(ch, { type: "ok", v: 2, nonce, fingerprint: value.snapshot.fingerprint });
         closeChannel(ch, 1000);
@@ -409,6 +412,8 @@ export function waitForSnapshot({ onProgress, timeouts = {}, nonce: nonceOpt, bu
  */
 export function requestRefresh({ held = new Map(), onProgress, timeouts = {} } = {}) {
   if (!S.done || !S.refreshKey || !S.hand) return Promise.reject(new HandoffError("no-handover", TEXT.portalGone));
+  // A shared copy has no portal listener behind it: nothing to ask.
+  if (S.mode !== "live") return Promise.reject(new HandoffError("no-handover", TEXT.sharedNoRefresh));
   if (S.refreshing) return Promise.reject(new HandoffError("busy", TEXT.busy));
   S.refreshing = true;
   const T = { ...TIMEOUTS, ...timeouts };
@@ -419,7 +424,7 @@ export function requestRefresh({ held = new Map(), onProgress, timeouts = {} } =
     const reply = openChannel(S.hand + "." + req);
     const timers = { first: 0, idle: 0, total: 0 };
     let finished = false, heard = false, queue = Promise.resolve();
-    const rx = receiver({ nonce, build: S.build, held, refreshKey: S.refreshKey, onProgress });
+    const rx = receiver({ nonce, build: S.build, held, refreshKey: S.refreshKey, onProgress, expectMode: "live" });
     const end = (err, value) => {
       if (finished) return;
       finished = true;
@@ -480,12 +485,63 @@ export function closeAll() {
 
 /** For tests: the channel names and flags (no data). */
 export const _stateForTests = () => ({ nonce: S.nonce, hand: S.hand, build: S.build, started: S.started, done: S.done,
-  refreshing: S.refreshing, hasRefreshKey: !!S.refreshKey });
+  refreshing: S.refreshing, hasRefreshKey: !!S.refreshKey, mode: S.mode });
 
 /** For tests: forget the module state (the page itself never calls this). */
 export function _resetForTests() {
   closeAll();
-  Object.assign(S, { nonce: null, hand: null, build: null, refreshKey: null, started: false, done: false, refreshing: false });
+  Object.assign(S, { nonce: null, hand: null, build: null, refreshKey: null, started: false, done: false, refreshing: false, mode: null });
 }
 
 export { codeOf, reasonOf };
+
+// ── honest errors (shown by index.js; here so they can be tested without a page) ──────────────
+/** The remedy when the mode is not known yet (also index.js's self-test failure). */
+export const AGAIN = "Close this tab, then press Simulation in the signed-in portal again.";
+const CHECKS = {
+  protocol: "the hand-over did not follow the expected steps",
+  schema: "a table, column or setting the simulation does not accept",
+  type: "a value of the wrong kind",
+  size: "more data than the simulation accepts",
+  key: "a missing or repeated record key",
+  secret: "something that looks like a password, key, token or signed link",
+  mask: "contact details that are not hidden",
+  response: "a recorded screen the simulation does not expect",
+  media: "a photo or video that does not match its list",
+  "media-missing": "a photo or video this tab no longer holds",
+  invariant: "figures that do not agree with each other",
+  fingerprint: "data that does not match its fingerprint",
+  plan: "a different choice of what each scene shows",
+};
+/** { title, reason, remedy, check } for a failed start or refresh (null: the locked screen). A shared
+ *  copy (e.mode "shared", or a share refusal from the portal) is described in a guest's words. */
+export function describeFailure(e) {
+  const code = e?.code || "protocol";
+  const detail = typeof e?.message === "string" ? e.message.slice(0, 200) : "";
+  const pc = e?.portalCode || null;
+  const shared = e?.mode === "shared" || Object.prototype.hasOwnProperty.call(SHARED_REFUSALS, pc || "");
+  const again = shared ? TEXT.sharedAgain : AGAIN;
+  switch (code) {
+    case "no-nonce": return null;
+    case "used": return { title: "This page has already been used", reason: "It received its data once; a page is used for one launch only.", remedy: again };
+    case "timeout": return { title: "The data did not arrive", reason: TEXT.timeout, remedy: "Keep the portal tab open and signed in. " + again };
+    case "build": return { title: "The portal tab runs another version", reason: TEXT.build, remedy: "Then close this tab." };
+    // This screen has no Refresh button: the freshness text's own "Press Refresh data." is left out.
+    case "stale": return shared
+      ? { title: "This shared simulation cannot play", reason: detail || TEXT.withdrawn, remedy: "Close this tab.", check: "stale" }
+      : { title: "The portal data is too old", reason: (detail || "The data was read too long ago.").replace(/\s*Press Refresh data\.$/, ""), remedy: AGAIN, check: "stale" };
+    case "portal-gone": return { title: "The portal tab did not answer", reason: TEXT.portalGone, remedy: "" };
+    case "portal-refused":
+      if (pc === "withdrawn" || pc === "expired") return { title: "This simulation is no longer shared", reason: TEXT.withdrawn, remedy: "Close this tab.", check: pc };
+      if (pc === "replaced") return { title: "A newer copy was shared", reason: TEXT.replaced, remedy: "", check: pc };
+      if (pc === "build-share") return { title: "The portal has been updated", reason: TEXT.buildShare, remedy: "Close this tab.", check: pc };
+      return { title: "The portal stopped the hand-over", reason: detail, remedy: again, check: pc };
+    case "prepare": return { title: "The simulation could not be prepared", reason: "Nothing is shown. The data arrived, but this page could not set it up.",
+      remedy: again, check: detail || null };
+    default: {
+      const what = CHECKS[code] || "a check of the data";
+      return { title: "The portal data was refused", reason: `Nothing is shown: the hand-over contained ${what}.`, remedy: again,
+        check: detail ? `${code} · ${detail}` : code };
+    }
+  }
+}

@@ -1,10 +1,11 @@
 // PMO Simulation director: the presenter's controls (bottom-right). Owner: B3b (contract §H.6).
 //   Previous · Pause/Resume · Next · Chapters · Restart · Exit, the run clock ("1:12 / 2:30") and the
-//   current chapter. The dock fades out while the run plays and comes back when the mouse moves; it
-//   stays up while paused or while a menu is open. Keys (bound in SimRoot): Space / . pause,
-//   → / PageDown next, ← / PageUp previous, C chapters, Home restart, Esc exit.
+//   current chapter; for a shared copy also a voice switch (voice prop). The dock fades out while the
+//   run plays and comes back when the mouse moves; it stays up while paused or while a menu is open.
+//   Keys (bound in SimRoot): Space / . pause, → / PageDown next, ← / PageUp previous, C chapters,
+//   Home restart, Esc exit.
 import { useEffect, useRef, useState } from "react";
-import { Pause, Play, SkipBack, SkipForward, ListOrdered, RotateCcw, X } from "lucide-react";
+import { Pause, Play, SkipBack, SkipForward, ListOrdered, RotateCcw, X, Volume2, VolumeX } from "lucide-react";
 import { NAVY, GOLD, GOLD_SOFT, INK, INK_SOFT, INK_DIM, SANS, SERIF, Z } from "./look.js";
 import { fmtClock } from "./clock.js";
 import { LIMIT } from "./engine.js";
@@ -69,7 +70,8 @@ export function ConfirmExit({ onCancel, onExit }) {
   );
 }
 
-export function Dock({ state, clock, chapters, menu, setMenu, onPrev, onPause, onNext, onChapter, onRestart, onExit, note }) {
+/** voice (optional): { on, toggle } — the voice switch of a shared copy (it takes effect from the next line). */
+export function Dock({ state, clock, chapters, menu, setMenu, onPrev, onPause, onNext, onChapter, onRestart, onExit, note, voice = null }) {
   const [awake, setAwake] = useState(true);
   useEffect(() => {
     let t = setTimeout(() => setAwake(false), 2600);
@@ -105,6 +107,12 @@ export function Dock({ state, clock, chapters, menu, setMenu, onPrev, onPause, o
         <Btn label="Next scene" title="Next scene (→)" onClick={onNext}><SkipForward size={15} /></Btn>
         <span style={{ width: 1, height: 22, background: "rgba(255,255,255,.12)", margin: "0 2px" }} />
         <Btn label="Chapters" title="Chapters (C)" onClick={() => setMenu(!menu)} active={menu}><ListOrdered size={15} /> Chapters</Btn>
+        {voice && (
+          <Btn label={voice.on ? "Voice off" : "Voice on"} title={voice.on ? "Voice on (click for captions only)" : "Captions only (click for voice)"}
+            onClick={voice.toggle} active={voice.on}>
+            {voice.on ? <Volume2 size={15} /> : <VolumeX size={15} />}
+          </Btn>
+        )}
         <Btn label="Restart" title="Restart (Home)" onClick={onRestart}><RotateCcw size={15} /></Btn>
         <Btn label="Exit" title="Exit (Esc)" onClick={onExit}><X size={15} /></Btn>
         <div style={{ padding: "0 8px 0 6px", minWidth: 104, lineHeight: 1.2 }}>
