@@ -15,11 +15,16 @@
 // HAND; the portal answers the same sequence (from progress to done) on the .<req> channel, and the sim
 // answers ok/refused there. Exit sends { type:'bye', refreshKey } on HAND.
 //
+// The manifest's mode is "live" (the PMO's own fresh read; share null) or "shared" (a copy the PMO
+// shared with guests, sent by a guest's portal tab from the stored files; share = { id, sharedAt,
+// expiresAt, voice }). A shared copy is checked against its expiry instead of the live 60-minute rule,
+// and is never refreshed. The portal may refuse a shared launch with withdrawn, expired or build-share.
+//
 // Everything is checked as it arrives and once more as a whole (src/sim/live/validate.js); anything
 // unexpected rejects the whole hand-over (fail closed), and the portal is told why (codes and check
 // names only, never data). The data lives only in this page's memory.
 import { TABLES, CAPS } from "./live/schema.js";
-import { validateSnapshot, validateMediaItem, ValidationError, MEDIA_MIMES } from "./live/validate.js";
+import { validateSnapshot, validateMediaItem, ValidationError, MEDIA_MIMES, sharedFreshness } from "./live/validate.js";
 
 export { sniff } from "./live/validate.js";
 
@@ -36,17 +41,26 @@ export const TEXT = Object.freeze({
   build: "Reload the portal tab, then press Simulation again.",
   review: "Something you approved in the launcher has changed. Press Simulation in the portal again to review it.",
   busy: "A refresh is already running.",
+  // A shared copy (guests).
+  withdrawn: "The PMO has stopped sharing this simulation.",
+  buildShare: "This simulation was shared before the latest portal update, so it cannot play on this version. The PMO will share it again.",
+  sharedAgain: "Close this tab and press Simulation in the portal again. If it keeps failing, tell the PMO.",
+  sharedNoRefresh: "A shared simulation keeps the data it was shared with.",
 });
+/** The portal's refusals of a shared launch, in this page's words. */
+export const SHARED_REFUSALS = Object.freeze({ withdrawn: TEXT.withdrawn, expired: TEXT.withdrawn, "build-share": TEXT.buildShare });
 
 export class HandoffError extends Error {
   /** code: no-nonce | used | timeout | protocol | build | media-missing | portal-gone | portal-refused | no-handover | busy
    *  | any validation code (schema, type, size, key, secret, mask, response, media, invariant, fingerprint, plan, stale).
-   *  portalCode: the portal's own code when it refused (signed-out, review-needed, busy, limit, failed). */
+   *  portalCode: the portal's own code when it refused (signed-out, review-needed, busy, limit, failed; for a shared
+   *  copy also withdrawn, expired, build-share). mode: "live" | "shared" once the manifest said so, else null. */
   constructor(code, message, portalCode = null) {
     super(message || code);
     this.name = "HandoffError";
     this.code = code;
     this.portalCode = portalCode;
+    this.mode = null;
   }
 }
 const fail = (code, msg) => { throw new HandoffError(code, msg); };
@@ -74,7 +88,26 @@ function safeText(s, max = 300) {
 }
 
 const MANIFEST_KEYS = ["type", "v", "nonce", "build", "takenAt", "readMs", "tz", "pmo", "mask", "testAccounts", "overrides",
-  "leftOut", "failed", "counts", "bytes", "media", "plan", "invariants", "fingerprint", "code", "refreshKey", "parts"];
+  "leftOut", "failed", "counts", "bytes", "media", "plan", "invariants", "fingerprint", "code", "refreshKey", "parts", "mode", "share"];
+const MODES = new Set(["live", "shared"]);
+const SHARE_KEYS = ["id", "sharedAt", "expiresAt", "voice"];
+const msTime = (v) => Number.isSafeInteger(v) && v > 0;
+/** The manifest's mode and share: live carries null; shared carries exactly { id, sharedAt, expiresAt, voice }. */
+function checkMode(m) {
+  if (typeof m.mode !== "string" || !MODES.has(m.mode)) fail("protocol", "manifest: mode");
+  if (m.mode === "live") {
+    if (m.share !== null) fail("protocol", "manifest: a live hand-over carries no share");
+    return null;
+  }
+  const s = m.share;
+  if (!isObj(s)) fail("protocol", "manifest: share");
+  exactKeys(s, SHARE_KEYS, "manifest share");
+  if (typeof s.id !== "string" || !UUID_RE.test(s.id)) fail("protocol", "manifest share: id");
+  if (!msTime(s.sharedAt) || !msTime(s.expiresAt) || s.expiresAt <= s.sharedAt) fail("protocol", "manifest share: times");
+  if (!Number.isFinite(m.takenAt) || s.expiresAt <= m.takenAt) fail("protocol", "manifest share: expiry before the read");
+  if (s.voice !== "on" && s.voice !== "off") fail("protocol", "manifest share: voice");
+  return { id: s.id, sharedAt: s.sharedAt, expiresAt: s.expiresAt, voice: s.voice };
+}
 const PORTAL_TYPES = new Set(["progress", "manifest", "tables", "responses", "rpc", "media", "done", "refused"]);
 const OWN_TYPES = new Set(["hello", "ok", "refresh", "bye"]);   // ours: never handled as portal messages
 const PROGRESS_PHASES = new Set(["media", "reading", "checking"]);
@@ -89,7 +122,7 @@ export function simBuild() {
 }
 
 // ── module state (one hand-over per page) ────────────────────────────────────
-const S = { nonce: null, hand: null, build: null, refreshKey: null, started: false, done: false, refreshing: false };
+const S = { nonce: null, hand: null, build: null, refreshKey: null, started: false, done: false, refreshing: false, mode: null };
 const channels = new Set();
 function openChannel(name) {
   const ch = new BroadcastChannel(name);
@@ -116,8 +149,8 @@ function postHand(m) {
  * held: Map(attachmentId → { key, attachmentId, mime, size, sha256, blob }) of items this page already has
  * (empty for the first hand-over: then any 'reuse' entry is refused).
  */
-function receiver({ nonce, build, held, refreshKey, onProgress }) {
-  let manifest = null, rpc = null, finished = false;
+function receiver({ nonce, build, held, refreshKey, onProgress, expectMode = null }) {
+  let manifest = null, rpc = null, finished = false, mode = null, share = null;
   const tables = {};
   const gotTables = new Set(), gotResp = new Set();
   const responses = [];
@@ -133,6 +166,10 @@ function receiver({ nonce, build, held, refreshKey, onProgress }) {
     if (manifest) fail("protocol", "a second manifest");
     if (typeof m.build !== "string" || m.build !== build) fail("build", TEXT.build);
     exactKeys(m, MANIFEST_KEYS, "manifest");
+    const sh = checkMode(m);
+    if (expectMode && m.mode !== expectMode) fail("protocol", "manifest: another mode");
+    mode = m.mode;
+    share = sh;
     if (typeof m.refreshKey !== "string" || !UUID_RE.test(m.refreshKey)) fail("protocol", "manifest: refreshKey");
     if (refreshKey && m.refreshKey !== refreshKey) fail("protocol", "manifest: another launch");
     if (!isObj(m.parts)) fail("protocol", "manifest: parts");
@@ -234,7 +271,12 @@ function receiver({ nonce, build, held, refreshKey, onProgress }) {
       failed: manifest.failed, tables, responses, rpc, media: manifestMedia, plan: manifest.plan, invariants: manifest.invariants,
       fingerprint: manifest.fingerprint, code: manifest.code, bytes: manifest.bytes,
     };
-    const clean = await validateSnapshot(snapshot, { build, now: Date.now() });
+    // Live: the 60-minute, same-day rule (inside validateSnapshot). Shared: the share's own expiry.
+    const clean = await validateSnapshot(snapshot, { build, now: mode === "live" ? Date.now() : undefined });
+    if (mode === "shared") {
+      const f = sharedFreshness(clean.takenAt, share.expiresAt, Date.now());
+      if (f.state === "refused") fail("stale", f.text);
+    }
     // Every item of the snapshot, by its key in this snapshot: the ones just sent and the ones held.
     const items = new Map();
     for (const e of clean.media) {
@@ -244,7 +286,7 @@ function receiver({ nonce, build, held, refreshKey, onProgress }) {
       } else items.set(e.key, media.get(e.key));
     }
     finished = true;
-    return { snapshot: clean, items, refreshKey: manifest.refreshKey };
+    return { snapshot: clean, items, refreshKey: manifest.refreshKey, mode, share: share ? { ...share } : null };
   }
 
   /** Handles one message; resolves the result after 'done', else null. */
@@ -272,12 +314,17 @@ function receiver({ nonce, build, held, refreshKey, onProgress }) {
       case "done": return onDone(m);
       case "refused": {
         const code = typeof m.code === "string" ? m.code.slice(0, 32) : "failed";
+        // A shared copy the PMO withdrew, that expired, or that predates this build: in this page's words.
+        if (Object.prototype.hasOwnProperty.call(SHARED_REFUSALS, code)) {
+          mode = "shared";
+          throw new HandoffError("portal-refused", SHARED_REFUSALS[code], code);
+        }
         throw new HandoffError("portal-refused", safeText(m.reason) || "The portal stopped the hand-over.", code);
       }
       default: return null;
     }
   }
-  return { handle };
+  return { handle, mode: () => mode };
 }
 
 const codeOf = (e) => (e instanceof HandoffError || e instanceof ValidationError ? e.code : "protocol");
@@ -291,7 +338,8 @@ function asHandoffError(e) {
 
 /**
  * Waits for the portal's hand-over. Resolves { snapshot (validated), items: Map(key → item with blob),
- * refreshKey } or rejects with a HandoffError (the portal has been sent 'refused' with the code first).
+ * refreshKey, mode: "live" | "shared", share: null | { id, sharedAt, expiresAt, voice } } or rejects
+ * with a HandoffError (err.mode once known; the portal has been sent 'refused' with the code first).
  * onProgress({ phase: waiting | portal-media | portal-reading | portal-checking | receiving | validating, media?, parts?, items? })
  * Options nonce / build / timeouts exist for tests; the page uses window.__PMO_SIM__.nonce and simBuild().
  */
