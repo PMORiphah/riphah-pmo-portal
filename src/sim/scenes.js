@@ -220,13 +220,15 @@ export function buildScenes({ plan, lines, meta = {} } = {}) {
         // O2 starts: the card folds into the caption dock (0.5 s), which then holds the caption.
         { presenter: "dock" },
         { say: "o2" },
-        // O2: rings only, each at the start of its word; a ring that would need a scroll is left out.
-        { word: "current", ifWord: true, spot: ['[data-sim-ui="badge"]'], ring: true },
-        { word: "money", ifWord: true, spot: [NAV("cmd"), NAV("cashflow")], ring: true },
-        { word: "projects", ifWord: true, spot: [NAV("proj")], ring: true },
-        { word: "sites", ifWord: true, spot: [NAV("camp")], ring: true },
-        { word: "people", ifWord: true, when: () => !!navInView("users"), spot: [() => navInView("users")], ring: true },
-        { word: "reports", ifWord: true, when: () => !!navInView("reports"), spot: [() => navInView("reports")], ring: true },
+        // O2: a ring at the start of each word, under the opening's light dim (so the dashboard's
+        // health verdict never sits at full brightness beside the caption); a ring that would need a
+        // scroll is left out.
+        { word: "current", ifWord: true, spot: ['[data-sim-ui="badge"]'], dim: 0.6 },
+        { word: "money", ifWord: true, spot: [NAV("cmd"), NAV("cashflow")], dim: 0.6 },
+        { word: "projects", ifWord: true, spot: [NAV("proj")], dim: 0.6 },
+        { word: "sites", ifWord: true, spot: [NAV("camp")], dim: 0.6 },
+        { word: "people", ifWord: true, when: () => !!navInView("users"), spot: [() => navInView("users")], dim: 0.6 },
+        { word: "reports", ifWord: true, when: () => !!navInView("reports"), spot: [() => navInView("reports")], dim: 0.6 },
         // "Money first": the light settles on the Total CAPEX block, and scene 1 continues there.
         { word: "money", nth: 2, frac: 0.85, spot: ['[data-tour="hero-total"]'] },
       ],
@@ -437,7 +439,10 @@ export function buildScenes({ plan, lines, meta = {} } = {}) {
             click: attr("data-cell", risks.cell), unless: cellOn, then: { test: cellOn, label: "risk list filtered" }, label: "risk matrix cell" },
           { word: "critical", frac: 0.8, ifWord: true, when: (a) => a.plain("s11"),
             click: attr("data-cell", risks.cell), unless: cellOn, then: { test: cellOn, label: "risk list filtered" }, label: "risk matrix cell" },
-          { spot: [attr("data-cell", risks.cell), '[data-tour="risk-count"]', risks.rowId ? attr("data-risk", risks.rowId) : null].filter(Boolean) },
+          // The row's severity, risk, category and probability / impact; never its owner (no person
+          // lit beside a shortfall).
+          { spot: [attr("data-cell", risks.cell), '[data-tour="risk-count"]',
+            risks.rowId ? { union: () => qa(`tr${attr("data-risk", risks.rowId)} > td`).slice(0, 4) } : null].filter(Boolean) },
         ] : []),
       ],
     },
@@ -494,6 +499,8 @@ export function buildScenes({ plan, lines, meta = {} } = {}) {
         ] : []),
         { test: () => selected(q('[data-view="sites"]')) && hasText(q('[data-tour="sites-campus"]'), assign.campus || "")
             && !!q('[data-tour="assign-pm"]') && !q('[data-tour="assign-pm"]').disabled, label: "sites view" },
+        // The Sites view keeps the page's scroll from head to head: bring the campus and Assign PM into view.
+        { scroll: '[data-tour="sites-campus"]', block: "center", instant: true },
         { spot: ['[data-tour="sites-campus"]', () => widen(q('[data-tour="assign-pm"]'), 160, 120)], ring: true },
         { word: "previews", frac: 0.45, click: '[data-tour="assign-pm"]', unless: () => !!q('[data-tour="bulk-preview"]'), label: "Assign PM" },
         { wait: '[data-tour="bulk-preview"]', label: "assign preview" },
@@ -562,12 +569,15 @@ export function buildScenes({ plan, lines, meta = {} } = {}) {
         // The cards are read before the list narrows and the project opens.
         { figures: true },
         ...(past.variant === "thread" ? [
-          { word: "without", frac: 0.6, when: (a) => !a.plain("s16"), type: '[data-tour="past-search"]', text: past.searchText, cps: 15 },
+          // A word is typed at 15 characters a second, a code (letters and digits) at 25.
+          { word: "without", frac: 0.6, when: (a) => !a.plain("s16"), type: '[data-tour="past-search"]', text: past.searchText,
+            cps: /\d/.test(String(past.searchText || "")) ? 25 : 15 },
           { when: (a) => !a.plain("s16"), wait: attr("data-past", past.id), label: "the past project row" },
           { when: (a) => !a.plain("s16"), click: attr("data-past", past.id), unless: () => !!q('[data-tour="past-thread"]'), label: "past project row" },
           { when: (a) => !a.plain("s16"), wait: `[data-tour="past-thread"] ${attr("data-msg", past.lastMessageId)}`, label: "follow-up thread" },
           { when: (a) => !a.plain("s16"), scroll: attr("data-msg", past.lastMessageId), block: "center" },
-          { when: (a) => !a.plain("s16"), spot: ['[data-tour="past-thread"]', attr("data-msg", past.lastMessageId)] },
+          // The manager's newest message (its bubble), and the thread's "Follow-up" head while it is on screen.
+          { when: (a) => !a.plain("s16"), spot: [`${attr("data-msg", past.lastMessageId)} > div`, '[data-tour="past-thread-head"]'], pad: 6 },
         ] : []),
       ],
     },
@@ -611,7 +621,10 @@ export function buildScenes({ plan, lines, meta = {} } = {}) {
             click: attr("data-report", rep.id), unless: () => !!q('[data-tour="report-viewer"]'), label: "the report" },
           { wait: '[data-tour="report-viewer"]', label: "the report viewer" },
           { mini: true },
-          { spot: ['[data-tour="report-chip"]', '[data-tile="capex"]', '[data-tile="approved"]', '[data-tile="released"]'], pad: 4 },
+          // A report whose frozen figures differ from today's dashboard shows only its status and header
+          // (with its as-at date) lit, never a second release share (plan.report.stale).
+          { spot: rep.stale ? ['[data-tour="report-chip"]', '[data-tour="report-head"]']
+            : ['[data-tour="report-chip"]', '[data-tile="capex"]', '[data-tile="approved"]', '[data-tile="released"]'], pad: 4 },
           { word: rep.variant === "nothing" ? "shows" : "what", frac: 0.75, ifWord: true, when: (a) => !a.plain("s18"),
             scroll: '[data-tour="report-attention-head"]', block: "start", force: true },
           { when: (a) => a.plain("s18"), endLine: true },
@@ -705,9 +718,10 @@ export const HOOKS = Object.freeze([
   "[data-metric]", '[data-tour="h2h-pms"]', '[data-tour="h2h-open"]', '[data-tour="sites-campus"]', '[data-tour="assign-pm"]',
   '[data-tour="bulk-preview"]', '[data-tour="users-header"]', '[data-tour="users-table"] tr[data-user]', 'td[data-col="role"]',
   'td[data-col="assigned"]', '[data-tour="updates-tab-all"]', '[data-tour="updates-list"]', "[data-comment]",
-  '[data-tour="past-cards"]', "[data-card]", '[data-tour="past-search"]', "[data-past]", '[data-tour="past-thread"]', "[data-msg]",
+  '[data-tour="past-cards"]', "[data-card]", '[data-tour="past-search"]', "[data-past]", '[data-tour="past-thread"]',
+  '[data-tour="past-thread-head"]', "[data-msg]",
   '[data-tour="gallery-campus"]', '[data-tour="gallery-count"]', '[data-tour="gallery-grid"] [data-attachment]', "[data-report]",
-  '[data-tour="report-viewer"]', '[data-tour="report-chip"]', "[data-tile]", '[data-tour="report-attention-head"]',
+  '[data-tour="report-viewer"]', '[data-tour="report-chip"]', '[data-tour="report-head"]', "[data-tile]", '[data-tour="report-attention-head"]',
   '[data-tour="report-attention"]', '[data-tour="report-back"]', '[data-tour="team-about"]', '[data-tour="team-org"]',
   '[data-tour="team-contact"]',
 ]);

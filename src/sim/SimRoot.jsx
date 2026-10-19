@@ -32,7 +32,7 @@ import { Badge, SpotLayer, CaptionDock, Shield } from "./director/Overlay.jsx";
 import { PresenterCard } from "./director/PresenterCard.jsx";
 import { useDirectorStyles } from "./director/look.js";
 import { buildScenes, HELPERS } from "./scenes.js";
-import { rehearse, projectRun, CRITICAL_TEXT } from "./live/preflight.js";
+import { rehearse, projectRun, projectGoverned, CRITICAL_TEXT } from "./live/preflight.js";
 import { freshness } from "./live/validate.js";
 import { fingerprintOf } from "./live/canon.js";
 import { fmtM } from "./live/format.js";
@@ -49,6 +49,8 @@ const TEST_LINE = "This is the presenter's voice. Each line is timed to finish i
 const UI_KEYS = { session: ["pmo-campus-view"], local: ["pmo_recent_projects"] };
 // The presenter's keys (everything else is swallowed while the rehearsal, the run or the closing card is up).
 const CONTROL_KEYS = new Set([" ", ".", "b", "B", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "c", "C", "Home", "Escape"]);
+// The keys the Begin screen's own controls use (buttons, the voice switch and list, its scrolling).
+const BEGIN_KEYS = new Set(["Tab", "Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
 
 // The screens, for the presenter's notes (no data).
 const SCREENS = { 0: "Opening", 1: "Capex Dashboard", 2: "Investments", 3: "PDD Status", 4: "Payments Status", 5: "Cashflows",
@@ -120,22 +122,45 @@ export async function portalReady(plan, alive) {
   return { ok: false, detail };
 }
 
-/** Decodes every handed-over picture now, 4 at a time, so the Gallery never waits for one. */
-async function decodeMedia(backend) {
-  let urls = [];
-  try { urls = Object.values(backend?.media?.() || {}); } catch { urls = []; }
-  let pics = 0, next = 0;
+/** Decodes every handed-over picture now, 4 at a time, so the Gallery never waits for one, and
+ *  checks that each video shows a first frame on this computer (a browser without the video's
+ *  codec shows a dark tile). → { total, pics, videos, frames } */
+async function decodeMedia(backend, items) {
+  let byKey = {};
+  try { byKey = backend?.media?.() || {}; } catch { byKey = {}; }
+  const mimeOf = new Map((items || []).map((m) => [m.key, String(m.mime || "")]));
+  const keys = Object.keys(byKey);
+  const isVid = (k) => /^video\//.test(mimeOf.get(k) || "");
+  const picKeys = keys.filter((k) => !isVid(k)), vidKeys = keys.filter(isVid);
+  let pics = 0, frames = 0, next = 0, nextV = 0;
   const one = (u) => new Promise((res) => {
     const img = new Image();
     let done = false;
     const end = (ok) => { if (done) return; done = true; if (ok) pics++; res(); };
     img.onload = () => { (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(() => end(true)); };
-    img.onerror = () => end(false);             // a video: nothing to decode
+    img.onerror = () => end(false);
     setTimeout(() => end(false), 12000);
     img.src = u;
   });
-  await Promise.all(Array.from({ length: 4 }, async () => { while (next < urls.length) await one(urls[next++]); }));
-  return { total: urls.length, pics };
+  const frame = (u) => new Promise((res) => {
+    const v = document.createElement("video");
+    let done = false;
+    const end = (ok) => {
+      if (done) return; done = true; if (ok) frames++;
+      try { v.removeAttribute("src"); v.load(); } catch { /* ignore */ }
+      res();
+    };
+    v.muted = true; v.preload = "auto"; v.playsInline = true;
+    v.onloadeddata = () => end(v.readyState >= 2 && v.videoWidth > 0);
+    v.onerror = () => end(false);
+    setTimeout(() => end(false), 8000);
+    v.src = u;
+  });
+  await Promise.all([
+    ...Array.from({ length: 4 }, async () => { while (next < picKeys.length) await one(byKey[picKeys[next++]]); }),
+    (async () => { while (nextV < vidKeys.length) await frame(byKey[vidKeys[nextV++]]); })(),
+  ]);
+  return { total: keys.length, pics, videos: vidKeys.length, frames };
 }
 
 export default function SimRoot({ snapshot, narration, backend, onExit, onRefresh }) {
@@ -233,7 +258,7 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
         director: rehearsal, scenes, lines, signal: ac.signal,
         waitApp: () => portalReady(plan, isAlive),
         resetApp: async () => { const r = await remount(isAlive); if (isAlive()) setAppReady(r); return r; },
-        decode: () => decodeMedia(backend),
+        decode: () => decodeMedia(backend, snapshot.media),
         onProgress: (p) => isAlive() && setPrep((x) => ({ ...x, progress: p, stage: p.phase === "scene" ? "rehearsal" : p.phase })),
       });
       if (!isAlive()) return;
@@ -292,7 +317,12 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
     const wpm = r.ms > 300 ? Math.round(r.words / (r.ms / 60000)) : null;
     setTestResult({ name: `${narrator.voice.name} (${narrator.voice.lang})`, wpm: wpm ?? 0 });
     const run = Math.round(narrator.wpm);
-    if (run >= 60) { const p = reproject(run); setVoiceProj({ wpm: run, total: p.total }); }
+    if (run >= 60) {
+      reproject(run);
+      // As the run will play: the deadline governor's short lines included.
+      const g = projectGoverned(lines, scenes, run, prep.report?.waits || {});
+      setVoiceProj({ wpm: run, total: g.total, short: g.short.length });
+    }
     setTesting(false);
   };
   useEffect(() => { if (!voiceOn) { reproject(135); setVoiceProj(null); } }, [voiceOn]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -411,17 +441,24 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
       const k = e.key;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && (k === "p" || k === "P" || k === "k" || k === "K")) { swallow(e); return; }
-      if (phase === "begin") return;
-      if (phase === "rehearsing") { swallow(e); return; }
-      // In the director's own controls (dock, closing card, exit confirm), Tab and Enter work as usual.
+      // In the director's own controls (Begin screen, dock, closing card, exit confirm), Tab and Enter work as usual.
       const inUi = !!(document.activeElement && document.activeElement.closest?.("[data-sim-ui]"));
+      // The Begin screen's own controls work as usual (Tab, Enter, Space, arrows in the voice list);
+      // any other key, or a key pressed outside them, is swallowed. The screen also stops its keys
+      // before they reach the App's document listeners (BeginScreen.jsx).
+      if (phase === "begin") {
+        if (!(k === "Tab" || (inUi && !mod && !e.altKey && BEGIN_KEYS.has(k)))) swallow(e);
+        return;
+      }
+      if (phase === "rehearsing") { swallow(e); return; }
       if (!CONTROL_KEYS.has(k) || mod || e.altKey) {
         if (inUi && (k === "Tab" || k === "Enter") && !mod && !e.altKey) return;
         swallow(e);
         return;
       }
       if (confirm) {
-        if (k === "Escape") { swallow(e); cancelExit(); }
+        // Esc again, or Space (a clicker's usual key), keeps presenting; Exit needs Tab and Enter, or a click.
+        if (k === "Escape" || k === " ") { swallow(e); cancelExit(); }
         else if (!inUi) swallow(e);
         return;
       }
@@ -437,8 +474,7 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
       } else if (phase === "closing") {
         if (k === "Home") restart();
         else if (k === "Escape") askExit();
-        else if ((k === " ") && inUi) handled = false;    // Space presses a focused button on the card
-        else handled = true;
+        else handled = true;                            // Space never presses a card button (Enter does, after Tab)
       } else handled = false;
       if (handled) swallow(e);
     };
@@ -463,7 +499,11 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
       { key: "portal", label: "Capex Dashboard drawn with the snapshot's figures",
         status: !appReady ? "wait" : appReady.ok ? "ok" : "fail", detail: appReady?.detail || null },
       { key: "media", label: "Gallery pictures decoded", status: prep.stage !== "done" ? "wait" : "ok",
-        detail: prep.decoded ? (prep.decoded.total ? `${plural(prep.decoded.pics, "picture")}${prep.decoded.total > prep.decoded.pics ? `, ${plural(prep.decoded.total - prep.decoded.pics, "video")}` : ""}` : "none handed over") : null },
+        detail: prep.decoded ? (prep.decoded.total - (prep.decoded.videos || 0) > 0 ? plural(prep.decoded.pics, "picture")
+          : prep.decoded.total ? "no pictures" : "none handed over") : null },
+      ...(prep.decoded && prep.decoded.videos > 0 ? [{ key: "videos", label: "Gallery videos show a first frame on this computer",
+        status: prep.decoded.frames === prep.decoded.videos ? "ok" : "warn",
+        detail: `${prep.decoded.frames} of ${prep.decoded.videos}${prep.decoded.frames < prep.decoded.videos ? " (the others show as dark tiles)" : ""}` }] : []),
       { key: "voice", label: "Voice",
         status: voices.loading ? "wait" : voiceNeedsTest ? "warn" : "ok",
         detail: !voices.list.length ? "captions only (no on-device voice)" : !voiceOn ? "off · captions only" : testResult ? `${testResult.wpm} words a minute` : "press Test voice" },
@@ -479,6 +519,13 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
     if (snapshot.failed > 0) notices.push({ tone: "warn", text: `${plural(snapshot.failed, "item")} could not be loaded.` });
     for (const t of plan.flags?.typedTexts || []) {
       notices.push({ tone: "warn", text: `A typed card text may be out of date (fix it with the card pencil): “${t.text}”` });
+    }
+    if (plan.report?.stale) {
+      const tiles = (plan.report.staleTiles || []).map((d) => `${d.tile.toLowerCase()} ${d.report} vs ${d.live}`).join("; ");
+      const draft = plan.report.kind !== "published";
+      notices.push({ tone: "warn", text: `The ${plan.report.month || ""} ${draft ? "draft" : "report"}'s figures are as at ${plan.report.asAtText} and differ from today's (${tiles}), `
+        + (draft ? "so its tiles stay unlit. To light them, press Refresh figures on the draft in the portal, then Refresh data here."
+          : "so its tiles stay unlit (a published report keeps its figures).") });
     }
     for (const t of narration.notes || []) notices.push({ tone: "info", text: t });
     const captions = [];

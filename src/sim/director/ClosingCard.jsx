@@ -56,10 +56,12 @@ function Report({ report }) {
 }
 
 export function ClosingCard({ caption, hhmm, chapters, report, notice, refreshing, onChapter, onRestart, onRefresh, onExit }) {
-  const first = useRef(null);
-  useEffect(() => { first.current?.focus({ preventScroll: true }); }, []);
+  // Focus is on the card itself, not on a button: Space or Enter alone never restarts (which would
+  // show the Begin screen's presenter notes to the audience). Tab reaches the buttons.
+  const card = useRef(null);
+  useEffect(() => { card.current?.focus({ preventScroll: true }); }, []);
   return (
-    <div data-sim-ui="closing" style={{
+    <div ref={card} tabIndex={-1} data-sim-ui="closing" style={{ outline: "none",
       position: "fixed", inset: 0, zIndex: Z.veil, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center",
       padding: "40px 16px", fontFamily: SANS, color: INK, animation: "simDirFade .7s ease both", boxSizing: "border-box",
       background: `radial-gradient(1000px 600px at 50% -10%, #18406A 0%, rgba(24,64,106,0) 62%),
@@ -73,7 +75,7 @@ export function ClosingCard({ caption, hhmm, chapters, report, notice, refreshin
           {caption || "Thank you."}
         </h1>
         <div data-sim-ui="as-of" style={{ marginTop: 10, fontSize: 14, color: INK_SOFT }}>Portal data as of {hhmm} PKT</div>
-        <div style={{ marginTop: 4, fontSize: 12.5, color: INK_DIM }}>Replay a chapter, start again, read the portal again, or exit.</div>
+        <div style={{ marginTop: 4, fontSize: 12.5, color: INK_DIM }}>Replay a chapter, restart, refresh the data, or exit.</div>
         <div style={{ maxWidth: 420, margin: "22px auto 0" }}>
           <ChapterList chapters={chapters} current={0} onPick={onChapter} />
         </div>
@@ -81,7 +83,7 @@ export function ClosingCard({ caption, hhmm, chapters, report, notice, refreshin
           <div role="alert" data-sim-ui="closing-notice" style={{ marginTop: 14, fontSize: 12.5, color: "#FFD9DF" }}>{notice}</div>
         )}
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
-          <button ref={first} type="button" className="sim-dir-btn" onClick={onRestart} style={btn}><RotateCcw size={15} /> Restart</button>
+          <button type="button" className="sim-dir-btn" onClick={onRestart} style={btn}><RotateCcw size={15} /> Restart</button>
           <button type="button" className="sim-dir-btn" data-sim-refresh="" onClick={onRefresh} disabled={refreshing} style={btn}>
             <RefreshCw size={15} style={refreshing ? { animation: "simDirSpin .9s linear infinite" } : null} />
             {refreshing ? "Reading the portal again…" : "Refresh data"}

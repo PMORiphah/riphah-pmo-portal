@@ -2,7 +2,7 @@
 // Owner: B3b (contract §H.6).
 //   - the spotlight (an SVG drawn by spotlight.js: dim with holes, gold rings);
 //   - the caption, docked in the sidebar column with the assistant, or shrunk to the assistant alone
-//     in the top-left corner while a full-screen view (Board report, Gallery picture) is open;
+//     in the bottom-left corner while a full-screen view (Board report, Gallery picture) is open;
 //   - a transparent shield that stops stray clicks from changing the run (the controls stay usable);
 //   - the simulation badge, top centre, above everything, in every state (Badge, exported):
 //     "Live portal data as of HH:MM PKT · read-only · nothing is sent".
@@ -17,10 +17,11 @@ export function Badge({ text }) {
   return (
     <div data-sim-ui="badge" role="note" style={{
       position: "fixed", top: 0, left: "50%", transform: "translateX(-50%)", zIndex: Z.badge,
-      pointerEvents: "none", padding: "3px 14px 4px", borderRadius: "0 0 10px 10px",
+      // Compact (about 18 px tall) so it clears the page title and the header buttons at 1366 px.
+      pointerEvents: "none", padding: "2px 12px 3px", borderRadius: "0 0 10px 10px",
       background: "rgba(10,26,46,.95)", border: `1px solid ${GOLD}`, borderTop: 0,
-      color: "#F6D9A8", font: `600 11px/1.35 ${SANS}`, letterSpacing: ".05em", whiteSpace: "nowrap",
-      boxShadow: "0 4px 14px rgba(0,0,0,.28)", maxWidth: "calc(100vw - 32px)", overflow: "hidden", textOverflow: "ellipsis",
+      color: "#F6D9A8", font: `600 10.5px/1.3 ${SANS}`, letterSpacing: ".02em", whiteSpace: "nowrap",
+      boxShadow: "0 2px 8px rgba(0,0,0,.25)", maxWidth: "calc(100vw - 32px)", overflow: "hidden", textOverflow: "ellipsis",
     }}>{text}</div>
   );
 }
@@ -101,8 +102,9 @@ export function CaptionDock({ state, voiceOn, progress }) {
   if (!show) return null;
   if (mini) {
     return (
+      // Bottom-left: the report viewer's left gutter is empty there (at the top it covered a label).
       <div data-sim-ui="caption-mini" aria-live="polite" style={{
-        position: "fixed", top: 74, left: 16, zIndex: Z.caption, pointerEvents: "none",
+        position: "fixed", bottom: 16, left: 16, zIndex: Z.caption, pointerEvents: "none",
         display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6,
         animation: "simDirFade .3s ease both",
       }}>

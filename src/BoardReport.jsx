@@ -136,7 +136,7 @@ export function ReportDocument({ rep }) {
   return (
     <div>
       {pg(1, <>
-        <div style={{ background:C.navy, color:"#fff", margin:"-36px -44px 0", padding:"26px 44px 22px" }}>
+        <div data-tour="report-head" style={{ background:C.navy, color:"#fff", margin:"-36px -44px 0", padding:"26px 44px 22px" }}>
           <div style={{ fontSize:9.5, letterSpacing:3, opacity:.6, textTransform:"uppercase" }}><span data-org>Riphah International University</span> · Project Management Office</div>
           <div style={{ fontSize:26, fontWeight:700, marginTop:8 }}>{title}</div>
           <div style={{ fontSize:15, marginTop:2, color:"#F3C877", fontWeight:600 }}>{f.period}</div>

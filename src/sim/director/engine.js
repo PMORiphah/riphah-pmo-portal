@@ -27,6 +27,7 @@ import { countWords, START_DELAY } from "./speech.js";
 export const LIMIT = 150;
 export const GOVERN_AT = 146;
 export const CUT_AT = 149.5;
+const CUT_POLL = 40;          // ms between hard-cut checks
 export const WAIT_LIMIT = 5;
 export const FIGURE_WAIT = 5;     // a figure check in the rehearsal waits up to 5 s for the text
 export const SHORT_HOLD = 0.7;    // a short scene keeps 70 % of its holds
@@ -236,9 +237,10 @@ export class Director {
 
   _watchCut() {
     clearInterval(this.cutTimer);
+    // Checked every 40 ms, from 40 ms before the cut, so the cut never fires after CUT_AT.
     this.cutTimer = setInterval(() => {
-      if (this.state.phase === "running" && !this.paused && this.clock.now() >= CUT_AT) this._cut();
-    }, 40);
+      if (this.state.phase === "running" && !this.paused && this.clock.now() >= CUT_AT - CUT_POLL / 1000) this._cut();
+    }, CUT_POLL);
   }
   _cut() {
     clearInterval(this.cutTimer);

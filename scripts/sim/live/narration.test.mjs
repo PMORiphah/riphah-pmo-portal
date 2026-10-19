@@ -15,6 +15,7 @@ import { buildNarration, useCandidate, SLOTS } from "../../../src/sim/live/build
 import { LINES, CHAPTERS } from "../../../src/sim/live/lines.js";
 import { countWords } from "../../../src/sim/live/say.js";
 import * as TM from "../../../src/sim/live/timing.js";
+import { projectGoverned } from "../../../src/sim/live/preflight.js";
 import { syntheticTables, syntheticCtx, IDS } from "./synthetic.mjs";
 
 const IDS_ORDER = ["o1", "o2", "s01", "s02", "s03", "s04", "s05", "s06", "s07", "s08", "s09", "s10", "s11", "s12a", "s12b", "s13", "s14",
@@ -269,6 +270,15 @@ const shortened = N0.lines.map((l) => ({ ...l, candidates: l.candidates, use: l.
 assert.ok(TM.project(shortened, N0.scenes, 135, { waits: { 1: 5 } }).total <= TM.COMPACT_AT);
 assert.deepEqual(TM.compact(N0.lines, N0.scenes, { wpm: 135, waits: { 1: 60 } }), ["s05", "s09", "s16", "s10"], "never more than the four");
 assert.deepEqual(N0.lines.filter((l) => l.compact), [], "compact() does not change the lines");
+
+// The governed projection ("with this voice" on the Begin screen): as the engine's governor plays it.
+const g135 = projectGoverned(N0.lines, N0.scenes, 135);
+near(g135.total, N0.totals.at135, "no governor at 135 wpm"); assert.deepEqual(g135.short, []);
+const g100 = projectGoverned(N0.lines, N0.scenes, 100);
+assert.ok(g100.short.length > 0 && g100.short[0] === 0, "at 100 wpm the governor shortens from the first scene");
+assert.ok(g100.total < TM.project(N0.lines, N0.scenes, 100).total, "the governed run is shorter than the plain one");
+assert.ok(g100.total <= TM.CUT_AT && !g100.cut, `the governed run ends by the cut (${g100.total} s)`);
+assert.equal(projectGoverned(N0.lines, N0.scenes, 40).total, TM.CUT_AT, "a very slow voice is cut at 149.5 s");
 
 console.log(`narration.test: part 1 ok (${V.length} variants, invented data; ${N0.totals.words} words, ${N0.totals.at135} s at 135 wpm)`);
 

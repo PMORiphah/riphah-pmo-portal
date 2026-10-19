@@ -436,16 +436,17 @@ function Launcher({ T, session: sessionProp, getSession, onClose }) {
 
       <Block T={T} icon={Users} title="Test accounts"
         right={<span style={{ ...TYPE.caption, color: T.muted }}>{tests?.size || 0} ticked</span>}>
-        <Note T={T}>User Management shows every account. Ticked accounts are described as being for testing ("some for testing"), and their rows are never lit. Only active accounts with no assigned projects are listed; the ones that look like test accounts are ticked already.</Note>
+        <Note T={T}>User Management shows every account. Ticked accounts are described as being for testing ("some for testing"), and their rows are never lit. Every active account except the PMO's is listed; the ones that look like test accounts (no projects, and a test-looking address or name) are ticked already and listed first. A test login that holds projects can be ticked too.</Note>
         {!preview.testAccountCandidates.length ? (
-          <div style={{ fontSize: 12.5, color: T.dim }}>No active account without projects.</div>
-        ) : preview.testAccountCandidates.map((u) => (
+          <div style={{ fontSize: 12.5, color: T.dim }}>No other active account.</div>
+        ) : <div style={{ maxHeight: 188, overflowY: "auto", paddingRight: 4 }}>{[...preview.testAccountCandidates]
+          .sort((x, y) => (y.detected ? 1 : 0) - (x.detected ? 1 : 0)).map((u) => (
           <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12.5, color: T.text, cursor: running ? "default" : "pointer" }}>
             <input type="checkbox" checked={!!tests?.has(u.id)} disabled={running} onChange={() => toggleTest(u.id)} />
             <span>{u.full_name || u.username || "—"}</span>
             <span style={{ ...TYPE.caption, color: T.dim }}>{u.username}{u.role ? ` · ${ROLE[u.role] || u.role}` : ""}{u.detected ? " · looks like a test account" : ""}</span>
           </label>
-        ))}
+        ))}</div>}
       </Block>
 
       <Block T={T} icon={ImageIcon} title="Photos and videos"

@@ -81,6 +81,7 @@ hook("38d", "src/BoardReport.jsx", 'hook="released"', 'label="Released" value=',
 hook("39a", "src/BoardReport.jsx", 'data-tour="report-attention-head"', ">Needs attention</H>", { within: 0 });
 hook("39b", "src/BoardReport.jsx", 'data-tour="report-attention"', "approved_nothing_released", { within: 1 });
 hook(40, "src/BoardReport.jsx", 'data-tour="report-chip"', "{chip[0]}</span>", { within: 0 });
+hook("40b", "src/BoardReport.jsx", 'data-tour="report-head"', "background:C.navy, color:\"#fff\", margin:\"-36px -44px 0\"", { within: 0 });
 hook("41a", "src/Cashflows.jsx", 'hook="cf-peak"', 'label="Peak month"', { within: 0 });
 hook("41b", "src/Cashflows.jsx", "data-tour={hook}", "function StatTile(", { within: 8 });
 hook(42, "src/InvestmentsTab.jsx", 'data-tour="inv-banner"', 'alignItems:"flex-start", gap:SP.md', { within: 1 });

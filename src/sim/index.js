@@ -67,7 +67,8 @@ export function describeFailure(e) {
     case "used": return { title: "This page has already been used", reason: "It received its data once; a page is used for one launch only.", remedy: AGAIN };
     case "timeout": return { title: "The data did not arrive", reason: TEXT.timeout, remedy: "Keep the portal tab open and signed in. " + AGAIN };
     case "build": return { title: "The portal tab runs another version", reason: TEXT.build, remedy: "Then close this tab." };
-    case "stale": return { title: "The portal data is too old", reason: detail || "The data was read too long ago.", remedy: AGAIN, check: "stale" };
+    // This screen has no Refresh button: the freshness text's own "Press Refresh data." is left out.
+    case "stale": return { title: "The portal data is too old", reason: (detail || "The data was read too long ago.").replace(/\s*Press Refresh data\.$/, ""), remedy: AGAIN, check: "stale" };
     case "portal-gone": return { title: "The portal tab did not answer", reason: TEXT.portalGone, remedy: "" };
     case "portal-refused": return { title: "The portal stopped the hand-over", reason: detail, remedy: AGAIN, check: e.portalCode || null };
     case "prepare": return { title: "The simulation could not be prepared", reason: "Nothing is shown. The data arrived, but this page could not set it up.",

@@ -10,7 +10,7 @@
 // the Begin screen. If the opening or the dashboard scene fails, Start stays disabled.
 // Then the App is reset (backend reset, remount, readiness again), the photos are decoded, and the
 // run is projected with the chosen lines and the measured action times (timing.js).
-import { project, sceneSeconds } from "./timing.js";
+import { project, sceneSeconds, GOVERN_AT, CUT_AT } from "./timing.js";
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
 export const CRITICAL_TEXT = "The dashboard figures could not be shown; nothing will be presented.";
@@ -24,6 +24,26 @@ export const timingScenes = (scenes) => (scenes || []).map((s) => ({ n: s.n, lin
  */
 export function projectRun(lines, scenes, wpm, waits = {}) {
   return project(lines, timingScenes(scenes), wpm, { waits });
+}
+
+/**
+ * The run as the engine's deadline governor plays it at `wpm` (engine.js _govern: a scene uses its
+ * short lines when the time so far plus the rest at full length passes GOVERN_AT):
+ * { total, short: [scene n], cut }. Used for "with this voice" on the Begin screen.
+ */
+export function projectGoverned(lines, scenes, wpm, waits = {}) {
+  const byId = new Map((lines || []).map((l) => [l.id, l]));
+  const list = timingScenes(scenes).sort((a, b) => a.n - b.n);
+  const ls = (sc) => sc.lines.map((id) => byId.get(id)).filter(Boolean);
+  const full = list.map((sc) => sceneSeconds(ls(sc), wpm, { waits: waits[sc.n] || 0 }));
+  let t = 0;
+  const short = [];
+  list.forEach((sc, i) => {
+    const s = t + full.slice(i).reduce((a, b) => a + b, 0) > GOVERN_AT;
+    if (s && full[i] > 0) short.push(sc.n);
+    t += s ? sceneSeconds(ls(sc), wpm, { short: true, waits: waits[sc.n] || 0 }) : full[i];
+  });
+  return { total: r3(Math.min(t, CUT_AT)), short, cut: t > CUT_AT };
 }
 
 /**

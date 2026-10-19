@@ -109,7 +109,8 @@ export function syntheticTables() {
     { id: IDS.past(2), code: "PX-02", name: "Repair of Quartz Fence", campus: "South Campus", status: "open", approved_amount: 2e6, released_amount: 1e6, pm_user_id: IDS.user(3), reason_open: "No progress", pm_name: "Bravo Person" },
     { id: IDS.past(3), code: "PX-03", name: "Paving of Yard", campus: "East Campus", status: "closed", approved_amount: 1e6, released_amount: 1e6, pm_user_id: IDS.user(4), reason_open: "", pm_name: "Charlie Person" },
   ];
-  const msg = (n, past, author, at) => ({ id: IDS.pastMsg(n), past_project_id: IDS.past(past), author_id: IDS.user(author), created_at: at });
+  const msg = (n, past, author, at, body = `Status note ${n}: the order is placed and delivery is expected next month.`) =>
+    ({ id: IDS.pastMsg(n), past_project_id: IDS.past(past), author_id: IDS.user(author), created_at: at, body });
   const past_project_updates = [msg(1, 1, 1, "2031-02-20T10:00:00Z"), msg(2, 1, 2, "2031-02-21T10:00:00Z"), msg(3, 1, 1, "2031-03-01T10:00:00Z"),
     msg(4, 1, 2, "2031-03-05T10:00:00Z"), msg(5, 2, 1, "2031-03-01T10:00:00Z")];
   const risk = (n, p, prob, impact, status, title, severity) => ({ id: IDS.risk(n), project_id: IDS.project(p), probability: prob, impact, status, title, severity });

@@ -59,8 +59,9 @@ export function ConfirmExit({ onCancel, onExit }) {
           This tab's copy of the portal data is cleared and the tab closes. The portal tab is not touched.
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
-          <button type="button" className="sim-dir-btn" onClick={onCancel} style={btn}>Keep presenting</button>
-          <button ref={ref} type="button" className="sim-dir-btn" onClick={onExit}
+          {/* Focus starts on Keep presenting: an accidental Esc followed by Space or Enter never ends the run. */}
+          <button ref={ref} type="button" className="sim-dir-btn" data-sim-keep="" onClick={onCancel} style={btn}>Keep presenting</button>
+          <button type="button" className="sim-dir-btn" onClick={onExit}
             style={{ ...btn, borderColor: GOLD, background: "rgba(216,152,64,.18)", color: "#fff", fontWeight: 600 }}>Exit</button>
         </div>
       </div>

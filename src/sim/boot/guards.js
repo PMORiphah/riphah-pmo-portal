@@ -61,6 +61,17 @@ export function selfTest() {
       && !document.querySelector('link[href*="fonts.googleapis"],link[href*="fonts.gstatic"]');
   });
   add("top", () => window.top === window);
+  // No frame (an about:blank frame would have the browser's own storage and window.open).
+  add("frames", () => {
+    let refused = false;
+    try { document.createElement("iframe"); } catch { refused = true; }
+    return refused && !document.querySelector("iframe,frame,object,embed");
+  });
+  // Nothing persists on the portal's origin: no IndexedDB, Cache Storage or cookies.
+  add("persist", () => {
+    document.cookie = "__pmo_sim_selftest=1";
+    return document.cookie === "" && window.indexedDB === undefined && window.caches === undefined;
+  });
   const failed = checks.filter((c) => !c.ok).map((c) => c.name);
   return { ok: failed.length === 0, checks, failed };
 }

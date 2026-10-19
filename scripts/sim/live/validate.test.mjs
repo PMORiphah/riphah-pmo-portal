@@ -45,6 +45,15 @@ await test("freshness: another PKT day, a UTC-day straddle (04:58 → 05:02 PKT)
   assert.equal(freshness(NaN, t).state, "refused");
   assert.equal(freshness(Date.now() - 1000).state, "ok");          // no now: the real clock
 });
+await test("freshness: a refused age rounds up; a read on an earlier day says so", () => {
+  const t = Date.parse("2026-10-16T05:41:00Z");                    // 10:41 PKT
+  assert.equal(freshness(t, t + 60 * MIN + 600).text, "Live data is 61 min old (read 10:41 PKT). Press Refresh data.");
+  const y = freshness(t, t + 24 * 60 * MIN);
+  assert.equal(y.state, "refused");
+  assert.equal(y.text, "Live data is 24 hours old (read yesterday at 10:41 PKT). Press Refresh data.");
+  const late = Date.parse("2026-10-16T18:55:00Z");                 // 23:55 PKT, then 00:05 PKT
+  assert.equal(freshness(late, late + 10 * MIN).text, "Live data was read before the day changed (read yesterday at 23:55 PKT). Press Refresh data.");
+});
 
 // ── the snapshot ─────────────────────────────────────────────────────────────
 const refp = async (s) => { Object.assign(s, await fingerprintOf(s)); return s; };
@@ -147,6 +156,12 @@ async function battery(name, base, blobs, now) {
     await refused(base, opts, "mask", (s) => { s.mask = { contacts: false }; }, { label: "mask off" });
     const withEmail = base.tables.user_profiles.findIndex((u) => u.email === MASK.email);
     if (withEmail >= 0) await refused(base, opts, "mask", (s) => { s.tables.user_profiles[withEmail].email = "a@b.example"; }, { label: "an unmasked email" });
+    // Contact details inside free text (snapshot.js replaces them).
+    await refused(base, opts, "mask", (s) => { s.tables.projects[0].notes = "Call 0300-1234567 for the keys."; }, { label: "a phone number in notes" });
+    const inThread = base.tables.past_project_updates.findIndex((m) => m.past_project_id === plan.past?.id);
+    if (inThread >= 0) await refused(base, opts, "mask", (s) => { s.tables.past_project_updates[inThread].body = "Write to someone@site.example.org"; }, { label: "an email in a message" });
+    const rep = base.tables.board_reports.findIndex((r) => r.id === plan.report?.id && r.figures);
+    if (rep >= 0) await refused(base, opts, "schema", (s) => { s.tables.board_reports[rep].figures = { ...s.tables.board_reports[rep].figures, risks: { top: [{ title: "x", mitigation: "y" }] } }; }, { label: "a risk mitigation in the report figures" });
     await refused(base, opts, "mask", (s) => { s.tables.user_profiles[0].phone = "not hidden"; }, { label: "an unmasked phone" });
     if (base.tables.project_risks_scored.length) {
       await refused(base, opts, "schema", (s) => { s.tables.project_risks_scored[0].description = "x"; }, { label: "description is always empty" });

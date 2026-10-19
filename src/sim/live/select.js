@@ -10,6 +10,7 @@
 // source is named in each section.
 import { STAGE_META, DATA } from "../../theme.js";
 import { fmtM, fmtP, mLabel, MONTH_NAMES, fmtDayReport, fmtStampGB, hhmmPKT, pktDateOf } from "./format.js";
+import { TEXT_MASK } from "./schema.js";
 
 export const PLAN_VERSION = 1;
 
@@ -111,13 +112,16 @@ const sharesWord = (a, b) => { const B = new Set(wordsOf(b).filter((w) => w.leng
 // ── test accounts (contract §E.13, decision 3) ───────────────────────────────
 const TEST_DOMAIN = /(^|\.)(example|test)\.(com|org|net)$/i;
 /** Active profiles with no project assignment: the launcher's tick list. */
+// Any active account except the PMO's may be ticked as a test account in the launcher (PMO decision 3,
+// widened 19 Oct 2026: a test login can hold real assignments). Detection below stays on unassigned ones.
 export function testAccountCandidatesOf(profiles, assignments) {
-  const assigned = new Set((assignments || []).map((a) => a.user_id));
-  return (profiles || []).filter((u) => isActive(u) && !assigned.has(u.id));
+  return (profiles || []).filter((u) => isActive(u) && u.role !== "pmo");
 }
 /** Detected test accounts (ids, sorted). Run on UNMASKED profiles (the email domain counts). */
 export function detectTestAccounts(profiles, assignments) {
+  const assigned = new Set((assignments || []).map((a) => a.user_id));
   return testAccountCandidatesOf(profiles, assignments)
+    .filter((u) => !assigned.has(u.id))
     .filter((u) => TEST_DOMAIN.test(str(u.email).split("@")[1] || "") || /test/i.test(str(u.username)) || /test/i.test(str(u.full_name)))
     .map((u) => u.id).sort(cmpStr);
 }
@@ -415,14 +419,14 @@ function usersOf(tables, ctx, compare, rejected) {
   const assignedUsers = new Set(assigns.map((a) => a.user_id));
   const confirmed = new Set(Array.isArray(ctx.testAccounts) ? ctx.testAccounts
     : detectTestAccounts(profiles, assigns));
-  const testIds = profiles.filter((u) => confirmed.has(u.id) && isActive(u) && !assignedUsers.has(u.id)).map((u) => u.id).sort(cmpStr);
+  const testIds = profiles.filter((u) => confirmed.has(u.id) && isActive(u) && u.role !== "pmo").map((u) => u.id).sort(cmpStr);
   const testSet = new Set(testIds);
   const projects = new Map((tables.projects || []).map((p) => [p.id, p]));
   const trailer = compare.trailer?.campus ?? null;
   const countOf = new Map();
   for (const a of assigns) countOf.set(a.user_id, (countOf.get(a.user_id) || 0) + 1);
   const eligible = profiles.map((u, i) => ({ u, i })).filter(({ u, i }) => {
-    if (u.role !== "project_manager" || !isActive(u) || !(countOf.get(u.id) > 0) || !str(u.full_name).trim()) return false;
+    if (u.role !== "project_manager" || !isActive(u) || testSet.has(u.id) || !(countOf.get(u.id) > 0) || !str(u.full_name).trim()) return false;
     if (trailer != null && assigns.some((a) => a.user_id === u.id && projects.get(a.project_id)?.campus === trailer)) return false;
     const prev = profiles[i - 1], next = profiles[i + 1];
     if ((prev && testSet.has(prev.id)) || (next && testSet.has(next.id))) return false;
@@ -473,6 +477,18 @@ const progressLabel = (r) => {
   if (/^in progress$/i.test(t)) return "In Progress";
   return t ? "Note" : "Not stated";
 };
+// A thread the scene may centre and light (storyboard M1: no third party, no informal letter on
+// the projector): its newest message is the manager's own short note, not a forwarded email or a
+// letter, and no message in it carried an email address or a phone number (snapshot.js has
+// replaced those with TEXT_MASK). A message whose text is not in the data (the simulation tab keeps
+// only the plan's thread) does not qualify, so both tabs choose the same thread.
+export const PAST_NOTE_MAX = 400;
+const LETTER_RE = /\bdear\b|\bregards\b|^\s*(from|sent|to|subject):/im;
+function threadFit(list) {
+  const b = list[0]?.body;
+  if (typeof b !== "string" || !b.trim() || b.length > PAST_NOTE_MAX || LETTER_RE.test(b)) return false;
+  return !list.some((m) => typeof m.body === "string" && (m.body.includes(TEXT_MASK.email) || m.body.includes(TEXT_MASK.phone)));
+}
 function pastPool(tables, now) {
   const rows = tables.past_project_summary || [];
   const msgs = groupBy(tables.past_project_updates || [], "past_project_id");
@@ -485,15 +501,22 @@ function pastPool(tables, now) {
     if (list.length < 3) continue;
     const newest = list[0], t = ms(newest.created_at);
     if (!r.pm_user_id || newest.author_id !== r.pm_user_id || t == null || now - t > 30 * DAY_MS) continue;
+    if (!threadFit(list)) continue;
     out.push({ r, list, newest });
   }
   out.sort((a, b) => (b.list.length - a.list.length) || newestFirst(a.newest, b.newest) || cmpStr(a.r.code, b.r.code) || cmpStr(a.r.id, b.r.id));
   return out;
 }
+/** The Past Projects search for a project (PastProjects.jsx list filter): the shortest of its name's
+ *  all-caps tokens (3-6 characters) and words of 4 or more letters that finds this row alone (ties:
+ *  first in the name), else its code. Short text is typed in a fraction of a second. */
 function pastSearchOf(r, rows) {
   const hay = rows.map((x) => `${x.code || ""} ${x.name || ""} ${x.reason_open || ""} ${x.campus || ""} ${x.pm_name || ""}`.toLowerCase());
-  for (const w of str(r.name).split(/\s+/).map((w) => w.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ""))) {
-    if (!/^[A-Za-z]{4,}$/.test(w)) continue;
+  const caps = tokensOf(r.name).filter((t) => /^[A-Z][A-Z0-9]{2,5}$/.test(t));
+  const words = str(r.name).split(/\s+/).map((w) => w.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, "")).filter((w) => /^[A-Za-z]{4,}$/.test(w));
+  const tries = [...new Set([...caps, ...words])].map((t, i) => ({ t, i, at: str(r.name).indexOf(t) }))
+    .sort((a, b) => a.t.length - b.t.length || a.at - b.at || a.i - b.i).map((x) => x.t);
+  for (const w of tries) {
     const q = w.toLowerCase();
     if (hay.filter((h) => h.includes(q)).length === 1) return w;
   }
@@ -562,6 +585,19 @@ function reportPool(tables) {
     .sort((a, b) => cmpStr(b.period, a.period) || cmpStr(b.created_at, a.created_at) || cmpStr(a.id, b.id));
   return { all, monthly, ordered: [...published, ...drafts] };
 }
+/** The headline tiles scene 18 would light, against today's dashboard, as printed: [{ tile, report, live }]
+ *  for every tile that differs (a draft's figures are frozen at its as-at time). */
+function reportDiffOf(r, pd) {
+  const h = r?.figures && typeof r.figures === "object" ? r.figures.headline : null;
+  if (!h || typeof h !== "object" || !pd || pd.total_capex == null) return [];
+  const capexPct = (rel, df) => (num(df) ? (num(rel) / num(df) * 100).toFixed(1) + "%" : "0.0%");
+  const pairs = [
+    ["Total CAPEX", `${fmtM(h.df_total)} · ${num(h.capex_count)} projects`, `${fmtM(pd.total_capex)} · ${num(pd.total_projects)} projects`],
+    ["Approved", fmtM(h.approved_bac), fmtM(pd.approved_total)],
+    ["Released", `${fmtM(h.released_total)} · ${capexPct(h.released_total, h.df_total)}`, `${fmtM(pd.budget_consumed)} · ${capexPct(pd.budget_consumed, pd.total_capex)}`],
+  ];
+  return pairs.filter(([, a, b]) => a !== b).map(([tile, report, live]) => ({ tile, report, live }));
+}
 function reportOf(tables, ctx, rejected) {
   const { all, monthly, ordered } = reportPool(tables);
   const ov = ctx.overrides || {};
@@ -577,8 +613,11 @@ function reportOf(tables, ctx, rejected) {
   const attentionNone = !!att && ["approved_nothing_released", "released_before_approval", "without_pm"]
     .every((k) => Array.isArray(att[k]) && att[k].length === 0);
   const asAtText = fmtDayReport(r.as_at);
+  // Stale: a lit tile would print another figure than the screens before it (one figure per run).
+  const diff = reportDiffOf(r, (tables.portfolio_dashboard || [])[0]);
   return { id: r.id, kind, month, year, asAtText, attentionNone, kicker: `${month} ${year} · ${kind} · figures as at ${asAtText}`,
-    variant: kind === "published" ? "published" : attentionNone ? "nothing" : "draft", monthly: monthly.length };
+    variant: kind === "published" ? "published" : attentionNone ? "nothing" : "draft", monthly: monthly.length,
+    stale: diff.length > 0, staleTiles: diff };
 }
 
 // Typed card texts with figures that may be out of date (shown on the Begin screen).

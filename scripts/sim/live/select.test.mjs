@@ -52,13 +52,13 @@ ok("baseline", () => {
   assert.deepEqual(p.assign, { campus: "East Campus", variant: "trio", total: 3, skippedClosed: 0, toAssign: 2, leftAlone: 1 });
   assert.deepEqual(p.users, { count: 7, testIds: [IDS.user(5)], testClause: "one", row: { userId: IDS.user(2), username: "pm.alpha", fullName: "Alpha Person", assigned: 4 } });
   assert.deepEqual(p.updates, { projectId: IDS.project(6), code: "SX-01", lastCommentId: IDS.comment(2), count: 2, threads: 2, variant: "pm" });
-  assert.deepEqual(p.past, { open: 2, noProgress: 1, id: IDS.past(1), code: "PX-01", messages: 4, lastMessageId: IDS.pastMsg(4), searchText: "Establishment", variant: "thread" });
+  assert.deepEqual(p.past, { open: 2, noProgress: 1, id: IDS.past(1), code: "PX-01", messages: 4, lastMessageId: IDS.pastMsg(4), searchText: "Studio", variant: "thread" });
   const g = p.gallery;
   assert.equal(g.total, 6); assert.equal(g.photos, 5); assert.equal(g.videos, 1); assert.equal(g.projectId, IDS.project(6)); assert.equal(g.campus, "South Campus");
   assert.equal(g.filteredCount, 3); assert.equal(g.onlyProject, true); assert.equal(g.variant, "subject"); assert.equal(g.alias, "Sports Court");
   assert.equal(g.firstPhotoId, IDS.att(11));
   assert.deepEqual(p.report, { id: IDS.report(2), kind: "draft", month: "February", year: 2031, asAtText: "5 Mar 2031", attentionNone: false,
-    kicker: "February 2031 · draft · figures as at 5 Mar 2031", variant: "draft", monthly: 1 });
+    kicker: "February 2031 · draft · figures as at 5 Mar 2031", variant: "draft", monthly: 1, stale: false, staleTiles: [] });
   assert.deepEqual(p.flags.typedTexts.map((x) => `${x.key}.${x.field}`), ["approved_projects.insight", "remaining_capex.sub"]);
   assert.deepEqual(p.flags.overrideRejected, []);
 });
@@ -206,7 +206,8 @@ ok("users", () => {
   let p = plan(T(), { testAccounts: [] }); assert.equal(p.users.testClause, "none"); assert.deepEqual(p.users.testIds, []);
   assert.equal(p.users.row.username, "pm.alpha");
   p = plan(T(), { testAccounts: [IDS.user(5), IDS.user(7)] }); assert.equal(p.users.testClause, "some");
-  p = plan(T(), { testAccounts: [IDS.user(2)] }); assert.deepEqual(p.users.testIds, [], "an account with assignments is never a test account");
+  p = plan(T(), { testAccounts: [IDS.user(2)] }); assert.deepEqual(p.users.testIds, [IDS.user(2)], "a ticked account with assignments counts as a test account");
+  assert.equal(p.users.testClause, "one"); assert.notEqual(p.users.row?.username, "pm.alpha", "a test account is never the named row");
   p = plan(T(), { overrides: { usersUserId: IDS.user(4) } }); assert.equal(p.users.row.username, "pm.alpha"); assert.deepEqual(p.flags.overrideRejected, ["usersUserId"]);
   p = plan(T(), { overrides: { usersUserId: IDS.user(3) } }); assert.equal(p.users.row.username, "pm.bravo");
   let t = T(); t.user_profiles[1].full_name = ""; assert.equal(plan(t).users.row.username, "pm.bravo", "a row without a full name is not named");
@@ -215,7 +216,8 @@ ok("users", () => {
   const pt = T(); pt.user_profiles[4].email = "someone@example.org"; pt.user_profiles[4].username = "pm.echo"; pt.user_profiles[4].full_name = "Echo";
   assert.deepEqual(detectTestAccounts(pt.user_profiles, pt.project_assignments), [IDS.user(5)], "test domain on an unmasked email");
   assert.deepEqual(detectTestAccounts(T().user_profiles, T().project_assignments), [IDS.user(5)], "test in the username");
-  assert.deepEqual(testAccountCandidatesOf(T().user_profiles, T().project_assignments).map((u) => u.id), [IDS.user(1), IDS.user(5), IDS.user(7)]);
+  assert.deepEqual(testAccountCandidatesOf(T().user_profiles, T().project_assignments).map((u) => u.id),
+    [IDS.user(2), IDS.user(3), IDS.user(4), IDS.user(5), IDS.user(6), IDS.user(7)], "every active account except the PMO's");
   p = selectPlan(T(), { ...syntheticCtx(), testAccounts: null }); assert.deepEqual(p.users.testIds, [IDS.user(5)], "no list: detected");
 });
 
@@ -228,6 +230,23 @@ ok("updates", () => {
   p = plan(t, { overrides: { updatesProjectId: IDS.project(10) } }); assert.deepEqual(p.flags.overrideRejected, ["updatesProjectId"]);
 });
 
+ok("report: stale when a lit tile would print another figure than today's dashboard", () => {
+  const t = T();
+  const pd = t.portfolio_dashboard[0];
+  pd.approved_total = 41.25e6;
+  const r = t.board_reports.find((x) => x.id === IDS.report(2));
+  const headline = { df_total: pd.total_capex, capex_count: pd.total_projects, approved_bac: pd.approved_total, released_total: pd.budget_consumed };
+  r.figures = { ...r.figures, headline };
+  assert.equal(plan(t).report.stale, false, "same figures: the tiles are lit");
+  r.figures = { ...r.figures, headline: { ...headline, approved_bac: headline.approved_bac + 20000 } };
+  assert.equal(plan(t).report.stale, false, "a difference that prints the same is not stale");
+  r.figures = { ...r.figures, headline: { ...headline, released_total: headline.released_total - 7.9e6 } };
+  const p = plan(t).report;
+  assert.equal(p.stale, true);
+  assert.deepEqual(p.staleTiles.map((x) => x.tile), ["Released"]);
+  assert.ok(p.staleTiles[0].report !== p.staleTiles[0].live);
+});
+
 ok("past", () => {
   let t = T(); t.past_project_updates.push({ id: "pm9", past_project_id: IDS.past(1), author_id: IDS.user(1), created_at: "2031-03-08T10:00:00Z" });
   assert.equal(plan(t).past.variant, "nothread", "the newest message is not the manager's");
@@ -237,6 +256,27 @@ ok("past", () => {
   t = T(); t.past_project_summary.push({ ...t.past_project_summary[0], id: "p9", code: "PX-09", name: "Studio Establishment works" });
   assert.equal(plan(t).past.searchText, "PX-01", "every word is found twice: the code is typed");
   let q = plan(T(), { overrides: { pastId: IDS.past(2) } }); assert.deepEqual(q.flags.overrideRejected, ["pastId"]);
+  // The search: the shortest name word or all-caps token that finds the row alone.
+  t = T(); t.past_project_summary[0].name = "Establishment of the QSX Studio"; assert.equal(plan(t).past.searchText, "QSX", "a short all-caps token first");
+  // Only a thread whose newest message is the manager's own short note, with no contact detail anywhere (M1).
+  const newest = (tt) => tt.past_project_updates.find((m) => m.id === IDS.pastMsg(4));
+  t = T(); newest(t).body = "x".repeat(401); assert.equal(plan(t).past.variant, "nothread", "a newest message over 400 characters");
+  t = T(); newest(t).body = "x".repeat(400); assert.equal(plan(t).past.variant, "thread", "400 characters is still a note");
+  for (const letter of ["Dear Sir, the items are missing.", "Done. Regards", "From: someone\nSubject: delivery"]) {
+    t = T(); newest(t).body = letter; assert.equal(plan(t).past.variant, "nothread", `a forwarded email or letter: ${letter.slice(0, 12)}`);
+  }
+  t = T(); t.past_project_updates[0].body = "Call me on (phone hidden)."; assert.equal(plan(t).past.variant, "nothread", "a masked phone in an older message");
+  t = T(); newest(t).body = "Write to (email hidden)."; assert.equal(plan(t).past.variant, "nothread", "a masked email");
+  t = T(); newest(t).body = null; assert.equal(plan(t).past.variant, "nothread", "a newest message without its text (the simulation tab's other threads)");
+  t = T(); newest(t).body = "   "; assert.equal(plan(t).past.variant, "nothread", "an empty newest message");
+  // Both tabs choose the same thread: with only the chosen thread's text kept, the plan is unchanged.
+  t = T(); t.past_project_summary.push({ ...t.past_project_summary[0], id: "p8", code: "PX-08", name: "Glazing of Vault" });
+  for (let i = 0; i < 5; i++) t.past_project_updates.push({ id: `p8m${i}`, past_project_id: "p8", author_id: IDS.user(2), created_at: `2031-03-0${i + 1}T11:00:00Z`, body: i === 4 ? "Dear Sir, please see the forwarded email." : "Note." });
+  const full = plan(t);
+  assert.equal(full.past.id, IDS.past(1), "the longer thread is passed over for its letter");
+  const trimmed = structuredClone(t);
+  for (const m of trimmed.past_project_updates) if (m.past_project_id !== full.past.id) m.body = null;
+  assert.deepEqual(plan(trimmed).past, full.past, "the simulation tab's trimmed bodies give the same choice");
 });
 
 ok("gallery", () => {

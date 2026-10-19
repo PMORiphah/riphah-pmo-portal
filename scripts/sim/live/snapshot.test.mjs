@@ -28,7 +28,7 @@ await test("test-account detection: no assignment and a test-looking address or 
   ];
   const assignments = [{ user_id: "u6", project_id: "p1" }];
   assert.deepEqual(detectTestAccounts(profiles, assignments), ["u1", "u3", "u4"]);
-  assert.deepEqual(testAccountCandidates(profiles, assignments).map((u) => u.id), ["u1", "u2", "u3", "u4"]);
+  assert.deepEqual(testAccountCandidates(profiles, assignments).map((u) => u.id), ["u1", "u2", "u3", "u4", "u6"], "any active account may be ticked");
 });
 
 await test("deliverables rule: CAPEX and (approved PDD link or a PDD/EPDD/charter file)", () => {
@@ -55,6 +55,30 @@ await test("masking is idempotent and drops unlisted columns at every level", ()
   assert.equal(embedded.body, null);
   assert.deepEqual(embedded.user_profiles, { role: "pmo", email: MASK.email });
   assert.equal(sanitizeRow("comments", { id: "c1", body: "kept" }, ctx).body, "kept");
+});
+
+await test("contact details inside free text are replaced; amounts, dates, codes and file names are not", () => {
+  const ctx = { mediaKey: new Map(), threads: { comments: new Set(["c1"]), past_project_updates: new Set(["m1"]) }, reportId: "r1" };
+  const body = "Call 0300-1234567, +92 51 1234567 or 00923001234567 and write to some.one@site.example.org. PO 4500012345, PKR 2,345,600 on 2026-10-15 (XX.000000-01).";
+  const want = "Call (phone hidden), (phone hidden) or (phone hidden) and write to (email hidden). PO 4500012345, PKR 2,345,600 on 2026-10-15 (XX.000000-01).";
+  assert.equal(sanitizeRow("comments", { id: "c1", body }, ctx).body, want);
+  assert.equal(sanitizeRow("past_project_updates", { id: "m1", body }, ctx).body, want);
+  assert.equal(sanitizeRow("projects", { id: "p1", notes: body }, ctx).notes, want);
+  assert.equal(sanitizeRow("past_project_summary", { id: "p2", notes: body, reason_open: "Call 051-1234567" }, ctx).reason_open, "Call (phone hidden)");
+  assert.equal(sanitizeRow("projects", { id: "p3", name: "Lab 0300-1234567" }, ctx).name, "Lab 0300-1234567", "only free-text columns");
+  assert.equal(sanitizeRow("project_attachments", { id: "a1", file_name: "IMG_03001234567.jpg" }, ctx).file_name, "IMG_03001234567.jpg");
+  assert.equal(sanitizeRow("comments", { id: "c1", body: want }, ctx).body, want, "idempotent");
+});
+
+await test("report figures leave out the top risks' mitigation texts", () => {
+  const ctx = { mediaKey: new Map(), threads: { comments: new Set(), past_project_updates: new Set() }, reportId: "r1" };
+  const figures = { headline: { df_total: 1 }, risks: { open: 2, top: [{ title: "a", mitigation: "do x" }, { title: "b", mitigation: null }] } };
+  const out = sanitizeRow("board_reports", { id: "r1", figures }, ctx).figures;
+  assert.deepEqual(out.risks.top.map((r) => r.mitigation), [null, null]);
+  assert.deepEqual(out.risks.top.map((r) => r.title), ["a", "b"]);
+  assert.equal(out.headline.df_total, 1);
+  assert.equal(figures.risks.top[0].mitigation, "do x", "the input is not changed");
+  assert.equal(sanitizeRow("board_reports", { id: "r2", figures }, ctx).figures, null);
 });
 
 await test("media keys: uploaded_at desc, then id asc; m001, m002 …", () => {
@@ -289,7 +313,8 @@ await test("unmasked contacts from the server are masked before anything else se
   }
   // detection ran on the unmasked rows: every unassigned active account now has an example.com address
   const pv = await readSnapshot({ get: g.get, pmo, now, preview: true });
-  assert.deepEqual(pv.testAccountsDetected, pv.testAccountCandidates.map((c) => c.id).sort());
+  const assigned = new Set((pv.tables.project_assignments || []).map((a) => a.user_id));
+  assert.deepEqual(pv.testAccountsDetected, pv.testAccountCandidates.filter((c) => !assigned.has(c.id)).map((c) => c.id).sort());
 });
 
 await test("an override outside the rule is not applied", async () => {

@@ -106,7 +106,9 @@ const walk = (p) => { const full = join(REPO, p); const st = statSync(full); if 
 let hits = 0, files = 0;
 const seen = new Set();
 const isSimFile = (rel) => SIM_PATHS.some((s) => rel === s || rel.startsWith(s + "/")) || rel.startsWith("dist-preview/sim")
-  || /^dist-preview\/(simulation\.html|sim-boot\.js)$/.test(rel) || /^preview\/(sim\/|simulation\.html|sim-boot\.js)/.test(rel);
+  || /^dist-preview\/(simulation\.html|sim-boot\.js)$/.test(rel) || /^preview\/(sim\/|simulation\.html|sim-boot\.js)/.test(rel)
+  // The simulation's own built chunks (campus names are checked there too).
+  || /^(dist-preview|preview)\/assets\/(SimRoot|SimLauncher|backend|validate|build|simBridge|handoff|scenes|select|snapshot)-[\w-]+\.js$/.test(rel);
 function scanText(where, text, sim, raw) {
   for (const [re, kind, arr] of [[nameRe, "name", N], [sim ? campusRe : null, "campus", C]]) {
     if (!re) continue;

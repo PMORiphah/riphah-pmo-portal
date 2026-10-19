@@ -3,13 +3,13 @@
 // no data, no names. Also runs in Node (scripts/sim/live/snapshot.test.mjs) over a private fixture.
 //
 // readSnapshot() reads the allow-listed tables (schema.js) through an injected GET, masks contact
-// details, drops every column the allow-list does not name, works out the deliverables RPC answer
+// details (profile columns, and email addresses and phone numbers inside free text), drops every column the allow-list does not name, works out the deliverables RPC answer
 // locally, removes the site-visit items the PMO left out (or that could not be prepared), chooses
 // the scenes' subjects (select.js), records the toured screens' responses (requests.js), trims
 // message bodies and report figures to the plan's own rows, checks the invariants, fingerprints
 // the result and validates it exactly as the simulation tab will. Nothing here writes anywhere:
 // `get` is GET /rest/v1/... only, and the module never calls an RPC.
-import { TABLES, MASK, CAPS, columnsOf, tablePath } from "./schema.js";
+import { TABLES, MASK, CAPS, columnsOf, tablePath, scrubContacts, isTextColumn } from "./schema.js";
 import { TEMPLATES, keyOf, fill } from "./requests.js";
 import { selectPlan, candidatesOf, detectTestAccounts, testAccountCandidatesOf } from "./select.js";
 import { invariants as invariantsOf, validateSnapshot } from "./validate.js";
@@ -95,9 +95,16 @@ function baseRow(table, row) {
     const v = row[name];
     if (c.policy === "mask") out[name] = v == null || v === "" ? v : MASK[name];
     else if (c.policy === "null") out[name] = null;
-    else out[name] = v;
+    else out[name] = isTextColumn(c) ? scrubContacts(v) : v;
   }
   return out;
+}
+
+/** A report's figures without the top risks' mitigation texts (mitigation_plan has the null policy). */
+export function figuresWithoutMitigation(v) {
+  const top = v && typeof v === "object" ? v.risks?.top : null;
+  if (!Array.isArray(top) || !top.some((r) => r && typeof r === "object" && r.mitigation != null)) return v;
+  return { ...v, risks: { ...v.risks, top: top.map((r) => (r && typeof r === "object" ? { ...r, mitigation: null } : r)) } };
 }
 
 /** The plan-dependent policies. `ctx` = { mediaKey: Map(id → key), threads: { comments: Set, past_project_updates: Set }, reportId }. */
@@ -107,8 +114,8 @@ function planValue(table, name, policy, row, v, ctx) {
     const key = ctx.mediaKey.get(row.id);
     return key ? "sim-media/" + key : "sim-unavailable/" + row.id;
   }
-  if (policy === "body") return row.id != null && ctx.threads[table]?.has(row.id) ? v : null;
-  if (policy === "figures") return ctx.reportId != null && row.id === ctx.reportId ? v : null;
+  if (policy === "body") return row.id != null && ctx.threads[table]?.has(row.id) ? scrubContacts(v) : null;
+  if (policy === "figures") return ctx.reportId != null && row.id === ctx.reportId ? figuresWithoutMitigation(v) : null;
   return v;
 }
 
@@ -140,7 +147,7 @@ export function sanitizeRow(table, row, ctx, embeds = {}, prefix = "") {
     if (!c) continue;
     if (c.policy === "mask") out[k] = v == null || v === "" ? v : MASK[k];
     else if (c.policy === "null") out[k] = null;
-    else out[k] = planValue(table, k, c.policy, row, v, ctx);
+    else out[k] = planValue(table, k, c.policy, row, isTextColumn(c) ? scrubContacts(v) : v, ctx);
   }
   return out;
 }

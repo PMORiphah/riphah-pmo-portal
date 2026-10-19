@@ -31,6 +31,12 @@ function Row({ status, label, detail }) {
   );
 }
 
+// The screen's background, also painted (fixed to the screen) behind the sticky footer, so the footer
+// has no visible edge against it.
+const VEIL_BG = `radial-gradient(1100px 620px at 18% -8%, #18406A 0%, rgba(24,64,106,0) 60%),
+  radial-gradient(900px 520px at 100% 110%, rgba(216,152,64,.16) 0%, rgba(216,152,64,0) 55%), ${NAVY}`;
+const FOOT_MASK = "linear-gradient(180deg, transparent, #000 28%)";
+
 const label = { fontSize: 10.5, letterSpacing: ".18em", textTransform: "uppercase", color: GOLD, fontWeight: 700, marginBottom: 10 };
 const panel = { padding: "16px 18px", borderRadius: 14, border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.035)" };
 const ghost = { display: "inline-flex", alignItems: "center", gap: 7, height: 34, padding: "0 13px", borderRadius: 9,
@@ -50,17 +56,25 @@ function Notice({ tone = "info", children }) {
 export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
   const startRef = useRef(null);
   const [showLines, setShowLines] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const d = data;
   const ready = !!d.startable;
   useEffect(() => { if (ready) startRef.current?.focus({ preventScroll: true }); }, [ready]);
   const v = voice;
   const reh = d.rehearsal;
+  // Once Start is ready and nothing failed, the rehearsal checks and the presenter's notes fold into one
+  // line (the screen may already be on the projector); a failure keeps them open.
+  const anyBad = d.checks.some((c) => c.status === "fail") || (reh?.notes || []).some((t) => t.tone === "bad")
+    || d.notices.some((t) => t.tone === "bad");
+  const folded = ready && !anyBad && !showDetails;
+  const nNotes = d.notices.length + (reh?.notes || []).length;
+  const nWarn = d.checks.filter((c) => c.status === "warn").length;
+  const rehDetail = d.checks.find((c) => c.key === "rehearsal")?.detail || "";
   return (
-    <div data-sim-ui="begin" style={{
-      position: "fixed", inset: 0, zIndex: Z.veil, overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center",
+    <div data-sim-ui="begin" onKeyDown={(e) => e.stopPropagation()} style={{
+      position: "fixed", inset: 0, zIndex: Z.veil, overflow: "auto", overflowX: "hidden", display: "flex", alignItems: "flex-start", justifyContent: "center",
       padding: "40px 16px", fontFamily: SANS, color: INK, boxSizing: "border-box",
-      background: `radial-gradient(1100px 620px at 18% -8%, #18406A 0%, rgba(24,64,106,0) 60%),
-        radial-gradient(900px 520px at 100% 110%, rgba(216,152,64,.16) 0%, rgba(216,152,64,0) 55%), ${NAVY}`,
+      background: VEIL_BG,
       opacity: leaving ? 0 : 1, transition: "opacity .6s ease", pointerEvents: leaving ? "none" : "auto",
     }}>
       <div style={{ width: "100%", maxWidth: 900, margin: "auto 0", animation: `simDirIn .5s ${EASE} both` }}>
@@ -107,7 +121,8 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
               <div data-sim-ui="projected" style={{ marginTop: 12, fontSize: 12.5, color: INK_SOFT, lineHeight: 1.6 }}>
                 {d.projected
                   ? <>Projected <b style={{ color: INK }}>{fmtClock(d.projected.at135)}</b> at 135 wpm · {fmtClock(d.projected.at150)} at 150 wpm · limit {fmtClock(LIMIT)}
-                    {d.projected.voice && <> · <b style={{ color: INK }}>{fmtClock(d.projected.voice.total)}</b> with this voice ({d.projected.voice.wpm} wpm)</>}</>
+                    {d.projected.voice && <> · <b style={{ color: INK }}>{fmtClock(d.projected.voice.total)}</b> with this voice ({d.projected.voice.wpm} wpm
+                      {d.projected.voice.short ? `; ${d.projected.voice.short} scene${d.projected.voice.short === 1 ? "" : "s"} on short lines` : ""})</>}</>
                   : "Projected time: after the rehearsal."}
               </div>
               <div style={{ marginTop: 8, fontSize: 11.5, color: INK_DIM, lineHeight: 1.6 }}>
@@ -115,17 +130,40 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
               </div>
             </div>
 
-            <div style={panel}>
-              <div style={label}>Rehearsal</div>
-              <div data-sim-ui="rehearsal" role="list">
-                {d.checks.map((c) => <Row key={c.key} status={c.status} label={c.label} detail={c.detail} />)}
+            {folded ? (
+              <div style={{ ...panel, padding: "12px 18px" }}>
+                <button type="button" className="sim-dir-btn" data-sim-ui="details-toggle" aria-expanded={false} onClick={() => setShowDetails(true)}
+                  style={{ ...ghost, border: "none", padding: 0, height: "auto", minHeight: 28, textAlign: "left", whiteSpace: "normal", lineHeight: 1.5 }}>
+                  <Check size={14} color="#3FD3B1" style={{ flexShrink: 0 }} />
+                  <span>
+                    Ready · {rehDetail}
+                    {nNotes > 0 && <span style={{ color: GOLD_SOFT }}> · {nNotes} note{nNotes === 1 ? "" : "s"} for the presenter</span>}
+                    {nWarn > 0 && <span style={{ color: GOLD_SOFT }}> · {nWarn} check{nWarn === 1 ? "" : "s"} to look at</span>}
+                  </span>
+                  <ChevronDown size={14} style={{ flexShrink: 0, transform: "rotate(-90deg)" }} />
+                </button>
               </div>
-              {reh && reh.notes.length > 0 && (
-                <div style={{ marginTop: 8, display: "grid", gap: 2 }}>
-                  {reh.notes.map((t, i) => <Notice key={i} tone={t.tone}>{t.text}</Notice>)}
+            ) : (
+              <div style={panel}>
+                <div style={{ ...label, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  Rehearsal
+                  {showDetails && (
+                    <button type="button" className="sim-dir-btn" data-sim-ui="details-toggle" aria-expanded onClick={() => setShowDetails(false)}
+                      style={{ ...ghost, border: "none", padding: 0, height: 20, fontSize: 11.5, color: INK_SOFT, letterSpacing: 0, textTransform: "none" }}>
+                      Fold <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
+                <div data-sim-ui="rehearsal" role="list">
+                  {d.checks.map((c) => <Row key={c.key} status={c.status} label={c.label} detail={c.detail} />)}
+                </div>
+                {reh && reh.notes.length > 0 && (
+                  <div style={{ marginTop: 8, display: "grid", gap: 2 }}>
+                    {reh.notes.map((t, i) => <Notice key={i} tone={t.tone}>{t.text}</Notice>)}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
@@ -183,7 +221,7 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
               )}
             </div>
 
-            {d.notices.length > 0 && (
+            {!folded && d.notices.length > 0 && (
               <div style={panel} data-sim-ui="notices">
                 <div style={label}>For the presenter</div>
                 <div style={{ display: "grid", gap: 2 }}>
@@ -212,9 +250,15 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
           )}
         </div>
 
-        {/* Start stays in view on a short screen: the footer sticks to the bottom of the page. */}
+        {/* Start stays in view on a short screen: the footer sticks to the bottom of the page. Its band
+            runs the full width of the screen and is the screen's own background (fixed), faded in at the
+            top, so it shows no edge at the column or against the background glow. */}
         <div style={{ position: "sticky", bottom: -40, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12,
-          marginTop: 10, flexWrap: "wrap", padding: "14px 0 54px", background: `linear-gradient(180deg, rgba(10,26,46,0), ${NAVY} 28%)` }}>
+          marginTop: 10, flexWrap: "wrap", padding: "14px 0 54px",
+          marginLeft: "calc(50% - 50vw)", marginRight: "calc(50% - 50vw)",
+          paddingLeft: "max(16px, calc(50vw - 450px))", paddingRight: "max(16px, calc(50vw - 450px))" }}>
+          <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, pointerEvents: "none",
+            background: VEIL_BG, backgroundAttachment: "fixed", WebkitMaskImage: FOOT_MASK, maskImage: FOOT_MASK }} />
           <button type="button" className="sim-dir-btn" data-sim-refresh="" onClick={onRefresh} disabled={d.refreshing || !d.canRefresh} style={ghost}>
             <RefreshCw size={14} style={d.refreshing ? { animation: "simDirSpin .9s linear infinite" } : null} />
             {d.refreshing ? "Reading the portal again…" : "Refresh data"}

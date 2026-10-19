@@ -16,6 +16,8 @@
  *       official report") and names the file SIMULATION_...;
  *   (h) points the portal's Google Fonts link at the self-hosted copy in sim/fonts/;
  *   (i) publishes window.__PMO_SIM__ (frozen);
+ *   (k) refuses frames, objects and embeds (an about:blank frame would have the browser's own APIs);
+ *   (l) turns off IndexedDB, Cache Storage and cookies (they would persist on the portal's origin);
  *   (j) self-tests, and fails closed: on any failure the app is never loaded.
  * The clock is the computer's own (the data is live; its read time is shown on screen).
  * Only after every check passes does it write the app's module script into the page (its URL comes
@@ -643,6 +645,115 @@
     probe.href = 'https://fonts.googleapis.com/css2?family=Inter';
     fixInserted(null, probe);
     check('fonts', probe.getAttribute('href') === FONTS_CSS);
+  });
+
+  // ── (k) no frames: an about:blank frame (which the policy's frame-src does not stop) would have ─
+  // the browser's own storage and window.open, outside every guard above. Creating or inserting a
+  // frame, object or embed is refused (also through markup), one that still reaches the page is
+  // removed at once, and their window and document read as null. The portal shows none on the
+  // screens the simulation visits.
+  var FRAME_TAG = /^(iframe|frame|object|embed|portal|fencedframe)$/i;
+  var FRAME_SEL = 'iframe,frame,object,embed,portal,fencedframe';
+  var FRAME_MARKUP = /<\s*(iframe|frame|object|embed|portal|fencedframe)\b/i;
+  function refuseFrame() { throw new DOMException('Frames are not available in the simulation', 'NotSupportedError'); }
+  function hasFrame(n) {
+    if (!n || (n.nodeType !== 1 && n.nodeType !== 11)) return false;
+    if (n.nodeType === 1 && FRAME_TAG.test(String(n.localName || n.tagName || ''))) return true;
+    return !!(n.querySelector && n.querySelector(FRAME_SEL));
+  }
+  attempt('frames', function () {
+    var DP = Document.prototype, NP = Node.prototype, EP = Element.prototype;
+    var ce = DP.createElement, cens = DP.createElementNS;
+    DP.createElement = function createElement(tag) { if (FRAME_TAG.test(String(tag))) refuseFrame(); return ce.apply(this, arguments); };
+    DP.createElementNS = function createElementNS(ns, tag) { if (FRAME_TAG.test(String(tag).split(':').pop())) refuseFrame(); return cens.apply(this, arguments); };
+    var ac = NP.appendChild, ib = NP.insertBefore, rc = NP.replaceChild;
+    NP.appendChild = function appendChild(n) { if (hasFrame(n)) refuseFrame(); return ac.call(this, n); };
+    NP.insertBefore = function insertBefore(n, r) { if (hasFrame(n)) refuseFrame(); return ib.call(this, n, r); };
+    NP.replaceChild = function replaceChild(n, o) { if (hasFrame(n)) refuseFrame(); return rc.call(this, n, o); };
+    [EP, W.DocumentFragment && DocumentFragment.prototype, DP, W.CharacterData && CharacterData.prototype].forEach(function (proto) {
+      if (!proto) return;
+      ['append', 'prepend', 'before', 'after', 'replaceWith', 'replaceChildren'].forEach(function (k) {
+        if (!Object.prototype.hasOwnProperty.call(proto, k) || typeof proto[k] !== 'function') return;
+        var f = proto[k];
+        proto[k] = function () { for (var i = 0; i < arguments.length; i++) if (hasFrame(arguments[i])) refuseFrame(); return f.apply(this, arguments); };
+      });
+    });
+    // Markup: innerHTML, outerHTML, insertAdjacentHTML, setHTMLUnsafe, createContextualFragment, document.write.
+    var markupOk = function (h) { if (FRAME_MARKUP.test(String(h))) refuseFrame(); };
+    [[EP, 'innerHTML'], [EP, 'outerHTML'], [W.ShadowRoot && ShadowRoot.prototype, 'innerHTML']].forEach(function (pair) {
+      var proto = pair[0], name = pair[1];
+      var d = proto && Object.getOwnPropertyDescriptor(proto, name);
+      if (!d || !d.set) return;
+      Object.defineProperty(proto, name, { configurable: true, enumerable: d.enumerable, get: d.get,
+        set: function (h) { markupOk(h); return d.set.call(this, h); } });
+    });
+    var iah = EP.insertAdjacentHTML;
+    if (iah) EP.insertAdjacentHTML = function insertAdjacentHTML(pos, h) { markupOk(h); return iah.call(this, pos, h); };
+    [EP, W.ShadowRoot && ShadowRoot.prototype].forEach(function (proto) {
+      ['setHTMLUnsafe', 'setHTML'].forEach(function (k) {
+        if (!proto || typeof proto[k] !== 'function') return;
+        var f = proto[k];
+        proto[k] = function (h) { markupOk(h); return f.apply(this, arguments); };
+      });
+    });
+    if (W.Range && Range.prototype.createContextualFragment) {
+      var ccf = Range.prototype.createContextualFragment;
+      Range.prototype.createContextualFragment = function createContextualFragment(h) { markupOk(h); return ccf.call(this, h); };
+    }
+    ['write', 'writeln'].forEach(function (k) {
+      var f = DP[k];
+      if (typeof f === 'function') DP[k] = function () { for (var i = 0; i < arguments.length; i++) markupOk(arguments[i]); return f.apply(this, arguments); };
+    });
+    [W.HTMLIFrameElement, W.HTMLFrameElement, W.HTMLObjectElement, W.HTMLEmbedElement].forEach(function (C) {
+      if (!C) return;
+      ['contentWindow', 'contentDocument'].forEach(function (p) {
+        if (p in C.prototype) Object.defineProperty(C.prototype, p, { configurable: true, enumerable: true, get: function () { return null; } });
+      });
+      if (typeof C.prototype.getSVGDocument === 'function') C.prototype.getSVGDocument = function () { return null; };
+    });
+    // Anything that still gets in (another path) is taken out as soon as it is seen.
+    if (W.MutationObserver) {
+      new MutationObserver(function (list) {
+        list.forEach(function (m) {
+          Array.prototype.forEach.call(m.addedNodes || [], function (n) {
+            if (n.nodeType !== 1) return;
+            var found = FRAME_TAG.test(String(n.localName || '')) ? [n] : Array.prototype.slice.call(n.querySelectorAll ? n.querySelectorAll(FRAME_SEL) : []);
+            found.forEach(function (f) { try { f.remove(); } catch (e) { /* ignore */ } });
+          });
+        });
+      }).observe(D.documentElement, { childList: true, subtree: true });
+    }
+    // Probes: creating one, inserting one built elsewhere, and markup with one are all refused.
+    var refused = function (fn) { try { fn(); return false; } catch (e) { return true; } };
+    var tpl = ce.call(D, 'template');
+    tpl.innerHTML = '';
+    var inertFrame = (new DOMParser()).parseFromString('<iframe></iframe>', 'text/html').querySelector('iframe');
+    check('frames', refused(function () { D.createElement('iframe'); }) && refused(function () { D.createElement('OBJECT'); })
+      && refused(function () { D.createElementNS('http://www.w3.org/1999/xhtml', 'embed'); })
+      && refused(function () { D.createDocumentFragment().appendChild(inertFrame); })
+      && refused(function () { tpl.innerHTML = '<iframe></iframe>'; })
+      && (!W.HTMLIFrameElement || inertFrame.contentWindow === null));
+  });
+
+  // ── (l) IndexedDB, Cache Storage and cookies: these would persist on the portal's own origin ──
+  attempt('persist', function () {
+    var off = function () { return new DOMException('Not available in the simulation', 'SecurityError'); };
+    if (W.IDBFactory) {
+      var IF = IDBFactory.prototype;
+      ['open', 'deleteDatabase', 'cmp'].forEach(function (k) { if (typeof IF[k] === 'function') IF[k] = function () { throw off(); }; });
+      if (typeof IF.databases === 'function') IF.databases = function () { return Promise.resolve([]); };
+    }
+    if (W.CacheStorage) {
+      var CS = CacheStorage.prototype;
+      ['open', 'match', 'has', 'keys', 'delete'].forEach(function (k) { if (typeof CS[k] === 'function') CS[k] = function () { return Promise.reject(off()); }; });
+    }
+    ['indexedDB', 'caches', 'cookieStore'].forEach(function (k) {
+      try { Object.defineProperty(W, k, { configurable: true, enumerable: true, get: function () { return undefined; } }); } catch (e) { /* checked below */ }
+    });
+    var cd = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+    if (cd) Object.defineProperty(Document.prototype, 'cookie', { configurable: true, enumerable: cd.enumerable, get: function () { return ''; }, set: function () {} });
+    D.cookie = '__pmo_sim_probe=1';
+    check('persist', D.cookie === '' && W.indexedDB === undefined && W.caches === undefined && W.cookieStore === undefined);
   });
 
   // ── (j) self-tests: the policy must be the first thing in <head>, and this the script running ─

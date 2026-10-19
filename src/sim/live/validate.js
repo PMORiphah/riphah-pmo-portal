@@ -13,7 +13,7 @@
 //
 // Codes: protocol, build, schema, type, size, key, secret, mask, response, media, invariant,
 // fingerprint, plan, stale.
-import { TABLES, MASK, SETTINGS_KEYS, CAPS, columnsOf, keysOf } from "./schema.js";
+import { TABLES, MASK, SETTINGS_KEYS, CAPS, columnsOf, keysOf, hasContact, isTextColumn } from "./schema.js";
 import { TEMPLATES, keyOf, fill } from "./requests.js";
 import { canon, fingerprintOf, sha256Hex } from "./canon.js";
 import { selectPlan } from "./select.js";
@@ -206,11 +206,15 @@ export function freshness(takenAt, now = Date.now()) {
   else if (ageMs / 60000 > FRESH.maxMin) { state = "refused"; reason = "age"; }
   else if (pktDay(takenAt) !== pktDay(now) || utcDay(takenAt) !== utcDay(now)) { state = "refused"; reason = "day"; }
   else if (ageMs / 60000 >= FRESH.amberMin) state = "amber";
+  // A refused age is rounded up (60.01 min is "61 min old"), and a read on an earlier day says so.
+  const oldMin = Math.ceil(ageMs / 60000);
+  const readWhen = pktDay(takenAt) === pktDay(now) ? `read ${readAt} PKT`
+    : pktDay(takenAt) === pktDay(now - 86400000) ? `read yesterday at ${readAt} PKT` : `read on ${pktDay(takenAt)} at ${readAt} PKT`;
   const text = state === "ok" ? ""
     : state === "amber" ? `Data read ${ageMin} min ago · Refresh data`
-      : reason === "day" ? `Live data was read before the day changed (read ${readAt} PKT). Press Refresh data.`
+      : reason === "day" ? `Live data was read before the day changed (${readWhen}). Press Refresh data.`
         : reason === "future" ? `The data read is timed after this computer's clock (read ${readAt} PKT). Press Refresh data.`
-          : `Live data is ${ageMin} min old (read ${readAt} PKT). Press Refresh data.`;
+          : `Live data is ${oldMin < 120 ? `${oldMin} min` : `${Math.floor(oldMin / 60)} hours`} old (${readWhen}). Press Refresh data.`;
   return { state, ageMin, readAt, reason, text };
 }
 
@@ -369,6 +373,8 @@ function checkRow(table, row, pc, { embeds = null, prefix = "", full = false, wh
     const v = row[k];
     if (v === undefined) bad("type", `${table}.${k}`);
     if (v !== null) checkType(table, c, v);
+    // Free text never carries an email address or a phone number (snapshot.js replaces them).
+    if (isTextColumn(c) && hasContact(v)) bad("mask", `${table}.${k} holds a contact detail`);
     switch (c.policy) {
       case "mask":
         if (v !== null && v !== "" && v !== MASK[k]) bad("mask", `${table}.${k} is not hidden`);
@@ -383,6 +389,8 @@ function checkRow(table, row, pc, { embeds = null, prefix = "", full = false, wh
         if (v !== null) {
           if (pc.reportId == null || row.id !== pc.reportId) bad("schema", `${table}.${k} outside the plan's report`);
           if (jsonLen(v) > CAPS.figuresJson) bad("size", `${table}.${k}`);
+          const top = v && typeof v === "object" ? v.risks?.top : null;
+          if (Array.isArray(top) && top.some((r) => r && typeof r === "object" && r.mitigation != null)) bad("schema", `${table}.${k}: risk mitigation must be empty`);
         }
         break;
       case "path": {

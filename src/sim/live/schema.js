@@ -13,8 +13,33 @@
 //          path    project_attachments.file_path rewrite (site_visit → "sim-media/<key>", else "sim-unavailable/<id>")
 //          body    kept only on rows of the plan's thread (comments: plan.updates.projectId;
 //                  past_project_updates: plan.past.id), else null
-//          figures kept only on plan.report.id, else null
+//          figures kept only on plan.report.id, else null; the top risks' mitigation texts are
+//                  emptied (mitigation_plan has the null policy)
+//   free text (TEXT_COLUMNS): email addresses and phone numbers inside it become TEXT_MASK
 export const MASK = Object.freeze({ email: "hidden for the presentation", phone: "hidden" });
+
+// Contact details inside free text (message bodies, notes): replaced in the portal tab before the
+// plan is worked out (snapshot.js), refused by validate.js if one is left. Email addresses, numbers
+// dialled with + or 00, and national numbers of 10-11 digits (0300-1234567, 051-1234567).
+export const TEXT_MASK = Object.freeze({ email: "(email hidden)", phone: "(phone hidden)" });
+export const TEXT_COLUMNS = Object.freeze(["body", "notes", "note", "reason_open"]);
+const EMAIL_IN_TEXT = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+const PHONE_IN_TEXT = /(?:\+|\b00)\d[\d\s().-]{7,}\d|\b0\d{2,3}[\s-]?\d{7,8}\b|\b03\d{2}[\s-]\d{3}[\s-]?\d{4}\b/g;
+/** The text with every email address and phone number replaced by TEXT_MASK. */
+export function scrubContacts(s) {
+  if (typeof s !== "string" || !s) return s;
+  return s.replace(EMAIL_IN_TEXT, TEXT_MASK.email).replace(PHONE_IN_TEXT, TEXT_MASK.phone);
+}
+/** True when the text still holds an email address or a phone number. */
+export function hasContact(s) {
+  if (typeof s !== "string" || !s) return false;
+  EMAIL_IN_TEXT.lastIndex = 0; PHONE_IN_TEXT.lastIndex = 0;
+  const hit = EMAIL_IN_TEXT.test(s) || PHONE_IN_TEXT.test(s);
+  EMAIL_IN_TEXT.lastIndex = 0; PHONE_IN_TEXT.lastIndex = 0;
+  return hit;
+}
+/** A free-text column whose contact details are scrubbed (type t, named in TEXT_COLUMNS). */
+export const isTextColumn = (c) => !!c && c.type === "t" && TEXT_COLUMNS.includes(c.name);
 
 export const SETTINGS_KEYS = Object.freeze(["dashboard_kpis", "dashboard_breakdowns", "dashboard_title", "fiscal_year",
   "about_us", "team_config", "contact_info"]);

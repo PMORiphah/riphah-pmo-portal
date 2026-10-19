@@ -46,6 +46,11 @@ html[data-pmo-sim] [data-tour="sim-launch"] { display: none !important; }
 /* A chart tooltip with a backdrop blur is not painted inside a spotlight hole (seen in Chromium); its
    background is opaque, so without the blur it looks the same. */
 html[data-pmo-sim] .recharts-tooltip-wrapper * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+/* The chart tooltip's entrance animation could leave it unpainted under a slow frame rate while its
+   ring is drawn: in the simulation it appears at once. */
+html[data-pmo-sim] .recharts-tooltip-wrapper .pmo-rise { animation: none !important; opacity: 1 !important; }
+/* The page title is lit as its text, not as the full width of its heading (it stays clear of the badge). */
+html[data-pmo-sim] [data-tour="page-title"] { width: fit-content; max-width: 100%; }
 @keyframes simDirFold { from { opacity: 1; transform: none; } to { opacity: 0; transform: var(--sim-fold, translate(-30vw, 30vh) scale(.35)); } }
 @media (prefers-reduced-motion: reduce) {
   [data-sim-ui] * { animation-duration: .01ms !important; transition-duration: .01ms !important; }

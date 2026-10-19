@@ -76,7 +76,8 @@ export function PresenterCard({ state, hhmm, fyLabel }) {
         boxShadow: "0 30px 80px rgba(0,0,0,.45)", color: INK, fontFamily: SANS,
         backdropFilter: "blur(14px) saturate(140%)", WebkitBackdropFilter: "blur(14px) saturate(140%)",
         transformOrigin: "50% 50%",
-        animation: folding ? `simDirFold ${FOLD_MS}ms ${EASE} both` : `simDirIn .45s ${EASE} both`,
+        // The entrance waits for the Begin screen's fade (.6 s) to be mostly done, so the two never overlap.
+        animation: folding ? `simDirFold ${FOLD_MS}ms ${EASE} both` : `simDirIn .45s ${EASE} .4s both`,
         ...(fold ? { "--sim-fold": fold } : null),
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
