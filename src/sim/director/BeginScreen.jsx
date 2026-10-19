@@ -8,7 +8,7 @@
 // with Test voice (required before Start while the voice is on), what the assistant will say,
 // Refresh data and Start. Start stays disabled until every rule holds; pressing it is also the
 // browser's required gesture before speech.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Loader2, AlertTriangle, Volume2, VolumeX, Play, RefreshCw, ChevronDown } from "lucide-react";
 import { AssistantAvatar } from "../../AssistantAvatar.jsx";
 import { NAVY, GOLD, GOLD_SOFT, INK, INK_SOFT, INK_DIM, SERIF, SANS, Z, EASE } from "./look.js";
@@ -31,8 +31,8 @@ function Row({ status, label, detail }) {
   );
 }
 
-// The screen's background, also painted (fixed to the screen) behind the sticky footer, so the footer
-// has no visible edge against it.
+// The screen's background, also painted behind the sticky footer (sized and offset to the screen), so the
+// footer has no visible edge against it.
 const VEIL_BG = `radial-gradient(1100px 620px at 18% -8%, #18406A 0%, rgba(24,64,106,0) 60%),
   radial-gradient(900px 520px at 100% 110%, rgba(216,152,64,.16) 0%, rgba(216,152,64,0) 55%), ${NAVY}`;
 const FOOT_MASK = "linear-gradient(180deg, transparent, #000 28%)";
@@ -74,6 +74,33 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
     window.addEventListener("resize", check);
     return () => { ro?.disconnect(); window.removeEventListener("resize", check); };
   }, []);
+  // The band paints the screen's background at the screen's size, shifted by its own offset, so it lines up
+  // with the background behind it. (background-attachment: fixed would do this, but Chromium ignores it
+  // under the column's entrance animation and squeezes the gradient into the band.)
+  const bandRef = useRef(null);
+  const placeBand = useCallback(() => {
+    const veil = veilRef.current, band = bandRef.current;
+    if (!veil || !band) return;
+    const v = veil.getBoundingClientRect(), b = band.getBoundingClientRect();
+    band.style.backgroundSize = `${veil.clientWidth}px ${veil.clientHeight}px`;
+    band.style.backgroundPosition = `${Math.round(v.left - b.left)}px ${Math.round(v.top - b.top)}px`;
+  }, []);
+  useEffect(() => {
+    const veil = veilRef.current;
+    if (!overflowing || !veil) return undefined;
+    let raf = 0;
+    const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(placeBand); };
+    placeBand();
+    // The footer can change height (a longer message wraps), which moves the band's top.
+    const ro = typeof ResizeObserver === "function" && bandRef.current ? new ResizeObserver(onScroll) : null;
+    if (ro) ro.observe(bandRef.current);
+    veil.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      cancelAnimationFrame(raf); ro?.disconnect();
+      veil.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll);
+    };
+  }, [overflowing, placeBand]);
   const v = voice;
   const reh = d.rehearsal;
   // Once Start is ready and nothing failed, the rehearsal checks and the presenter's notes fold into one
@@ -91,7 +118,7 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
       background: VEIL_BG,
       opacity: leaving ? 0 : 1, transition: "opacity .6s ease", pointerEvents: leaving ? "none" : "auto",
     }}>
-      <div style={{ width: "100%", maxWidth: 900, margin: "auto 0", animation: `simDirIn .5s ${EASE} both` }}>
+      <div onAnimationEnd={placeBand} style={{ width: "100%", maxWidth: 900, margin: "auto 0", animation: `simDirIn .5s ${EASE} both` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 18, flexWrap: "wrap" }}>
           <div style={{ width: 104, height: 104, flexShrink: 0 }}>
             <AssistantAvatar size={104} boxScale={1.0} track state={ready ? "success" : "thinking"} />
@@ -265,14 +292,14 @@ export function BeginScreen({ leaving, data, voice, onStart, onRefresh }) {
         </div>
 
         {/* Start stays in view on a short screen: the footer sticks to the bottom of the page. Its band
-            runs the full width of the screen and is the screen's own background (fixed), faded in at the
-            top, so it shows no edge at the column or against the background glow. */}
+            runs the full width of the screen and is the screen's own background (lined up with it by
+            placeBand), faded in at the top, so it shows no edge at the column or against the background glow. */}
         <div style={{ position: "sticky", bottom: -40, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12,
           marginTop: 10, flexWrap: "wrap", padding: "14px 0 54px",
           marginLeft: "calc(50% - 50vw)", marginRight: "calc(50% - 50vw)",
           paddingLeft: "max(16px, calc(50vw - 450px))", paddingRight: "max(16px, calc(50vw - 450px))" }}>
-          {overflowing && <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, pointerEvents: "none",
-            background: VEIL_BG, backgroundAttachment: "fixed", WebkitMaskImage: FOOT_MASK, maskImage: FOOT_MASK }} />}
+          {overflowing && <div ref={bandRef} aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, pointerEvents: "none",
+            background: VEIL_BG, backgroundRepeat: "no-repeat", WebkitMaskImage: FOOT_MASK, maskImage: FOOT_MASK }} />}
           <button type="button" className="sim-dir-btn" data-sim-refresh="" onClick={onRefresh} disabled={d.refreshing || !d.canRefresh} style={ghost}>
             <RefreshCw size={14} style={d.refreshing ? { animation: "simDirSpin .9s linear infinite" } : null} />
             {d.refreshing ? "Reading the portal again…" : "Refresh data"}
