@@ -107,4 +107,5 @@ Both must pass. The names files are private (scratch only). The scan prints file
 never the name itself, so its output is safe to paste.
 
 Build the preview with `./build.sh --config vite.config.preview.js`, then `git checkout -- index.html`
-(`build.sh` overwrites the root `index.html`). The production build has no Simulation button.
+(`build.sh` overwrites the root `index.html`). Since 19 Oct 2026 the production build (`./build.sh`) has the
+Simulation button (PMO, desktop) and its own `simulation.html` too; `SIM_PROD=0` leaves the page out.
