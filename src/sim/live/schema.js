@@ -53,7 +53,7 @@ const PROJ = "id:u,code:t,name:t,sector_id:u,region_id:u,segment_id:u,cost_cente
   + "su_requested_amount:n,df_recommended_amount:n,bac:n,amount_released:n,payments_made:n,is_carry_forward:b,payments_pending:b,"
   + "start_date:d,end_date:d,duration_months:n,pct_complete:n,manual_schedule_flag:e,manual_budget_flag:e,notes:t,created_at:ts,"
   + "updated_at:ts,fiscal_year:t,strategic_priority:t,actual_start_date:d,actual_end_date:d,budget_release_date:d,scope_change:b,"
-  + "campus:t,campus_id:u,portfolio:t,actual_cost:n,pcd_received_date:d";
+  + "campus:t,campus_id:u,portfolio:t,actual_cost:n,pcd_received_date:d,pcr:b";
 const PM = "id:u,code:t,name:t,sector_id:u,region_id:u,segment_id:u,cost_center_id:u,project_type:t,priority:e,workflow_stage:e,"
   + "su_requested_amount:n,df_recommended_amount:n,bac:n,amount_released:n,payments_made:n,is_carry_forward:b,payments_pending:b,"
   + "start_date:d,end_date:d,actual_start_date:d,actual_end_date:d,effective_start:d,duration_months:n,pct_complete:n,scope_change:b,"
