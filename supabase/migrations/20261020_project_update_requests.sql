@@ -21,11 +21,11 @@ alter table public.comments
   add constraint comments_kind_chk check (kind in ('comment', 'update_request', 'update')),
   add constraint comments_kind_root_chk check (kind = 'comment' or parent_id is null),
   add constraint comments_update_shape_chk check (
-    kind <> 'update' or (
+    kind <> 'update' or coalesce(
       data ->> 'overall' in ('on_track', 'at_risk', 'delayed')
       and jsonb_typeof(data -> 'pct') = 'number' and (data ->> 'pct')::numeric between 0 and 100
       and jsonb_typeof(coalesce(data -> 'lines', '[]'::jsonb)) = 'array'
-      and length(btrim(body)) >= 20));
+      and length(btrim(body)) >= 20, false));
 
 -- A deliverable line that is an item (not a contingency, sales tax or GST line).
 create or replace function public.deliverable_is_item(t text)

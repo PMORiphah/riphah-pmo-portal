@@ -17,7 +17,7 @@ alter table public.past_project_updates
   add constraint past_updates_kind_chk check (kind in ('message', 'status_request', 'status')),
   add constraint past_updates_status_chk check (
     case when kind = 'status'
-         then pct_complete between 0 and 100 and length(btrim(coalesce(justification, ''))) >= 10
+         then coalesce(pct_complete between 0 and 100, false) and length(btrim(coalesce(justification, ''))) >= 10
          else pct_complete is null and justification is null end);
 
 -- Who may post which kind. A restrictive policy is ANDed with the existing insert policies
@@ -31,14 +31,16 @@ create policy past_updates_kind_guard on public.past_project_updates as restrict
   );
 
 -- A request or an answer cannot be rewritten afterwards (only the PMO can update rows at all; this keeps
--- the kind and the two answer fields fixed even for the PMO, so the record stays what the manager sent).
+-- the kind and the two answer fields fixed even for the PMO, so the record stays what the manager sent;
+-- an ordinary message can still be moved, e.g. when two copies of a past project are merged).
 create or replace function public.guard_past_update_kind()
 returns trigger language plpgsql
 set search_path to 'public', 'pg_temp'
 as $$
 begin
   if new.kind is distinct from old.kind or new.pct_complete is distinct from old.pct_complete
-     or new.justification is distinct from old.justification or new.past_project_id is distinct from old.past_project_id then
+     or new.justification is distinct from old.justification
+     or (old.kind <> 'message' and new.past_project_id is distinct from old.past_project_id) then
     raise exception 'A status request or answer cannot be changed' using errcode = '42501';
   end if;
   return new;
