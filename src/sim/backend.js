@@ -53,6 +53,7 @@ const KNOWN = new Set([
   "activity_log", "user_sessions", "session_events", "tour_events", "notifications_log", "user_webauthn_credentials",
   "webauthn_challenges", "push_subscriptions", "pmo_active_session", "milestones", "epdd_pdds", "epdd_files",
   "epdd_reviews", "epdd_sync_runs", "epdd_state", "board_reports", "board_report_recipients",
+  "project_todos", "project_pcrs",   // 20 Oct 2026: not in the snapshot, so they read as empty
   // views
   "portfolio_metrics", "portfolio_dashboard", "project_metrics", "investment_metrics", "cashflow_monthly",
   "at_risk_projects", "pdd_pending_projects", "project_task_rollup", "project_risks_scored", "lessons_learned_full",
