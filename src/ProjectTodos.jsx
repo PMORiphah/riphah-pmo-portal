@@ -102,6 +102,8 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
   itemsRef.current = items;
   const alive  = useRef(true);
   const queues = useRef({});                         // id -> { chain, n }
+  const saved  = useRef({});                         // id -> the item as the server last confirmed it
+  const lastTick = useRef(0);                        // when a tick box was last pressed
   const addRef = useRef(null);
   const tmpSeq = useRef(0);
 
@@ -112,7 +114,10 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
     try {
       const r = await supa(`/rest/v1/project_todos?project_id=eq.${projectId}&removed=is.false&select=${SEL}` +
                            `&order=done.asc,due_date.asc.nullslast,created_at.asc`, {}, tokenRef.current);
-      if (alive.current) setItems(Array.isArray(r) ? r : []);
+      if (!alive.current) return;
+      const rows = Array.isArray(r) ? r : [];
+      saved.current = Object.fromEntries(rows.map(x => [x.id, x]));
+      setItems(rows);
     } catch (e) {
       if (alive.current) { setLoadErr(e.message || "The list could not be loaded."); setItems(x => x || []); }
     }
@@ -160,6 +165,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
         body: JSON.stringify({ project_id: projectId, title, due_date: due }) }, tokenRef.current);
       const row = Array.isArray(r) ? r[0] : null;
       if (!row?.id) throw new Error("not saved");
+      saved.current[row.id] = row;
       if (alive.current) setItems(list => (list || []).map(x => x.id === id ? row : x));
     } catch {
       if (!alive.current) return;
@@ -176,7 +182,6 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
     if (!before || isTemp(id)) return;
     const local = { ...patch };
     if ("done" in patch) local.done_at = patch.done ? new Date().toISOString() : null;
-    const prev = Object.fromEntries(Object.keys(local).map(k => [k, before[k]]));
     // The error line is left alone here: hiding it would move the list under a click that is under way.
     setItems(list => (list || []).map(x => x.id === id ? { ...x, ...local } : x));
     const q = queues.current[id] || (queues.current[id] = { chain: Promise.resolve(), n: 0 });
@@ -187,11 +192,16 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
           headers:{ Prefer:"return=representation" }, body: JSON.stringify(patch) }, tokenRef.current);
         const row = Array.isArray(r) ? r[0] : null;
         if (!row?.id) throw new Error("not saved");
+        saved.current[id] = { ...saved.current[id], ...row, ...(patch.removed ? { removed: true } : null) };
         // Take the server's copy (its done time) only when nothing newer is waiting.
         if (alive.current && q.n === 1 && !patch.removed) setItems(list => (list || []).map(x => x.id === id ? { ...x, ...row } : x));
       } catch {
         if (!alive.current) return;
-        setItems(list => (list || []).map(x => x.id === id ? { ...x, ...prev } : x));
+        // Back to what the server last confirmed, not to the value before this change: that value
+        // may itself be an earlier change that is still waiting, or that failed too.
+        const base = saved.current[id] || before;
+        const back = Object.fromEntries(Object.keys(local).map(k => [k, base[k]]));
+        setItems(list => (list || []).map(x => x.id === id ? { ...x, ...back } : x));
         fail(what);
       } finally { q.n--; }
     });
@@ -216,7 +226,14 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
       <button type="button" role="checkbox" aria-checked={on} data-todo-toggle disabled={temp}
         aria-label={on ? `Done: ${it.title}. Untick to reopen` : `Mark done: ${it.title}`}
         title={on ? "Untick to reopen" : "Mark done"}
-        onClick={() => mutate(it.id, { done: !on }, on ? "The to-do could not be reopened." : "The to-do could not be marked done.")}
+        onClick={() => {
+          // A ticked item moves to the other list and the next one slides up under the pointer, so the
+          // second click of a double-click would tick that one too. Clicks right after a tick are ignored.
+          const now = Date.now();
+          if (now - lastTick.current < 450) return;
+          lastTick.current = now;
+          mutate(it.id, { done: !on }, on ? "The to-do could not be reopened." : "The to-do could not be marked done.");
+        }}
         className="pmo-focusable"
         style={{ width:20, height:20, borderRadius:5, flexShrink:0, padding:0, marginTop:1,
           cursor: temp ? "default" : "pointer", display:"inline-flex", alignItems:"center", justifyContent:"center",

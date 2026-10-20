@@ -26,6 +26,8 @@ const FIELD_LABELS = {
   value: "Value", sub: "Subtitle", insight: "Insight", label: "Label",
   su_requested: "SU Requested card", df_recommended: "DF Recommended card",
   carry_forward: "Carry Forward card", budget_reduction: "Budget Reduction card",
+  scope_change: "Change in Scope", pcr: "PCR (project change request)",
+  due_date: "Due date", done: "Done", done_at: "Done at", removed: "Removed",
 };
 // Never worth showing in a detail panel.
 const SKIP = new Set(["id", "created_at", "updated_at", "created_by", "uploaded_by", "captured_by",
@@ -136,6 +138,7 @@ const PLURAL = {
   past_project_updates: "follow-ups", past_pm_messages: "chat messages", settings: "settings",
   epdd_pdds: "PDDs", notification: "notifications", user_profiles: "users",
   lessons_learned: "lessons", benefits_realized: "benefits",
+  project_todos: "to-dos",
 };
 const VERB = {
   created: "added", updated: "updated", deleted: "deleted", stage_changed: "moved stage",

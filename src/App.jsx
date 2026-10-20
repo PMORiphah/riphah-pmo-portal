@@ -39,7 +39,7 @@ import {
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
   Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
-  PackageCheck, FileBarChart, MonitorPlay,
+  PackageCheck, FileBarChart, MonitorPlay, ListTodo,
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -4455,7 +4455,8 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
         "/rest/v1/project_attachments?select=id,file_name,kind,project_id",
         {}, session.access_token).catch(() => []);
       const rows = Array.isArray(atRisk) ? atRisk : [];
-      if (rows.length > 0) {
+      const todoNote = await todosAtRiskNote(session.access_token);
+      if (rows.length > 0 || todoNote) {
         const docCount   = rows.filter(a => a.kind === "document").length;
         const mediaCount = rows.filter(a => a.kind === "site_visit").length;
         const affected   = new Set(rows.map(a => a.project_id)).size;
@@ -4464,11 +4465,14 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
         if (mediaCount) parts.push(mediaCount + " site visit file" + (mediaCount === 1 ? "" : "s"));
         const proceed = window.confirm(
           "This import replaces every project in the portal.\n\n" +
-          parts.join(" and ") + " attached to " + affected + " project" +
-          (affected === 1 ? "" : "s") + " will be detached and will no longer appear " +
-          "anywhere in the portal.\n\n" +
-          "The files stay in storage, but re-linking them has to be done by hand, " +
-          "one file at a time.\n\n" +
+          (rows.length > 0
+            ? parts.join(" and ") + " attached to " + affected + " project" +
+              (affected === 1 ? "" : "s") + " will be detached and will no longer appear " +
+              "anywhere in the portal.\n\n" +
+              "The files stay in storage, but re-linking them has to be done by hand, " +
+              "one file at a time.\n\n"
+            : "") +
+          (todoNote ? todoNote + "\n\n" : "") +
           "Continue with the import?"
         );
         if (!proceed) {
@@ -5125,8 +5129,11 @@ function ProjectsPage({ T, session, onSelectProject,
       );
       case "name": {
         const closed = isClosedRow(p);
+        // On hover a PCR row keeps room for the Open chip, so a long name ellipsises before the pill
+        // and the chip sits to its right instead of over it.
         return (
-          <span style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
+          <span style={{ display:"flex", alignItems:"center", gap:6, minWidth:0,
+            paddingRight: hovered && p.pcr && onSelectProject ? 64 : 0 }}>
             {closed && closedMark()}
             <span data-peek={p.name}
               data-peek-meta={[closed && "Closed", p.pcr && "Project change request (PCR)"].filter(Boolean).join(" · ") || undefined}
@@ -5564,11 +5571,11 @@ function ProjectsPage({ T, session, onSelectProject,
                             the row states what clicking will do (§14). */}
                         {c.key === "name" && hovered && onSelectProject && (
                           <>
-                          <span aria-hidden="true" style={{
+                          {!p.pcr && <span aria-hidden="true" style={{
                             position:"absolute", right:0, top:0, bottom:0, width:96,
                             background:`linear-gradient(90deg, transparent, ${T.surface} 55%)`,
                             pointerEvents:"none",
-                          }} />
+                          }} />}
                           <span className="pmo-rise" style={{
                             position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
                             display:"inline-flex", alignItems:"center", gap:3,
@@ -7613,7 +7620,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
     setLoading(false);
   };
 
-  useEffect(() => { loadDetail(); }, [projectId, session.access_token]);
+  // Loaded once per project. Not again when the token is renewed: supa() is handed the current
+  // token on every call anyway, and a reload swaps the whole page for "Loading project…", which
+  // unmounts the open tab and loses anything half typed in it (the To-Do List).
+  useEffect(() => { loadDetail(); }, [projectId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const assignPM = async () => {
     if (!selectedPM) return;
@@ -7724,6 +7734,21 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const budgetStatus   = isClosed ? "Settled"   : evm.budget_flag   === "within"  ? "On Budget"  : evm.budget_flag   === "over"    ? "Over Budget" : "Not Started";
   const budgetColor    = isClosed ? EMERALD     : evm.budget_flag   === "within"  ? EMERALD      : evm.budget_flag   === "over"    ? ROSE : T.dim;
 
+  // The project's section tabs. Risks and Lessons/Benefits are not shown to project managers.
+  const detailTabs = [
+    { id:"overview",   label:"Overview",   Icon:FileText },
+    { id:"financials", label:"Financials", Icon:Wallet },
+    { id:"timeline",   label:"Timeline",   Icon:Clock },
+    { id:"wbs",        label:"WBS",        Icon:ListTree },
+    ...(hasDeliv ? [{ id:"deliverables", label:"Deliverables", Icon:PackageCheck }] : []),
+    { id:"documents",  label:"Documents",  Icon:ClipboardList, "data-tour":"detail-tabs" },
+    { id:"sitevisit",  label:"Site Visit", Icon:Camera },
+    { id:"risks",      label:"Risks",      Icon:ShieldAlert },
+    { id:"lessons",    label:"Lessons/Benefits", Icon:Lightbulb },
+    // Last, and for the PMO only (the table is PMO-only by row-level security too).
+    ...(session?.role === "pmo" ? [{ id:"todo", label:"To-Do List", Icon:ListTodo }] : []),
+  ].filter(t => !((t.id === "risks" || t.id === "lessons") && session?.role === "project_manager"));
+
   return (
     <div className="pmo-scroll" style={{ flex:1, overflowY:"auto", overflowX:"hidden", background:T.page }}>
 
@@ -7833,20 +7858,16 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       </div>
 
       {/* ── SECTION TABS ── */}
-      <div className="pmo-scroll" style={{ padding: vpD.isCompact ? `0 ${SP.lg}px` : `0 ${SP.xxl}px`, background:T.surface,
-        overflowX: vpD.isCompact ? "auto" : "visible", overflowY:"visible" }}>
-        <TabsUI T={T} active={tab} onChange={setTab} isMobile={vpD.isCompact}
-          tabs={[
-            { id:"overview",   label:"Overview",   Icon:FileText },
-            { id:"financials", label:"Financials", Icon:Wallet },
-            { id:"timeline",   label:"Timeline",   Icon:Clock },
-            { id:"wbs",        label:"WBS",        Icon:ListTree },
-            ...(hasDeliv ? [{ id:"deliverables", label:"Deliverables", Icon:PackageCheck }] : []),
-            { id:"documents",  label:"Documents",  Icon:ClipboardList, "data-tour":"detail-tabs" },
-            { id:"sitevisit",  label:"Site Visit", Icon:Camera },
-            { id:"risks",      label:"Risks",      Icon:ShieldAlert },
-            { id:"lessons",    label:"Lessons/Benefits", Icon:Lightbulb },
-          ].filter(t => !((t.id === "risks" || t.id === "lessons") && session?.role === "project_manager"))} />
+      {/* Up to ten tabs (with Deliverables and the PMO's To-Do List). Ten use the dense strip so they
+          fit a 1366 px laptop; the wrapper scrolls sideways on any narrower window, so no tab is ever
+          cut off. These tabs have no hover previews, so the wrapper may clip. It keeps 10 px of
+          unpainted room below the strip (taken back by the negative margin) so the underline's glow
+          is not cut off, and pmo-tabs-clip draws the keyboard focus ring inside each tab. */}
+      <div className="pmo-scroll pmo-tabs-clip" style={{ padding: vpD.isCompact ? `0 ${SP.lg}px 10px` : `0 ${SP.xxl}px 10px`,
+        marginBottom:-10, background:`linear-gradient(${T.surface}, ${T.surface}) 0 0 / 100% calc(100% - 10px) no-repeat`,
+        overflowX:"auto", overflowY:"hidden" }}>
+        <TabsUI T={T} active={tab} onChange={setTab} isMobile={vpD.isCompact} dense={!vpD.isCompact && detailTabs.length >= 10}
+          tabs={detailTabs} />
       </div>
 
       {tab === "timeline" && (
@@ -8317,6 +8338,15 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           </div>
         )}
 
+        {/* The PMO's own to-do list for this project. Mounted only while the tab is open. */}
+        {tab === "todo" && session?.role === "pmo" && (
+          <div style={{ gridColumn:"1 / -1", minWidth:0 }}>
+            <Suspense fallback={<div style={{ color:T.muted, fontSize:13 }}>Loading the to-do list…</div>}>
+              <ProjectTodos T={T} session={session} supa={supa} projectId={projectId} isCompact={vpD.isCompact} />
+            </Suspense>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -8461,6 +8491,13 @@ const CampusCompare = lazy(() => import("./CampusCompare.jsx").catch(() => {
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
   return { CampusCompare: () => null };
 }).then(m => ({ default: m.CampusCompare })));
+
+// The PMO's To-Do List on a project (PMO, 20 Oct 2026): loaded only when its tab is opened, so the
+// project page sends no project_todos request until then. Reload once on a missing chunk, as above.
+const ProjectTodos = lazy(() => import("./ProjectTodos.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
+  return { ProjectTodos: () => null };
+}).then(m => ({ default: m.ProjectTodos })));
 
 // Board reports (PMO, 8 Oct 2026): loaded only when opened.
 // After a deploy an open tab may ask for a file that no longer exists: reload
@@ -8955,7 +8992,8 @@ function RestoreSnapshotButton({ T, session, entry }) {
         "/rest/v1/project_attachments?select=id,kind,project_id",
         {}, session.access_token).catch(() => []);
       const rows2 = Array.isArray(atRisk2) ? atRisk2 : [];
-      if (rows2.length > 0 && current.length > 0) {
+      const todoNote2 = current.length > 0 ? await todosAtRiskNote(session.access_token) : "";
+      if ((rows2.length > 0 || todoNote2) && current.length > 0) {
         const d = rows2.filter(a => a.kind === "document").length;
         const m = rows2.filter(a => a.kind === "site_visit").length;
         const affected = new Set(rows2.map(a => a.project_id)).size;
@@ -8964,10 +9002,13 @@ function RestoreSnapshotButton({ T, session, entry }) {
         if (m) parts.push(m + " site visit file" + (m === 1 ? "" : "s"));
         const proceed = window.confirm(
           "Restoring this snapshot replaces every project.\n\n" +
-          parts.join(" and ") + " attached to " + affected + " project" +
-          (affected === 1 ? "" : "s") + " will be detached. Snapshots do not " +
-          "include uploaded files, so restoring will not bring them back.\n\n" +
-          "The files stay in storage and can be re-linked by hand.\n\n" +
+          (rows2.length > 0
+            ? parts.join(" and ") + " attached to " + affected + " project" +
+              (affected === 1 ? "" : "s") + " will be detached. Snapshots do not " +
+              "include uploaded files, so restoring will not bring them back.\n\n" +
+              "The files stay in storage and can be re-linked by hand.\n\n"
+            : "") +
+          (todoNote2 ? todoNote2 + "\n\n" : "") +
           "Continue with the restore?"
         );
         if (!proceed) { setMsg(null); return; }
@@ -8989,6 +9030,7 @@ function RestoreSnapshotButton({ T, session, entry }) {
         payments_made:p.payments_made,is_carry_forward:p.is_carry_forward,payments_pending:p.payments_pending,
         start_date:p.start_date,end_date:p.end_date,duration_months:p.duration_months,
         pct_complete:p.pct_complete,manual_schedule_flag:p.manual_schedule_flag,manual_budget_flag:p.manual_budget_flag,notes:p.notes,
+        pcr:!!p.pcr,
       }));
       const BATCH = 100;
       for (let i=0; i<toInsert.length; i+=BATCH) {
@@ -9027,6 +9069,17 @@ function RestoreSnapshotButton({ T, session, entry }) {
       )}
     </div>
   );
+}
+
+// To-do items hang on project ids. An Excel import or a snapshot restore gives every project a new
+// id, so every To-Do List drops off the portal (the rows stay in project_todos). Counted before the
+// delete so the confirm can say so; "" when there are none.
+async function todosAtRiskNote(token) {
+  const r = await supa("/rest/v1/project_todos?removed=is.false&select=project_id", {}, token).catch(() => []);
+  const rows = Array.isArray(r) ? r : [];
+  if (!rows.length) return "";
+  const n = rows.length, p = new Set(rows.map(x => x.project_id)).size;
+  return `${n} to-do item${n === 1 ? "" : "s"} on ${p} project${p === 1 ? "" : "s"} will no longer appear on any To-Do List.`;
 }
 
 // ─── ACTIVITY LOG ─────────────────────────────────────────────────────────────
@@ -9276,6 +9329,7 @@ function ActivityLogPage({ T, session, supa }) {
     session:             "Session",
     tour:                "Tour",
     project_tasks:       "WBS Task",
+    project_todos:       "To-Do",
     past_project_tasks:  "Past WBS Task",
     past_projects:       "Past Project",
     past_project_updates:"Past Follow-up",
@@ -9336,6 +9390,7 @@ function ActivityLogPage({ T, session, supa }) {
     { value:"project_attachments", label:"Files" },
     { value:"project_raci",        label:"RACI" },
     { value:"project_tasks",       label:"WBS Tasks" },
+    { value:"project_todos",       label:"To-Do Lists" },
     { value:"lessons_learned",     label:"Lessons Learned" },
     { value:"benefits_realized",   label:"Benefits" },
     { value:"past_projects",       label:"Past Projects" },
