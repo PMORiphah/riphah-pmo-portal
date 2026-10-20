@@ -124,6 +124,13 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
     load();
   }, [isPMO, projectId, load]);
 
+  // An error line goes after ten seconds, or when dismissed.
+  useEffect(() => {
+    if (!err) return;
+    const t = setTimeout(() => setErr(null), 10000);
+    return () => clearTimeout(t);
+  }, [err]);
+
   // "Remove?" waits five seconds for an answer, then steps back.
   useEffect(() => {
     if (!confirmId) return;
@@ -140,7 +147,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
   // ── Add ──
   const add = async () => {
     const title = cleanTitle(draft);
-    if (!title) return;
+    if (!title || items === null || loadErr) return;
     const due = draftDue || null;
     const id = `tmp-${++tmpSeq.current}`;
     const temp = { id, title, due_date: due, done: false, done_at: null, created_at: new Date().toISOString() };
@@ -170,7 +177,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
     const local = { ...patch };
     if ("done" in patch) local.done_at = patch.done ? new Date().toISOString() : null;
     const prev = Object.fromEntries(Object.keys(local).map(k => [k, before[k]]));
-    setErr(null);
+    // The error line is left alone here: hiding it would move the list under a click that is under way.
     setItems(list => (list || []).map(x => x.id === id ? { ...x, ...local } : x));
     const q = queues.current[id] || (queues.current[id] = { chain: Promise.resolve(), n: 0 });
     q.n++;
@@ -194,6 +201,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
   const open   = sortOpen(all.filter(x => !x.done));
   const done   = sortDone(all.filter(x => x.done));
   const canAdd = !!cleanTitle(draft);
+  const addOff = items === null || !!loadErr;
   const touch  = isCompact || !CAN_HOVER;
   const dateScheme = T.mode === "dark" ? "dark" : "light";
 
@@ -346,7 +354,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
       <div style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", marginBottom:2 }}>
         <ListTodo size={16} color={T.textOf(BRAND.gold)} />
         <h3 style={{ ...TYPE.h2, color:T.text, margin:0 }}>To-Do List</h3>
-        {items && (
+        {items && !loadErr && (
           <span data-todo-counts style={{ ...TYPE.caption, color:T.muted }}>
             <b style={{ color:T.text, fontWeight:700 }}>{open.length}</b> open · <b style={{ color:T.textOf(DATA.positive), fontWeight:700 }}>{done.length}</b> done
           </span>
@@ -360,17 +368,17 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
       <form data-todo-add-form onSubmit={e => { e.preventDefault(); add(); }}
         style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", alignItems:"center", marginBottom:SP.md }}>
         <input ref={addRef} data-todo-input value={draft} maxLength={TODO_MAX} placeholder="Add a to-do…"
-          aria-label="New to-do" disabled={items === null}
+          aria-label="New to-do" disabled={addOff}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => { if (e.key === "Escape") { setDraft(""); setDraftDue(""); } }}
           style={{ ...inp, flex:"1 1 240px" }} />
         <label style={{ display:"inline-flex", alignItems:"center", gap:6, flex: isCompact ? "1 1 150px" : "0 0 auto", minWidth:0 }}>
           <span style={{ ...TYPE.caption, color:T.muted, whiteSpace:"nowrap" }}>Due</span>
-          <input type="date" data-todo-new-due value={draftDue} aria-label="Due date (optional)" disabled={items === null}
+          <input type="date" data-todo-new-due value={draftDue} aria-label="Due date (optional)" disabled={addOff}
             onChange={e => setDraftDue(e.target.value)}
             style={{ ...inp, padding:"7px 8px", colorScheme:dateScheme, flex: isCompact ? 1 : "0 0 auto", width: isCompact ? "auto" : 150 }} />
         </label>
-        <Button T={T} type="submit" variant="primary" icon={Plus} disabled={!canAdd || items === null} data-todo-add>Add</Button>
+        <Button T={T} type="submit" variant="primary" icon={Plus} disabled={!canAdd || addOff} data-todo-add>Add</Button>
       </form>
 
       {err && (
@@ -437,6 +445,7 @@ function TitleEditor({ T, value, inp, onDone }) {
   const settled = useRef(false);
   useEffect(() => { const el = ref.current; if (el) { el.focus(); el.select(); } }, []);
   const finish = (out) => { if (settled.current) return; settled.current = true; onDone(out); };
+  // Same height and text position as the title it replaces, so nothing below moves when it closes.
   return (
     <input ref={ref} data-todo-edit value={v} maxLength={TODO_MAX} aria-label="Edit to-do"
       onChange={e => setV(e.target.value)}
@@ -445,12 +454,14 @@ function TitleEditor({ T, value, inp, onDone }) {
         if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(undefined); }
       }}
       onBlur={() => finish(v)}
-      style={{ ...inp, width:"100%", padding:"5px 8px", fontSize:13.5, borderColor:T.inputFocus }} />
+      style={{ ...inp, display:"block", width:"calc(100% + 16px)", margin:"-4px -8px", padding:"3px 7px", fontSize:13.5,
+        lineHeight:1.45, fontWeight:500, border:`1px solid ${T.inputFocus}` }} />
   );
 }
 
-// Inline date editor: picking or typing a date and leaving the box saves; Enter
-// saves; Escape cancels; Clear removes the due date.
+// Inline date editor: opens the browser's calendar where it can. The tick, Enter
+// or leaving the box saves; Escape cancels; Clear removes the due date. Nothing
+// is saved while a date is being typed, so one change is one Activity Log line.
 function DueEditor({ T, value, scheme, inp, onDone }) {
   const [v, setV] = useState(value || "");
   const ref = useRef(null);
@@ -461,6 +472,8 @@ function DueEditor({ T, value, scheme, inp, onDone }) {
     try { el.showPicker?.(); } catch { /* not allowed without a fresh click on some browsers */ }
   }, []);
   const finish = (out) => { if (settled.current) return; settled.current = true; onDone(out); };
+  const small = { background:"none", border:`1px solid ${T.border}`, borderRadius:R.sm, padding:"4px 9px", cursor:"pointer",
+    fontFamily:TYPE.body.fontFamily, fontSize:11.5, fontWeight:600, color:T.muted };
   return (
     <span style={{ display:"inline-flex", alignItems:"center", gap:SP.xs, flexWrap:"wrap" }}>
       <input ref={ref} type="date" data-todo-due-edit value={v} aria-label="Due date"
@@ -470,11 +483,16 @@ function DueEditor({ T, value, scheme, inp, onDone }) {
           if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(undefined); }
         }}
         onBlur={() => finish(v)}
-        style={{ ...inp, padding:"4px 7px", fontSize:12.5, colorScheme:scheme, borderColor:T.inputFocus }} />
+        style={{ ...inp, padding:"4px 7px", fontSize:12.5, colorScheme:scheme, border:`1px solid ${T.inputFocus}` }} />
+      {/* mousedown is held back on both buttons so the date box keeps focus and does not save first. */}
+      <button type="button" data-todo-due-save aria-label="Save due date" title="Save" onMouseDown={e => e.preventDefault()}
+        onClick={() => finish(v)} className="pmo-focusable pmo-btn"
+        style={{ ...small, color:T.textOf(DATA.positive), display:"inline-flex", alignItems:"center", padding:"4px 7px" }}>
+        <Check size={13} strokeWidth={2.5} />
+      </button>
       {value && (
-        // mousedown is held back so the date box keeps focus and does not save first.
-        <Button T={T} size="sm" variant="subtle" data-todo-due-clear onMouseDown={e => e.preventDefault()}
-          onClick={() => finish("")}>Clear</Button>
+        <button type="button" data-todo-due-clear onMouseDown={e => e.preventDefault()} onClick={() => finish("")}
+          className="pmo-focusable pmo-btn" style={small}>Clear</button>
       )}
     </span>
   );

@@ -4926,7 +4926,7 @@ function ProjectsPage({ T, session, onSelectProject,
 
   const downloadExport = async () => {
     const XLSX = await loadXLSX();
-    const headers = ["Sr #","Fiscal Year","Organization","Project ID","Project Name","DF Recommended (M)","Approved Budget (M)","Segment","Priority","Strategic Priority","Stage","Cost Centre","Campus/Site"];
+    const headers = ["Sr #","Fiscal Year","Organization","Project ID","Project Name","DF Recommended (M)","Approved Budget (M)","Segment","Priority","Strategic Priority","Stage","Cost Centre","Campus/Site","PCR"];
     const data = filtered.map((p,i) => [
       i+1,
       p.fiscal_year||"",
@@ -4941,6 +4941,7 @@ function ProjectsPage({ T, session, onSelectProject,
       STAGE[p.workflow_stage]?.label||p.workflow_stage||"",
       p.cost_centers?.name||"",
       p.campus||"",
+      p.pcr ? "Yes" : "No",
     ]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers,...data]);
@@ -5086,6 +5087,26 @@ function ProjectsPage({ T, session, onSelectProject,
     borderBottom:`1px solid ${T.border}`, verticalAlign:"middle",
     overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" };
 
+  // ── Row markers (PMO, 20 Oct 2026). Closed projects: soft emerald tint, emerald edge, a check
+  //    before the name, the name a touch muted. Projects with a Project Change Request (PCR, ticked
+  //    in Edit project): amber edge and a PCR pill after the name. A project can be both, so the
+  //    edges stack (emerald outermost). The stage badge stays as it is.
+  const isClosedRow = (p) => p.workflow_stage === "closed";
+  const markersOf = (p) => [isClosedRow(p) && EMERALD, p.pcr && PCR_CLR].filter(Boolean);
+  const edgeShadow = (cols, w = 3) => cols.map((c, i) => `inset ${w * (i + 1)}px 0 0 ${c}`).join(", ");
+  const closedTint = `${EMERALD}${T.wash}`;
+  const pcrPill = (style) => (
+    <span data-pcr-pill="" title="Project change request" style={{
+      ...TYPE.caption, fontWeight:700, fontSize:10, letterSpacing:"0.05em", lineHeight:1.5,
+      background:PCR_CLR + T.badge, color:T.textOf(PCR_CLR), border:`1px solid ${PCR_CLR}55`,
+      padding:"0 5px", borderRadius:R.sm, flexShrink:0, whiteSpace:"nowrap", cursor:"help", ...style }}>PCR</span>
+  );
+  const closedMark = (size = 13, style) => (
+    <span title="Closed project" style={{ display:"inline-flex", flexShrink:0, lineHeight:0, ...style }}>
+      <CheckCircle2 size={size} strokeWidth={2.4} color={T.textOf(EMERALD)} aria-hidden="true" />
+    </span>
+  );
+
   // ── Cell renderers, shared by the table and the mobile card ───────────────
   const cell = (p, key, hovered) => {
     const pClr = PRIORITY_META[p.priority]?.color || T.dim;
@@ -5102,11 +5123,20 @@ function ProjectsPage({ T, session, onSelectProject,
           <span style={{ ...TYPE.mono, color: hovered ? T.text : T.textSoft }}>{p.code || "—"}</span>
         </span>
       );
-      case "name": return (
-        <span data-peek={p.name} style={{ display:"block", overflow:"hidden",
-          textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight: hovered ? 600 : 450,
-          color:T.text, transition:`font-weight ${MOTION.fast}` }}>{p.name}</span>
-      );
+      case "name": {
+        const closed = isClosedRow(p);
+        return (
+          <span style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
+            {closed && closedMark()}
+            <span data-peek={p.name}
+              data-peek-meta={[closed && "Closed", p.pcr && "Project change request (PCR)"].filter(Boolean).join(" · ") || undefined}
+              style={{ display:"block", minWidth:0, overflow:"hidden",
+              textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight: hovered ? 600 : 450,
+              color: closed ? T.textSoft : T.text, transition:`font-weight ${MOTION.fast}` }}>{p.name}</span>
+            {p.pcr && pcrPill()}
+          </span>
+        );
+      }
       case "df": return (
         <span style={{ fontVariantNumeric:"tabular-nums", fontWeight:600, color:T.textSoft }}>
           {fmtM(p.df_recommended_amount)}
@@ -5323,6 +5353,33 @@ function ProjectsPage({ T, session, onSelectProject,
         </div>
       </div>
 
+      {/* ── MARKER LEGEND: only the markers present in this view, with counts ── */}
+      {(summary.closed > 0 || summary.pcr > 0) && (
+        <div data-legend="project-markers" style={{
+          flexShrink:0, display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap",
+          padding:`6px ${vpP.isCompact ? SP.md : SP.xl}px`, borderBottom:`1px solid ${T.border}`,
+          background:T.surface, ...TYPE.caption, color:T.muted,
+        }}>
+          {summary.closed > 0 && (
+            <span data-legend-item="closed" title="Closed projects: tinted row with a check before the name"
+              style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
+              <span aria-hidden="true" style={{ width:3, height:14, borderRadius:2, background:EMERALD }} />
+              {closedMark(12)}
+              <span><span style={{ color:T.text, fontWeight:600 }}>Closed</span> <span style={{ fontVariantNumeric:"tabular-nums" }}>{summary.closed}</span></span>
+            </span>
+          )}
+          {summary.closed > 0 && summary.pcr > 0 && <span aria-hidden="true" style={{ color:T.dim }}>·</span>}
+          {summary.pcr > 0 && (
+            <span data-legend-item="pcr" title="Projects with a Project Change Request (the PCR tick in Edit project)"
+              style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
+              <span aria-hidden="true" style={{ width:3, height:14, borderRadius:2, background:PCR_CLR }} />
+              {pcrPill({ cursor:"inherit" })}
+              <span><span style={{ color:T.text, fontWeight:600, fontVariantNumeric:"tabular-nums" }}>{summary.pcr}</span> (project change request)</span>
+            </span>
+          )}
+        </div>
+      )}
+
       {/* ── MOBILE: cards, not a squeezed table ── */}
       {vpP.isCompact ? (
         <div className="pmo-scroll" style={{ flex:1, overflowY:"auto", padding:SP.md,
@@ -5330,18 +5387,32 @@ function ProjectsPage({ T, session, onSelectProject,
           {paged.map((p, i) => {
             const st = STAGE_META[p.workflow_stage];
             const pClr = PRIORITY_META[p.priority]?.color || T.dim;
+            const closed = isClosedRow(p);
+            const marks = markersOf(p);
             return (
               <Surface key={p.id} T={T} pad={SP.md} interactive
                 onClick={() => onSelectProject && onSelectProject(p.id)}
                 className="pmo-in"
+                data-project-card={p.id}
+                data-closed={closed ? "true" : undefined}
+                data-pcr={p.pcr ? "true" : undefined}
                 // Column flex + overflow:auto crushes children unless they opt
                 // out of shrinking — the same trap that flattened the dashboard
                 // header. Any card in a scrolling column list needs this.
-                style={{ animationDelay:`${Math.min(i, 8) * 35}ms`, flexShrink:0 }}>
+                style={{ animationDelay:`${Math.min(i, 8) * 35}ms`, flexShrink:0,
+                  ...(closed ? { background:`linear-gradient(${closedTint}, ${closedTint}), ${T.surface}` } : null) }}>
+                {marks.length > 0 && (
+                  <span aria-hidden="true" style={{ position:"absolute", left:0, top:0, bottom:0, width:3 * marks.length,
+                    background: marks.length > 1 ? `linear-gradient(90deg, ${marks[0]} 0 3px, ${marks[1]} 3px 6px)` : marks[0] }} />
+                )}
                 <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:SP.sm }}>
                   <div style={{ minWidth:0 }}>
                     <div style={{ ...TYPE.mono, color:T.muted, marginBottom:3 }}>{p.code || "—"}</div>
-                    <div style={{ ...TYPE.h3, color:T.text, lineHeight:1.35 }}>{p.name}</div>
+                    <div style={{ ...TYPE.h3, color: closed ? T.textSoft : T.text, lineHeight:1.35 }}>
+                      {closed && closedMark(14, { verticalAlign:"-2px", marginRight:6 })}
+                      {p.name}
+                      {p.pcr && pcrPill({ marginLeft:7, verticalAlign:"2px" })}
+                    </div>
                   </div>
                   <span style={{ width:3, alignSelf:"stretch", borderRadius:2, background:pClr, flexShrink:0 }} />
                 </div>
@@ -5466,19 +5537,24 @@ function ProjectsPage({ T, session, onSelectProject,
                 const hovered = hoverId === p.id;
                 const pClr = PRIORITY_META[p.priority]?.color || T.dim;
                 const n = (pageSafe - 1) * perPage + i + 1;
+                const closed = isClosedRow(p);
+                const marks = markersOf(p);
                 return (
                   <tr key={p.id} data-project-id={p.id}
+                    data-closed={closed ? "true" : undefined}
+                    data-pcr={p.pcr ? "true" : undefined}
                     onClick={() => onSelectProject && onSelectProject(p.id)}
                     onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId(null)}
                     style={{
                       background: hovered
-                        ? `linear-gradient(90deg, ${pClr}14, ${T.rowHover} 22%)`
-                        : i % 2 === 0 ? "transparent" : T.rowAlt,
+                        ? `linear-gradient(90deg, ${pClr}14, ${closed ? EMERALD + T.badge : T.rowHover} 22%)`
+                        : closed ? closedTint : i % 2 === 0 ? "transparent" : T.rowAlt,
                       cursor: onSelectProject ? "pointer" : "default",
                       transition:`background ${MOTION.fast}`,
                     }}>
                     <td style={{ ...td, color:T.dim, fontVariantNumeric:"tabular-nums", width:58,
-                      boxShadow: hovered ? `inset 3px 0 0 ${pClr}` : "none",
+                      boxShadow: marks.length ? edgeShadow(marks, hovered ? 4 : 3)
+                        : hovered ? `inset 3px 0 0 ${pClr}` : "none",
                       transition:`box-shadow ${MOTION.fast}` }}>{n}</td>
                     {visible.map(c => (
                       <td key={c.key} style={{ ...td, textAlign: c.num ? "right" : "left",
@@ -7692,6 +7768,11 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                 </Badge>
               )}
               {evm.is_carry_forward && <Badge T={T} color={T.violet}>Carry forward</Badge>}
+              {details.pcr && (
+                <span data-pcr-badge="" title="Project change request" style={{ display:"inline-flex", cursor:"help" }}>
+                  <Badge T={T} color={PCR_CLR} style={{ cursor:"help", letterSpacing:"0.04em" }}>PCR</Badge>
+                </span>
+              )}
               {details.fiscal_year && (
                 <span style={{ ...TYPE.caption, color:T.heroFgMuted }}>{details.fiscal_year}</span>
               )}
@@ -7907,6 +7988,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <Row label="Payments Pending" value={details.payments_pending ? "Yes — awaiting transfer" : "No"} vc={details.payments_pending ? AMBER : EMERALD} />
           <Row label="Carry Forward"    value={details.is_carry_forward ? "Yes — prior FY obligation" : "No"} vc={details.is_carry_forward ? GOLD : T.muted} />
           <Row label="Change in Scope"  value={details.scope_change ? "Yes — scope revised" : "No"} vc={details.scope_change ? VIOLET : T.muted} />
+          <Row label="Project change request (PCR)" value={details.pcr ? "Yes" : "No"} vc={details.pcr ? T.textOf(PCR_CLR) : T.muted} />
         </Card>
 
         </div>
