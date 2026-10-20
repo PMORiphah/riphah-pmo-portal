@@ -1,5 +1,8 @@
 # Deliverables phase 2: weekly PM check-in ("Has anything arrived?")
 
+> **Replaced 20 Oct 2026 (PMO):** the weekly check-in is dropped in favour of an on-demand **Ask update** button; see `status-requests.md`.
+
+
 Status: **parked 7 Oct 2026, waiting for the PMO.** Nothing built, no migration run.
 Resume by asking decision 1 below (one decision at a time).
 
