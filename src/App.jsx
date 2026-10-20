@@ -4772,7 +4772,7 @@ function MobileProjectCard({ T, project: p, onSelect, badges, metrics, rightSlot
 // ─── PROJECTS ─────────────────────────────────────────────────────────────────
 function ProjectsPage({ T, session, onSelectProject,
   search, setSearch, fFY, setFFY, fOrg, setFOrg, fCode, setFCode, fName, setFName,
-  fSeg, setFSeg, fPri, setFPri, fStrat, setFStrat, fStage, setFStage, fCC, setFCC }) {
+  fSeg, setFSeg, fPri, setFPri, fStrat, setFStrat, fStage, setFStage, fCC, setFCC, fMark = "", setFMark = () => {} }) {
   const isPMO = session?.role === "pmo";
   const [rows,         setRows]         = useState([]);
   const [lookups,      setLookups]      = useState({sectors:[],regions:[],segments:[],cost_centers:[],campuses:[]});
@@ -4826,7 +4826,7 @@ function ProjectsPage({ T, session, onSelectProject,
   const distinctSegs   = useMemo(()=>[...new Set(rows.map(p=>p.sectors?.name).filter(Boolean))].sort(),[rows]);
   const distinctStrats = useMemo(()=>[...new Set(rows.map(p=>p.strategic_priority).filter(Boolean))].sort(),[rows]);
 
-  const filtered = useMemo(() => {
+  const preMark = useMemo(() => {
     let r = rows;
     // Global search
     if (search.trim()) { const q=search.toLowerCase(); r=r.filter(p=>p.name.toLowerCase().includes(q)||p.code?.toLowerCase().includes(q)); }
@@ -4842,6 +4842,12 @@ function ProjectsPage({ T, session, onSelectProject,
     if (fCC)    r = r.filter(p=>(p.cost_centers?.name||"")=== fCC);
     return sortRealCodeFirst(r);
   }, [rows,search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC]);
+  // Clicking Closed or PCR in the marker legend shows only those projects; clicking it again shows all.
+  const markOf = { closed: (p) => p.workflow_stage === "closed", pcr: (p) => !!p.pcr };
+  const filtered = useMemo(() => markOf[fMark] ? preMark.filter(markOf[fMark]) : preMark, [preMark, fMark]);
+  const markCounts = useMemo(() => ({
+    closed: preMark.filter(markOf.closed).length, pcr: preMark.filter(markOf.pcr).length,
+  }), [preMark]);
 
   // Sorting. Text sorts case-insensitively; money/percent sort numerically;
   // stage and priority sort by their real workflow order rather than
@@ -4881,7 +4887,7 @@ function ProjectsPage({ T, session, onSelectProject,
   );
   // Any change to the result set sends the reader back to the first page —
   // otherwise filtering while on page 3 shows an empty table.
-  useEffect(() => { setPage(1); }, [search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC,perPage]);
+  useEffect(() => { setPage(1); }, [search,fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC,fMark,perPage]);
 
   const toggleSort = (key) =>
     // asc → desc → back to the activity ranking, so the default order is
@@ -4891,7 +4897,7 @@ function ProjectsPage({ T, session, onSelectProject,
               : null);
 
   const activeFilterCount = [fFY,fOrg,fCode,fName,fSeg,fPri,fStrat,fStage,fCC].filter(Boolean).length;
-  const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); setFCC(""); };
+  const clearAllFilters = () => { setSearch(""); setFFY(""); setFOrg(""); setFCode(""); setFName(""); setFSeg(""); setFPri(""); setFStrat(""); setFStage(""); setFCC(""); setFMark(""); };
 
   // The summary strip restates the portfolio for whatever slice is currently
   // filtered — filter to "MT Review" and you immediately see the money sitting
@@ -4926,6 +4932,7 @@ function ProjectsPage({ T, session, onSelectProject,
     fStrat       && { key:"strat",  label:"Strategic", val:fStrat,                             clear:()=>setFStrat("") },
     fStage       && { key:"stage",  label:"Stage",     val:STAGE[fStage]?.label||fStage,       clear:()=>setFStage("") },
     fCC          && { key:"cc",     label:"Cost Ctr",  val:fCC,                                clear:()=>setFCC("") },
+    fMark        && { key:"mark",   label:"Show",      val:fMark === "pcr" ? "PCR only" : "Closed only", clear:()=>setFMark("") },
   ].filter(Boolean);
 
   const downloadExport = async () => {
@@ -4952,7 +4959,7 @@ function ProjectsPage({ T, session, onSelectProject,
     ws["!cols"] = headers.map((_,i)=>({wch: i===4||i===9 ? 30 : 20}));
     XLSX.utils.book_append_sheet(wb,ws,"Projects");
     const ts = new Date().toISOString().slice(0,10);
-    const filterLabel = activeFilterCount > 0 ? `_Filtered${activeFilterCount}` : "_All";
+    const filterLabel = (activeFilterCount > 0 ? `_Filtered${activeFilterCount}` : "_All") + (fMark === "pcr" ? "_PCR" : fMark === "closed" ? "_Closed" : "");
     XLSX.writeFile(wb,`PMO_Projects${filterLabel}_${ts}.xlsx`);
   };
 
@@ -5099,6 +5106,11 @@ function ProjectsPage({ T, session, onSelectProject,
   const markersOf = (p) => [isClosedRow(p) && EMERALD, p.pcr && PCR_CLR].filter(Boolean);
   const edgeShadow = (cols, w = 3) => cols.map((c, i) => `inset ${w * (i + 1)}px 0 0 ${c}`).join(", ");
   const closedTint = `${EMERALD}${T.wash}`;
+  const legendBtn = (on, clr) => ({
+    display:"inline-flex", alignItems:"center", gap:6, font:"inherit", color:"inherit", cursor:"pointer",
+    padding:"3px 8px", margin:"-3px -8px", borderRadius:R.pill,
+    background: on ? clr + T.wash : "transparent", border:`1px solid ${on ? clr + "77" : "transparent"}`,
+  });
   const pcrPill = (style) => (
     <span data-pcr-pill="" title="Project change request" style={{
       ...TYPE.caption, fontWeight:700, fontSize:10, letterSpacing:"0.05em", lineHeight:1.5,
@@ -5230,7 +5242,7 @@ function ProjectsPage({ T, session, onSelectProject,
         </div>
         <div style={{ position:"relative" }}>
           <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:4 }}>
-            {activeFilterCount || search.trim() ? "In this view" : "All projects"}
+            {activeFilterCount || search.trim() || fMark ? "In this view" : "All projects"}
           </div>
           <div style={{ display:"flex", alignItems:"baseline", gap:7 }}>
             <span style={{ ...TYPE.metric, color:T.heroFg }}>{sorted.length}</span>
@@ -5361,29 +5373,36 @@ function ProjectsPage({ T, session, onSelectProject,
       </div>
 
       {/* ── MARKER LEGEND: only the markers present in this view, with counts ── */}
-      {(summary.closed > 0 || summary.pcr > 0) && (
+      {(markCounts.closed > 0 || markCounts.pcr > 0 || fMark) && (
         <div data-legend="project-markers" style={{
           flexShrink:0, display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap",
           padding:`6px ${vpP.isCompact ? SP.md : SP.xl}px`, borderBottom:`1px solid ${T.border}`,
           background:T.surface, ...TYPE.caption, color:T.muted,
         }}>
-          {summary.closed > 0 && (
-            <span data-legend-item="closed" title="Closed projects: tinted row with a check before the name"
-              style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
+          {(markCounts.closed > 0 || fMark === "closed") && (
+            <button type="button" data-legend-item="closed" aria-pressed={fMark === "closed"}
+              onClick={() => setFMark(fMark === "closed" ? "" : "closed")}
+              title={fMark === "closed" ? "Showing closed projects only. Click to show all projects" : "Show closed projects only"}
+              style={legendBtn(fMark === "closed", EMERALD)}>
               <span aria-hidden="true" style={{ width:3, height:14, borderRadius:2, background:EMERALD }} />
               {closedMark(12)}
-              <span><span style={{ color:T.text, fontWeight:600 }}>Closed</span> <span style={{ fontVariantNumeric:"tabular-nums" }}>{summary.closed}</span></span>
-            </span>
+              <span><span style={{ color:T.text, fontWeight:600 }}>Closed</span> <span style={{ fontVariantNumeric:"tabular-nums" }}>{markCounts.closed}</span></span>
+              {fMark === "closed" && <X size={12} aria-hidden="true" />}
+            </button>
           )}
-          {summary.closed > 0 && summary.pcr > 0 && <span aria-hidden="true" style={{ color:T.dim }}>·</span>}
-          {summary.pcr > 0 && (
-            <span data-legend-item="pcr" title="Projects with a Project Change Request (the PCR tick in Edit project)"
-              style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
+          {(markCounts.closed > 0 || fMark === "closed") && (markCounts.pcr > 0 || fMark === "pcr") && <span aria-hidden="true" style={{ color:T.dim }}>·</span>}
+          {(markCounts.pcr > 0 || fMark === "pcr") && (
+            <button type="button" data-legend-item="pcr" aria-pressed={fMark === "pcr"}
+              onClick={() => setFMark(fMark === "pcr" ? "" : "pcr")}
+              title={fMark === "pcr" ? "Showing PCR projects only. Click to show all projects" : "Show projects with a Project Change Request only"}
+              style={legendBtn(fMark === "pcr", PCR_CLR)}>
               <span aria-hidden="true" style={{ width:3, height:14, borderRadius:2, background:PCR_CLR }} />
               {pcrPill({ cursor:"inherit" })}
-              <span><span style={{ color:T.text, fontWeight:600, fontVariantNumeric:"tabular-nums" }}>{summary.pcr}</span> (project change request)</span>
-            </span>
+              <span><span style={{ color:T.text, fontWeight:600, fontVariantNumeric:"tabular-nums" }}>{markCounts.pcr}</span> (project change request)</span>
+              {fMark === "pcr" && <X size={12} aria-hidden="true" />}
+            </button>
           )}
+          {!fMark && <span style={{ color:T.dim }}>Click one to show only those projects</span>}
         </div>
       )}
 
@@ -11986,6 +12005,7 @@ export default function App() {
   const [projFStrat, setProjFStrat] = useState("");
   const [projFStage, setProjFStage] = useState("");
   const [projFCC,    setProjFCC]    = useState("");
+  const [projFMark,  setProjFMark]  = useState(""); // "" | "closed" | "pcr": the marker legend's filter
   const [campSel,    setCampSel]    = useState("");
   const [campQ,      setCampQ]      = useState("");
   const [campFCode,  setCampFCode]  = useState("");
@@ -12818,7 +12838,7 @@ export default function App() {
               fCode={projFCode} setFCode={setProjFCode} fName={projFName} setFName={setProjFName}
               fSeg={projFSeg} setFSeg={setProjFSeg} fPri={projFPri} setFPri={setProjFPri}
               fStrat={projFStrat} setFStrat={setProjFStrat} fStage={projFStage} setFStage={setProjFStage}
-              fCC={projFCC} setFCC={setProjFCC} />}
+              fCC={projFCC} setFCC={setProjFCC} fMark={projFMark} setFMark={setProjFMark} />}
             {effectivePage === "camp" && <CampusPage T={T} session={session} onSelectProject={openProject}
               sel={campSel} setSel={setCampSel} q={campQ} setQ={setCampQ}
               fCode={campFCode} setFCode={setCampFCode} fName={campFName} setFName={setCampFName}
