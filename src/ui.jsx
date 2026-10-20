@@ -414,6 +414,8 @@ export const injectGlobals = () => {
       outline-offset: 2px;
       border-radius: ${R.sm}px;
     }
+    /* Tabs inside a sideways-scrolling (so clipping) wrapper: the ring goes inside the tab. */
+    .pmo-tabs-clip .pmo-focusable:focus-visible { outline-offset: -2px; }
 
     /* Native controls restyled once, globally (§37: no default browser controls) */
     .pmo-select {
@@ -1349,7 +1351,9 @@ export const Ambient = ({ T }) => (
 
 // ─── TABS ────────────────────────────────────────────────────────────────────
 // Animated underline that slides between tabs rather than cutting (§18).
-export function Tabs({ T, tabs, active, onChange, isMobile, onDirection }) {
+// `dense` trims the side padding so a long strip (a project page with ten tabs) still fits a
+// 1366 px laptop; callers keep the strip in a horizontally scrolling wrapper for narrower windows.
+export function Tabs({ T, tabs, active, onChange, isMobile, onDirection, dense }) {
   const wrap = useRef(null);
   const [ind, setInd] = useState({ left:0, width:0 });
   const [hover, setHover] = useState(null);
@@ -1368,6 +1372,23 @@ export function Tabs({ T, tabs, active, onChange, isMobile, onDirection }) {
     window.addEventListener("resize", measure);
     return () => { clearTimeout(t); window.removeEventListener("resize", measure); };
   }, [measure]);
+
+  // When the strip sits in a sideways-scrolling wrapper (a window too narrow for every tab), bring
+  // the active tab fully into view: a click on a half-hidden tab otherwise leaves it cut off. Only
+  // that wrapper moves (never the page), and nothing happens while every tab fits.
+  useEffect(() => {
+    const el = wrap.current?.querySelector(`[data-tab="${active}"]`);
+    if (!el) return;
+    for (let sc = wrap.current.parentElement; sc && sc !== document.body; sc = sc.parentElement) {
+      if (!/auto|scroll/.test(getComputedStyle(sc).overflowX)) continue;
+      if (sc.scrollWidth <= sc.clientWidth + 1) return;
+      const a = el.getBoundingClientRect(), b = sc.getBoundingClientRect(), pad = 24;
+      const dx = a.left < b.left ? a.left - b.left - pad : a.right > b.right ? a.right - b.right + pad : 0;
+      const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (dx) sc.scrollBy({ left: dx, behavior: still ? "auto" : "smooth" });
+      return;
+    }
+  }, [active]);
 
   return (
     <div ref={wrap} className="pmo-scroll" data-tour="tab-strip" style={{
@@ -1396,8 +1417,8 @@ export function Tabs({ T, tabs, active, onChange, isMobile, onDirection }) {
               onFocus={() => setHover(t.id)} onBlur={() => setHover(null)}
               className={`pmo-focusable ${hot ? "pmo-hot" : ""}`}
               style={{
-                display:"flex", alignItems:"center", gap:7,
-                padding: isMobile ? "9px 13px" : "10px 17px",
+                display:"flex", alignItems:"center", gap: dense ? 6 : 7,
+                padding: isMobile ? "9px 13px" : dense ? "10px 12px" : "10px 17px",
                 // A soft surface grows behind the tab on hover, and the active
                 // tab keeps a permanent one — so "current" and "about to be
                 // current" are distinguishable at a glance (§9).
