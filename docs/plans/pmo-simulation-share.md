@@ -2,7 +2,7 @@
 
 PMO request, 19 Oct 2026: after creating the simulation, the PMO selects users (guests only). They get a Simulation button when they sign in, receive the simulation with the PMO's choices, and one click starts it automatically.
 
-Status: built on the feature branch and tested headless with every database and storage write fulfilled locally. **Not deployed. The migration `supabase/migrations/20261019_sim_shares.sql` has not been run** and waits for the PMO's approval. People are named by role only in this file.
+Status: **in production since 20 Oct 2026** (PMO: "Guests should get the exact same simulation as the pmo, deploy straight to production"). The migration `supabase/migrations/20261019_sim_shares.sql` was applied the same day and its access rules were checked by SQL. Tested headless with every share write fulfilled locally; the first real share (to the Guest test account) is the PMO's own check. People are named by role only in this file.
 
 ## What is shared
 
@@ -92,9 +92,8 @@ Status: built on the feature branch and tested headless with every database and 
 - real voices and whether the click carries over to the new tab on Windows with Chrome or Edge (headless Chromium did not carry it);
 - a real Guest account.
 
-## Next steps, after approval
+## Done and next
 
-1. Apply the migration, run `get_advisors`, then run read-only SQL access checks as the PMO, a recipient guest, a non-recipient guest, a project manager and anon.
-2. Deploy to /preview/ and test with the Guest test account.
-3. The PMO reviews on a Windows laptop (Chrome or Edge).
-4. Production.
+1. Done 20 Oct 2026: migration applied; `get_advisors` shows nothing new beyond the usual "signed-in users may run a security definer helper"; access checked by SQL as the PMO, a recipient guest, another guest, a project manager and anon (inside a rolled-back transaction, nothing left behind).
+2. Done 20 Oct 2026: production and /preview/ deployed together, at the PMO's request (no /preview/ stage).
+3. Next, the PMO: share with the Guest test account, sign in as Guest on a Windows laptop (Chrome or Edge), press Play now; check the voice, then Replace or Stop sharing and share with the real guests.
