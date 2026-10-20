@@ -35,8 +35,16 @@ const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 
 
 export function cleanReading(data: Row) {
   const checks: string[] = [];
-  const baseline = money(data.baseline_cost), additional = money(data.additional_cost);
+  let baseline = money(data.baseline_cost), additional = money(data.additional_cost);
   let revised = money(data.revised_cost);
+  // Two of the three figures give the third (the reader sometimes leaves one out).
+  if (baseline == null && additional != null && revised != null && Math.abs(revised) >= 1000) {
+    baseline = Math.round((revised - additional) * 100) / 100;
+    checks.push("Baseline budget worked out as revised − additional (the form's baseline box is empty or was not read).");
+  } else if (additional == null && baseline != null && revised != null && Math.abs(baseline) >= 1000 && Math.abs(revised) >= 1000) {
+    additional = Math.round((revised - baseline) * 100) / 100;
+    checks.push("Additional cost worked out as revised − baseline (the form does not state it).");
+  }
   // A budget under PKR 1,000 is a misread (e.g. "17 million" read as 17), so it is not used to work anything out.
   const odd = (n: number | null) => n != null && n !== 0 && Math.abs(n) < 1000;
   if (odd(baseline)) checks.push(`The baseline budget was read as ${fmt(baseline!)}; check it against the document.`);
