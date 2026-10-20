@@ -280,6 +280,42 @@ assert.ok(g100.total < TM.project(N0.lines, N0.scenes, 100).total, "the governed
 assert.ok(g100.total <= TM.CUT_AT && !g100.cut, `the governed run ends by the cut (${g100.total} s)`);
 assert.equal(projectGoverned(N0.lines, N0.scenes, 40).total, TM.CUT_AT, "a very slow voice is cut at 149.5 s");
 
+// A copy the PMO shared with guests: the same plan, the data's date where the live texts say
+// "current" or "today"; every other line is word for word the live one.
+const shared = (N, NS, label) => {
+  const o2 = lineOf(NS, "o2"), live = lineOf(N, "o2");
+  assert.ok(!/current/i.test(o2.caption + o2.speech + o2.short.caption + o2.short.speech), `${label}: o2 says no "current"`);
+  assert.equal(o2.kicker, live.kicker, `${label}: o2 kicker unchanged`);
+  const s13 = lineOf(NS, "s13");
+  for (const c of s13.candidates) assert.ok(!/today/i.test(c.caption + c.speech), `${label}: s13 says no "today"`);
+  for (const l of NS.lines) {
+    if (l.id === "o2" || l.id === "s13") continue;
+    const b = lineOf(N, l.id);
+    assert.deepEqual(l.candidates.map((c) => [c.caption, c.speech]), b.candidates.map((c) => [c.caption, c.speech]), `${label}: ${l.id} as live`);
+  }
+  for (const l of NS.lines) for (const c of l.candidates) assert.ok(!/\d/.test(c.speech) && !/[{}]/.test(c.caption), `${label}: ${l.id} filled, spoken in words`);
+  return o2;
+};
+{
+  const NS = build(() => {}, { opts: { shared: true } });
+  const o2 = shared(N0, NS, "synthetic");
+  assert.equal(o2.caption, "Data as of 10 Mar 2031: money, projects, sites, people, reports. Money first.");
+  assert.equal(o2.speech, "Data as of tenth March: money, projects, sites, people, reports. Money first.");
+  assert.equal(o2.short.caption, "Portal data as of 10 Mar 2031. Money first.");
+  assert.equal(o2.short.speech, "Portal data as of tenth March. Money first.");
+  const s13 = (mut) => lineOf(build(mut, { opts: { shared: true } }), "s13").caption;
+  assert.equal(s13((p) => { Object.assign(p.assign, { variant: "none", toAssign: 0 }); }), "On East Campus, Assign PM previews first: nothing to assign.");
+  assert.equal(s13(() => {}), "On East Campus, Assign PM previews first: 2 to assign, 1 left alone.", "the other s13 variants as live");
+  // Words: o2 keeps the live line's 12 (the spoken date is always two), so the run is timed as live.
+  const dateWords = countWords(SLOTS.dateText(basePlan).say);
+  assert.equal(dateWords, 2);
+  assert.equal(lineOf(NS, "o2").words, lineOf(N0, "o2").words, "o2: as many spoken words as live");
+  assert.equal(NS.totals.words, N0.totals.words, `words ${NS.totals.words} vs ${N0.totals.words}`);
+  assert.deepEqual(NS.compacted, N0.compacted, "the same lines in their short form as live");
+  assert.ok(NS.totals.at135 <= TM.GOVERN_AT, `shared run ${NS.totals.at135} s at 135 wpm`);
+  assert.equal(SLOTS.dateText(basePlan).cap, "10 Mar 2031");
+}
+
 console.log(`narration.test: part 1 ok (${V.length} variants, invented data; ${N0.totals.words} words, ${N0.totals.at135} s at 135 wpm)`);
 
 // ── Part 2: the private fixture ──────────────────────────────────────────────
@@ -333,4 +369,15 @@ for (const [list, key] of [["story", "storyId"], ["updates", "updatesProjectId"]
     built++;
   }
 }
-console.log(`narration.test: part 2 ok (23 approved lines reproduced; ${N.totals.words} words; ${N.totals.at135} s at 135 wpm, ${N.totals.at150} s at 150; ${built} launcher choices built)`);
+// The shared copy of today's data: o2 and s13 only, within the governor at 135 wpm. o2 keeps the live
+// word count, so the shared run is never longer than live and no other line switches to its short form
+// (today's live run is only 0.5 s under the 141 s compaction line).
+const NS = buildNarration({ tables: FX.tables, plan, overrides: {} }, { shared: true });
+shared(N, NS, "fixture");
+assert.equal(countWords(SLOTS.dateText(plan).say), 2, "the spoken date is two words");
+assert.equal(lineOf(NS, "o2").words, lineOf(N, "o2").words, "o2 words as live");
+assert.ok(NS.totals.at135 <= N.totals.at135, `shared run ${NS.totals.at135} s, live ${N.totals.at135} s`);
+assert.deepEqual(NS.compacted, N.compacted, "the same lines in their short form as live");
+assert.ok(NS.totals.at135 <= TM.GOVERN_AT, `shared run ${NS.totals.at135} s at 135 wpm`);
+assert.ok(NS.compacted.every((id) => TM.COMPACT_ORDER.includes(id)));
+console.log(`narration.test: part 2 ok (23 approved lines reproduced; ${N.totals.words} words; ${N.totals.at135} s at 135 wpm, ${N.totals.at150} s at 150; ${built} launcher choices built; shared copy ${NS.totals.words} words, ${NS.totals.at135} s, short: ${NS.compacted.join(", ") || "none"})`);

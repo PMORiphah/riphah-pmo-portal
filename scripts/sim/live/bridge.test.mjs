@@ -90,6 +90,30 @@ await test("message plan: manifest, whole tables in parts under 2 MB, responses,
   assert.equal(man.refreshKey, "k");
 });
 
+await test("manifest mode: live by default (share null); a shared copy differs only by mode and its exact share", () => {
+  const snapshot = {
+    v: 2, build: "dev", takenAt: 1, readMs: 2, tz: "Asia/Karachi", pmo: { id: "me", username: "u", full_name: null }, mask: { contacts: true },
+    testAccounts: [], overrides: {}, leftOut: 0, failed: 0, plan: { v: 1 }, invariants: [], fingerprint: "f".repeat(64), code: "ABCDEF", bytes: 10,
+    tables: { a: [{ id: 1 }] }, responses: [{ key: "/rest/v1/t", status: 200, contentRange: null, body: [] }],
+    rpc: { project_has_deliverables: [] }, media: [{ attachmentId: "a1", key: "m001", mime: "image/jpeg", size: 3, sha256: "0".repeat(64) }],
+  };
+  const held = new Map([["a1", { blob: new Blob(["abc"]) }]]);
+  const live = B.messagesFor(snapshot, { nonce: "n", refreshKey: "k", held });
+  assert.equal(live.messages[0].mode, "live");
+  assert.equal(live.messages[0].share, null);
+  assert.deepEqual(Object.keys(live.messages[0]).slice(-2), ["mode", "share"], "the two new fields close the manifest");
+  const share = { id: "5a5a5a5a-0000-4000-8000-000000000001", sharedAt: 2, expiresAt: 3, voice: "off" };
+  const shared = B.messagesFor(snapshot, { nonce: "n", refreshKey: "k", held, mode: "shared", share: { ...share, extra: "dropped" } });
+  assert.equal(shared.messages[0].mode, "shared");
+  assert.deepEqual(shared.messages[0].share, share, "exactly id, sharedAt, expiresAt, voice");
+  const bare = (msgs) => JSON.stringify(msgs.map((m, i) => { if (i) return m; const { mode, share: sh, ...rest } = m; return rest; }));
+  assert.equal(bare(shared.messages), bare(live.messages), "otherwise byte-identical");
+  assert.equal(shared.messages.at(-2).item.blob, live.messages.at(-2).item.blob, "the same file");
+  assert.throws(() => B.messagesFor(snapshot, { nonce: "n", refreshKey: "k", held, mode: "shared" }), TypeError);
+  assert.throws(() => B.messagesFor(snapshot, { nonce: "n", refreshKey: "k", held, share }), TypeError);
+  assert.throws(() => B.messagesFor(snapshot, { nonce: "n", refreshKey: "k", held, mode: "other" }), TypeError);
+});
+
 await test("portal build name is 'dev' without an entry script", () => { assert.equal(B.portalBuild(), "dev"); });
 
 const pmo = { id: "11111111-1111-4111-8111-111111111111", username: "pmo", full_name: null };
@@ -239,6 +263,8 @@ await test("launch: hello → progress → manifest, parts, rpc, media, done →
   assert.equal(man.parts.tables, types.filter((t) => t === "tables").length);
   assert.equal(man.parts.responses, types.filter((t) => t === "responses").length);
   assert.ok(UUID.test(man.refreshKey));
+  assert.equal(man.mode, "live");
+  assert.equal(man.share, null);
   const media = sim.got.filter((m) => m.type === "media");
   assert.equal(media.length, man.media.length);
   assert.deepEqual(media.map((m) => m.item.key), man.media.map((m) => m.key));

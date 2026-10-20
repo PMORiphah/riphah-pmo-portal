@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
 import { storageUrl } from "./storageUrl.js";
 import { PhotoWallPage } from "./PhotoWall.jsx";
@@ -410,7 +411,148 @@ const SimLauncher = lazy(() => import("./SimLauncher.jsx").catch(() => {
 let simBridgeUsed = false;
 function stopSimBridge() {
   if (!SIM_ENABLED || !simBridgeUsed) return;
+  try { simShareMod?.stopShared?.(); } catch { /* ignore */ }
   import("./simBridge.js").then((m) => m.stopAll?.()).catch(() => { /* not loaded: nothing to stop */ });
+}
+
+// A simulation the PMO shared with senior management (PMO, 19 Oct 2026; src/simShare.js). Loaded
+// for guests only, at sign-in; the hand-over modules follow only once a share exists. The PMO and
+// project managers never load either.
+let simShareMod = null;
+const loadSimShare = () => (simShareMod ? Promise.resolve(simShareMod) : import("./simShare.js").then((m) => (simShareMod = m)));
+const FINE_POINTER = "(hover: hover) and (pointer: fine)";
+// A computer that can play it: a mouse (or trackpad) and a screen of at least 1280 × 720 (CSS
+// pixels, so a 1080p laptop at 150 % counts), with the browser window at least 1200 × 540: what a
+// maximised window leaves on such a screen once the taskbar, tabs, toolbar and bookmarks are drawn
+// (the simulation plays in that same window). Listens only while `active` (a guest with a share).
+const SIM_SCREEN = { w: 1280, h: 720 }, SIM_WINDOW = { w: 1200, h: 540 };
+function useSimComputer(active) {
+  const read = () => {
+    if (typeof window === "undefined") return { fine: false, screen: false, computer: false };
+    let fine = false;
+    try { fine = !!window.matchMedia?.(FINE_POINTER).matches; } catch { /* ignore */ }
+    const sw = Math.max(window.screen?.width || 0, window.screen?.height || 0), sh = Math.min(window.screen?.width || 0, window.screen?.height || 0);
+    const screen = fine && sw >= SIM_SCREEN.w && sh >= SIM_SCREEN.h;
+    return { fine, screen, computer: screen && window.innerWidth >= SIM_WINDOW.w && window.innerHeight >= SIM_WINDOW.h };
+  };
+  const [dev, setDev] = useState(read);
+  useEffect(() => {
+    if (!active) return;
+    const on = () => setDev((d) => { const n = read(); return n.fine === d.fine && n.screen === d.screen && n.computer === d.computer ? d : n; });
+    on();
+    window.addEventListener("resize", on);
+    let mq = null;
+    try { mq = window.matchMedia?.(FINE_POINTER); mq?.addEventListener?.("change", on); } catch { /* ignore */ }
+    return () => { window.removeEventListener("resize", on); try { mq?.removeEventListener?.("change", on); } catch { /* ignore */ } };
+  }, [active]);
+  return dev;
+}
+
+// Guests: the simulation the PMO shared with them, under Take the tour and in the same look; an
+// icon when the sidebar is collapsed. data-tour="sim-launch": hidden inside the simulation itself.
+// The click opens the simulation tab at once (it must happen inside the click).
+function SidebarSharedSimButton({ T, sim, mini }) {
+  const { status, busy, fresh, onPlay } = sim;
+  const label = status === "updating" ? "Simulation (being updated)" : status === "reload" ? "Simulation (reload the portal)" : "Simulation";
+  const title = status === "updating" ? "The portal was updated after the PMO shared this simulation. The PMO will share it again."
+    : status === "reload" ? "Reload the portal, then press Simulation."
+      : status === "loading" ? "Loading the simulation…"
+        : busy ? "Preparing the simulation…" : "Play the 2-minute simulation the PMO shared with you. It opens in a new tab and starts by itself.";
+  const disabled = busy || status === "loading" || status === "updating";
+  const click = () => { if (status === "reload") { window.location.reload(); return; } if (!disabled) onPlay(); };
+  const dot = fresh && status === "ok" && !busy ? (
+    <span aria-hidden="true" style={{ width:7, height:7, borderRadius:"50%", background:BRAND.gold, boxShadow:`0 0 8px ${BRAND.gold}AA`,
+      position: mini ? "absolute" : "static", top: mini ? 5 : undefined, right: mini ? 5 : undefined }} />
+  ) : null;
+  // Collapsed: an icon; the panel clips anything drawn beside it, so the native tooltip names it.
+  if (mini) {
+    return (
+      <button onClick={click} disabled={disabled} className="pmo-focusable" data-tour="sim-launch" aria-label={label} title={`${label}: ${title}`} style={{
+        position:"relative", width:34, height:34, margin:"9px auto 0", borderRadius:R.sm, cursor: disabled ? "default" : "pointer",
+        background:"transparent", border:`1px solid ${T.sidebarBorder}`, color:T.sidebarFg, opacity: disabled ? 0.6 : 1,
+        display:"flex", alignItems:"center", justifyContent:"center",
+      }}>{busy ? <Spinner size={13} color={T.sidebarFg} /> : <MonitorPlay size={14} />}{dot}</button>
+    );
+  }
+  return (
+    <button onClick={click} disabled={disabled} className="pmo-focusable" data-tour="sim-launch" title={title} style={{
+      width:"100%", marginTop:7, padding:"8px 12px", borderRadius:R.sm, cursor: disabled ? "default" : "pointer",
+      background:"transparent", border:`1px solid ${T.sidebarBorder}`, opacity: disabled ? 0.65 : 1,
+      color:T.sidebarFg, fontSize:11.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+      display:"flex", alignItems:"center", justifyContent:"center", gap:7,
+    }}>{busy ? <Spinner size={12} color={T.sidebarFg} /> : <MonitorPlay size={12} />} {label}{dot}</button>
+  );
+}
+
+// The guest's progress while a shared simulation is prepared, at App level and portaled to the
+// page (a collapse or resize unmounts the sidebar), top right under the header (the assistant sits
+// bottom right). Errors stay until closed.
+const SIM_SHARE_PHASE = {
+  opening: "Opening the simulation tab…",
+  checking: "Checking the simulation…",
+  sending: "Handing it to the simulation tab…",
+  confirming: "Waiting for the simulation tab…",
+};
+function SimShareProgress({ T, run, onClose }) {
+  if (!run) return null;
+  const m = run.media || { done: 0, total: 0 };
+  const pct = run.done ? 100 : m.total ? Math.round((m.done / m.total) * 100) : 0;
+  const tone = run.done ? (run.ok ? T.positive : T.danger) : T.blueBright;
+  const line = run.done
+    ? (run.ok ? "Ready: the simulation is in its own tab and starts by itself." : run.error || "The simulation could not start.")
+    : run.phase === "downloading" ? `Preparing the simulation… photos and videos ${m.done} of ${m.total}`
+      : SIM_SHARE_PHASE[run.phase] || "Preparing the simulation…";
+  return createPortal(
+    <div role="status" aria-live="polite" className="pmo-fade" style={{
+      position:"fixed", right:24, top:76, zIndex:1100, width:340, maxWidth:"calc(100vw - 32px)", boxSizing:"border-box",
+      background:T.surfaceOver || T.surface, border:`1px solid ${T.borderStrong || T.border}`, borderRadius:R.lg, boxShadow:T.shadowLg,
+      padding:`${SP.md}px ${SP.lg}px`, fontFamily:TYPE.body.fontFamily,
+    }}>
+      <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:6 }}>
+        {run.done && !run.ok ? <AlertTriangle size={14} color={T.danger} /> : run.done ? <CheckCircle2 size={14} color={T.positive} /> : <MonitorPlay size={14} color={T.blueBright} />}
+        <span style={{ ...TYPE.bodySm, fontWeight:700, color:T.text, flex:1 }}>Simulation</span>
+        {(run.done || run.error) && <IconButton T={T} icon={X} onClick={onClose} title="Close" />}
+      </div>
+      <div style={{ ...TYPE.bodySm, color: run.done && !run.ok ? T.textOf?.(T.danger) || T.danger : T.textSoft || T.text, lineHeight:1.5 }}>{line}</div>
+      {!(run.done && !run.ok) && (
+        <div style={{ height:4, borderRadius:R.pill, background:T.border, marginTop:SP.sm, overflow:"hidden" }}>
+          <div style={{ width:`${pct}%`, height:"100%", background:tone, transition:`width ${MOTION.base}` }} />
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
+}
+
+// The one-time notice when the PMO has shared a simulation with this guest (seen_at): on a
+// computer with Play now and Later; elsewhere it says where it plays (a window too small for it
+// only says so, and comes back at the next sign-in). Never over a running tour.
+function SimShareNotice({ T, sim, kind, status, isMobile, onPlay, onClose }) {
+  const tour = useTour();
+  if (tour?.running || !sim || !simShareMod) return null;
+  const { share } = sim;
+  const asOf = simShareMod.asOfText(share.as_at), until = simShareMod.dayText(share.expires_at);
+  // On a computer, Play now (greyed for the moment the hand-over modules are still loading).
+  const playable = kind === "computer" && (status === "ok" || status === "loading");
+  const where = kind === "phone" || kind === "screen"
+    ? `It plays on a laptop or desktop computer${kind === "screen" ? " with a larger screen (at least 1280 × 720)" : ""}: sign in there and press Simulation in the sidebar.`
+    : kind === "small"
+      ? "It needs a larger browser window: maximise this window (or press F11 for full screen), then press Simulation in the sidebar."
+      : status === "updating" ? "It is being updated after a portal change: the PMO will share it again."
+        : status === "reload" ? "Reload the portal, then press Simulation in the sidebar."
+          : `It opens in a new tab and starts by itself, ${share.voice === "off" ? "with captions" : "with the assistant's voice (if you hear nothing, click once on the page)"}. Simulation in the sidebar plays it again until ${until}.`;
+  return (
+    <Modal T={T} icon={MonitorPlay} width={480} isMobile={isMobile} onClose={onClose} title="A simulation shared with you"
+      sub="From the PMO"
+      footer={playable
+        ? <><Button T={T} variant="ghost" onClick={onClose}>Later</Button>
+            <Button T={T} variant="primary" icon={MonitorPlay} onClick={onPlay} disabled={status !== "ok"} loading={status === "loading"}>Play now</Button></>
+        : <Button T={T} variant="primary" onClick={onClose}>OK</Button>}>
+      <div style={{ ...TYPE.body, color:T.text, lineHeight:1.6 }}>
+        The PMO has shared a 2-minute simulation of the portal with you (data as of {asOf}). {where}
+      </div>
+    </Modal>
+  );
 }
 
 // Same place and look as Take the tour, which the PMO does not have. getSession returns the App's
@@ -435,7 +577,7 @@ function SidebarSimButton({ T, session, getSession }) {
   );
 }
 
-function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false, reportsNew = 0, onChangePassword,
+function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false, reportsNew = 0, onChangePassword, simShared = null,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
                   fyLabel = "FY 2026-27", navStats = null }) {
   const roleFiltered = NAV.filter(n => {
@@ -676,6 +818,10 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
         )}
         {SIM_ENABLED && session?.role === "pmo" && !mini && !isCompact && (
           <SidebarSimButton T={T} session={session} getSession={getSession} />
+        )}
+        {/* A simulation the PMO shared with this guest: computers only (decided by the App). */}
+        {SIM_ENABLED && session?.role === "guest" && simShared && !isCompact && (
+          <SidebarSharedSimButton T={T} sim={simShared} mini={mini} />
         )}
       </div>
 
@@ -11814,6 +11960,78 @@ export default function App() {
     return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
   }, [refreshReports]);
 
+  // A simulation the PMO shared with this guest (19 Oct 2026). Guests only: one small read at
+  // sign-in, every 2 minutes and on return to the tab, so a withdrawn share's button goes within
+  // 2 minutes. Nobody else reads or loads anything for it.
+  const [simShare, setSimShare] = useState(null);          // { share, recipient } or null
+  const [simEngine, setSimEngine] = useState("idle");      // idle | ready | failed: the hand-over modules
+  const [simShareRun, setSimShareRun] = useState(null);    // the in-portal progress panel
+  const [simPopupReady, setSimPopupReady] = useState(false);
+  const [simPopupDoneId, setSimPopupDoneId] = useState(null);
+  const simShareRef = useRef(null);
+  simShareRef.current = simShare;
+  const simLaunching = useRef(false);
+  const simPoll = useRef(null);
+  const simDevice = useSimComputer(!!simShare);
+  useEffect(() => {
+    if (!SIM_ENABLED || !session?.access_token || session.role !== "guest") { setSimShare(null); simPoll.current = null; return; }
+    let alive = true;
+    // → the poll's answer (null: nothing shared), or undefined when it could not be read.
+    const run = async () => {
+      try {
+        const m = await loadSimShare();
+        const r = await m.pollShare({ get: (p) => supa(p, {}, session.access_token), userId: session.user_id });
+        if (!alive) return undefined;
+        setSimShare((cur) => (JSON.stringify(cur) === JSON.stringify(r) ? cur : r));
+        if (r) m.preloadShared().then(() => { if (alive) setSimEngine("ready"); }, () => { if (alive) setSimEngine("failed"); });
+        return r;
+      } catch (_) { return undefined; /* keep what we knew */ }
+    };
+    simPoll.current = run;
+    run();
+    const iv = setInterval(run, 120000);
+    const onVisible = () => { if (document.visibilityState === "visible") run(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { alive = false; simPoll.current = null; clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
+  }, [session?.access_token, session?.role, session?.user_id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // The one-time notice waits a few seconds after sign-in, so the page has settled first.
+  const simShareFound = !!simShare;
+  useEffect(() => {
+    if (!simShareFound) { setSimPopupReady(false); return; }
+    const t = setTimeout(() => setSimPopupReady(true), 6000);
+    return () => clearTimeout(t);
+  }, [simShareFound, session?.access_token]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // MUST run synchronously inside the click (the simulation tab opens before anything is awaited).
+  const playShared = useCallback(() => {
+    const m = simShareMod, cur = simShareRef.current;
+    if (!m || !cur || simLaunching.current) return;
+    simBridgeUsed = true;                    // sign-out stops the hand-over
+    simLaunching.current = true;
+    setSimShareRun({ phase: "opening", media: { done: 0, total: cur.share.media_count, bytes: 0 } });
+    m.launchShared({ share: cur.share, getSession,
+      // Refused files: asks again, so a copy the PMO has since replaced is told apart from a stopped one.
+      recheck: async () => (await simPoll.current?.())?.share || null,
+      onProgress: (p) => setSimShareRun((r) => (r && !r.done ? { ...p } : r)) })
+      .then((res) => {
+        setSimShareRun({ done: true, ok: !!res.confirmed, error: res.confirmed ? null : res.error });
+        if (res.confirmed) simPoll.current?.();          // the first start is recorded: the button's dot goes
+      },
+        (e) => {
+          setSimShareRun({ done: true, ok: false, error: e?.message || "The simulation could not start." });
+          // Withdrawn or expired since the last check: ask again, so the button goes now (a newer copy
+          // was already found by the recheck, and the button plays it).
+          if (e?.code === "withdrawn" || e?.code === "expired") simPoll.current?.();
+        })
+      .finally(() => { simLaunching.current = false; });
+  }, [getSession]);
+  // A finished launch's panel closes by itself; a failure stays until closed.
+  useEffect(() => {
+    if (!simShareRun?.done || !simShareRun.ok) return;
+    const t = setTimeout(() => setSimShareRun((r) => (r?.done && r.ok ? null : r)), 8000);
+    return () => clearTimeout(t);
+  }, [simShareRun]);
+  useEffect(() => { if (!session) { setSimShareRun(null); setSimPopupDoneId(null); } }, [session]);
+
   // PMO Review badge: PDDs copied from the E-PDD portal since intake began that
   // the PMO has not opened. The copy runs every 5 minutes; checking every
   // minute keeps the badge close behind it.
@@ -12258,6 +12476,29 @@ export default function App() {
   if (inviteState) return <SetPasswordPage T={T} dark={dark} token={inviteState.token} refreshToken={inviteState.refresh} type={inviteState.type} onDone={s=>{ setSession(s); setInviteState(null); }} />;
   if (!session) return <><Login T={T} dark={dark} onLogin={setSession} /><InstallPrompt T={T} /></>;
 
+  // The board report notice (also holds back the shared-simulation notice below).
+  const reportPopupShowing = !!session && !reportPopupDone && !blockingAlertActive && reportsUnseen.length > 0 && effectivePage !== "reports";
+  // A shared simulation: a guest with an active share. The button only on a computer that can play
+  // it; the notice once per share (on a phone it says where it plays).
+  const simGuest = SIM_ENABLED && session?.role === "guest" && !!simShare;
+  const simShareButton = simGuest && !vp.isCompact && simDevice.computer ? {
+    status: simEngine === "failed" ? "reload" : simEngine === "ready" && simShareMod ? simShareMod.buildState(simShare.share) || "loading" : "loading",
+    busy: !!simShareRun && !simShareRun.done, fresh: !simShare.recipient.opened_at, onPlay: playShared,
+  } : null;
+  const simKind = !simDevice.fine ? "phone" : !simDevice.screen ? "screen" : simDevice.computer && !vp.isCompact ? "computer" : "small";
+  const simNoticeOpen = simGuest && simPopupReady && !simShare.recipient.seen_at && simPopupDoneId !== simShare.share.id
+    && !blockingAlertActive && !showTourInvite && !reportPopupShowing;
+  const closeSimNotice = () => {
+    const cur = simShare;
+    if (!cur) return;
+    setSimPopupDoneId(cur.share.id);
+    // A window too small for it: not recorded, so a later sign-in in a larger window offers Play now.
+    if (simKind === "small") return;
+    supa(`/rest/v1/sim_share_recipients?share_id=eq.${cur.share.id}&user_id=eq.${session.user_id}`, {
+      method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ seen_at: new Date().toISOString() }),
+    }, session.access_token).catch(() => {});
+  };
+
   // Contextual quick actions for the header. Deliberately small: two per page
   // at most, and only actions the current role can actually perform (§24).
   const quickActions = (() => {
@@ -12358,6 +12599,7 @@ export default function App() {
       <Sidebar
         T={T} page={effectivePage} setPage={navigateToPage} session={session} getSession={getSession}
         unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} reportsAllowed={reportsAllowed} reportsNew={reportsUnseen.length} onChangePassword={() => setShowChangePassword(true)}
+        simShared={simShareButton}
         collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}
         isCompact={vp.isCompact} fyLabel={portal.fy} navStats={navStats}
@@ -12450,13 +12692,20 @@ export default function App() {
       )}
       {/* A board report shared with this person and not yet opened (8 Oct 2026):
           once per sign-in, after any blocking deadline alert. */}
-      {session && !reportPopupDone && !blockingAlertActive && reportsUnseen.length > 0 && effectivePage !== "reports" && (
+      {reportPopupShowing && (
         <Suspense fallback={null}>
           <BoardReportPopup T={T} reports={reportsUnseen} isMobile={vp.isCompact}
             onOpen={(id) => { setReportPopupDone(true); setReportsPinned(true); setOpenReport(id); setPage("reports"); }}
             onLater={() => setReportPopupDone(true)} />
         </Suspense>
       )}
+      {/* A simulation the PMO shared with this guest: once per share (seen_at), after any other
+          sign-in notice and the tour invite. */}
+      {simNoticeOpen && (
+        <SimShareNotice T={T} sim={simShare} kind={simKind} status={simShareButton?.status || "loading"} isMobile={vp.isCompact}
+          onPlay={() => { playShared(); closeSimNotice(); }} onClose={closeSimNotice} />
+      )}
+      <SimShareProgress T={T} run={simShareRun} onClose={() => setSimShareRun(null)} />
       {showChangePassword && session && (
         <ChangePasswordModal T={T} session={session} onClose={() => setShowChangePassword(false)} />
       )}

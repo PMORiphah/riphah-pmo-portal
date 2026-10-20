@@ -4,15 +4,19 @@
 //   - the caption, docked in the sidebar column with the assistant, or shrunk to the assistant alone
 //     in the bottom-left corner while a full-screen view (Board report, Gallery picture) is open;
 //   - a transparent shield that stops stray clicks from changing the run (the controls stay usable);
+//     while the browser refuses the voice (a shared copy that started by itself), its first click
+//     turns the voice on (VoiceChip says so);
 //   - the simulation badge, top centre, above everything, in every state (Badge, exported):
-//     "Live portal data as of HH:MM PKT · read-only · nothing is sent".
+//     "Live portal data as of HH:MM PKT · read-only · nothing is sent", or for a shared copy
+//     "Portal data as of Mon 19 Oct, 14:05 PKT · shared by the PMO · read-only · nothing is sent".
 // Nothing here is new to the App: it is its own layer and only reads the App's layout.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Volume2 } from "lucide-react";
 import { AssistantAvatar } from "../../AssistantAvatar.jsx";
 import { SPOT_MAX } from "./spotlight.js";
 import { GOLD, GOLD_SOFT, INK, SANS, Z, EASE } from "./look.js";
 
-/** The badge: "Live portal data as of HH:MM PKT · read-only · nothing is sent". */
+/** The badge: "Live portal data as of HH:MM PKT · read-only · nothing is sent" (or the shared copy's). */
 export function Badge({ text }) {
   return (
     <div data-sim-ui="badge" role="note" style={{
@@ -167,12 +171,28 @@ export function CaptionDock({ state, voiceOn, progress }) {
   );
 }
 
-/** Swallows stray clicks on the App while the run plays (the controls sit above it). */
-export function Shield({ on }) {
+/** Swallows stray clicks on the App while the run plays (the controls sit above it). onPress (optional)
+ *  runs inside a click on it, e.g. to turn on a voice the browser refused. */
+export function Shield({ on, onPress }) {
   if (!on) return null;
   const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  const click = (e) => { stop(e); if (onPress && e.isTrusted !== false) onPress(); };
   return (
-    <div data-sim-ui="shield" aria-hidden="true" onMouseDown={stop} onClick={stop} onContextMenu={stop}
-      onDoubleClick={stop} style={{ position: "fixed", inset: 0, zIndex: Z.shield, background: "transparent", cursor: "default" }} />
+    <div data-sim-ui="shield" aria-hidden="true" onMouseDown={stop} onClick={click} onContextMenu={stop}
+      onDoubleClick={stop} style={{ position: "fixed", inset: 0, zIndex: Z.shield, background: "transparent", cursor: onPress ? "pointer" : "default" }} />
+  );
+}
+
+/** "Click anywhere for voice": shown while the browser refuses the voice; the chip itself is a button. */
+export function VoiceChip({ on, onPress }) {
+  if (!on) return null;
+  return (
+    <button type="button" data-sim-ui="voice-chip" className="sim-dir-btn" onClick={(e) => { e.stopPropagation(); onPress?.(); }}
+      style={{ position: "fixed", left: "50%", bottom: 18, transform: "translateX(-50%)", zIndex: Z.dock,
+        display: "inline-flex", alignItems: "center", gap: 8, height: 36, padding: "0 16px", borderRadius: 99,
+        border: `1px solid ${GOLD}`, background: "rgba(10,26,46,.94)", color: "#F6D9A8", font: `600 13px ${SANS}`, cursor: "pointer",
+        boxShadow: "0 10px 30px rgba(0,0,0,.4)", animation: "simDirFade .3s ease both, simDirBreathe 5.5s ease-in-out infinite" }}>
+      <Volume2 size={15} /> Click anywhere for voice
+    </button>
   );
 }

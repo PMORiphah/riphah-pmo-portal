@@ -3,7 +3,8 @@
 //
 // During the first line the assistant presents from a compact card over the live, lightly dimmed
 // dashboard: the Begin screen's own navy-glass assistant, "Riphah PMO Portal" and
-// "{FY} capital projects · portal data as of HH:MM PKT", with the caption below. When the second line
+// "{FY} capital projects · portal data as of HH:MM PKT" (a shared copy: its day and time, asOfText),
+// with the caption below. When the second line
 // starts the director sets presenter "dock": the card folds into the caption dock in the sidebar
 // column (0.5 s) and the dock takes over. No title animation.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -32,7 +33,7 @@ function useCardPlace(active) {
   return place;
 }
 
-export function PresenterCard({ state, hhmm, fyLabel }) {
+export function PresenterCard({ state, hhmm, fyLabel, asOfText = null }) {
   const on = state.phase === "running" && state.presenter === "card";
   const [folding, setFolding] = useState(false);
   const [caption, setCaption] = useState("");
@@ -87,7 +88,7 @@ export function PresenterCard({ state, hhmm, fyLabel }) {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: SERIF, fontWeight: 400, fontSize: 30, lineHeight: 1.1 }}>Riphah PMO Portal</div>
             <div style={{ marginTop: 6, fontSize: 13, color: GOLD_SOFT, letterSpacing: ".02em" }}>
-              {fyLabel ? `${fyLabel} capital projects` : "Capital projects"} · portal data as of {hhmm} PKT
+              {fyLabel ? `${fyLabel} capital projects` : "Capital projects"} · portal data as of {asOfText || hhmm} PKT
             </div>
             {state.paused && (
               <div style={{ marginTop: 4, fontSize: 11, color: GOLD_SOFT, fontWeight: 600, animation: "simDirPulse 1.6s ease-in-out infinite" }}>Paused</div>

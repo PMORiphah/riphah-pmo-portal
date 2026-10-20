@@ -8,7 +8,9 @@
 // its candidates in order: the data-selected main line, its fallbacks, then the figure-free bare line
 // (none for the critical opening and dashboard lines). The rehearsal may move a line's `use` to a
 // later candidate; caption, speech, words, figures and short always read the candidate in use.
-import { LINES, CHAPTERS, CLOSING_SCENE, chapterOfScene } from "./lines.js";
+// buildNarration(snapshot, { shared: true }) (a copy the PMO shared with guests) says the data's date
+// where the live texts say "current" or "today" (lines.js SHARED_TEXTS); the plan is the same.
+import { LINES, CHAPTERS, CLOSING_SCENE, chapterOfScene, SHARED_TEXTS } from "./lines.js";
 import { fmtM, fmtFull, fmtP1, fmtMcc, pctRound, fmtDayGB } from "./format.js";
 import { sayText, sayMillions, sayPercent, sayInt, sayDate, sayCampus, countWords } from "./say.js";
 import { project, compact, fmtClock, COMPACT_AT } from "./timing.js";
@@ -24,7 +26,8 @@ const HOLDERS = { in_df: "Director Finance", in_ed: "the Executive Director", in
 /** The slot catalogue: (plan, env) → { cap, say, screen } (screen: a string, an object of named
  *  forms with `default`, or null when nothing on screen can be checked). */
 export const SLOTS = {
-  dateText: (p) => ({ cap: p.asOf.dateText, say: p.asOf.dateText, screen: null }),
+  // "19 Oct 2026" on screen, "nineteenth October" spoken (said only by a shared copy's opening).
+  dateText: (p) => ({ cap: p.asOf.dateText, say: sayDate(p.asOf.pktDate, Number(String(p.asOf.pktDate).slice(0, 4))), screen: null }),
   hhmm: (p) => ({ cap: p.asOf.hhmm, say: p.asOf.hhmm, screen: null }),
 
   capexM: (p) => ({ cap: millionsCap(p.dashboard.capexTotal), say: sayMillions(p.dashboard.capexTotal), screen: fmtM(p.dashboard.capexTotal) }),
@@ -257,18 +260,27 @@ function buildLine(L, plan, F, vars) {
 const totalWords = (lines) => lines.filter((l) => !l.skip).reduce((s, l) => s + (l.compact ? l.short.words : l.words), 0);
 const r3 = (x) => Math.round(x * 1000) / 1000;
 
+/** A line with a shared copy's texts in place of the live ones (same entries, conditions and figures). */
+function sharedLine(L) {
+  const t = SHARED_TEXTS[L.id];
+  if (!t) return L;
+  return { ...L, short: t.short ?? L.short,
+    main: L.main.map((e) => (t.main && Object.prototype.hasOwnProperty.call(t.main, e.name) ? { ...e, caption: t.main[e.name] } : e)) };
+}
+
 /**
  * The narration for a validated snapshot (contract §F.1):
  *   { lines, scenes, chapters, totals: { words, at135, at150, atWpm }, compacted, notes }
+ * shared: a copy the PMO shared with guests (its data may be days old; see SHARED_TEXTS).
  */
-export function buildNarration(snapshot, { wpm = 135 } = {}) {
+export function buildNarration(snapshot, { wpm = 135, shared = false } = {}) {
   const plan = snapshot?.plan;
   if (!plan || plan.v !== 1) throw new Error("narration: the snapshot has no plan");
   const tables = snapshot.tables || {};
   const env = { campuses: tables.campuses || [], say: snapshot.overrides?.say || {} };
   const F = new Filler(plan, env);
   const vars = varsOf(plan);
-  const lines = LINES.map((L) => buildLine(L, plan, F, vars));
+  const lines = LINES.map((L) => buildLine(shared ? sharedLine(L) : L, plan, F, vars));
 
   const sceneNs = [...new Set(lines.map((l) => l.scene))].sort((a, b) => a - b);
   const scenes = sceneNs.map((n) => {

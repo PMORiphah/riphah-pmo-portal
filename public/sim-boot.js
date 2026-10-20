@@ -13,7 +13,8 @@
  *       speech may use on-device voices only;
  *   (f) guards links, window.open, navigation, downloads, printing (window.print, Ctrl+P) and Ctrl+S;
  *   (g) labels any print made from the browser menu ("Live portal data as of HH:MM PKT · not an
- *       official report") and names the file SIMULATION_...;
+ *       official report", or for a copy the PMO shared with guests "Portal data as of 19 Oct 2026,
+ *       14:05 PKT · shared by the PMO · not an official report") and names the file SIMULATION_...;
  *   (h) points the portal's Google Fonts link at the self-hosted copy in sim/fonts/;
  *   (i) publishes window.__PMO_SIM__ (frozen);
  *   (k) refuses frames, objects and embeds (an about:blank frame would have the browser's own APIs);
@@ -526,19 +527,42 @@
   // ── (g) print from the browser menu: a label on every page, SIMULATION_ file names ────────────
   // window.print and Ctrl+P are off (f); the browser menu's Print cannot be stopped, so every page it
   // prints says what it is. The read time is set once the data has arrived (__PMO_SIM__.setAsOf).
+  // @sim-asof-begin (scripts/sim/live/share.test.mjs runs this block on its own: keep it self-contained)
   var HHMM = (function () {
     try { return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', hour12: false }); }
     catch (e) { return null; }
   }());
-  var asOfMs = null;
+  // A shared copy may be days old: its label names the day too ("19 Oct 2026, 14:05").
+  var DAYHHMM = (function () {
+    try { return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Karachi', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }); }
+    catch (e) { return null; }
+  }());
+  var asOfMs = null, asOfShared = false;
+  function printLabel() {
+    if (asOfShared) {
+      return asOfMs !== null && DAYHHMM ? 'Portal data as of ' + DAYHHMM.format(asOfMs) + ' PKT · shared by the PMO · not an official report'
+        : 'Portal data · shared by the PMO · not an official report';
+    }
+    return asOfMs !== null && HHMM ? 'Live portal data as of ' + HHMM.format(asOfMs) + ' PKT · not an official report'
+      : 'Live portal data · not an official report';
+  }
+  // The read time of the data on screen (ms). It only moves forward (a Refresh reads later data),
+  // and only to a time within a day before now (a shared copy: 8 days), or a few minutes after it.
+  // A page plays live data or a shared copy, never both: the first call decides.
+  function acceptAsOf(ms, shared, t) {
+    if (typeof ms !== 'number' || !isFinite(ms)) return false;
+    var back = (shared ? 8 * 24 : 24) * 3600 * 1000;
+    if (ms < t - back || ms > t + 5 * 60 * 1000) return false;
+    if (asOfMs !== null && (ms < asOfMs || !!shared !== asOfShared)) return false;
+    asOfMs = ms;
+    asOfShared = !!shared;
+    return true;
+  }
+  // @sim-asof-end
   function cssText(s) {
     // A CSS string: every character outside printable ASCII (and " and \) as a 6-digit escape. The
     // escape is closed by a space, which CSS consumes, so a space that follows it in the text stays.
     return '"' + String(s).replace(/[^ !#-[\]-~]/g, function (c) { return '\\' + ('000000' + c.charCodeAt(0).toString(16)).slice(-6) + ' '; }) + '"';
-  }
-  function printLabel() {
-    return asOfMs !== null && HHMM ? 'Live portal data as of ' + HHMM.format(asOfMs) + ' PKT · not an official report'
-      : 'Live portal data · not an official report';
   }
   function printCss() {
     var label = cssText(printLabel());
@@ -555,7 +579,8 @@
       '  img[alt^="Riphah"] { display: none !important; }',
       '  [data-sim-ui] { display: none !important; }',
       '  .br-page { position: relative !important; }',
-      '  .br-page::after { content: ' + cssText('Live portal data · not an official report') + '; position: absolute; left: 50%; top: 46%;',
+      '  .br-page::after { content: ' + cssText(asOfShared ? 'Portal data shared by the PMO · not an official report'
+        : 'Live portal data · not an official report') + '; position: absolute; left: 50%; top: 46%;',
       '    transform: translate(-50%, -50%) rotate(-30deg); font: 700 40px Inter, Arial, sans-serif; letter-spacing: .06em;',
       '    color: rgba(13, 25, 41, .075); white-space: nowrap; pointer-events: none; z-index: 50;',
       '    -webkit-print-color-adjust: exact; print-color-adjust: exact; }',
@@ -595,16 +620,11 @@
       if (savedTitle !== null && D.title === printingTitle) D.title = savedTitle;
       savedTitle = printingTitle = null;
     });
-    check('print', /Live portal data/.test(printStyle.textContent));
+    check('print', /portal data/i.test(printStyle.textContent));
   });
-  // The read time of the data on screen (ms). It only moves forward (a Refresh reads later data),
-  // and only to a time within a day before now (or a few minutes after it).
-  function setAsOf(ms) {
-    if (typeof ms !== 'number' || !isFinite(ms)) return false;
-    var t = now();
-    if (ms < t - 24 * 3600 * 1000 || ms > t + 5 * 60 * 1000) return false;
-    if (asOfMs !== null && ms < asOfMs) return false;
-    asOfMs = ms;
+  // setAsOf(ms, shared): see acceptAsOf in (g); the print label follows.
+  function setAsOf(ms, shared) {
+    if (!acceptAsOf(ms, shared === true, now())) return false;
     if (printStyle) printStyle.textContent = printCss();
     return true;
   }
@@ -783,7 +803,7 @@
       D.write('<div role="alert" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;'
         + 'background:#0A1A2E;color:#fff;font:15px/1.6 Inter,Segoe UI,Arial,sans-serif;text-align:center">'
         + '<div style="max-width:520px"><div style="font-size:20px;font-weight:600;margin-bottom:10px">The simulation could not start safely</div>'
-        + '<div style="opacity:.8">Nothing was loaded. Close this tab, then sign in to the PMO portal as PMO and press Simulation in the sidebar.</div>'
+        + '<div style="opacity:.8">Nothing was loaded. Close this tab, then press Simulation in the signed-in PMO portal again.</div>'
         + '<div style="opacity:.45;font-size:12px;margin-top:14px">Check failed: ' + esc(fails.join(', ')) + '</div></div></div>'
         + '<plaintext style="display:none">');
     } catch (e) { /* main.jsx shows the locked message instead */ }

@@ -345,6 +345,19 @@ export const LINES = Object.freeze([
     short: "Thank you.", fallbacks: [], bare: null },
 ]);
 
+/**
+ * A copy the PMO shared with guests plays the same plan on data that may be days old: the texts that
+ * say "current" or "today" are said with the data's date instead (buildNarration(…, { shared: true })).
+ * o2 keeps the live line's 12 spoken words (the date is always two), so the run is timed as the PMO's
+ * and no other line switches to its short form.
+ * { lineId: { short?, main: { entryName: caption } } } [new]
+ */
+export const SHARED_TEXTS = Object.freeze({
+  o2: { main: { main: "Data as of {dateText}: money, projects, sites, people, reports. Money first." },
+    short: "Portal data as of {dateText}. Money first." },
+  s13: { main: { none: "On {assignCampus}, Assign PM previews first: nothing to assign." } },
+});
+
 /** The chapter of a scene (the closing belongs to the last chapter). */
 export function chapterOfScene(n) {
   if (n === CLOSING_SCENE) return CHAPTERS[CHAPTERS.length - 1].n;

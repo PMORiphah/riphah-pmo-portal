@@ -10,6 +10,8 @@
 //   validateMediaItem(item, snapshot)                                  → the item, blob re-typed, or throws
 //   invariants(snapshot)                                               → [{ name, ok, detail }]
 //   freshness(takenAt, now)                                            → { state: ok | amber | refused, … }
+//   sharedFreshness(takenAt, expiresAt, now)                           → { state: ok | refused, … } (a shared copy)
+//   freshnessFor(takenAt, now, share)                                  → the rule for the hand-over's mode
 //
 // Codes: protocol, build, schema, type, size, key, secret, mask, response, media, invariant,
 // fingerprint, plan, stale.
@@ -24,6 +26,8 @@ export const CODES = Object.freeze(["protocol", "build", "schema", "type", "size
   "media", "invariant", "fingerprint", "plan", "stale"]);
 /** Freshness (contract §G.8): amber from 15 minutes, refused after 60 or on another day. */
 export const FRESH = Object.freeze({ amberMin: 15, maxMin: 60, futureMs: 2 * 60 * 1000 });
+/** A copy the PMO shared with guests: valid until its expiry (7 days), never beyond 8 days, no amber. */
+export const SHARE = Object.freeze({ maxDays: 7, hardDays: 8, futureMs: 2 * 60 * 1000 });
 
 export class ValidationError extends Error {
   constructor(code, reason) {
@@ -216,6 +220,43 @@ export function freshness(takenAt, now = Date.now()) {
         : reason === "future" ? `The data read is timed after this computer's clock (read ${readAt} PKT). Press Refresh data.`
           : `Live data is ${oldMin < 120 ? `${oldMin} min` : `${Math.floor(oldMin / 60)} hours`} old (${readWhen}). Press Refresh data.`;
   return { state, ageMin, readAt, reason, text };
+}
+
+const DAY_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short",
+  hour: "2-digit", minute: "2-digit", hour12: false });
+/** "Mon 19 Oct, 14:05" in Pakistan time (built from parts, so every engine prints the same). */
+export function dayTimePKT(ms) {
+  const p = Object.fromEntries(DAY_TIME.formatToParts(ms).filter((x) => x.type !== "literal").map((x) => [x.type, x.value]));
+  return `${p.weekday} ${p.day} ${p.month}, ${p.hour === "24" ? "00" : p.hour}:${p.minute}`;
+}
+
+/**
+ * The rule for a copy the PMO shared (no amber, no day change): { state: "ok" | "refused", ageMin,
+ * readAt: "Mon 19 Oct, 14:05", reason: null | "expired" | "age" | "future" | "time", text }.
+ * Refused once `expiresAt` has passed, when the read is more than 8 days old, or when it claims to be
+ * more than 2 minutes after this computer's clock.
+ */
+export function sharedFreshness(takenAt, expiresAt, now = Date.now()) {
+  if (!Number.isFinite(takenAt) || !Number.isFinite(expiresAt) || !Number.isFinite(now)) {
+    return { state: "refused", ageMin: null, readAt: null, reason: "time", text: "The time of the shared data is not known." };
+  }
+  const ageMs = now - takenAt;
+  const ageMin = Math.max(0, Math.floor(ageMs / 60000));
+  const readAt = dayTimePKT(takenAt);
+  let reason = null;
+  if (ageMs < -SHARE.futureMs) reason = "future";
+  else if (now >= expiresAt) reason = "expired";
+  else if (ageMs > SHARE.hardDays * 86400000) reason = "age";
+  const text = reason === null ? ""
+    : reason === "future" ? `The shared data is timed after this computer's clock (portal data as of ${readAt} PKT). Check the computer's date and time.`
+      : reason === "expired" ? `The PMO has stopped sharing this simulation: it was shared until ${dayTimePKT(expiresAt)} PKT.`
+        : `The shared data is too old (portal data as of ${readAt} PKT). Ask the PMO to share it again.`;
+  return { state: reason === null ? "ok" : "refused", ageMin, readAt, reason, text };
+}
+
+/** The freshness rule of the hand-over's mode: a share ({ expiresAt, … }) or live (null). */
+export function freshnessFor(takenAt, now = Date.now(), share = null) {
+  return share ? sharedFreshness(takenAt, share.expiresAt, now) : freshness(takenAt, now);
 }
 
 // ── media ────────────────────────────────────────────────────────────────────

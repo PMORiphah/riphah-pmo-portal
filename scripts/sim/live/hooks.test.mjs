@@ -148,6 +148,57 @@ check("stopAll on sign-out: guarded, lazy, never in production", () => {
   assert.ok(s.includes("simBridgeUsed = true; setOpen(true);"), "flag set when the launcher opens");
   assert.equal((s.match(/import\("\.\/simBridge\.js"\)/g) || []).length, 1);
 });
+// ── a copy the PMO shared with guests: the simulation tab's side ─────────────
+check("shared: index.js gives SimRoot the share and Refresh only when live", () => {
+  const s = src("src/sim/index.js");
+  assert.ok(s.includes('onRefresh: mode === "live" ? refresh : null'), "onRefresh is live only");
+  assert.ok(s.includes("show(h(SimRoot, { key: snapshot.fingerprint, snapshot, narration, backend, share, onExit: exit,"), "share passed");
+  assert.ok(s.includes("buildNarration(snapshot, { shared: !!share })"), "shared narration");
+  assert.ok(s.includes("window.__PMO_SIM__.setAsOf(snapshot.takenAt, !!share)"), "the print label knows");
+  assert.ok(s.includes('if (current.mode !== "live") return { ok: false, error: TEXT.sharedNoRefresh };'), "refresh refuses a shared copy");
+  assert.ok(!/\bfreshness\(/.test(s), "every freshness check goes through freshnessFor");
+});
+check("shared: SimRoot drops Test voice and Refresh, renders SharedStart, keeps every other Start rule", () => {
+  const s = src("src/sim/SimRoot.jsx");
+  assert.ok(s.includes("const voiceNeedsTest = !shared && narrator.voiceOn && !testResult;"), "no Test-voice rule when shared");
+  assert.ok(s.includes("? <SharedStart leaving={leaving} data={sharedView} voice={voice} onStart={startRun} onExit={exit} />"), "SharedStart");
+  assert.ok(s.includes(": <BeginScreen leaving={leaving} data={begin} voice={voice} onStart={startRun} onRefresh={doRefresh} />"), "the PMO's Begin screen");
+  assert.ok(s.includes('{(phase === "rehearsing" || st.phase === "begin" || leaving) && (shared'), "Restart (phase begin) returns to SharedStart");
+  assert.ok(s.includes("onRefresh={onRefresh ? doRefresh : null}"), "no Refresh on the closing card without onRefresh");
+  assert.ok(s.includes("const fresh = freshnessFor(snapshot.takenAt, now, share);"), "the share's freshness rule");
+  assert.ok(s.includes("useInterval(() => setNow(Date.now()), 15000, !shared);"), "no 15 s re-check when shared");
+  for (const rule of ["[!isolation.ok,", "[prep.stage !== \"done\",", "[!!report && !report.critical.ok,", "[!fp,", "[!appReady || !appReady.ok,",
+    "[fresh.state === \"refused\", fresh.text],", "[voices.loading,"]) assert.ok(s.includes(rule), `rule kept: ${rule}`);
+  assert.ok(!/\bfreshness\(/.test(s), "every freshness check goes through freshnessFor");
+  assert.ok(s.includes("watchStart: shared"), "the start watch only for a shared copy");
+  assert.ok(s.includes("narrator.blocked = !p.ok;"), "a refused probe starts captions-only");
+  assert.ok(s.includes("`Portal data as of ${asOfText} PKT · shared by the PMO · read-only · nothing is sent`"), "shared badge");
+  assert.ok(s.includes("`Live portal data as of ${hhmm} PKT · read-only · nothing is sent`"), "live badge unchanged");
+});
+check("shared: SharedStart has no Test voice, no Refresh, no presenter notes; the countdown runs only while visible", () => {
+  const s = src("src/sim/director/SharedStart.jsx");
+  const code = s.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  for (const bad of ["Test voice", "data-sim-refresh", "Refresh data", "onRefresh", "notices", "For the presenter", "Run report"]) {
+    assert.ok(!code.includes(bad), `no ${bad}`);
+  }
+  assert.ok(code.includes("export const COUNTDOWN = 5;"));
+  assert.ok(code.includes('document.addEventListener("visibilitychange", on);'), "listens for visibility");
+  assert.ok(code.includes("const counting = ready && visible && !cancelled && !leaving && !d.probing;"), "counts only while visible and ready");
+  assert.ok(code.includes('if (fired || document.visibilityState !== "visible") return;'), "fires only while visible");
+  assert.ok(code.includes("onStartRef.current({ auto: true });"), "the countdown starts the run itself");
+  assert.ok(code.includes("onClick={() => onStart({ auto: false })}"), "Start now is a click (the voice's gesture)");
+  assert.ok(code.includes('data-sim-ui="begin"') && code.includes("data-sim-start"), "the Begin screen's hooks (keys, harness)");
+  assert.ok(code.includes("Shared by the PMO · portal data as of"), "the shared wording");
+});
+check("shared: the dock's voice switch, the voice chip and the closing card", () => {
+  const dock = src("src/sim/director/Dock.jsx"), ov = src("src/sim/director/Overlay.jsx"), cc = src("src/sim/director/ClosingCard.jsx");
+  assert.ok(dock.includes("{voice && ("), "the dock's voice switch only with a voice prop");
+  assert.ok(ov.includes("Click anywhere for voice") && ov.includes("export function VoiceChip"), "the chip");
+  assert.ok(ov.includes("if (onPress && e.isTrusted !== false) onPress();"), "the shield's click turns the voice on");
+  assert.ok(cc.includes("{onRefresh && ("), "Refresh only with onRefresh");
+  assert.ok(src("src/sim/director/PresenterCard.jsx").includes("portal data as of {asOfText || hhmm} PKT"));
+});
+
 check("WelcomeEmail.jsx: no simulation branch", () => {
   const s = src("src/WelcomeEmail.jsx");
   for (const bad of ["IN_SIM", "__PMO_SIM__", "sim/files", "simulation.example"]) assert.ok(!s.includes(bad), bad);

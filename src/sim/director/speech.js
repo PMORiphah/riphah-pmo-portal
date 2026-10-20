@@ -14,6 +14,12 @@
 // ({ charIndex }), so a step can wait for the word it belongs to. A voice that never reports them is
 // timed from its estimate instead (engine.js). Test hook: window.__PMO_SIM_TEST__.readWpm (60–400),
 // set by a test's init script, replaces the captions-only reading pace.
+//
+// Refused speech (a tab the browser has not let play sound yet, e.g. one that started by itself):
+// an error 'not-allowed', or (with watchStart, the shared copy's start screen) a line that never
+// starts within 2 s while no line has started yet (the silent drop of some browsers), sets `blocked`.
+// The line then waits its reading pace like a caption instead of ending at once, and every line after
+// it is captions-only until unblock() is called inside a click.
 
 const NETWORK = /Google|Online/i;
 const LANG_RANK = ["en-IN", "en-GB", "en-US"];
@@ -31,6 +37,7 @@ export function readWpm() {
   return READ_WPM;
 }
 export const START_DELAY = 0.3;  // seconds a line takes to start, in the estimates
+export const START_WATCH_MS = 2000;   // a voice that has never started gets this long to start a line
 
 export const countWords = (s) => String(s || "").trim().split(/\s+/).filter(Boolean).length;
 const langOf = (v) => String(v?.lang || "").replace("_", "-");
@@ -67,6 +74,37 @@ export function loadVoices(timeoutMs = 2500, synth = window.speechSynthesis) {
   });
 }
 
+/**
+ * Whether this tab may speak now without a click (a shared copy that starts by itself): a silent line
+ * with the voice, 1.5 s at most ('not-allowed' = no; it starts, ends or fails otherwise = yes), and when
+ * it says nothing in time, the state of a new AudioContext (Chromium decides both by the same autoplay
+ * rule). → Promise<{ ok, how, audio }>
+ */
+export function probeVoice(voice, { synth = typeof window !== "undefined" ? window.speechSynthesis : null, timeoutMs = 1500 } = {}) {
+  let audio = null;
+  try {
+    const AC = typeof window !== "undefined" ? (window.AudioContext || window.webkitAudioContext) : null;
+    if (AC) { const ac = new AC(); audio = ac.state; ac.close?.()?.catch?.(() => {}); }
+  } catch { audio = null; }
+  return new Promise((resolve) => {
+    if (!synth || !voice) { resolve({ ok: false, how: "no-voice", audio }); return; }
+    let done = false, t = 0;
+    const end = (ok, how) => { if (done) return; done = true; clearTimeout(t); resolve({ ok, how, audio }); };
+    let u;
+    try {
+      u = new SpeechSynthesisUtterance(" ");
+      u.voice = voice;
+      u.lang = voice.lang;
+      u.volume = 0;
+    } catch { end(audio === "running", "no-utterance"); return; }
+    u.onstart = () => end(true, "start");
+    u.onend = () => end(true, "end");
+    u.onerror = (e) => { const err = e && e.error; end(err !== "not-allowed", err === "not-allowed" ? "not-allowed" : "error"); };
+    t = setTimeout(() => { try { synth.cancel(); } catch { /* ignore */ } end(audio === "running", "timeout"); }, timeoutMs);
+    try { synth.speak(u); } catch { end(audio === "running", "throw"); }
+  });
+}
+
 export const clampRate = (r) => Math.min(RATE_MAX, Math.max(RATE_MIN, r));
 export function rateFor(naturalWpm) {
   if (!naturalWpm || !isFinite(naturalWpm)) return 1;
@@ -77,14 +115,16 @@ export function rateFor(naturalWpm) {
 
 /**
  * Speaks lines with one voice, learning its speed. speak() resolves when the line has ended:
- * { interrupted, ms, words, rate, stuck }. With no voice (or voice switched off) it waits a
- * reading pace on the run clock instead, so captions-only runs keep the same rhythm.
+ * { interrupted, ms, words, rate, stuck }. With no voice (or voice switched off, or refused by the
+ * browser: `blocked`) it waits a reading pace on the run clock instead, so captions-only runs keep
+ * the same rhythm.
  */
 export class Narrator {
-  constructor({ synth = window.speechSynthesis, voice = null, enabled = true, sleep } = {}) {
+  constructor({ synth = window.speechSynthesis, voice = null, enabled = true, sleep, watchStart = false } = {}) {
     this.synth = synth || null;
     this.voice = voice;
     this.enabled = enabled;
+    this.watchStart = watchStart; // a line that never starts (no line has yet) is taken as refused speech
     this.sleep = sleep;           // (sec, signal) => Promise, on the run clock
     this.rate = 1;
     this.natural = null;          // learned words a minute at rate 1
@@ -92,14 +132,39 @@ export class Narrator {
     this._cancelled = new WeakSet();
     this._current = null;
     this.boundaries = false;      // the voice has reported word boundaries at least once
+    this.blocked = false;         // the browser refused speech; captions only until unblock()
+    this.started = false;         // a line has started at least once in this page
   }
-  get voiceOn() { return !!(this.enabled && this.voice && this.synth); }
+  // `blocked` is separate from `enabled`, which SimRoot sets from its voice switch on every render.
+  get voiceOn() { return !!(this.enabled && this.voice && this.synth && !this.blocked); }
   /** Words a minute the next line is expected to take (for the deadline governor). */
   get wpm() { return this.voiceOn ? (this.natural || 135) * this.rate : readWpm(); }
   /** Seconds a line of `words` words is expected to take, start delay included. */
   estimate(words) { return words * 60 / Math.max(60, this.wpm) + START_DELAY; }
 
   setVoice(voice) { this.voice = voice; this.natural = null; this.rate = 1; }
+
+  /** Must run inside a click (or key press): a silent line with the voice, which the browser takes as
+   *  the permission to speak; the voice is on again from the next line. */
+  unblock() {
+    if (this.synth && this.voice) {
+      try {
+        const u = new SpeechSynthesisUtterance(" ");
+        u.voice = this.voice;
+        u.lang = this.voice.lang;
+        u.volume = 0;
+        this.synth.speak(u);
+      } catch { /* ignore */ }
+    }
+    this.blocked = false;
+  }
+
+  /** Waits a reading pace for the rest of a line (the time since `t0` counts), then resolves `extra`. */
+  _read(words, t0, signal, extra) {
+    const sec = Math.max(0.2, this.estimate(words) - (performance.now() - t0) / 1000);
+    return (this.sleep ? this.sleep(sec, signal) : new Promise((r) => setTimeout(r, sec * 1000)))
+      .then(() => ({ interrupted: false, ms: performance.now() - t0, words, rate: 1, read: true, ...extra }));
+  }
 
   speak(text, { signal, onBoundary } = {}) {
     const words = countWords(text);
@@ -108,7 +173,8 @@ export class Narrator {
       return (this.sleep ? this.sleep(sec, signal) : new Promise((r) => setTimeout(r, sec * 1000)))
         .then(() => ({ interrupted: false, ms: sec * 1000, words, rate: 1, read: true }));
     }
-    return new Promise((resolve) => {
+    const called = performance.now();
+    return new Promise((resolve, reject) => {
       let u;
       try { u = new SpeechSynthesisUtterance(text); } catch { resolve({ interrupted: false, ms: 0, words, rate: 1, stuck: true }); return; }
       u.voice = this.voice;
@@ -116,28 +182,51 @@ export class Narrator {
       u.rate = this.rate;
       u.pitch = 1;
       u.volume = 1;
-      let t0 = null, done = false;
+      let t0 = null, done = false, startWatch = 0;
       const expectMs = (words * 60 / Math.max(60, (this.natural || 135) * this.rate)) * 1000;
       const finish = (interrupted, stuck = false) => {
         if (done) return;
         done = true;
         clearTimeout(watch);
+        clearTimeout(startWatch);
         if (this._current === u) this._current = null;
         const ms = t0 == null ? 0 : performance.now() - t0;
         const cut = interrupted || this._cancelled.has(u);
         if (!cut && !stuck && t0 != null && ms > 300) this._learn(words, ms, u.rate);
         resolve({ interrupted: cut, ms, words, rate: u.rate, stuck });
       };
-      u.onstart = () => { t0 = performance.now(); };
+      // The browser refused to speak: captions from here on, and this line is read, not cut short.
+      const refused = (why) => {
+        if (done) return;
+        done = true;
+        clearTimeout(watch);
+        clearTimeout(startWatch);
+        if (this._current === u) this._current = null;
+        this.blocked = true;
+        try { this.synth.cancel(); } catch { /* ignore */ }
+        this._read(words, called, signal, { blocked: why }).then(resolve, reject);
+      };
+      u.onstart = () => { t0 = performance.now(); this.started = true; clearTimeout(startWatch); };
       u.onboundary = (e) => {
         if (!e || (e.name && e.name !== "word") || typeof e.charIndex !== "number") return;
         this.boundaries = true;
         try { onBoundary?.({ charIndex: e.charIndex }); } catch { /* a listener never stops the voice */ }
       };
       u.onend = () => finish(false);
-      u.onerror = (e) => finish(true, !(e && /interrupted|canceled/i.test(e.error || "")));
+      u.onerror = (e) => {
+        if (e && e.error === "not-allowed" && !this._cancelled.has(u)) { refused("not-allowed"); return; }
+        finish(true, !(e && /interrupted|canceled/i.test(e.error || "")));
+      };
       // Chrome now and then never reports the end of a line: carry on after twice its length.
       const watch = setTimeout(() => { try { this.synth.cancel(); } catch { /* ignore */ } finish(false, true); }, expectMs * 2 + 3000);
+      // A voice that has never started in this page (no Test voice, a tab that started by itself) and
+      // does not start now is taken as refused; once one line has started, only the watch above applies.
+      if (this.watchStart && !this.started) {
+        startWatch = setTimeout(() => {
+          if (t0 != null) return;
+          if (this._cancelled.has(u)) finish(true); else refused("silent");
+        }, START_WATCH_MS);
+      }
       const onAbort = () => this.cancel();
       signal?.addEventListener?.("abort", onAbort, { once: true });
       this._current = u;

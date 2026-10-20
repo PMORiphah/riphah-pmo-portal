@@ -2,7 +2,12 @@
 //
 // src/sim/index.js renders it once the snapshot has been validated, the synthetic backend and the
 // PMO's session are in place and the narration has been generated:
-//   <SimRoot snapshot narration backend onExit onRefresh/>   (key = snapshot.fingerprint)
+//   <SimRoot snapshot narration backend share onExit onRefresh/>   (key = snapshot.fingerprint)
+// share: null for the PMO's live run; for a copy the PMO shared with guests { id, sharedAt,
+// expiresAt, voice }: then the guest's start screen (SharedStart) replaces the Begin screen, the run
+// starts by itself after a countdown, the share's expiry replaces the live freshness rule, there is no
+// Test voice and no Refresh (onRefresh null), and a voice the browser refuses falls back to captions
+// with "Click anywhere for voice".
 // It mounts the real App exactly as src/main.jsx does, behind the Begin screen, and adds the
 // director layer on top: the spotlight, the presenter card and the caption dock with the assistant,
 // the pointer shield, the controls, the closing card and the badge. The App is never changed: the
@@ -23,17 +28,18 @@ import { RunClock, sleepRun, tick } from "./director/clock.js";
 import { Director, LIMIT } from "./director/engine.js";
 import * as guard from "./director/guard.js";
 import { Spotlight } from "./director/spotlight.js";
-import { Narrator, loadVoices, eligibleVoices } from "./director/speech.js";
+import { Narrator, loadVoices, eligibleVoices, probeVoice } from "./director/speech.js";
 import { settled, isNavActive, hasText, appRoot } from "./director/dom.js";
 import { BeginScreen } from "./director/BeginScreen.jsx";
+import { SharedStart } from "./director/SharedStart.jsx";
 import { ClosingCard } from "./director/ClosingCard.jsx";
 import { Dock, ConfirmExit } from "./director/Dock.jsx";
-import { Badge, SpotLayer, CaptionDock, Shield } from "./director/Overlay.jsx";
+import { Badge, SpotLayer, CaptionDock, Shield, VoiceChip } from "./director/Overlay.jsx";
 import { PresenterCard } from "./director/PresenterCard.jsx";
 import { useDirectorStyles } from "./director/look.js";
 import { buildScenes, HELPERS } from "./scenes.js";
 import { rehearse, projectRun, projectGoverned, CRITICAL_TEXT } from "./live/preflight.js";
-import { freshness } from "./live/validate.js";
+import { freshnessFor, dayTimePKT } from "./live/validate.js";
 import { fingerprintOf } from "./live/canon.js";
 import { fmtM } from "./live/format.js";
 
@@ -163,10 +169,13 @@ async function decodeMedia(backend, items) {
   return { total: keys.length, pics, videos: vidKeys.length, frames };
 }
 
-export default function SimRoot({ snapshot, narration, backend, onExit, onRefresh }) {
+export default function SimRoot({ snapshot, narration, backend, onExit, onRefresh, share = null }) {
   useDirectorStyles();
   const plan = snapshot.plan;
   const hhmm = plan.asOf?.hhmm || "";
+  const shared = !!share;
+  // A shared copy names its day as well ("Mon 19 Oct, 14:05"): it may be several days old.
+  const asOfText = shared ? dayTimePKT(snapshot.takenAt) : null;
   // While this page holds the data, a reload (F5, a clicker's slideshow key, a reload started by
   // code) is refused: it would lose it (public/sim-boot.js).
   useEffect(() => {
@@ -188,7 +197,8 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
     };
     const scenes = buildScenes({ plan, lines, meta });
     const clock = new RunClock();
-    const narrator = new Narrator({ enabled: true, sleep: (s, signal) => sleepRun(clock, s, signal) });
+    // A shared copy may start by itself, untested: a first line that never starts falls back to captions.
+    const narrator = new Narrator({ enabled: true, sleep: (s, signal) => sleepRun(clock, s, signal), watchStart: shared });
     const spotlight = new Spotlight();
     const director = new Director({ backend, lines, meta, scenes, narrator, spotlight, clock, mode: "run", guard, helpers: HELPERS });
     const rClock = new RunClock();
@@ -216,7 +226,14 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [now, setNow] = useState(Date.now());
-  useInterval(() => setNow(Date.now()), 15000, true);
+  // Live data ages by the minute; a shared copy changes only when it expires.
+  useInterval(() => setNow(Date.now()), 15000, !shared);
+  useEffect(() => {
+    const wait = shared ? share.expiresAt - Date.now() : 0;
+    if (wait <= 0) return undefined;
+    const t = setTimeout(() => setNow(Date.now()), Math.min(2 ** 31 - 1, wait + 50));
+    return () => clearTimeout(t);
+  }, [shared, share]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState(null);
   const [closingNotice, setClosingNotice] = useState(null);
@@ -276,7 +293,8 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
 
   // ── voice ─────────────────────────────────────────────────────────────────────────────────────
   const [voices, setVoices] = useState({ loading: true, list: [] });
-  const [voiceOn, setVoiceOn] = useState(true);
+  // The PMO chose voice or captions for a shared copy; the guest can still switch.
+  const [voiceOn, setVoiceOn] = useState(shared ? share.voice !== "off" : true);
   const [voiceName, setVoiceName] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -342,12 +360,13 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
   }, [phase, appKey]);
 
   // ── freshness and Start ───────────────────────────────────────────────────────────────────────
-  const fresh = freshness(snapshot.takenAt, now);
+  const fresh = freshnessFor(snapshot.takenAt, now, share);
   const report = prep.report;
-  const voiceNeedsTest = narrator.voiceOn && !testResult;
+  // A shared copy needs no Test voice: an untested voice starts at 135 wpm and its speed is learned.
+  const voiceNeedsTest = !shared && narrator.voiceOn && !testResult;
   const rules = [
     [!isolation.ok, "The simulation's isolation checks failed; close this tab and press Simulation again."],
-    [fp && !fp.ok, "The snapshot check failed; press Refresh data."],
+    [fp && !fp.ok, shared ? "The snapshot check failed. Close this tab and press Simulation in the portal again." : "The snapshot check failed; press Refresh data."],
     [prep.stage !== "done", "Rehearsing the run silently…"],
     [!!report && !report.critical.ok, report?.critical?.reason || CRITICAL_TEXT],
     [!fp, "Checking the snapshot…"],
@@ -360,11 +379,27 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
   const blocked = rules.find(([bad]) => bad);
   const startable = !blocked && st.phase === "begin";
 
-  const startRun = () => {
-    if (!startable) return;
-    if (freshness(snapshot.takenAt, Date.now()).state === "refused") { setNow(Date.now()); return; }
-    // The press is the browser's gesture for speech: a silent line with the chosen on-device voice.
-    if (narrator.voiceOn) {
+  // A shared copy's countdown checks the voice first (no click: the browser may refuse it).
+  const [probing, setProbing] = useState(false);
+  const probingRef = useRef(false);
+  const startRun = async (opts) => {
+    const auto = shared && !!(opts && opts.auto === true);
+    if (!startable || probingRef.current) return;
+    if (freshnessFor(snapshot.takenAt, Date.now(), share).state === "refused") { setNow(Date.now()); return; }
+    if (auto && narrator.voiceOn) {
+      probingRef.current = true;
+      setProbing(true);
+      let p = { ok: false };
+      try { p = await probeVoice(narrator.voice); } catch { p = { ok: false }; }
+      probingRef.current = false;
+      if (!mounted.current) return;
+      setProbing(false);
+      if (director.state.phase !== "begin") return;
+      // Refused: captions only, with "Click anywhere for voice" until a click turns it on.
+      narrator.blocked = !p.ok;
+    } else if (narrator.voiceOn) {
+      // The press is the browser's gesture for speech: a silent line with the chosen on-device voice.
+      narrator.blocked = false;
       try { const u = new SpeechSynthesisUtterance(" "); u.voice = narrator.voice; u.volume = 0; window.speechSynthesis.speak(u); } catch { /* ignore */ }
     }
     setClosingNotice(null);
@@ -372,9 +407,25 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
     director.start();
     setTimeout(() => { if (mounted.current) setLeaving(false); }, 650);
   };
+  // Inside a click (the shield, the chip or the dock's switch): the browser now lets the voice speak.
+  const [, setUnlocks] = useState(0);
+  const unlockVoice = useCallback(() => {
+    if (!narrator.blocked) return;
+    narrator.unblock();
+    setUnlocks((n) => n + 1);                        // the chip goes at once, also while paused
+  }, [narrator]);
+  const toggleVoice = useCallback(() => {
+    if (voiceOn && !narrator.blocked) { setVoiceOn(false); return; }
+    narrator.enabled = voices.list.length > 0;
+    if (narrator.blocked) narrator.unblock();
+    setVoiceOn(true);
+    setUnlocks((n) => n + 1);
+  }, [voiceOn, voices.list.length, narrator]);
 
   const restart = useCallback(() => {
     director.stop();
+    // Restart is pressed (a click or a key): the voice may speak again; a shared copy counts down anew.
+    narrator.blocked = false;
     setMenu(false);
     setConfirm(false);
     pausedForConfirm.current = false;
@@ -386,7 +437,7 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
     let alive = true;
     remount(() => alive && mounted.current).then((r) => { if (mounted.current) setAppReady(r); });
     return () => { alive = false; };
-  }, [director, remount]);
+  }, [director, remount, narrator]);
 
   const doRefresh = useCallback(async () => {
     if (refreshing || !onRefresh) return;
@@ -413,12 +464,12 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
 
   const pickChapter = useCallback((n) => {
     if (st.phase === "closing") {
-      const f = freshness(snapshot.takenAt, Date.now());
+      const f = freshnessFor(snapshot.takenAt, Date.now(), share);
       if (f.state === "refused") { setClosingNotice(f.text); setNow(Date.now()); return; }
     }
     setClosingNotice(null);
     director.chapter(n);
-  }, [director, st.phase, snapshot.takenAt]);
+  }, [director, st.phase, snapshot.takenAt, share]);
 
   // Asking to exit holds the run (voice and clock) until the presenter answers; "Keep presenting"
   // resumes it only if the confirm was what paused it.
@@ -548,28 +599,64 @@ export default function SimRoot({ snapshot, narration, backend, onExit, onRefres
     };
   }, [prep, fp, isolation, appReady, voices, voiceOn, testResult, voiceProj, fresh.state, fresh.ageMin, fresh.text, startable, blocked, refreshing, refreshError, phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const badge = `Live portal data as of ${hhmm} PKT · read-only · nothing is sent`;
+  // ── what a shared copy's start screen shows (no presenter notes, report, Test voice or Refresh) ──
+  const sharedView = useMemo(() => {
+    if (!shared) return null;
+    const rep = prep.report;
+    const sceneList = scenes.filter((s) => !s.closing);
+    const ready = rep ? rep.scenes.filter((s) => s.n !== 20 && s.ok).length : 0;
+    const progress = prep.progress;
+    const checkFail = !isolation.ok || (fp && !fp.ok) || fresh.state === "refused";
+    const rehFail = prep.stage === "done" && !!rep && !rep.critical.ok;
+    const FRESH_DETAIL = { expired: "no longer shared", age: "too old", future: "check this computer's clock", time: "read time unknown" };
+    const steps = [
+      { key: "checked", label: "Data checked", status: checkFail ? "fail" : fp ? "ok" : "wait",
+        detail: !isolation.ok ? isolation.detail : fp && !fp.ok ? fp.detail : fresh.state === "refused" ? FRESH_DETAIL[fresh.reason] || null
+          : fp ? `snapshot ${snapshot.code}` : null },
+      { key: "rehearsal", label: "Rehearsing the presentation",
+        status: rehFail ? "fail" : prep.stage !== "done" ? "wait" : "ok",
+        detail: prep.stage === "done" ? `${ready} of ${sceneList.length} scenes ready`
+          : progress?.phase === "reset" ? "resetting the portal" : progress?.phase === "decode" ? "decoding the photos"
+            : progress ? `scene ${progress.done + 1} of ${progress.total}` : "starting" },
+      { key: "ready", label: "Ready", status: startable ? "ok" : checkFail || rehFail || (appReady && !appReady.ok) ? "fail" : "wait",
+        detail: startable ? null : appReady && !appReady.ok ? "the dashboard is not ready" : null },
+    ];
+    return {
+      asOfText, untilText: dayTimePKT(share.expiresAt), steps, startable, probing,
+      startReason: blocked ? blocked[1] : "",
+      startReasonTone: blocked && /failed|could not|not ready|old|refused|stopped|after this|not known/.test(blocked[1]) ? "bad" : "dim",
+    };
+  }, [shared, prep, fp, isolation, appReady, fresh.state, fresh.reason, startable, blocked, probing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const badge = shared
+    ? `Portal data as of ${asOfText} PKT · shared by the PMO · read-only · nothing is sent`
+    : `Live portal data as of ${hhmm} PKT · read-only · nothing is sent`;
   const voice = {
     available: voices.list.length > 0, loading: voices.loading, list: voices.list, on: voiceOn, setOn: setVoiceOn,
     name: voiceName, choose: chooseVoice, test: testVoice, testing, result: testResult,
   };
+  // A shared copy whose voice the browser refused: captions, and the first click turns the voice on.
+  const voiceRefused = shared && running && voiceOn && voices.list.length > 0 && narrator.blocked;
 
   return (
     <>
       {phase !== "rehearsing" && <SpotLayer spotlight={spotlight} />}
-      <Shield on={running} />
-      <PresenterCard state={st} hhmm={hhmm} fyLabel={plan.asOf?.fyLabel} />
+      <Shield on={running} onPress={voiceRefused ? unlockVoice : null} />
+      <PresenterCard state={st} hhmm={hhmm} asOfText={asOfText} fyLabel={plan.asOf?.fyLabel} />
       <CaptionDock state={st} voiceOn={narrator.voiceOn} progress={clockSec / LIMIT} />
+      <VoiceChip on={voiceRefused} onPress={unlockVoice} />
       <Dock state={st} clock={clockSec} chapters={meta.chapters} menu={menu} setMenu={setMenu} note={st.note}
         onPrev={() => director.prev()} onPause={() => director.togglePause()} onNext={() => director.next()}
-        onChapter={(n) => director.chapter(n)} onRestart={restart} onExit={askExit} />
+        onChapter={(n) => director.chapter(n)} onRestart={restart} onExit={askExit}
+        voice={shared && voices.list.length > 0 ? { on: voiceOn && !narrator.blocked, toggle: toggleVoice } : null} />
 
-      {(phase === "rehearsing" || st.phase === "begin" || leaving) && (
-        <BeginScreen leaving={leaving} data={begin} voice={voice} onStart={startRun} onRefresh={doRefresh} />
+      {(phase === "rehearsing" || st.phase === "begin" || leaving) && (shared
+        ? <SharedStart leaving={leaving} data={sharedView} voice={voice} onStart={startRun} onExit={exit} />
+        : <BeginScreen leaving={leaving} data={begin} voice={voice} onStart={startRun} onRefresh={doRefresh} />
       )}
       {st.phase === "closing" && (
-        <ClosingCard caption={st.caption} hhmm={hhmm} chapters={meta.chapters} report={director.report} notice={closingNotice}
-          refreshing={refreshing} onChapter={pickChapter} onRestart={restart} onRefresh={doRefresh} onExit={askExit} />
+        <ClosingCard caption={st.caption} hhmm={hhmm} asOfText={asOfText} chapters={meta.chapters} report={director.report} notice={closingNotice}
+          refreshing={refreshing} onChapter={pickChapter} onRestart={restart} onRefresh={onRefresh ? doRefresh : null} onExit={askExit} />
       )}
       {confirm && <ConfirmExit onCancel={cancelExit} onExit={exit} />}
       <Badge text={badge} />

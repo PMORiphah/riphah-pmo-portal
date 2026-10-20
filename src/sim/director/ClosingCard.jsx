@@ -1,8 +1,9 @@
 // PMO Simulation director: the closing card. Owner: B3b (contract §H.6).
 //
-// The closing line, "Portal data as of HH:MM PKT", the six chapters as buttons with their start times,
-// Restart (the same snapshot), Refresh data (asks the still-open portal tab), Exit, and the run report
-// for the presenter (collapsed, "m:ss of 2:30").
+// The closing line, "Portal data as of HH:MM PKT" (a shared copy: its day and time), the six chapters
+// as buttons with their start times, Restart (the same snapshot), Refresh data (asks the still-open
+// portal tab; not shown without onRefresh, as for a shared copy), Exit, and the run report for the
+// presenter (collapsed, "m:ss of 2:30").
 import { useEffect, useRef } from "react";
 import { RotateCcw, X, RefreshCw } from "lucide-react";
 import { AssistantAvatar } from "../../AssistantAvatar.jsx";
@@ -55,7 +56,7 @@ function Report({ report }) {
   );
 }
 
-export function ClosingCard({ caption, hhmm, chapters, report, notice, refreshing, onChapter, onRestart, onRefresh, onExit }) {
+export function ClosingCard({ caption, hhmm, asOfText = null, chapters, report, notice, refreshing, onChapter, onRestart, onRefresh, onExit }) {
   // Focus is on the card itself, not on a button: Space or Enter alone never restarts (which would
   // show the Begin screen's presenter notes to the audience). Tab reaches the buttons.
   const card = useRef(null);
@@ -74,8 +75,10 @@ export function ClosingCard({ caption, hhmm, chapters, report, notice, refreshin
         <h1 style={{ margin: 0, fontFamily: SERIF, fontWeight: 400, fontSize: 40, lineHeight: 1.15 }}>
           {caption || "Thank you."}
         </h1>
-        <div data-sim-ui="as-of" style={{ marginTop: 10, fontSize: 14, color: INK_SOFT }}>Portal data as of {hhmm} PKT</div>
-        <div style={{ marginTop: 4, fontSize: 12.5, color: INK_DIM }}>Replay a chapter, restart, refresh the data, or exit.</div>
+        <div data-sim-ui="as-of" style={{ marginTop: 10, fontSize: 14, color: INK_SOFT }}>Portal data as of {asOfText || hhmm} PKT</div>
+        <div style={{ marginTop: 4, fontSize: 12.5, color: INK_DIM }}>
+          {onRefresh ? "Replay a chapter, restart, refresh the data, or exit." : "Replay a chapter, restart, or exit."}
+        </div>
         <div style={{ maxWidth: 420, margin: "22px auto 0" }}>
           <ChapterList chapters={chapters} current={0} onPick={onChapter} />
         </div>
@@ -84,10 +87,12 @@ export function ClosingCard({ caption, hhmm, chapters, report, notice, refreshin
         )}
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
           <button type="button" className="sim-dir-btn" onClick={onRestart} style={btn}><RotateCcw size={15} /> Restart</button>
-          <button type="button" className="sim-dir-btn" data-sim-refresh="" onClick={onRefresh} disabled={refreshing} style={btn}>
-            <RefreshCw size={15} style={refreshing ? { animation: "simDirSpin .9s linear infinite" } : null} />
-            {refreshing ? "Reading the portal again…" : "Refresh data"}
-          </button>
+          {onRefresh && (
+            <button type="button" className="sim-dir-btn" data-sim-refresh="" onClick={onRefresh} disabled={refreshing} style={btn}>
+              <RefreshCw size={15} style={refreshing ? { animation: "simDirSpin .9s linear infinite" } : null} />
+              {refreshing ? "Reading the portal again…" : "Refresh data"}
+            </button>
+          )}
           <button type="button" className="sim-dir-btn" onClick={onExit} style={{ ...btn, borderColor: `${GOLD}99` }}><X size={15} /> Exit</button>
         </div>
         <Report report={report} />
