@@ -432,6 +432,9 @@ const launcherKey = (compact) => `pmo.launcher.bottom.${compact ? "phone" : "des
 // aura ring the button no longer includes, so its resting place is unchanged.
 export const launcherHome = (compact) => Math.round((compact ? 74 : 20) + AURA_PAD(compact));
 const launcherRight = (compact) => Math.round((compact ? 10 : 22) + AURA_PAD(compact));
+// How far the robot reaches in from the right edge of the window. It can be dragged anywhere up the
+// edge, so a control that sticks to the bottom right (the update form's Send) keeps this much clear.
+export const launcherClearance = (compact) => launcherRight(compact) + LAUNCHER_SIZE(compact);
 
 export function readLauncherBottom(compact) {
   const home = launcherHome(compact);

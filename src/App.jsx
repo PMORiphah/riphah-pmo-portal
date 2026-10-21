@@ -10,7 +10,8 @@ import { ProjectRaciCard } from "./RaciCard.jsx";
 import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
 import { ProjectDeliverables, hasDeliverables } from "./Deliverables.jsx";
-import { PastProjectsPage, loadPastUnread } from "./PastProjects.jsx";
+import { PastProjectsPage, loadPastUnread, isPastViewer } from "./PastProjects.jsx";
+import { kindOf, threadState, OVERALL, isItem, agoText, agoShort, dayText } from "./updateKinds.js";
 import { PmoReviewPage } from "./PmoReview.jsx";
 import { ActivityDetails, BurstList, groupBursts, burstSummary, notificationEntries } from "./ActivityDetail.jsx";
 import { CashflowsPage } from "./Cashflows.jsx";
@@ -39,7 +40,7 @@ import {
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
   Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
-  PackageCheck, FileBarChart, MonitorPlay, ListTodo, FileDiff,
+  PackageCheck, FileBarChart, MonitorPlay, ListTodo, FileDiff, BellRing,
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -169,7 +170,8 @@ const supa = async (path, opts = {}, token = null) => {
   const run = _supaFetch(path, opts, token);
   if (key) {
     _inFlight.set(key, run);
-    run.finally(() => _inFlight.delete(key));
+    // The caller handles a failure; this bookkeeping copy must not become an unhandled rejection.
+    run.finally(() => _inFlight.delete(key)).catch(() => {});
   }
   return run;
 };
@@ -9686,6 +9688,19 @@ function ActivityLogPage({ T, session, supa }) {
 }
 
 // ─── UPDATES & COMMENTS ───────────────────────────────────────────────────────
+// Ask update (PMO, 20 Oct 2026): the request window, the manager's form, the request and update cards
+// and the managers' sign-in notice. Loaded only when one of them is shown; reload once on a missing chunk.
+const updReqModule = () => import("./UpdateRequest.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
+  const Nothing = () => null;
+  return { AskUpdateModal: Nothing, UpdateForm: Nothing, RequestCard: Nothing, UpdateCard: Nothing, AsksNotice: Nothing };
+});
+const AskUpdateModal = lazy(() => updReqModule().then(m => ({ default: m.AskUpdateModal })));
+const UpdateForm     = lazy(() => updReqModule().then(m => ({ default: m.UpdateForm })));
+const RequestCard    = lazy(() => updReqModule().then(m => ({ default: m.RequestCard })));
+const UpdateCard     = lazy(() => updReqModule().then(m => ({ default: m.UpdateCard })));
+const AsksNotice     = lazy(() => updReqModule().then(m => ({ default: m.AsksNotice })));
+
 const timeAgo = d => {
   const s = (Date.now() - new Date(d)) / 1000;
   if (s < 60)    return "just now";
@@ -9704,16 +9719,21 @@ const buildTree = comments => {
   return { roots, replies };
 };
 
-function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
+// renderKind(comment): the card for a request or an update (Ask update); ordinary comments show their text.
+function CommentBubble({ T, comment, replies, onReply, onDelete, depth, renderKind }) {
   const ROLE = { pmo:{ c:T.textOf(GOLD), label:"Admin" }, project_manager:{ c:T.textOf(DATA.info), label:"PM" }, guest:{ c:T.textOf(DATA.neutral), label:"Guest" } };
   const role = comment.author_role || comment.user_profiles?.role;
   const rc   = ROLE[role] || { c:T.textOf(DATA.neutral), label:"?" };
   const name = comment.author_name || comment.user_profiles?.full_name || comment.user_profiles?.username;
   const deleted = !name;
   const init = deleted ? "✕" : name[0].toUpperCase();
+  const kind = kindOf(comment);
+  const card = kind !== "comment" && !depth && renderKind ? renderKind(comment) : null;
+  const tone = !card ? null : kind === "update" ? (OVERALL[comment.data?.overall]?.color || EMERALD) : AMBER;
   return (
     <div data-comment={comment.id} data-author-role={role || ""} style={{ marginLeft: depth ? 36 : 0, marginBottom:10 }}>
-      <div style={{ background:T.card2, borderRadius:R.md, padding:"11px 14px", border:`1px solid ${T.border}` }}>
+      <div data-kind={kind} style={{ background:T.card2, borderRadius:R.md, padding:"11px 14px",
+        border:`1px solid ${tone ? `${tone}55` : T.border}`, ...(tone ? { borderLeft:`3px solid ${tone}` } : {}) }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
           <div style={{ width:26, height:26, borderRadius:"50%", background:NAVY, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>{init}</div>
           <span style={{ fontSize:13, fontWeight:600, color:deleted ? T.dim : T.text }}>{deleted ? "Deleted User" : name}</span>
@@ -9725,8 +9745,9 @@ function CommentBubble({ T, comment, replies, onReply, onDelete, depth }) {
             </button>
           )}
         </div>
-        <div style={{ fontSize:13.5, color:T.text, lineHeight:1.65, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{comment.body}</div>
-        {!depth && onReply && (
+        {card || <div style={{ fontSize:13.5, color:T.text, lineHeight:1.65, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{comment.body}</div>}
+        {/* A request is answered with the update form, never a reply: a reply would leave it waiting. */}
+        {!depth && onReply && kind !== "update_request" && (
           <button className="pmo-focusable pmo-btn" onClick={() => onReply(comment)} style={{ marginTop:7, background:"none", border:"none", cursor:"pointer", fontSize:11, color:T.muted, padding:0, fontFamily:TYPE.body.fontFamily }}>
             ↩ Reply
           </button>
@@ -9791,6 +9812,30 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
   const [replyingTo,     setReplyingTo]     = useState(null);
   const [body,           setBody]           = useState("");
   const [posting,        setPosting]        = useState(false);
+  const [projLoaded,     setProjLoaded]     = useState(false);
+  // Ask update (PMO, 20 Oct 2026): requests and the managers' updates live in the thread as posts
+  // with a kind; the list shows which projects wait (project_update_status, one row per project asked).
+  const [statusOf,       setStatusOf]       = useState({});    // project_id → project_update_status row
+  const [threadAssignees,setThreadAssignees]= useState([]);    // user ids assigned to the open project
+  const [lineTitles,     setLineTitles]     = useState({});    // deliverable id → { line_no, title }, for update cards
+  const [itemCount,      setItemCount]      = useState(null);  // the open project's deliverable items, for request cards
+  const [linkMissing,    setLinkMissing]    = useState(false); // a ?upd= link to a project this person cannot see
+  const [projPct,        setProjPct]        = useState(null);  // the open project's % Complete (PMO: "Use this %")
+  const [isViewer,       setIsViewer]       = useState(false); // a past-project viewer, who may ask too
+  const [askOpen,        setAskOpen]        = useState(false);
+  const [flash,          setFlash]          = useState(null);
+  const [composeShown,   setComposeShown]   = useState(false); // phones: the composer while the update form is open
+  const threadSeq = useRef(0);
+  const formRef   = useRef(null);
+  const scrolledFor = useRef(null);
+
+  // Past-project viewers may ask for updates (the database checks is_past_viewer() again). Never asked for the PMO.
+  useEffect(() => {
+    if (session.role === "pmo") return;
+    let alive = true;
+    isPastViewer(supa, session).then(v => { if (alive) setIsViewer(v); });
+    return () => { alive = false; };
+  }, [session.user_id, session.role]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load ────────────────────────────────────────────────────────────────────
   const loadSummary = useCallback(async () => {
@@ -9798,6 +9843,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
     try {
       const projData = await supa("/rest/v1/projects?select=id,code,name&order=code.asc", {}, session.access_token);
       setProjects(projData);
+      setProjLoaded(true);
     } catch(_) {}
     try {
       const sumData = await supa("/rest/v1/comments?select=id,project_id,author_id,is_read_by_pmo,created_at,author_role,user_profiles!comments_author_id_fkey(role)&order=created_at.desc", {}, session.access_token);
@@ -9810,41 +9856,86 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       setReadIds(new Set((reads||[]).map(r => r.comment_id)));
     } catch(_) {}
     try {
-      if (session.role === "project_manager") {
+      // Anyone who is not the PMO may manage projects (one manager is a guest): theirs are marked on the list.
+      if (session.role !== "pmo") {
         const assigns = await supa("/rest/v1/project_assignments?select=project_id&user_id=eq."+session.user_id, {}, session.access_token);
         setUserAssignments(new Set(assigns.map(a => a.project_id)));
       }
+    } catch(_) {}
+    try {
+      const st = await supa("/rest/v1/project_update_status?select=project_id,pending_since,requested_at,updated_at,overall,pct", {}, session.access_token);
+      setStatusOf(Object.fromEntries((Array.isArray(st) ? st : []).map(r => [r.project_id, r])));
     } catch(_) {}
   }, [session.access_token, session.role, session.user_id]);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
-  // Auto-select project when coming from Project Detail "Go to Discussion"
+  // Auto-select project when coming from Project Detail "Go to Discussion", a ?upd= email link
+  // or the managers' sign-in notice (also while another project is open).
   useEffect(() => {
-    if (defaultProjectId && projects.length > 0 && !selId) {
-      const p = projects.find(pr => pr.id === defaultProjectId);
-      if (p) { selectProject(p); onClearDefault?.(); }
-    }
-  }, [defaultProjectId, projects]);
+    if (!defaultProjectId || !projLoaded) return;
+    const p = projects.find(pr => pr.id === defaultProjectId);
+    if (p && p.id !== selId) selectProject(p);
+    setLinkMissing(!p);
+    onClearDefault?.();
+  }, [defaultProjectId, projects, projLoaded]);
 
-  const loadThread = useCallback(async id => {
-    setLoadingThread(true); setThread([]);
+  const loadThread = useCallback(async (id, { quiet = false } = {}) => {
+    // A later project (or reload) wins: answers for an earlier one are dropped.
+    const my = ++threadSeq.current;
+    if (!quiet) { setLoadingThread(true); setThread([]); setLineTitles({}); setProjPct(null); setThreadAssignees([]); setItemCount(null); }
     try {
-      const data = await supa(
-        `/rest/v1/comments?project_id=eq.${id}&select=id,body,parent_id,author_id,author_name,author_role,is_read_by_pmo,created_at,user_profiles!comments_author_id_fkey(username,full_name,role)&order=created_at.asc`,
-        {}, session.access_token
-      );
+      let data;
+      try {
+        data = await supa(
+          `/rest/v1/comments?project_id=eq.${id}&select=id,body,parent_id,author_id,author_name,author_role,is_read_by_pmo,created_at,kind,data,user_profiles!comments_author_id_fkey(username,full_name,role)&order=created_at.asc`,
+          {}, session.access_token
+        );
+      } catch (_) {
+        // Without the Ask update columns (kind, data) the thread still reads as before.
+        data = await supa(
+          `/rest/v1/comments?project_id=eq.${id}&select=id,body,parent_id,author_id,author_name,author_role,is_read_by_pmo,created_at,user_profiles!comments_author_id_fkey(username,full_name,role)&order=created_at.asc`,
+          {}, session.access_token
+        );
+      }
+      if (my !== threadSeq.current) return;
       setThread(data);
 
-      // Assigned PM(s) for this project — used by the WhatsApp nudge button
+      // Assigned PM(s) for this project — used by the WhatsApp nudge button, Ask update and the manager's form
       try {
         const assigns = await supa(`/rest/v1/project_assignments?project_id=eq.${id}&select=user_id`, {}, session.access_token);
         const ids = (assigns||[]).map(a=>a.user_id);
+        if (my === threadSeq.current) setThreadAssignees(ids);
         if (ids.length) {
           const pms = await supa(`/rest/v1/user_profiles?id=in.(${ids.join(",")})&is_active=eq.true&select=id,full_name,username,phone`, {}, session.access_token);
-          setThreadPMs(pms||[]);
-        } else setThreadPMs([]);
-      } catch(_) { setThreadPMs([]); }
+          if (my === threadSeq.current) setThreadPMs(pms||[]);
+        } else if (my === threadSeq.current) setThreadPMs([]);
+      } catch(_) { if (my === threadSeq.current) setThreadPMs([]); }
+
+      // Request cards say what was asked, which depends on the project's deliverable items.
+      if ((data || []).some(c => kindOf(c) === "update_request")) {
+        try {
+          const ds = await supa(`/rest/v1/project_deliverables?project_id=eq.${id}&confirmed=eq.true&superseded=eq.false&select=title`, {}, session.access_token);
+          if (my === threadSeq.current) setItemCount((Array.isArray(ds) ? ds : []).filter(d => isItem(d.title)).length);
+        } catch(_) {}
+      }
+      // Update cards: the deliverable lines they name, and (PMO) the project's % Complete for "Use this %".
+      const updates = (data || []).filter(c => kindOf(c) === "update");
+      if (updates.length) {
+        const lineIds = [...new Set(updates.flatMap(u => (Array.isArray(u.data?.lines) ? u.data.lines : []).map(l => l?.id)).filter(Boolean))];
+        if (lineIds.length) {
+          try {
+            const ls = await supa(`/rest/v1/project_deliverables?id=in.(${lineIds.join(",")})&select=id,line_no,title`, {}, session.access_token);
+            if (my === threadSeq.current) setLineTitles(Object.fromEntries((ls || []).map(l => [l.id, l])));
+          } catch(_) {}
+        }
+        if (session.role === "pmo") {
+          try {
+            const pr = await supa(`/rest/v1/projects?id=eq.${id}&select=pct_complete`, {}, session.access_token);
+            if (my === threadSeq.current) setProjPct(pr?.[0]?.pct_complete ?? null);
+          } catch(_) {}
+        }
+      }
 
       // Mark any comments I haven't read (and didn't write) as read — for ALL roles.
       const myReads = await supa(`/rest/v1/comment_reads?select=comment_id`, {}, session.access_token);
@@ -9875,11 +9966,11 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
         }
       }
     } catch(_) {}
-    setLoadingThread(false);
+    if (my === threadSeq.current) setLoadingThread(false);
   }, [session.access_token, session.role, session.user_id, loadSummary, onReadChange]);
 
   const selectProject = useCallback(p => {
-    setSelId(p.id); setSelProject(p); setReplyingTo(null); setBody("");
+    setSelId(p.id); setSelProject(p); setReplyingTo(null); setBody(""); setAskOpen(false); setFlash(null); setComposeShown(false); setLinkMissing(false);
     loadThread(p.id);
   }, [loadThread]);
 
@@ -9970,6 +10061,50 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
 
   const { roots, replies } = useMemo(() => buildTree(thread), [thread]);
 
+  // ── Ask update ──────────────────────────────────────────────────────────────
+  // Who manages a project is project_assignments, never the role (one manager is a guest).
+  const tstate    = useMemo(() => threadState(thread), [thread]);
+  const canAsk    = session.role === "pmo" || isViewer;
+  const amManager = threadAssignees.includes(session.user_id);
+  const formOpen  = amManager && !!tstate.pending && !loadingThread;
+  const lastData  = tstate.lastUpdate?.data || null;
+  const lastPct   = lastData?.pct ?? null;
+
+  // A manager who opens a thread with a request waiting lands on the form (once per request).
+  useEffect(() => {
+    if (!formOpen) return;
+    const k = `${selId}:${tstate.pending.id}`;
+    if (scrolledFor.current === k) return;
+    scrolledFor.current = k;
+    const t = setTimeout(() => formRef.current?.scrollIntoView({ block:"start", behavior:"smooth" }), 300);
+    return () => clearTimeout(t);
+  }, [formOpen, selId, tstate.pending?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 7000);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  // "Use this %" (PMO only, PMO decision 20 Oct 2026): the manager's % goes into % Complete only when pressed.
+  const applyPct = async (pct) => {
+    await supa(`/rest/v1/projects?id=eq.${selId}`,
+      { method:"PATCH", headers:{ Prefer:"return=minimal" }, body: JSON.stringify({ pct_complete: pct }) }, session.access_token);
+    setProjPct(pct);
+  };
+  const renderKind = (c) => (
+    <Suspense fallback={<div style={{ fontSize:13.5, color:T.text, lineHeight:1.65, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{c.body}</div>}>
+      {kindOf(c) === "update_request"
+        ? <RequestCard T={T} comment={c} answeredBy={tstate.answeredBy[c.id] || null} waiting={tstate.waiting.some(w => w.id === c.id)} lines={itemCount} />
+        : <UpdateCard T={T} comment={c} titles={lineTitles} latest={c.id === tstate.lastUpdate?.id}
+            isPMO={session.role === "pmo"} projectPct={projPct} onUsePct={applyPct} />}
+    </Suspense>
+  );
+  // After a request or an update: the thread, and the list's chips, both at once.
+  const afterPost = (msg) => {
+    setFlash(msg);
+    return Promise.all([loadThread(selId, { quiet:true }), loadSummary()]);
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
@@ -10038,6 +10173,29 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                     {cm.total} comment{cm.total!==1?"s":""} · {timeAgo(cm.lastAt)}
                   </div>
                 )}
+                {(() => {
+                  // Ask update: waiting (amber, breathing), or the manager's latest overall status and %.
+                  const st = statusOf[p.id];
+                  const chip = (c) => ({ display:"inline-flex", alignItems:"center", gap:5, maxWidth:"100%", padding:"1px 8px",
+                    borderRadius:R.pill, background:`${c}${T.badge}`, color:T.textOf(c), fontSize:10.5, fontWeight:700,
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", boxSizing:"border-box" });
+                  if (st?.pending_since) return (
+                    <div data-asked="waiting" style={{ marginTop:5 }}>
+                      <span style={chip(AMBER)} title={`Update requested ${agoText(st.pending_since)}`}>
+                        <span className="pmo-pulse-dot" style={{ width:6, height:6, borderRadius:"50%", background:AMBER, color:AMBER, flexShrink:0 }} />
+                        {userAssignments.has(p.id) ? "Your update needed" : "Update requested"} · {agoShort(st.pending_since)}
+                      </span>
+                    </div>
+                  );
+                  const o = st?.updated_at ? OVERALL[st.overall] : null;
+                  return o ? (
+                    <div data-asked="answered" style={{ marginTop:5 }}>
+                      <span style={chip(o.color)} title="The manager's latest update">
+                        {o.label}{st.pct != null ? ` · ${Number(st.pct)}%` : ""} · {dayText(st.updated_at)}
+                      </span>
+                    </div>
+                  ) : null;
+                })()}
               </div>
             );
           })}
@@ -10068,13 +10226,54 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
             </div>
             <div style={{ ...TYPE.h3, color:T.text }}>Select a project to view updates</div>
             <div style={{ fontSize:12, color:T.dim }}>Comments and progress updates appear here.</div>
+            {linkMissing && (
+              <div role="status" data-link-missing style={{ ...TYPE.bodySm, color:T.textOf(AMBER), marginTop:6, textAlign:"center", maxWidth:360, padding:"0 16px" }}>
+                The project in that link is not in your list, so it could not be opened.
+              </div>
+            )}
           </div>
         ) : (
           <>
             {/* Thread header */}
-            <div style={{ padding:"12px 20px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, flexShrink:0 }}>
-              <div style={{ fontSize:10, color:T.dim, fontFamily:"monospace" }}>{selProject?.code || "-"}</div>
-              <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{selProject?.name}</div>
+            <div style={{ padding:"12px 20px", borderBottom:`1px solid ${T.border}`, background:T.headerBg, flexShrink:0,
+              display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+              <div style={{ flex:"1 1 220px", minWidth:0 }}>
+                <div style={{ fontSize:10, color:T.dim, fontFamily:"monospace" }}>{selProject?.code || "-"}</div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{selProject?.name}</div>
+                {!loadingThread && (tstate.pending ? (
+                  <div data-asked="waiting" style={{ ...TYPE.caption, color:T.textOf(AMBER), marginTop:3, display:"flex", alignItems:"center", gap:6 }}>
+                    <span className="pmo-pulse-dot" style={{ width:7, height:7, borderRadius:"50%", background:AMBER, color:AMBER, flexShrink:0 }} />
+                    <span>
+                      Update requested {agoText(tstate.pending.created_at)}
+                      {tstate.waiting.length > 1 ? ` · asked ${tstate.waiting.length} times` : ""}
+                      {amManager ? " · your update is needed" : ""}
+                    </span>
+                  </div>
+                ) : tstate.lastUpdate ? (
+                  <div style={{ ...TYPE.caption, color:T.muted, marginTop:3 }}>
+                    Last update {dayText(tstate.lastUpdate.created_at)}
+                    {OVERALL[lastData?.overall] ? ` · ${OVERALL[lastData.overall].label}` : ""}
+                    {lastPct != null ? ` · PM reports ${Number(lastPct)}%` : ""}
+                  </div>
+                ) : null)}
+              </div>
+              {/* Phones land on the form already; the button would only squeeze the title. */}
+              {formOpen && !vpD.isCompact && (
+                <Button T={T} size="sm" variant="primary" icon={ClipboardCheck}
+                  onClick={() => formRef.current?.scrollIntoView({ block:"start", behavior:"smooth" })}>Give update</Button>
+              )}
+              {canAsk && (
+                <Button T={T} size="sm" variant="accent" tone={T.textOf(AMBER)} icon={BellRing}
+                  disabled={loadingThread || !threadPMs.length}
+                  title={!loadingThread && !threadPMs.length ? "No active manager is assigned to this project" : tstate.pending ? "Ask again: a new request and email" : "Email the manager and ask for an update"}
+                  onClick={() => setAskOpen(true)}>{tstate.pending ? "Remind" : "Ask update"}</Button>
+              )}
+              {/* Said, not only in a hover title: phones and tablets have no hover. */}
+              {canAsk && !loadingThread && !threadPMs.length && (
+                <div data-no-manager style={{ ...TYPE.caption, color:T.dim, flexBasis:"100%" }}>
+                  No active manager is assigned, so nobody could answer an update request.
+                </div>
+              )}
             </div>
 
             {/* Comments */}
@@ -10092,10 +10291,34 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                   replies={replies[c.id] || []}
                   onReply={canPost ? setReplyingTo : null}
                   onDelete={session.role === "pmo" ? deleteComment : null}
-                  depth={0}
+                  depth={0} renderKind={renderKind}
                 />
               ))}
+              {/* The manager's form, while a request waits: last in the thread, just above the composer. */}
+              {formOpen && selProject && (
+                <div ref={formRef} style={{ scrollMarginTop:8 }}>
+                  <Suspense fallback={<div style={{ ...TYPE.bodySm, color:T.muted, padding:"12px 0" }}>Loading the update form…</div>}>
+                    <UpdateForm key={selId} T={T} session={session} supa={supa} project={selProject} waiting={tstate.waiting}
+                      lastPct={lastPct} isCompact={vpD.isCompact}
+                      onDone={(msg) => afterPost(msg || "Update sent.")} />
+                  </Suspense>
+                </div>
+              )}
             </div>
+
+            {flash && (
+              <div role="status" className="pmo-in" style={{ ...TYPE.bodySm, color:T.textOf(DATA.positive), background:`${DATA.positive}${T.wash}`,
+                borderTop:`1px solid ${DATA.positive}44`, padding:"8px 20px", display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                <CheckCircle2 size={13} /> {flash}
+              </div>
+            )}
+            {/* Portalled: the thread pane moves with the pointer (a transform), which would hold a fixed window inside it. */}
+            {askOpen && selProject && createPortal(
+              <Suspense fallback={null}>
+                <AskUpdateModal T={T} session={session} supa={supa} project={selProject} managers={threadPMs}
+                  remind={!!tstate.pending} isMobile={vpD.isCompact} onClose={() => setAskOpen(false)}
+                  onSent={({ message }) => { setAskOpen(false); afterPost(message || "Request posted in this thread."); }} />
+              </Suspense>, document.body)}
 
             {/* Compose */}
             {session.role === "pmo" && (() => {
@@ -10118,12 +10341,23 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
               );
             })()}
 
-            <ComposeBox
-              T={T} value={body} onChange={setBody}
-              onPost={postComment} posting={posting}
-              replyingTo={replyingTo} onCancelReply={() => setReplyingTo(null)}
-              canPost={canPost}
-            />
+            {/* On a phone the update form needs the room: the composer folds to one line while it is open. */}
+            {formOpen && vpD.isCompact && !composeShown && !replyingTo && !body ? (
+              <div style={{ padding:"8px 20px", borderTop:`1px solid ${T.border}`, flexShrink:0, background:T.headerBg }}>
+                <button type="button" className="pmo-focusable pmo-btn" onClick={() => setComposeShown(true)} style={{
+                  width:"100%", minHeight:40, borderRadius:R.md, border:`1px solid ${T.inputBorder}`, background:T.inputBg,
+                  color:T.muted, fontSize:13, textAlign:"left", padding:"0 12px", cursor:"pointer", fontFamily:TYPE.body.fontFamily }}>
+                  Write a comment…
+                </button>
+              </div>
+            ) : (
+              <ComposeBox
+                T={T} value={body} onChange={setBody}
+                onPost={postComment} posting={posting}
+                replyingTo={replyingTo} onCancelReply={() => setReplyingTo(null)}
+                canPost={canPost}
+              />
+            )}
           </>
         )}
         </div>
@@ -12008,6 +12242,31 @@ function GlobalSearch({ T, session, open, onClose, onSelect, onQuick }) {
   );
 }
 
+// Requests waiting on this person (Ask status on Past Projects, Ask update on FY 2026-27; 20 Oct 2026):
+// past projects they manage (past_projects.pm_user_id) and FY projects they are assigned to
+// (project_assignments). Never decided by role: one manager is a guest. Oldest first.
+async function loadMyAsks(session) {
+  const tok = session.access_token, me = session.user_id;
+  const list = (p) => p.then(r => (Array.isArray(r) ? r : []), () => []);
+  const [past, mine] = await Promise.all([
+    list(supa(`/rest/v1/past_project_summary?select=id,name,status_pending_since,status_requested_at,status_requested_by&pm_user_id=eq.${me}&status_pending_since=not.is.null`, {}, tok)),
+    list(supa(`/rest/v1/project_assignments?select=project_id&user_id=eq.${me}`, {}, tok)),
+  ]);
+  // since = the first request still waiting (the order); by/askedAt = the latest request (the views pair them so).
+  const out = past.map(r => ({ kind:"past", id:r.id, name:r.name, since:r.status_pending_since, by:r.status_requested_by, askedAt:r.status_requested_at }));
+  const ids = [...new Set(mine.map(a => a.project_id))];
+  if (ids.length) {
+    const waiting = await list(supa(`/rest/v1/project_update_status?select=project_id,pending_since,requested_at,requested_by&pending_since=not.is.null&project_id=in.(${ids.join(",")})`, {}, tok));
+    if (waiting.length) {
+      const names = await list(supa(`/rest/v1/projects?id=in.(${waiting.map(w => w.project_id).join(",")})&select=id,code,name`, {}, tok));
+      const byId = Object.fromEntries(names.map(p => [p.id, p]));
+      waiting.forEach(w => out.push({ kind:"fy", id:w.project_id, name:byId[w.project_id]?.name || "Project",
+        code:byId[w.project_id]?.code || null, since:w.pending_since, by:w.requested_by, askedAt:w.requested_at }));
+    }
+  }
+  return out.sort((a, b) => String(a.since).localeCompare(String(b.since)));
+}
+
 export default function App() {
   const [dark, setDark] = useState(true);
   const [session, setSession] = useState(null);
@@ -12027,8 +12286,13 @@ export default function App() {
   })());
   // ?report=<id> (the board report push and email) opens that report.
   const deepReport = useRef((() => { const v = new URLSearchParams(window.location.search).get("report"); return /^[0-9a-f-]{36}$/i.test(v || "") ? v : null; })());
+  // ?upd=<project> (the Ask update emails, 20 Oct 2026) opens that project's Updates thread. Read once;
+  // removed from the address bar once Updates has opened it.
+  const deepUpd = useRef((() => { const v = new URLSearchParams(window.location.search).get("upd"); return /^[0-9a-f-]{36}$/i.test(v || "") ? v : null; })());
+  // What the links opened, kept for the managers' sign-in notice (it leaves those out).
+  const deepOpened = useRef(new Set([deepUpd.current, deepPast.current?.kind === "project" ? deepPast.current.id : null].filter(Boolean)));
   const [openReport, setOpenReport] = useState(null);
-  const [page, setPage] = useState(() => deepReviewId.current ? "review" : deepPast.current ? "past" : deepReport.current ? "reports" : "cmd");
+  const [page, setPage] = useState(() => deepReviewId.current ? "review" : deepPast.current ? "past" : deepUpd.current ? "upd" : deepReport.current ? "reports" : "cmd");
   const [restoring, setRestoring] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
 
@@ -12062,7 +12326,8 @@ export default function App() {
   const [inviteError, setInviteError] = useState(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [discussionProjectId, setDiscussionProjectId] = useState(null); // {token, type}
+  const [discussionProjectId, setDiscussionProjectId] = useState(() => deepUpd.current); // the Updates thread to open
+  const [pastLink, setPastLink] = useState(null);       // a past project to open (the managers' sign-in notice)
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadTick, setUnreadTick] = useState(0); // bump to force an immediate refresh
   const [reviewCount, setReviewCount] = useState(0); // PDDs from the E-PDD portal not yet opened (PMO)
@@ -12268,6 +12533,37 @@ export default function App() {
     return () => clearTimeout(t);
   }, [simShareRun]);
   useEffect(() => { if (!session) { setSimShareRun(null); setSimPopupDoneId(null); } }, [session]);
+
+  // The managers' sign-in notice (Ask status / Ask update, 20 Oct 2026): what waits on this person, read once
+  // per sign-in 9 s after it, so the deadline and PDD pop-ups (5 s and 7 s) claim the screen first; it then
+  // waits behind every other sign-in notice. Never read for the PMO.
+  const [asks, setAsks] = useState([]);
+  const [asksDone, setAsksDone] = useState(false);
+  useEffect(() => {
+    setAsks([]); setAsksDone(false);
+    const s0 = sessionRef.current;
+    if (!s0?.access_token || s0.role === "pmo") return;
+    try { if (sessionStorage.getItem(`pmo-asks-shown:${s0.user_id}`)) return; } catch (_) { /* ignore */ }
+    let alive = true;
+    const t = setTimeout(async () => {
+      const cur = sessionRef.current;
+      if (!cur?.access_token || cur.user_id !== s0.user_id) return;
+      const items = await loadMyAsks(cur).catch(() => []);
+      if (alive) setAsks(items.filter(i => !deepOpened.current.has(i.id)));
+    }, 9000);
+    return () => { alive = false; clearTimeout(t); };
+  }, [session?.user_id, session?.role]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const closeAsks = () => {
+    setAsksDone(true);
+    try { if (session?.user_id) sessionStorage.setItem(`pmo-asks-shown:${session.user_id}`, "1"); } catch (_) { /* ignore */ }
+  };
+  // Signed out (not while the saved session is still being restored): the next sign-in shows it again, and an
+  // unsent update draft (UpdateRequest.jsx) does not stay behind on a shared computer.
+  useEffect(() => {
+    if (session || restoring) return;
+    try { Object.keys(sessionStorage).filter(k => k.startsWith("pmo-asks-shown:")).forEach(k => sessionStorage.removeItem(k)); } catch (_) { /* ignore */ }
+    try { Object.keys(localStorage).filter(k => k.startsWith("pmo-upd-draft:")).forEach(k => localStorage.removeItem(k)); } catch (_) { /* ignore */ }
+  }, [session, restoring]);
 
   // PMO Review badge: PDDs copied from the E-PDD portal since intake began that
   // the PMO has not opened. The copy runs every 5 minutes; checking every
@@ -12735,6 +13031,8 @@ export default function App() {
       method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ seen_at: new Date().toISOString() }),
     }, session.access_token).catch(() => {});
   };
+  // Requests waiting on a manager: after the deadline/PDD alerts, the tour invite, a shared report and a shared simulation.
+  const asksOpen = asks.length > 0 && !asksDone && !blockingAlertActive && !showTourInvite && !reportPopupShowing && !simNoticeOpen;
 
   // Contextual quick actions for the header. Deliberately small: two per page
   // at most, and only actions the current role can actually perform (§24).
@@ -12894,9 +13192,9 @@ export default function App() {
               onSelectProject={openProject} />}
         {effectivePage === "schedule" && <div data-tour="schedule-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><SchedulePage T={T} session={session} onSelectProject={openProject} /></div>}
         {effectivePage === "past" && <PastProjectsPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
-          initialOpen={deepPast.current} onUnreadChange={setPastCount}
+          initialOpen={pastLink || deepPast.current} onUnreadChange={setPastCount}
           onInitialOpened={() => {
-            deepPast.current = null;
+            deepPast.current = null; setPastLink(null);
             const u = new URL(window.location.href); u.searchParams.delete("past"); u.searchParams.delete("pastpm");
             window.history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
           }} />}
@@ -12915,7 +13213,15 @@ export default function App() {
           initialOpenId={deepReviewId.current} onInitialOpened={() => { deepReviewId.current = null; }}
           onSeenChange={() => setReviewTick(t => t + 1)}
           renderCreateProject={(props) => <PddProjectCreator T={T} session={session} {...props} />} />}
-            {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId} onClearDefault={()=>setDiscussionProjectId(null)} onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
+            {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId}
+              onClearDefault={() => {
+                setDiscussionProjectId(null);
+                if (!deepUpd.current) return;
+                deepUpd.current = null;
+                const u = new URL(window.location.href); u.searchParams.delete("upd");
+                window.history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
+              }}
+              onReadChange={()=>setUnreadTick(t=>t+1)} /></div>}
             {effectivePage === "team" && <TeamPage T={T} session={session} />}
             {effectivePage === "log"   && <ActivityLogPage T={T} session={session} supa={supa} />}
             {effectivePage === "users" && <UserManagementPage T={T} session={session} />}
@@ -12941,6 +13247,17 @@ export default function App() {
       {simNoticeOpen && (
         <SimShareNotice T={T} sim={simShare} kind={simKind} status={simShareButton?.status || "loading"} isMobile={vp.isCompact}
           onPlay={() => { playShared(); closeSimNotice(); }} onClose={closeSimNotice} />
+      )}
+      {/* Status / update requests waiting on this manager (20 Oct 2026): once per sign-in, after the notices above. */}
+      {asksOpen && (
+        <Suspense fallback={null}>
+          <AsksNotice T={T} items={asks} isMobile={vp.isCompact} onLater={closeAsks}
+            onOpen={(it) => {
+              closeAsks();
+              if (it.kind === "past") { setPastLink({ kind:"project", id:it.id }); navigateToPage("past"); }
+              else { setDiscussionProjectId(it.id); navigateToPage("upd"); }
+            }} />
+        </Suspense>
       )}
       <SimShareProgress T={T} run={simShareRun} onClose={() => setSimShareRun(null)} />
       {showChangePassword && session && (

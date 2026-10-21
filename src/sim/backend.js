@@ -54,10 +54,12 @@ const KNOWN = new Set([
   "webauthn_challenges", "push_subscriptions", "pmo_active_session", "milestones", "epdd_pdds", "epdd_files",
   "epdd_reviews", "epdd_sync_runs", "epdd_state", "board_reports", "board_report_recipients",
   "project_todos", "project_pcrs",   // 20 Oct 2026: not in the snapshot, so they read as empty
+  "project_payments",                // 21 Oct 2026 (Investments → Payments Made): not in the snapshot, so the card is left out of the simulation; reads as empty if asked
   // views
   "portfolio_metrics", "portfolio_dashboard", "project_metrics", "investment_metrics", "cashflow_monthly",
   "at_risk_projects", "pdd_pending_projects", "project_task_rollup", "project_risks_scored", "lessons_learned_full",
   "benefits_realized_full", "past_project_summary", "past_project_task_rollup", "session_summary", "tour_progress",
+  "project_update_status",   // 20 Oct 2026 (Ask update): not in the snapshot, so it reads as empty
 ]);
 // Always empty in the simulation: these drive the sign-in pop-ups (deadline alerts, PDD reminders),
 // which would block the run. The real pop-up still opens in the PMO's own portal tab.

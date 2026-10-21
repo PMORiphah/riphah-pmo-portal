@@ -155,6 +155,10 @@ const CHANNEL = {
   password_reset: "Password reset email", "epdd-email": "New PDD email", "epdd-push": "New PDD push",
   "past-pm-email": "Past projects chat email", "past-project-email": "Past project follow-up email",
   "epdd-health-push": "E-PDD sync alert (push)", "epdd-health-email": "E-PDD sync alert (email)",
+  // Ask status (Past Projects) and Ask update (FY 2026-27), 20 Oct 2026.
+  "past-status-request-email": "Status request email", "past-status-email": "Status answer email",
+  "update-request-email": "Update request email", "update-request-push": "Update request push",
+  "update-answer-email": "Update email (answer)", "update-answer-push": "Update push (answer)",
 };
 export function notificationEntries(rows, who) {
   return (rows || []).map(n => {

@@ -1,11 +1,24 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { History, Search, X, Send, Mail, Pencil, ChevronDown, ChevronRight,
          Clock, AlertTriangle, CheckCircle2, MessageSquare, Plus,
-         Upload, Download, ArrowLeft, CalendarRange, ListTree, List } from "lucide-react";
+         Upload, Download, ArrowLeft, CalendarRange, ListTree, List,
+         ClipboardList, BellRing, Hourglass } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
+import { notifyPast, kindOf, statusThread, waitedFor, AskedChip, PctChip, StatusTile, StatusBeside,
+         StatusRequestCard, StatusAnswerCard, StatusSentNote } from "./PastStatus.jsx";
+
+// Ask status (20 Oct 2026): the window that asks and the manager's answer form load only when
+// one of them opens; reload once on a missing chunk (a deploy replaced it).
+const statusForms = () => import("./PastStatusForms.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch { /* ignore */ }
+  const Nothing = () => null;
+  return { AskStatusModal: Nothing, StatusAnswerForm: Nothing };
+});
+const AskStatusModal   = lazy(() => statusForms().then(m => ({ default: m.AskStatusModal })));
+const StatusAnswerForm = lazy(() => statusForms().then(m => ({ default: m.StatusAnswerForm })));
 
 let _xlsx;
 const loadXLSX = () => (_xlsx ||= import("xlsx"));
@@ -66,6 +79,13 @@ function usePastStyles() {
 .past-row  { animation: pastIn .42s cubic-bezier(.22,.8,.3,1) backwards; }
 .past-glow { animation: pastGlow 26s ease-in-out infinite; will-change: opacity, transform; }
 .past-dot  { animation: pastPulse 2.6s ease-in-out infinite; }
+/* A manager's card on By PM: the whole card lights and presses with its chat button, as it did when the
+   card was one button (it now also holds the Ask status button, and a button cannot sit inside another). */
+.past-pmcard { transition: filter 140ms ease, transform 90ms ease; }
+@media (hover: hover) { .past-pmcard:has(> .past-pmcard-main:hover) { filter: brightness(1.14); } }
+.past-pmcard:has(> .past-pmcard-main:active) { transform: scale(.985); }
+/* A summary card that filters is a button: the portal's keyboard focus ring (as .pmo-focusable). */
+.past-row[role=button]:focus-visible { outline: 2px solid #4A9BE0; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .past-row, .past-glow, .past-dot { animation: none !important; }
 }`;
@@ -276,12 +296,8 @@ async function markPastRead(supa, session, thread) {
     }, session.access_token);
   } catch { /* a missed marker only leaves a badge on */ }
 }
-// Best-effort: the message is already saved; a mail problem must not look like a failed post.
-const notifyPast = (supa, session, kind, id) => {
-  if (!id) return;
-  supa("/functions/v1/notify-past", { method:"POST", body: JSON.stringify({ kind, id }) },
-       session.access_token).catch(() => {});
-};
+// notifyPast (best-effort email after a post) lives in PastStatus.jsx, which also sends the
+// status kinds: one call with every id of a bulk "Ask status".
 const UnreadDot = ({ T, n }) => n > 0 ? (
   <span className="past-dot" style={{ minWidth:18, height:18, padding:"0 5px", borderRadius:R.pill,
     background:BRAND.gold, color:"#1A1206", fontSize:10, fontWeight:800, display:"inline-flex",
@@ -420,7 +436,7 @@ function EditPastModal({ T, session, supa, row, pms, isCompact, onClose, onSaved
 
 
 /* ── Chat with one project manager about all their past projects ─────────── */
-function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = false, isCompact, onOpenProject, onBack, onRead }) {
+function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = false, isCompact, onOpenProject, onBack, onRead, onAskStatus }) {
   // A viewer chats with any manager the way the PMO does; the PMO and the
   // manager are both emailed when they send.
   const isPMO = isPMOrole || viewer;
@@ -462,6 +478,7 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
   };
 
   const open = projects.filter(p => p.status !== "closed");
+  const waiting = open.filter(p => p.status_pending_since).length;
   const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm,
     padding:"9px 11px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily,
     outline:"none", width:"100%", boxSizing:"border-box" };
@@ -478,7 +495,7 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
       <Surface T={T} tone={BRAND.blue} pad={isCompact ? SP.md : SP.lg} style={{ marginBottom:SP.md }}>
         <div style={{ ...TYPE.label, color:T.dim }}>{isPMO ? "Follow-up chat with" : "Follow-up chat with the PMO"}</div>
         <div style={{ ...TYPE.display, fontSize: isCompact ? 17 : 20, color:T.text, lineHeight:1.3 }}>
-          {isPMO ? (pm.full_name || pm.username) : "Your past projects"}
+          {isPMO ? (pm.full_name || pm.username) : "Projects from earlier years"}
         </div>
         <div style={{ ...TYPE.caption, color:T.muted, marginTop:4 }}>
           {projects.length} past project{projects.length===1?"":"s"} · {open.length} still open ·
@@ -495,10 +512,24 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
                   fontSize:11.5, color:T.text }}>
                 <span style={{ width:6, height:6, borderRadius:3, background:st.color, flexShrink:0 }} />
                 <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</span>
+                {p.status_pending_since && <Hourglass size={10} color={T.textOf(DATA.warning)} aria-label="status requested" />}
               </button>
             );
           })}
         </div>
+        {/* The status requests go to each project's own Follow-up thread, not into this chat. */}
+        {isPMO && onAskStatus && open.length > 0 && (
+          <div style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", marginTop:SP.md }}>
+            <Button T={T} size="sm" variant="accent" icon={ClipboardList} onClick={() => onAskStatus(open)}>
+              Ask status on all {open.length} open project{open.length === 1 ? "" : "s"}
+            </Button>
+            {waiting > 0 && (
+              <span style={{ ...TYPE.caption, color:T.textOf(DATA.warning), display:"inline-flex", alignItems:"center", gap:4 }}>
+                <Hourglass size={11} /> {waiting} awaiting status
+              </span>
+            )}
+          </div>
+        )}
       </Surface>
 
       <div style={{ maxWidth:860 }}>
@@ -579,7 +610,7 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
 
 
 /* ── Project managers at a glance (PMO) ──────────────────────────────────── */
-function PmsView({ T, rows, unread, lastByPm, isCompact, onOpen }) {
+function PmsView({ T, rows, unread, lastByPm, isCompact, onOpen, onAskStatus }) {
   const groups = useMemo(() => {
     const m = {};
     (rows || []).filter(r => r.pm_user_id).forEach(r => {
@@ -602,11 +633,18 @@ function PmsView({ T, rows, unread, lastByPm, isCompact, onOpen }) {
         {groups.map((g, i) => {
           const value = g.open.reduce((s, r) => s + (parseFloat(r.approved_amount)||0), 0);
           const stale = g.open.filter(r => (r.days_since_followup ?? 9999) > 30).length;
+          const waiting = g.open.filter(r => r.status_pending_since).length;
+          // The card is a box holding the chat button and, for askers, the bulk
+          // "Ask status" button (a button cannot sit inside another).
           return (
-            <button key={g.id} onClick={() => onOpen(g.id)} className="pmo-focusable pmo-btn past-row"
-              style={{ animationDelay:`${Math.min(i,10)*40}ms`, textAlign:"left", cursor:"pointer",
-                padding:`${SP.md}px ${SP.lg}px`, background:T.surface, border:`1px solid ${g.unread ? `${BRAND.gold}88` : T.border}`,
-                borderRadius:R.lg, boxShadow: g.unread ? T.glowSoft(BRAND.gold) : T.shadow, color:T.text }}>
+            <div key={g.id} className="past-row past-pmcard" data-pm-card={g.id}
+              style={{ animationDelay:`${Math.min(i,10)*40}ms`, display:"flex", flexDirection:"column",
+                background:T.surface, border:`1px solid ${g.unread ? `${BRAND.gold}88` : T.border}`,
+                borderRadius:R.lg, boxShadow: g.unread ? T.glowSoft(BRAND.gold) : T.shadow, overflow:"hidden" }}>
+            <button onClick={() => onOpen(g.id)} className="pmo-focusable past-pmcard-main"
+              style={{ flex:1, width:"100%", display:"flex", flexDirection:"column", justifyContent:"flex-start",
+                textAlign:"left", cursor:"pointer", padding:`${SP.md}px ${SP.lg}px`,
+                background:"transparent", border:"none", color:T.text, fontFamily:TYPE.body.fontFamily }}>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                 <MessageSquare size={14} color={T.textOf(BRAND.blue)} />
                 <span style={{ fontSize:14, fontWeight:700, flex:1, minWidth:0, overflow:"hidden",
@@ -623,6 +661,21 @@ function PmsView({ T, rows, unread, lastByPm, isCompact, onOpen }) {
               </div>
               {g.last && <div style={{ ...TYPE.caption, color:T.dim, marginTop:4 }}>{when(g.last.created_at)}</div>}
             </button>
+            {onAskStatus && g.open.length > 0 && (
+              <div style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap",
+                padding:`${SP.sm}px ${SP.lg}px`, borderTop:`1px solid ${T.border}`, background:T.card2 }}>
+                {waiting > 0 && (
+                  <span style={{ ...TYPE.caption, color:T.textOf(DATA.warning), display:"inline-flex", alignItems:"center", gap:4 }}>
+                    <Hourglass size={11} /> {waiting} awaiting status
+                  </span>
+                )}
+                <Button T={T} size="sm" variant="ghost" icon={ClipboardList} onClick={() => onAskStatus(g)}
+                  style={{ marginLeft:"auto" }}>
+                  Ask status on all {g.open.length} open project{g.open.length === 1 ? "" : "s"}
+                </Button>
+              </div>
+            )}
+            </div>
           );
         })}
       </div>
@@ -725,7 +778,7 @@ function DatesTab({ T, row, roll, isPMO, isCompact }) {
 
 
 /* ── Follow-up tab: the reason it is still open, and the thread ─────────── */
-function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged, onRead }) {
+function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, isCompact, onChanged, onRead }) {
   const [msgs, setMsgs]   = useState(null);
   const [body, setBody]   = useState("");
   const [busy, setBusy]   = useState(false);
@@ -745,7 +798,13 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
     await markPastRead(supa, session, `project:${row.id}`); onRead?.();
   }, [row.id, supa, session]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (msgs?.length) endRef.current?.scrollIntoView({ block:"nearest" }); }, [msgs]);
+  // "Ask status": which requests each answer closed, and what is still waiting. The
+  // project's own manager answers at the top of the tab (decided by pm_user_id, not role).
+  const thread = useMemo(() => statusThread(msgs), [msgs]);
+  const answering = !!row.pm_user_id && row.pm_user_id === session.user_id
+    && (!!row.status_pending_since || thread.pending.length > 0);
+  // The form is the point of the visit then, so the page is not scrolled away from it.
+  useEffect(() => { if (msgs?.length && !answering) endRef.current?.scrollIntoView({ block:"nearest" }); }, [msgs]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const post = async () => {
     if (!body.trim()) return;
@@ -784,8 +843,19 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
 
   return (
     <div data-tour="past-thread" style={{ maxWidth:820 }}>
-      {/* Why it is still open — PMO's field. A PM reads it and answers below. */}
-      <div style={{ marginBottom:SP.lg }}>
+      <StatusSentNote T={T} row={row} />
+      {answering && (
+        <Suspense fallback={<div style={{ ...TYPE.bodySm, color:T.muted, marginBottom:SP.lg }}>Loading the status form…</div>}>
+          <StatusAnswerForm T={T} session={session} supa={supa} row={row} pending={thread.pending} isCompact={isCompact}
+            onSent={async () => { await load(); onChanged?.(); }} />
+        </Suspense>
+      )}
+
+      {/* Why it is still open — PMO's field. A PM reads it and answers below.
+          The manager's latest % and justification sit beside it (PMO, 20 Oct 2026). */}
+      <div style={{ marginBottom:SP.lg, display:"grid", gap:SP.md,
+        gridTemplateColumns: row.status_pct != null ? "repeat(auto-fit, minmax(240px, 1fr))" : "minmax(0,1fr)" }}>
+      <div style={{ minWidth:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:SP.sm, marginBottom:6 }}>
           <span style={{ ...TYPE.label, color:T.muted }}>Why still open</span>
           {isPMO && !editing && (
@@ -827,6 +897,8 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
             </div>); })()
         )}
       </div>
+      <StatusBeside T={T} row={row} />
+      </div>
 
       <div data-tour="past-thread-head" style={{ ...TYPE.label, color:T.muted, marginBottom:SP.sm }}>
         Follow-up {msgs?.length ? `· ${msgs.length} message${msgs.length===1?"":"s"}` : ""}
@@ -842,11 +914,18 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:SP.sm }}>
           {msgs.map(m => {
+            const k = kindOf(m);   // rows from before Ask status have no kind: messages
             const mine = m.author_id === session.user_id;
             const pmo  = m.author_role === "pmo";
             const asker = !pmo && m.author_id !== row.pm_user_id;   // one of the two viewers
             return (
-              <div key={m.id} data-msg={m.id} data-author-role={m.author_role} style={{ display:"flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
+              <div key={m.id} data-msg={m.id} data-author-role={m.author_role} data-kind={k} style={{ display:"flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
+                {k === "status_request" ? (
+                  <StatusRequestCard T={T} m={m} at={when(m.created_at)} answer={thread.answerOf.get(m.id)}
+                    pmName={row.pm_user_id === session.user_id ? "you" : row.pm_name} />
+                ) : k === "status" ? (
+                  <StatusAnswerCard T={T} m={m} at={when(m.created_at)} />
+                ) : (
                 <div style={{ maxWidth:"82%", padding:"10px 13px", borderRadius:R.md,
                   background: pmo ? `${BRAND.blue}1A` : asker ? `${BRAND.gold}14` : T.card2,
                   border:`1px solid ${pmo ? `${BRAND.blue}3D` : asker ? `${BRAND.gold}4D` : T.border}` }}>
@@ -858,6 +937,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
                   </div>
                   <div style={{ fontSize:13, color:T.textSoft, lineHeight:1.6, whiteSpace:"pre-wrap" }}>{m.body}</div>
                 </div>
+                )}
               </div>
             );
           })}
@@ -887,7 +967,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, onChanged
 
 
 /* ── One past project, full page ─────────────────────────────────────────── */
-function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm }) {
+function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm, onAskStatus }) {
   const [tab, setTab] = useState("followup");
   const [editing, setEditing] = useState(false);
   const st = STATUS[row.status] || STATUS.open;
@@ -895,6 +975,10 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
   // PMO always; the project's own manager once the page is opened to them.
   // The database decides either way.
   const canWriteTasks = isPMO || (row.pm_user_id && row.pm_user_id === session.user_id);
+  // Ask status: the PMO and the viewers, on an open project that has a manager.
+  // Its manager (by pm_user_id, whatever their role) answers on the Follow-up tab.
+  const canAsk = !!onAskStatus && (isPMO || viewer) && !!row.pm_user_id && row.status !== "closed";
+  const iAnswer = !!row.pm_user_id && row.pm_user_id === session.user_id && !!row.status_pending_since;
 
   return (
     <div className="past-row">
@@ -911,7 +995,19 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
             {row.code && <div style={{ ...TYPE.mono, fontSize:10, color:T.dim }}>{row.code}</div>}
             <div style={{ ...TYPE.display, fontSize: isCompact ? 17 : 20, color:T.text, lineHeight:1.3 }}>{row.name}</div>
           </div>
-          <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", alignItems:"center" }}>
+            {canAsk && (row.status_pending_since ? (<>
+              <AskedChip T={T} row={row} />
+              <Button T={T} size="sm" variant="ghost" icon={BellRing} onClick={() => onAskStatus(row, true)}
+                title={`Ask ${row.pm_name || "the manager"} again`}>Remind</Button>
+            </>) : (
+              <Button T={T} size="sm" variant="accent" icon={ClipboardList} onClick={() => onAskStatus(row, false)}
+                title={`Ask ${row.pm_name || "the manager"} for % completed and a justification`}>Ask status</Button>
+            ))}
+            {iAnswer && (
+              <Button T={T} size="sm" variant="accent" tone={T.textOf(DATA.warning)} icon={Hourglass}
+                onClick={() => setTab("followup")}>Status requested</Button>
+            )}
             {row.pm_user_id && onOpenPm && (
               <Button T={T} size="sm" variant="ghost" icon={MessageSquare} onClick={() => onOpenPm(row.pm_user_id)}>
                 {isPMO || viewer ? `Chat with ${String(row.pm_name || "PM").split(" ")[0]}` : "Chat with PMO"}
@@ -937,6 +1033,8 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
               <div style={{ fontSize:12.5, fontWeight:700, color: c ? T.textOf(c) : T.text }}>{v}</div>
             </div>
           ))}
+          {/* The manager's own figure, beside the PMO's Progress (it does not replace it). */}
+          <StatusTile T={T} row={row} onClick={() => setTab("followup")} />
         </div>
       </Surface>
 
@@ -950,7 +1048,10 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
       </div>
 
       {tab === "followup" && (
-        <FollowUpPanel key={row.id + row.updated_at} T={T} session={session} supa={supa}
+        // Remounts when the row changes, so the thread reloads after a post; a status
+        // request or answer is in the key too. An unsent answer survives (PastStatus.jsx).
+        <FollowUpPanel key={`${row.id}|${row.updated_at}|${row.status_requested_at || ""}|${row.status_at || ""}`}
+          T={T} session={session} supa={supa} isCompact={isCompact}
           row={row} isPMO={isPMO} viewer={viewer} onChanged={onChanged} onRead={onRead} />
       )}
       {tab === "timeline" && (
@@ -1400,6 +1501,8 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const [campus, setCampus] = useState("");
   const [prog, setProg]   = useState("");          // "" | In Progress | No progress | gap
   const [onlyUnread, setOnlyUnread] = useState(false); // only projects with unread messages
+  const [awaiting, setAwaiting] = useState(false);     // only projects whose status was asked and not yet given
+  const [asking, setAsking] = useState(null);          // Ask status window: { pmName, projects, remind }
   const [rollup, setRollup] = useState({});       // past_project_id -> task roll-up
   const [collapsed, setCollapsed] = useState({});
   const [hover, setHover] = useState(null);
@@ -1492,10 +1595,19 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const unreadOf = useCallback(r => (unread[`project:${r.id}`] || 0) + (unread[`tagged:${r.id}`] || 0), [unread]);
   const unreadProjects = useMemo(() => (rows || []).filter(r => unreadOf(r) > 0).length, [rows, unreadOf]);
   useEffect(() => { if (onlyUnread && !unreadProjects) setOnlyUnread(false); }, [onlyUnread, unreadProjects]);
+  // Open projects whose status was asked and not yet given (past_project_summary.status_pending_since).
+  const waitingRows = useMemo(() => (rows || []).filter(r => r.status_pending_since && r.status !== "closed"), [rows]);
+  useEffect(() => { if (awaiting && !waitingRows.length) setAwaiting(false); }, [awaiting, waitingRows]);
+  // The window is opened from a project, a manager's card or their chat.
+  const askStatus = seeAll ? (projects, remind = false) => {
+    const ask = projects.filter(p => p.pm_user_id && p.status !== "closed");
+    if (ask.length) setAsking({ pmName: ask[0].pm_name, projects: ask, remind: remind && ask.length === 1 });
+  } : null;
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (rows||[]).filter(r =>
       (!onlyUnread || unreadOf(r) > 0) &&
+      (!awaiting || !!r.status_pending_since) &&
       (!fy || r.fiscal_year === fy) &&
       (!pm || r.pm_name === pm) && (!campus || r.campus === campus) &&
       (!prog || progressOf(r).label === prog) &&
@@ -1503,7 +1615,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
       (onlyUnread || (status === "all" ? true : status === "open_all" ? r.status !== "closed" : r.status === status)) &&
       (!needle || `${r.code||""} ${r.name||""} ${r.reason_open||""} ${r.campus||""} ${r.pm_name||""}`.toLowerCase().includes(needle))
     );
-  }, [rows, q, fy, pm, campus, prog, status, onlyUnread, unreadOf]);
+  }, [rows, q, fy, pm, campus, prog, status, onlyUnread, awaiting, unreadOf]);
 
   // Grouped by campus (default), fiscal year or manager; oldest release first
   // inside a group, since the longest-open project is the one to chase.
@@ -1525,6 +1637,9 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
       noProgress: src.filter(r => progressOf(r).label === "No progress").length,
       old: src.filter(r => ageOf(r).key === "old").length,
       stale: src.filter(r => (r.days_since_followup ?? 9999) > 30).length,
+      waiting: src.filter(r => r.status_pending_since).length,
+      // The longest wait, for the card's second line.
+      waitedSince: src.map(r => r.status_pending_since).filter(Boolean).sort()[0] || null,
     };
   }, [rows]);
 
@@ -1678,6 +1793,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
             <PastProjectDetail T={T} session={session} supa={supa} row={openRow}
               roll={rollup[openRow.id]} isPMO={isPMO} viewer={viewer} isCompact={isCompact}
               pms={pmChoices} onRead={refreshUnread}
+              onAskStatus={askStatus ? (r, remind) => askStatus([r], remind) : null}
               onOpenPm={(id) => { setOpenId(null); setChatPm(id); }}
               onBack={() => setOpenId(null)} onChanged={load} />
           ) : chatPm ? (
@@ -1687,11 +1803,11 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               projects={rows.filter(r => r.pm_user_id === chatPm)}
               onOpenProject={(id) => { setChatPm(null); setOpenId(id); }}
               onBack={() => { setChatPm(null); if (seeAll) setView("pms"); }}
-              onRead={refreshUnread} />
+              onRead={refreshUnread} onAskStatus={askStatus} />
           ) : (<>
           {/* Summary strip — PMO only; a project manager sees just their own projects. */}
           {seeAll && <div data-tour="past-cards" style={{ display:"grid", gap:SP.md, marginBottom:SP.lg,
-            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(5, minmax(0,1fr))" }}>
+            gridTemplateColumns: isCompact ? "1fr 1fr" : "repeat(6, minmax(0,1fr))" }}>
             {[
               { k:"Still open",       v:totals.openCount, sub:`${totals.old} open over a year`, c:DATA.danger, Icon:History },
               { k:"Approved",         v:`PKR ${fmtM(totals.approved)}`, sub:"on open projects", c:BRAND.gold, Icon:CheckCircle2 },
@@ -1701,11 +1817,19 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               { k:"No progress",      v:totals.noProgress, sub:"marked in the sheet", c:DATA.danger, Icon:AlertTriangle,
                 onClick: totals.noProgress ? () => setProg(p => p === "No progress" ? "" : "No progress") : null, on: prog === "No progress" },
               { k:"Not chased",       v:totals.stale, sub:"over 30 days", c:T.muted, Icon:Clock },
+              { k:"Awaiting status",  v:totals.waiting, c:DATA.warning, Icon:Hourglass,
+                sub: totals.waiting ? waitedFor(totals.waitedSince) : "none waiting",
+                onClick: totals.waiting ? () => setAwaiting(a => !a) : null, on: awaiting },
             ].map(({k,v,sub,c,Icon,bar,onClick,on}, i, all) => (
-              <div key={k} className="past-row" data-card={k.toLowerCase().replace(/\s+/g, "-")} onClick={onClick || undefined} role={onClick ? "button" : undefined}
+              // A card that filters is a toggle button for the keyboard too (Enter or Space), with its state said.
+              <div key={k} className="past-row" data-card={k.toLowerCase().replace(/\s+/g, "-")}
+                onClick={onClick || undefined} role={onClick ? "button" : undefined}
+                tabIndex={onClick ? 0 : undefined} aria-pressed={onClick ? !!on : undefined}
+                onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
                 title={onClick ? (on ? "Show all" : `Show only these`) : undefined}
                 style={{ animationDelay:`${i*50}ms`, cursor: onClick ? "pointer" : "default",
-                outline: on ? `2px solid ${c}` : "none",
+                // Only when on: an inline "none" would also hide the keyboard focus ring.
+                ...(on ? { outline:`2px solid ${c}` } : {}),
                 // Five cards in a two-column phone grid: the last one takes the row.
                 gridColumn: isCompact && all.length % 2 && i === all.length - 1 ? "1 / -1" : undefined,
                 position:"relative", overflow:"hidden", padding:`${SP.md}px ${SP.lg}px`,
@@ -1718,8 +1842,14 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                   <Icon size={13} color={c} />
                   <span style={{ ...TYPE.label, color:T.muted }}>{k}</span>
                 </div>
+                {/* Six cards share the row since Awaiting status (20 Oct 2026): "PKR" is set small
+                    so an amount stays on one line on a 1280-1366 px laptop. */}
                 <div style={{ position:"relative", ...TYPE.metricSm, fontSize:24, color:T.text,
-                  marginTop:6, lineHeight:1.1 }}>{v}</div>
+                  marginTop:6, lineHeight:1.1, whiteSpace:"nowrap" }}>
+                  {typeof v === "string" && v.startsWith("PKR ")
+                    ? <><span style={{ fontSize:13, fontWeight:600, color:T.muted }}>PKR</span> {v.slice(4)}</>
+                    : v}
+                </div>
                 <div style={{ position:"relative", ...TYPE.caption, color:T.dim, marginTop:2 }}>{sub}</div>
                 {bar != null && (
                   <div style={{ position:"relative", height:4, borderRadius:R.pill, background:T.card2, marginTop:6, overflow:"hidden" }}>
@@ -1735,6 +1865,20 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               Projects from earlier fiscal years still being followed up: what was approved and released, and how
               long each has been open since its budget release. Reply to the PMO on a project's Follow-up tab, or use
               <b> Chat with PMO</b> for all of them at once.
+              {/* A manager asked for a status: what is waiting, one tap to list it. */}
+              {(() => { const mine = waitingRows.filter(r => r.pm_user_id === session.user_id).length; return mine > 0 && (
+                <div data-status-ask-note style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", marginTop:SP.md,
+                  padding:"9px 12px", borderRadius:R.md, background:`${DATA.warning}12`, border:`1px solid ${DATA.warning}55` }}>
+                  <Hourglass size={14} color={T.textOf(DATA.warning)} />
+                  <span style={{ flex:"1 1 220px", minWidth:0 }}>
+                    Status requested on <b>{mine} project{mine === 1 ? "" : "s"}</b>. {mine === 1 ? "Open it" : "Open each one"} and
+                    send % completed and a justification.
+                  </span>
+                  <Button T={T} size="sm" variant="accent" tone={T.textOf(DATA.warning)} onClick={() => setAwaiting(a => !a)}>
+                    {awaiting ? "Show all" : `Show ${mine === 1 ? "it" : "them"}`}
+                  </Button>
+                </div>
+              ); })()}
             </div>
           )}
 
@@ -1777,6 +1921,15 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                 <option value="">All project managers</option>
                 {pms.map(n => <option key={n} value={n}>{n}</option>)}
               </Select>
+            )}
+            {awaiting && (
+              <button type="button" className="pmo-focusable pmo-btn" onClick={() => setAwaiting(false)}
+                aria-label="Show every project, not only those awaiting a status"
+                style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 11px", borderRadius:R.md, cursor:"pointer",
+                  fontSize:12.5, fontWeight:600, fontFamily:TYPE.body.fontFamily, border:`1px solid ${DATA.warning}`,
+                  background:`${DATA.warning}22`, color:T.text }}>
+                <Hourglass size={13} color={T.textOf(DATA.warning)} /> Awaiting status <X size={12} />
+              </button>
             )}
             <button type="button" className="pmo-focusable pmo-btn" aria-pressed={onlyUnread} data-tour="past-unread"
               disabled={!unreadProjects}
@@ -1829,7 +1982,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
 
           {view === "pms" && seeAll ? (
             <PmsView T={T} rows={rows} unread={unread} lastByPm={lastByPm} isCompact={isCompact}
-              onOpen={(id) => setChatPm(id)} />
+              onOpen={(id) => setChatPm(id)} onAskStatus={askStatus ? (g) => askStatus(g.open) : null} />
           ) : view === "timeline" ? (
             <PastAging T={T} groups={groups} isCompact={isCompact} onOpen={(r) => setOpenId(r.id)} />
           ) : groups.length === 0 ? (
@@ -1904,6 +2057,8 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                                 background:`${pg.color}${T.badge}`, color:T.textOf(pg.color) }}>{pg.label}</span>
                               {pg.text && <span style={{ fontSize:11.5, color:T.textSoft, overflow:"hidden", textOverflow:"ellipsis",
                                 whiteSpace:"nowrap", maxWidth:360 }}>{pg.text}</span>}
+                              <PctChip T={T} row={r} />
+                              <AskedChip T={T} row={r} short />
                               {r.status !== "open" && (
                                 <span style={{ ...TYPE.caption, fontWeight:700, padding:"1px 8px", borderRadius:R.pill,
                                   background:`${st.color}${T.badge}`, color:T.textOf(st.color) }}>{st.label}</span>
@@ -1952,6 +2107,14 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
         <ImportModal T={T} session={session} supa={supa} pms={pmAccounts}
           existing={rows} isCompact={isCompact}
           onClose={() => setImporting(false)} onDone={load} />
+      )}
+
+      {asking && (
+        <Suspense fallback={null}>
+          <AskStatusModal T={T} session={session} supa={supa} viewer={viewer} isCompact={isCompact}
+            pmName={asking.pmName} projects={asking.projects} remind={asking.remind}
+            onClose={() => setAsking(null)} onSent={() => { load(); refreshUnread(); }} />
+        </Suspense>
       )}
 
     </div>
