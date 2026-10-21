@@ -6,7 +6,7 @@
 --   kind = 'status_request'  "Ask status", by the PMO or a past-project viewer
 --   kind = 'status'          the manager's answer: % completed (0-100) and a justification, both required
 -- The PMO's own "Why still open" field (past_projects.reason_open) is not touched (PMO decision 20 Oct 2026).
--- No DROP or DELETE anywhere.
+-- Additive only: nothing is removed.
 
 alter table public.past_project_updates
   add column if not exists kind          text not null default 'message',

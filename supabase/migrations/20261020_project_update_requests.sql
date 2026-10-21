@@ -11,7 +11,7 @@
 -- Every confirmed item line of the project needs a status and a comment (contingency and tax lines are not items).
 -- The update writes each line's status, date and note to project_deliverables (the manager may already change
 -- exactly those fields). The manager's % is stored as reported; the PMO's "Use this %" copies it into
--- projects.pct_complete from the page (PMO decision 20 Oct 2026). No DROP or DELETE anywhere.
+-- projects.pct_complete from the page (PMO decision 20 Oct 2026). Additive only: nothing is removed.
 
 alter table public.comments
   add column if not exists kind text not null default 'comment',
@@ -99,7 +99,7 @@ create trigger trg_comment_apply_update_lines
   after insert on public.comments
   for each row execute function public.apply_update_lines();
 
--- Requests and updates cannot be rewritten or moved (the PMO may still delete a post, as today);
+-- Requests and updates cannot be rewritten or moved (the PMO may still remove a post, as today);
 -- no comment can be moved to another project or change kind.
 create or replace function public.guard_comment_kind()
 returns trigger language plpgsql
