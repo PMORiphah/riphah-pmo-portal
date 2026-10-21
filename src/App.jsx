@@ -26,6 +26,7 @@ import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps, pmSteps } from "./tourSteps.js";
 import { InvestmentsTab } from "./InvestmentsTab.jsx";
+import { CapexPaymentsWindow, IN_SIM, focusVisible } from "./PaymentsWindow.jsx";
 import { InstallPrompt } from "./InstallPrompt.jsx";
 import { BiometricButton } from "./BiometricButton.jsx";
 import { NotificationButton } from "./NotificationButton.jsx";
@@ -64,7 +65,7 @@ import {
   RankedBars, ShareStrip, ProgressRing, TargetCard,
   Aurora, Reveal, SparkBar, useCursorLight, useCursorTilt,
   useTableSort, SortHeader, InsightNote, MicroTrend, AmbientRibbon,
-  LoginAtmosphere, useLoginParallax,
+  LoginAtmosphere, useLoginParallax, CAN_HOVER,
 } from "./ui.jsx";
 import {
   usePresence, useProximityField, useNear,
@@ -1468,7 +1469,10 @@ const PUBLISHED_ONLY_KPIS = new Set(["su_requested", "budget_reduction"]);
 // data-kpi hook names for the simulation director (attribute only; no behaviour).
 const KPI_HOOK = { approved_projects:"approved", budgeted_projects:"budgeted", non_budgeted_projects:"non_budgeted" };
 
-function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false, trendPoints = null, liveValue, liveSub }) {
+function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey, onSave, onCardClick, isSelected, index = 0, Icon, lockSub = false, dashData, insightOverride, valueOverridden, insightOnly = false, trendPoints = null, liveValue, liveSub, opens, opensRef }) {
+  // opens: the card opens a window (Payments Made, 21 Oct 2026) rather than a
+  // project list. Its call to action is then a real button labelled with this
+  // text, and its hover follows a real pointer only (a tap would leave it lit).
   const vpK = useViewport();
   const [editing, setEditing] = useState(false);
   const [eVal,    setEVal]    = useState("");
@@ -1568,8 +1572,8 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
         // Sibling cards are also positioned, so without this the next card in
         // the DOM paints over this one's insight layer.
         zIndex: hover && !editing ? 30 : undefined }}
-      onClick={() => { if (!editing && onCardClick) onCardClick(); }}
-      onMouseEnter={() => setHover(true)}
+      onClick={() => { if (!editing && onCardClick) { if (opens) setHover(false); onCardClick(); } }}
+      onMouseEnter={() => { if (!opens || CAN_HOVER) setHover(true); }}
       onMouseLeave={() => { setHover(false); cl.onMouseLeave(); }}
     >
       <div
@@ -1711,13 +1715,14 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
 
                 Double-clicking the figure opens the same editor. A 32px corner
                 target is fine when you know it is there; the value itself is a
-                target the size of the card. */}
+                target the size of the card. Not on a card that opens a window:
+                its first click would open the window under the second. */}
             <div
-              onDoubleClick={canEdit ? (e) => { e.stopPropagation(); startEdit(); } : undefined}
-              title={canEdit ? "Double-click to edit" : undefined}
+              onDoubleClick={canEdit && !opens ? (e) => { e.stopPropagation(); startEdit(); } : undefined}
+              title={canEdit && !opens ? "Double-click to edit" : undefined}
               style={{ ...TYPE[valSize], color: accent ? T.textOf(accent) : T.text,
                 whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
-                cursor: canEdit ? "text" : "inherit", position:"relative", zIndex:2 }}>{shownVal}</div>
+                cursor: canEdit && !opens ? "text" : "inherit", position:"relative", zIndex:2 }}>{shownVal}</div>
 
             {sub && (
               <div style={{ ...TYPE.caption, color: hover ? T.textSoft : T.muted,
@@ -1743,7 +1748,33 @@ function EditableKCard({ T, label, value, sub, accent, featured, canEdit, kpiKey
 
 
 
-            {onCardClick && (
+            {onCardClick && opens && (
+              // A real button, so the keyboard and screen readers reach the
+              // window without the whole card becoming a button around the
+              // PMO's pencil. Keyboard focus lights the card as a hover does.
+              <button ref={opensRef} type="button" data-opens className="pmo-focusable pmo-btn"
+                aria-haspopup="dialog"
+                aria-label={`${label}: ${/^(PKR|Rs)/i.test(String(value)) ? value : "PKR " + value}${sub ? `, ${sub}` : ""}. ${opens}`}
+                onClick={(e) => { e.stopPropagation(); setHover(false); onCardClick(); }}
+                onFocus={(e) => { if (focusVisible(e.currentTarget)) setHover(true); }}
+                onBlur={() => setHover(false)}
+                style={{
+                  // A little padding (offset by the margin) so the focus ring
+                  // clears the text; the words sit where "View projects" does.
+                  display:"inline-flex", alignItems:"center", gap:4, margin:`${SP.sm - 2}px 0 -2px -4px`,
+                  ...TYPE.caption, color:T.dim, fontWeight:600,
+                  background:"none", border:"none", padding:"2px 4px", cursor:"pointer",
+                  position:"relative", zIndex:2,
+                  opacity: hover ? 1 : 0.55, transition:`opacity ${MOTION.fast}`,
+                }}>
+                {opens}
+                <ArrowUpRight size={11} aria-hidden="true" style={{
+                  transform: hover ? "translate(1px,-1px)" : "none",
+                  transition:`transform ${MOTION.base}`,
+                }} />
+              </button>
+            )}
+            {onCardClick && !opens && (
               <div style={{
                 display:"flex", alignItems:"center", gap:4, marginTop:SP.sm,
                 ...TYPE.caption, color: isSelected ? clr : T.dim, fontWeight:600,
@@ -3347,6 +3378,16 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   // (Finance's pending payments), not projects flagged is_carry_forward,
   // which are none — "Live" on the card once reset it to 0 (29 Sep 2026).
   const [cfList, setCfList] = useState({ total: 0, count: 0 });
+  // Payments Made (Payments Status tab) opens every itemised CAPEX payment
+  // (PMO, 21 Oct 2026), in the window the Investments tab uses. Not in the
+  // simulation, which has no project_payments: the card stays as it was there.
+  const [payOpen, setPayOpen] = useState(false);
+  const payCtaRef = useRef(null);
+  const closePay = useCallback(() => {
+    setPayOpen(false);
+    // Back to the card's button, for keyboard and screen readers.
+    requestAnimationFrame(() => payCtaRef.current?.focus({ preventScroll: true }));
+  }, []);
 
   // Real cumulative series by project start month — the only genuine time
   // dimension this data has. 11 months, built from `start_date`, so every KPI's
@@ -3805,9 +3846,16 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           <EditableKCard dashData={d} Icon={Wallet} index={0} T={T} label="Total CAPEX"      featured accent={GOLD} canEdit={canEdit} kpiKey="total_capex"       onSave={saveKPI} {...kv("total_capex",        fmtM(d.total_capex),              "Full portfolio value")} />
           <EditableKCard dashData={d} Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} onCardClick={() => toggleCard("budget_released")} isSelected={activeCard==="budget_released"} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
           <EditableKCard dashData={d} Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
-          <EditableKCard dashData={d} Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI} {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
+          <EditableKCard dashData={d} Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI}
+            {...(IN_SIM ? null : { onCardClick: () => setPayOpen(true), opens: "View payments", opensRef: payCtaRef })}
+            {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
           <EditableKCard dashData={d} Icon={Clock} index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
         </div>
+      )}
+      {payOpen && !IN_SIM && (
+        <CapexPaymentsWindow T={T} session={session} supa={supa} canManage={canEdit}
+          isCompact={vp.isCompact} onClose={closePay}
+          onSelectProject={onSelectProject ? (id) => { setPayOpen(false); onSelectProject(id); } : null} />
       )}
       {activeTab === "financials" && (
         <div className="pmo-card-in" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:R.lg, padding:"20px 24px", boxShadow:T.shadow }}>
