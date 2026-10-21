@@ -68,7 +68,7 @@ export const paymentsOn = (projects, payments) => {
 };
 const AMOUNTS = [["Gross", "gross"], ["Tax", "tax"], ["Net", "net"]];
 // A payment taken from the Finance record names its row there:
-// "FY 2026-27 Finance payment record (ISB, LHR & RIU), row 147".
+// "<name of the Finance payment record>, row 147".
 const ROW_RE = /^(.*\S)\s*[,;]\s*row\s+(\d+)\s*$/i;
 const splitSource = (s) => { const m = ROW_RE.exec(String(s || "").trim()); return m ? { doc: m[1], row: m[2] } : null; };
 // One amount for display. A payment row shows its own figure ("—" when empty);
@@ -324,8 +324,8 @@ export function PaymentsWindow({ T, scope = "investment", projects = [], payment
               <div style={{ overflowX:"auto", border:`1px solid ${T.border}`, borderRadius:R.md }}>
                 {/* Fixed columns, so every project's table lines up with the next.
                     Gross and Net fit 9 digits with paisa in bold (128,456,789.75),
-                    Tax 8 (12,345,678.90); Department fits a code like
-                    "PRH-1107" or "Rsec-LHR-1200" on one line. Particulars gets
+                    Tax 8 (12,345,678.90); Department fits a code of up to 13
+                    characters ("Abcd-XYZ-1234") on one line. Particulars gets
                     the rest. */}
                 <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed", minWidth:880 }}>
                   <colgroup>
