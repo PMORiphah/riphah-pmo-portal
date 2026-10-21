@@ -138,7 +138,7 @@ const PLURAL = {
   past_project_updates: "follow-ups", past_pm_messages: "chat messages", settings: "settings",
   epdd_pdds: "PDDs", notification: "notifications", user_profiles: "users",
   lessons_learned: "lessons", benefits_realized: "benefits",
-  project_todos: "to-dos",
+  project_todos: "to-dos", project_pcrs: "PCR readings", project_payments: "payments",
 };
 const VERB = {
   created: "added", updated: "updated", deleted: "deleted", stage_changed: "moved stage",
