@@ -65,9 +65,9 @@ assert.deepEqual(N0.compacted, []); assert.deepEqual(N0.notes, []);
 
 // The base texts (invented values).
 const BASE = {
-  s01: ["Total Capex: 162.0 million rupees, 14 projects, 1 closed; health scores cover only 3.",
-    "Total Capex: one hundred sixty-two million rupees, fourteen projects, one closed; health scores cover only three.",
-    "Capex: 162.0 million; health scores cover only 3."],
+  s01: ["Total Capex: 162.0 million rupees, 14 projects, 1 PCD received; health scores cover only 3.",
+    "Total Capex: one hundred sixty-two million rupees, fourteen projects, one P C D received; health scores cover only three.",
+    "Capex: 162.0 million, 1 PCD received; health scores cover only 3."],
   s04: ["Payments Status: released, 68.0 million, 42 percent; payments entered for one project only.",
     "Payments Status: released, sixty-eight million, forty-two percent; payments entered for one project only.", "Payments Status: payments entered for one project only."],
   s09: ["Timeline: red means overdue, or PDD not submitted; XQZ, due 30 June.",
@@ -87,9 +87,9 @@ for (const [id, [c, s, sh]] of Object.entries(BASE)) {
 
 // Every variant, reached by changing the plan.
 const V = [
-  ["s01", (p) => { p.dashboard.progClause = "none"; }, "Total Capex: 162.0 million rupees, 14 projects, 1 closed."],
-  ["s01", (p) => { p.dashboard.progClause = "await"; p.dashboard.progN = 0; }, "Total Capex: 162.0 million rupees, 14 projects, 1 closed; health scores await progress reports."],
-  ["s01", (p) => { p.dashboard.closedN = 3; }, "Total Capex: 162.0 million rupees, 14 projects, 3 closed; health scores cover only 3."],
+  ["s01", (p) => { p.dashboard.progClause = "none"; }, "Total Capex: 162.0 million rupees, 14 projects, 1 PCD received."],
+  ["s01", (p) => { p.dashboard.progClause = "await"; p.dashboard.progN = 0; }, "Total Capex: 162.0 million rupees, 14 projects, 1 PCD received; health scores await progress reports."],
+  ["s01", (p) => { p.dashboard.closedN = 3; }, "Total Capex: 162.0 million rupees, 14 projects, 3 PCDs received; health scores cover only 3."],
   ["s01", (p) => { p.dashboard.closedN = 0; }, "Total Capex: 162.0 million rupees, 14 projects; health scores cover only 3."],
   ["s01", (p) => { p.dashboard.closedN = 3; p.dashboard.closedLive = false; }, "Total Capex: 162.0 million rupees, 14 projects; health scores cover only 3."],
   ["s01", (p) => { p.dashboard.closedN = 0; p.dashboard.progClause = "none"; }, "Total Capex: 162.0 million rupees, 14 projects."],
@@ -227,15 +227,15 @@ assert.deepEqual(Object.values(f(N0, "s01")).map((x) => [x.screen, x.where]), [[
   assert.deepEqual(c.map((x) => x.name), ["caveat", "caveatNoClosed"]);
   assert.equal(c[1].caption, "Total Capex: 162.0 million rupees, 14 projects; health scores cover only 3.");
   assert.ok(!c[1].figures.some((x) => x.slot === "closedN"));
-  assert.equal(c[0].words - c[1].words, 2, "the closed clause adds two spoken words");
+  assert.equal(c[0].words - c[1].words, 5, "the clause \"one P C D received\" adds five spoken words");
   for (const mut of [(p) => { p.dashboard.closedN = 0; }, (p) => { p.dashboard.closedLive = false; }]) {
     const l = lineOf(build(mut), "s01");
     assert.deepEqual(l.candidates.map((x) => x.name), ["caveat"]);
     assert.ok(!l.figures.some((x) => x.slot === "closedN"));
   }
   const l3 = lineOf(build((p) => { p.dashboard.closedN = 3; }), "s01");
-  assert.equal(l3.speech, "Total Capex: one hundred sixty-two million rupees, fourteen projects, three closed; health scores cover only three.");
-  assert.equal(l3.short.caption, "Capex: 162.0 million; health scores cover only 3.", "the short line leaves the clause out");
+  assert.equal(l3.speech, "Total Capex: one hundred sixty-two million rupees, fourteen projects, three PCDs received; health scores cover only three.");
+  assert.equal(l3.short.caption, "Capex: 162.0 million, 3 PCDs received; health scores cover only 3.", "the short line keeps the clause");
   assert.equal(l3.figures.find((x) => x.slot === "closedN").screen, "3 of 14 projects");
 }
 assert.equal(f(N0, "s03")["revAre.list"].screen, "2 projects"); assert.equal(f(N0, "s03").revAre.where, '[data-kpi="in_ed"]');
@@ -279,7 +279,7 @@ near(TM.sceneSeconds([{ words: 10, minHold: 7.8, short: { words: 5 } }], 135, { 
 near(TM.sceneSeconds([{ words: 10, minHold: 1, skip: true }], 135), 0, "skipped");
 near(TM.sceneSeconds([{ words: 10, minHold: 1 }], 135, { waits: 1.5 }), 0.3 + 10 * 60 / 135 + 1.5, "waits");
 assert.equal(TM.fmtClock(139.9), "2:19"); assert.equal(TM.fmtClock(43.94), "0:43"); assert.equal(TM.fmtClock(0), "0:00");
-assert.deepEqual([TM.LIMIT, TM.GOVERN_AT, TM.CUT_AT, TM.COMPACT_AT, TM.START_DELAY, TM.GAP], [150, 146, 149.5, 142, 0.3, 0.06]);
+assert.deepEqual([TM.LIMIT, TM.GOVERN_AT, TM.CUT_AT, TM.COMPACT_AT, TM.START_DELAY, TM.GAP], [150, 146, 149.5, 143, 0.3, 0.06]);
 const pr = TM.project(N0.lines, N0.scenes, 135);
 near(pr.total, N0.totals.at135, "total"); near(pr.chapters[1].start, pr.scenes.find((s) => s.n === 6).start, "chapter 2 starts at scene 6");
 for (const s of N0.scenes) near(s.start, pr.scenes.find((x) => x.n === s.n).start, `scene ${s.n} start`);
@@ -367,10 +367,10 @@ if (fs.existsSync(goldenPath)) {
   near(N.totals.at150, G.totals.at150, "total at 150 wpm", 0.006);
   N.chapters.forEach((c, i) => near(c.start, G.chapters135[i], `chapter ${c.n} start`));
 } else console.log("narration.test: golden lines SKIP (b3a-narration-expect.json not in SIM_FIXTURE)");
-assert.equal(N.totals.words, 291, "291 spoken words today (22 Oct fixture, incl. the closed clause)");
-assert.equal(Math.round(N.totals.at135 * 10) / 10, 141.6, "141.6 s at 135 wpm today");
-assert.equal(Math.round(N.totals.at150 * 10) / 10, 135.9, "135.9 s at 150 wpm today");
-assert.deepEqual(N.chapters.map((c) => TM.fmtClock(c.start)), ["0:00", "0:45", "1:00", "1:18", "1:45", "2:04"]);
+assert.equal(N.totals.words, 292, "292 spoken words today (22 Oct fixture, incl. \"three PCDs received\")");
+assert.equal(Math.round(N.totals.at135 * 10) / 10, 142, "142.0 s at 135 wpm today");
+assert.equal(Math.round(N.totals.at150 * 10) / 10, 136.3, "136.3 s at 150 wpm today");
+assert.deepEqual(N.chapters.map((c) => TM.fmtClock(c.start)), ["0:00", "0:45", "1:00", "1:19", "1:45", "2:05"]);
 assert.deepEqual(N.compacted, []); assert.deepEqual(N.notes, []);
 assert.ok(N.lines.every((l) => l.use === 0 && !l.skip));
 // The figures carry today's screen forms (fixture-expect.json).
