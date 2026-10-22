@@ -194,6 +194,10 @@ await test("full read over the fixture: shape, policies, keys, rpc, invariants, 
   }
   for (const r of snap.tables.project_risks_scored) { assert.equal(r.description, null); assert.equal(r.mitigation_plan, null); }
   for (const m of snap.tables.past_pm_messages) assert.equal(m.body, null);
+  // Payments (22 Oct 2026): every itemised payment, with the columns the payments window reads.
+  assert.ok(snap.tables.project_payments.length > 0, "the fixture has payments");
+  assert.equal(snap.tables.project_payments.length, FT.tables.project_payments.length);
+  for (const r of snap.tables.project_payments) assert.deepEqual(Object.keys(r).sort(), ["dept", "gross", "id", "net", "paid_on", "particulars", "payee", "project_id", "source", "tax"]);
   const P = snap.plan;
   for (const c of snap.tables.comments) if (c.project_id !== P.updates?.projectId) assert.equal(c.body, null);
   for (const m of snap.tables.past_project_updates) if (m.past_project_id !== P.past?.id) assert.equal(m.body, null);
@@ -211,8 +215,10 @@ await test("full read over the fixture: shape, policies, keys, rpc, invariants, 
   assert.deepEqual(snap.rpc.project_has_deliverables, RPC.project_has_deliverables.slice().sort());
   // responses: templates of this plan only, in TEMPLATES order, no table reads
   const ids = { me: pmo.id, storyId: P.story?.id, storyPmId: P.story?.pmId, updatesId: P.updates?.projectId, pastId: P.past?.id, reportId: P.report?.id };
+  const tplOf0 = (id) => keyOf(fill(TEMPLATES.find((t) => t.id === id).path, ids));
   const expectKeys = [...new Set(TEMPLATES.map((t) => fill(t.path, ids)).filter(Boolean).map(keyOf))];
   assert.deepEqual(snap.responses.map((r) => r.key), expectKeys);
+  for (const id of ["pay.rows", "pay.capex.projects"]) assert.ok(snap.responses.some((r) => tplOf0(id) === r.key), `${id} recorded`);
   assert.ok(snap.responses.length <= CAPS.responses);
   for (const r of snap.responses) assert.ok(r.status >= 200 && r.status < 300 && r.body && typeof r.body === "object");
   const tplOf = new Map(TEMPLATES.map((t) => [fill(t.path, ids) && keyOf(fill(t.path, ids)), t]));
@@ -223,6 +229,8 @@ await test("full read over the fixture: shape, policies, keys, rpc, invariants, 
       if ("file_path" in a) assert.ok(/^sim-(media\/m\d{3}|unavailable\/.+)$/.test(a.file_path));
     }
     if (t.id === "upd.thread") assert.ok([].concat(r.body).every((c) => c.body !== undefined), "thread bodies kept");
+    if (t.id === "pay.rows") assert.equal(r.body.length, snap.tables.project_payments.length, "every payment recorded for the window");
+    if (t.id === "pay.capex.projects") assert.ok(r.body.every((x) => Object.keys(x).sort().join() === "code,id,name,payments_made"), "the CAPEX window's project read");
   }
   const text = JSON.stringify([snap.tables, snap.responses]);
   assert.ok(!/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\./.test(text), "no JWT-like strings");

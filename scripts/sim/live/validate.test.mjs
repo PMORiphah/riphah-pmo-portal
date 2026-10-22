@@ -163,6 +163,12 @@ async function battery(name, base, blobs, now) {
     const rep = base.tables.board_reports.findIndex((r) => r.id === plan.report?.id && r.figures);
     if (rep >= 0) await refused(base, opts, "schema", (s) => { s.tables.board_reports[rep].figures = { ...s.tables.board_reports[rep].figures, risks: { top: [{ title: "x", mitigation: "y" }] } }; }, { label: "a risk mitigation in the report figures" });
     await refused(base, opts, "mask", (s) => { s.tables.user_profiles[0].phone = "not hidden"; }, { label: "an unmasked phone" });
+    // Payments (22 Oct 2026): payee and particulars are free text, scrubbed like messages.
+    if (base.tables.project_payments.length) {
+      await refused(base, opts, "mask", (s) => { s.tables.project_payments[0].particulars = "Cheque sent, call 0300-1234567"; }, { label: "a phone number in payment particulars" });
+      await refused(base, opts, "mask", (s) => { s.tables.project_payments[0].payee = "vendor@site.example.org"; }, { label: "an email as payee" });
+      await refused(base, opts, "schema", (s) => { s.tables.project_payments[0].created_by = s.tables.user_profiles[0].id; }, { label: "a payment column outside the allow-list" });
+    }
     if (base.tables.project_risks_scored.length) {
       await refused(base, opts, "schema", (s) => { s.tables.project_risks_scored[0].description = "x"; }, { label: "description is always empty" });
     }

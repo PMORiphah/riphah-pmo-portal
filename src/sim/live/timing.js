@@ -6,9 +6,11 @@
 // (scene 13: Cancel after the line) and any waits the rehearsal measured. Scenes follow one another
 // with no gap. If the projection at 135 wpm is over COMPACT_AT, the lines in COMPACT_ORDER switch to
 // their short form, one at a time, until it fits.
+// COMPACT_AT was 141 until 22 Oct 2026; 142 since the dashboard line says the closed projects (PMO),
+// so that clause does not cost scene 5 its peak month on today's data (still 4 s under GOVERN_AT).
 import { CHAPTERS } from "./lines.js";
 
-export const START_DELAY = 0.3, GAP = 0.06, LIMIT = 150, GOVERN_AT = 146, CUT_AT = 149.5, COMPACT_AT = 141;
+export const START_DELAY = 0.3, GAP = 0.06, LIMIT = 150, GOVERN_AT = 146, CUT_AT = 149.5, COMPACT_AT = 142;
 export const SHORT_HOLD = 0.7;
 export const COMPACT_ORDER = Object.freeze(["s05", "s09", "s16", "s10"]);
 

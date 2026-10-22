@@ -26,6 +26,7 @@ export const CHAPTERS = Object.freeze([
 export const CLOSING_SCENE = 20;
 
 const HERO = '[data-tour="hero-total"]';
+const PCD = '[data-kpi="pcds_received"]';
 const H2H = (c, metric) => `[data-tour="compare-h2h-grid"] [data-campus="{${c}}"] [data-metric="${metric}"]`;
 const RED = {
   both: "Timeline: red means overdue, or PDD not submitted",
@@ -49,20 +50,37 @@ export const LINES = Object.freeze([
     short: "Current portal data. Money first.", fallbacks: [], bare: null },
 
   // ── 1 Capex dashboard (critical) ─────────────────────────────────────────
+  // {closedN}: ", 3 closed" (PCDs Received card, PMO 22 Oct 2026) [new]; "" when none
+  // has closed or the card shows a typed figure. The short lines leave it out (they save time). The
+  // fallbacks are the same lines without it, so a closed count not on screen never stops the run.
   { id: "s01", scene: 1, minHold: 7.5, critical: true,
     main: [
       { name: "caveat", when: (p) => p.dashboard.progClause === "caveat",
+        caption: "Total Capex: {capexM} rupees, {capexN} projects{closedN}; health scores cover only {progN}.",
+        short: "Capex: {capexM}; health scores cover only {progN}.",
+        figures: [`capexM@${HERO}`, `capexN@${HERO}`, 'progN@[data-tour="hero-cpi-hint"]', `closedN@${PCD}`] },
+      { name: "await", when: (p) => p.dashboard.progClause === "await",
+        caption: "Total Capex: {capexM} rupees, {capexN} projects{closedN}; health scores await progress reports.",
+        short: "Capex: {capexM}; health scores await progress reports.",                       // [adapted]
+        figures: [`capexM@${HERO}`, `capexN@${HERO}`, `closedN@${PCD}`] },
+      { name: "none", caption: "Total Capex: {capexM} rupees, {capexN} projects{closedN}.", short: "Capex: {capexM}.",
+        figures: [`capexM@${HERO}`, `capexN@${HERO}`, `closedN@${PCD}`] },
+    ],
+    short: "Capex: {capexM}.",
+    fallbacks: [
+      { name: "caveatNoClosed", when: (p) => p.dashboard.progClause === "caveat",
         caption: "Total Capex: {capexM} rupees, {capexN} projects; health scores cover only {progN}.",
         short: "Capex: {capexM}; health scores cover only {progN}.",
         figures: [`capexM@${HERO}`, `capexN@${HERO}`, 'progN@[data-tour="hero-cpi-hint"]'] },
-      { name: "await", when: (p) => p.dashboard.progClause === "await",
+      { name: "awaitNoClosed", when: (p) => p.dashboard.progClause === "await",
         caption: "Total Capex: {capexM} rupees, {capexN} projects; health scores await progress reports.",
-        short: "Capex: {capexM}; health scores await progress reports.",                       // [adapted]
+        short: "Capex: {capexM}; health scores await progress reports.",
         figures: [`capexM@${HERO}`, `capexN@${HERO}`] },
-      { name: "none", caption: "Total Capex: {capexM} rupees, {capexN} projects.", short: "Capex: {capexM}.",
+      { name: "noneNoClosed", when: (p) => p.dashboard.progClause === "none",
+        caption: "Total Capex: {capexM} rupees, {capexN} projects.", short: "Capex: {capexM}.",
         figures: [`capexM@${HERO}`, `capexN@${HERO}`] },
     ],
-    short: "Capex: {capexM}.", fallbacks: [], bare: null },
+    bare: null },
 
   // ── 2 Investments ────────────────────────────────────────────────────────
   { id: "s02", scene: 2, minHold: 3.72,

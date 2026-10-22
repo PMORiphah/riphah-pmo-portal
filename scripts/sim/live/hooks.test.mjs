@@ -199,6 +199,25 @@ check("shared: the dock's voice switch, the voice chip and the closing card", ()
   assert.ok(src("src/sim/director/PresenterCard.jsx").includes("portal data as of {asOfText || hhmm} PKT"));
 });
 
+// ── 22 Oct 2026 (PMO): closed projects in scene 1, both Payments Made cards in the simulation ──
+check("PCDs Received card: data-kpi=\"pcds_received\" (kpiKey, no KPI_HOOK rename)", () => {
+  const s = src(A);
+  assert.ok(s.includes('<div data-kpi={KPI_HOOK[kpiKey] || kpiKey}'), "the card's data-kpi");
+  assert.ok(/const KPI_HOOK = \{[^}]*\}/.test(s) && !/const KPI_HOOK = \{[^}]*pcds_received/.test(s), "KPI_HOOK leaves pcds_received alone");
+  assert.equal((s.match(/kpiKey="pcds_received"/g) || []).length, 1);
+  assert.ok(/kpiKey="pcds_received"[^\n]*String\(d\.closed_count \?\? 0\), `\$\{d\.closed_count \?\? 0\} of \$\{d\.total_projects \?\? 0\} projects`/.test(s),
+    "value closed_count, sub \"N of M projects\" (the figure the narration checks)");
+});
+check("Payments Made: no simulation switch left; both cards open their window", () => {
+  for (const f of [A, "src/InvestmentsTab.jsx", "src/PaymentsWindow.jsx"]) assert.ok(!src(f).includes("IN_SIM"), `${f}: IN_SIM`);
+  const s = src(A);
+  assert.ok(s.includes('onCardClick={() => setPayOpen(true)} opens="View payments" opensRef={payCtaRef}'), "CAPEX card opens");
+  assert.ok(s.includes("{payOpen && (\n        <CapexPaymentsWindow"), "CAPEX window");
+  const inv = src("src/InvestmentsTab.jsx");
+  assert.ok(/\{ label: "Payments Made", value: payFailed/.test(inv), "the sixth investments card");
+  assert.ok(src("src/PaymentsWindow.jsx").includes('data-pay="window"'), "the window's hook");
+});
+
 check("WelcomeEmail.jsx: no simulation branch", () => {
   const s = src("src/WelcomeEmail.jsx");
   for (const bad of ["IN_SIM", "__PMO_SIM__", "sim/files", "simulation.example"]) assert.ok(!s.includes(bad), bad);

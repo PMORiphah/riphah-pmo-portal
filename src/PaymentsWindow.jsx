@@ -19,14 +19,13 @@ import { launcherClearance } from "./AssistantAvatar.jsx";
        says so, so the card can always be reconciled with the list.
 
    Read-only: payments are recorded by the PMO in project_payments (RLS: read =
-   can_view_project). The simulation never opens it: its live snapshot does not
-   carry project_payments, so both cards stay as they were there (IN_SIM).
+   can_view_project). The simulation shows both cards and windows too (22 Oct
+   2026): its live snapshot carries project_payments and its backend answers
+   these reads from it.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export const PAY_PATH = "/rest/v1/project_payments?select=id,project_id,paid_on,dept,payee,particulars,gross,tax,net,source&order=paid_on.asc";
 const CAPEX_PROJECTS_PATH = "/rest/v1/projects?portfolio=eq.capex&select=id,code,name,payments_made";
-// simulation.html marks its <html> (scripts/sim/make-sim-html.mjs); see the note above.
-export const IN_SIM = typeof document !== "undefined" && document.documentElement.hasAttribute("data-pmo-sim");
 // Old browsers throw on an unknown pseudo-class; treat that as "not keyboard focus".
 export const focusVisible = (el) => { try { return el.matches(":focus-visible"); } catch { return false; } };
 
@@ -412,7 +411,6 @@ export function PaymentsWindow({ T, scope = "investment", projects = [], payment
 export function CapexPaymentsWindow({ T, session, supa, canManage, isCompact, onClose, onSelectProject }) {
   const [state, setState] = useState({ loading: true, failed: false, projects: [], payments: [] });
   const read = useCallback(async () => {
-    if (IN_SIM) return { failed: false, projects: [], payments: [] };
     try {
       const [projects, payments] = await Promise.all([
         supa(CAPEX_PROJECTS_PATH, {}, session.access_token),

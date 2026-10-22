@@ -136,13 +136,16 @@ function asOfOf(tables, now) {
   };
 }
 
-// App.jsx:3449-3530 (hero), 3302 (kv)
+// App.jsx:3449-3530 (hero), 3302 (kv); 3785 (PCDs Received: closed_count, "N of M projects")
 function dashboardOf(pd, kpis) {
   const capexCount = num(pd.total_projects), progN = num(pd.reporting_progress_count);
+  const pcd = kpis.pcds_received || {};
   return {
     capexTotal: num(pd.total_capex), capexCount, dfTotal: num(pd.df_recommended_total),
     dfLive: !(kpis.df_recommended?.value), progN,
     progClause: progN === 0 ? "await" : progN * 2 >= capexCount ? "none" : "caveat",
+    // Closed projects, said only while the PCDs Received card shows the live count (no typed figure).
+    closedN: num(pd.closed_count), closedLive: !(pcd.value != null && pcd.value !== "") && !(pcd.sub != null && pcd.sub !== ""),
   };
 }
 

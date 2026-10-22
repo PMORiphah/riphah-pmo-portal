@@ -22,7 +22,7 @@ export const MASK = Object.freeze({ email: "hidden for the presentation", phone:
 // plan is worked out (snapshot.js), refused by validate.js if one is left. Email addresses, numbers
 // dialled with + or 00, and national numbers of 10-11 digits (0300-1234567, 051-1234567).
 export const TEXT_MASK = Object.freeze({ email: "(email hidden)", phone: "(phone hidden)" });
-export const TEXT_COLUMNS = Object.freeze(["body", "notes", "note", "reason_open"]);
+export const TEXT_COLUMNS = Object.freeze(["body", "notes", "note", "reason_open", "payee", "particulars"]);
 const EMAIL_IN_TEXT = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const PHONE_IN_TEXT = /(?:\+|\b00)\d[\d\s().-]{7,}\d|\b0\d{2,3}[\s-]?\d{7,8}\b|\b03\d{2}[\s-]\d{3}[\s-]?\d{4}\b/g;
 /** The text with every email address and phone number replaced by TEXT_MASK. */
@@ -85,6 +85,9 @@ export const TABLES = Object.freeze({
   project_risks_scored: { cols: "id:u,project_id:u,title:t,description:t:null,category:e,probability:e,impact:e,status:e,owner:t,mitigation_plan:t:null,date_identified:d,date_last_reviewed:d,created_by:u,created_by_name:t,created_at:ts,updated_at:ts,project_name:t,project_code:t,project_campus:t,severity:t", order: "date_identified.desc", rows: 2000 },
   project_risks: { cols: "id:u,project_id:u,status:e", rows: 2000 },
   project_deliverables: { cols: "id:u,project_id:u,status:t,confirmed:b,superseded:b", rows: 5000 },
+  // The itemised payments behind both Payments Made cards (Investments tab, Payments Status): the
+  // columns PaymentsWindow.jsx PAY_PATH reads. payee/particulars are free text (contacts scrubbed).
+  project_payments: { cols: "id:u,project_id:u,paid_on:d,dept:t,payee:t,particulars:t,gross:n,tax:n,net:n,source:t", rows: 5000 },
   epdd_pdds: { cols: "id:n,pdd_number:t,epdd_status:t,linked_project_id:u,is_history:b,seen_at:ts,queue:t", rows: 2000 },
   project_raci: { cols: "id:u,project_id:u,raci_role:e,user_id:u,person_name:t,person_title:t,sort_order:n,created_by:u,created_at:ts,updated_at:ts", plan: "project_id=eq.{storyId}", rows: 200 },
   project_tasks: { cols: TASK.replace("{fk}", "project_id"), plan: "project_id=eq.{storyId}", rows: 2000 },

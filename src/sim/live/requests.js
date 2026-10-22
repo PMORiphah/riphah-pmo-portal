@@ -47,6 +47,9 @@ export const TEMPLATES = Object.freeze([
   { id: "dash.breakdown.targets", path: "/rest/v1/settings?key=eq.dashboard_breakdowns&select=value", table: "settings", src: "App.jsx:2293" },
   { id: "inv.rows", path: "/rest/v1/project_metrics?portfolio=eq.investment&select=*&order=su_requested_amount.desc", table: "project_metrics", src: "InvestmentsTab.jsx:63" },
   { id: "inv.totals", path: "/rest/v1/investment_metrics?select=*", table: "investment_metrics", src: "InvestmentsTab.jsx:65" },
+  // Payments Made (Investments card and window; the Payments Status card's View payments window)
+  { id: "pay.rows", path: "/rest/v1/project_payments?select=id,project_id,paid_on,dept,payee,particulars,gross,tax,net,source&order=paid_on.asc", table: "project_payments", src: "PaymentsWindow.jsx:26 (PAY_PATH), InvestmentsTab.jsx:76" },
+  { id: "pay.capex.projects", path: "/rest/v1/projects?portfolio=eq.capex&select=id,code,name,payments_made", table: "projects", src: "PaymentsWindow.jsx:27" },
   // ── Project Cashflows ──
   { id: "cf.rows", path: "/rest/v1/project_cashflows?select=*&order=month.asc", table: "project_cashflows", src: "Cashflows.jsx:155" },
   { id: "cf.released", path: "/rest/v1/projects?portfolio=eq.capex&select=name,amount_released,budget_release_date&amount_released=gt.0&order=budget_release_date.asc", table: "projects", src: "Cashflows.jsx:156" },

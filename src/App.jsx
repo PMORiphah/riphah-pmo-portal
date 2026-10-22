@@ -26,7 +26,7 @@ import { PddAlertPMO, PddAlertPM } from "./PddAlerts.jsx";
 import { TourProvider, useTour } from "./TourGuide.jsx";
 import { guestSteps, pmSteps } from "./tourSteps.js";
 import { InvestmentsTab } from "./InvestmentsTab.jsx";
-import { CapexPaymentsWindow, IN_SIM, focusVisible } from "./PaymentsWindow.jsx";
+import { CapexPaymentsWindow, focusVisible } from "./PaymentsWindow.jsx";
 import { InstallPrompt } from "./InstallPrompt.jsx";
 import { BiometricButton } from "./BiometricButton.jsx";
 import { NotificationButton } from "./NotificationButton.jsx";
@@ -3847,12 +3847,12 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           <EditableKCard dashData={d} Icon={ArrowDownRight} index={1} T={T} label="Budget Released"           canEdit={canEdit} kpiKey="budget_released"    onSave={saveKPI} onCardClick={() => toggleCard("budget_released")} isSelected={activeCard==="budget_released"} {...kv("budget_released",     fmtM(d.budget_consumed),          fmtP((d.budget_consumed/d.total_capex)*100)+" of total CAPEX")} />
           <EditableKCard dashData={d} Icon={PiggyBank} index={2} T={T} label="Remaining CAPEX"  accent={good} canEdit={canEdit} kpiKey="remaining_capex"  onSave={saveKPI} {...kv("remaining_capex",    fmtM(d.df_recommended_total - d.approved_total),         fmtP(((d.df_recommended_total - d.approved_total)/d.df_recommended_total)*100)+" awaiting approval")} />
           <EditableKCard dashData={d} Icon={CheckCircle} index={3} T={T} label="Payments Made"             canEdit={canEdit} kpiKey="payments_made"      onSave={saveKPI}
-            {...(IN_SIM ? null : { onCardClick: () => setPayOpen(true), opens: "View payments", opensRef: payCtaRef })}
+            onCardClick={() => setPayOpen(true)} opens="View payments" opensRef={payCtaRef}
             {...kv("payments_made",       fmtM(d.payments_made_total),      "Finance-confirmed transfers")} />
           <EditableKCard dashData={d} Icon={Clock} index={4} T={T} label="Payments Pending" accent={warn} canEdit={canEdit} kpiKey="payments_pending" onSave={saveKPI} onCardClick={() => toggleCard("payments_pending")} isSelected={activeCard==="payments_pending"} {...kv("payments_pending",  fmtM(d.payments_pending_amount),  d.payments_pending_count+" projects awaiting transfer")} />
         </div>
       )}
-      {payOpen && !IN_SIM && (
+      {payOpen && (
         <CapexPaymentsWindow T={T} session={session} supa={supa} canManage={canEdit}
           isCompact={vp.isCompact} onClose={closePay}
           onSelectProject={onSelectProject ? (id) => { setPayOpen(false); onSelectProject(id); } : null} />

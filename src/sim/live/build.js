@@ -33,6 +33,14 @@ export const SLOTS = {
   capexM: (p) => ({ cap: millionsCap(p.dashboard.capexTotal), say: sayMillions(p.dashboard.capexTotal), screen: fmtM(p.dashboard.capexTotal) }),
   capexN: (p) => ({ cap: String(p.dashboard.capexCount), say: sayInt(p.dashboard.capexCount), screen: `${p.dashboard.capexCount} projects` }),
   progN: (p) => ({ cap: String(p.dashboard.progN), say: sayInt(p.dashboard.progN), screen: `${p.dashboard.progN} of ${p.dashboard.capexCount} projects` }),
+  // ", 3 closed" after the project count (PCDs Received card); nothing when none has closed or the
+  // card shows a typed figure (then there is nothing to check it against). Two spoken words, so the
+  // dashboard line grows by under a second.
+  closedN: (p) => {
+    const d = p.dashboard, n = d.closedLive ? d.closedN : 0;
+    if (!(n > 0)) return { cap: "", say: "", screen: null };
+    return { cap: `, ${n} closed`, say: `, ${sayInt(n)} closed`, screen: `${n} of ${d.capexCount} projects` };
+  },
 
   invCount: (p) => ({ cap: plural(p.investments.invN, "project"), say: countSay(p.investments.invN, "project"), screen: String(p.investments.invN) }),
 
