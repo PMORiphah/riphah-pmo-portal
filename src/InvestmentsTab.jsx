@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { TrendingUp, Plus, ArrowRightLeft, Search, X, Check, Pencil, ArrowUpRight } from "lucide-react";
 import { TYPE, SP, R, MOTION } from "./theme.js";
 import { EmptyState, Skeleton, Button, Input, Select, Badge, Modal, useViewport, CAN_HOVER } from "./ui.jsx";
-import { PaymentsWindow, PAY_PATH, IN_SIM, focusVisible, paymentsOn } from "./PaymentsWindow.jsx";
+import { PaymentsWindow, PAY_PATH, focusVisible, paymentsOn } from "./PaymentsWindow.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    INVESTMENTS
@@ -22,10 +22,8 @@ import { PaymentsWindow, PAY_PATH, IN_SIM, focusVisible, paymentsOn } from "./Pa
    so a failure shows "—" on the card instead of breaking the tab. The window
    is shared with the dashboard's CAPEX Payments Made card (PaymentsWindow.jsx).
 
-   The simulation leaves the card out: its live snapshot does not carry
-   project_payments yet, so it could only ever show 0 while the real portal
-   shows the recorded payments. Adding the table to the snapshot (schema.js /
-   requests.js) is a separate change for the PMO to approve.
+   The simulation shows the card and its window as well (PMO, 22 Oct 2026):
+   project_payments is in its live snapshot (schema.js / requests.js).
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const MIN_CARD = 190;   // px; the strip's narrowest card, as before the sixth card
@@ -71,8 +69,7 @@ export function InvestmentsTab({
   useEffect(() => () => stripObs.current?.disconnect(), []);
 
   // Never rejects: a failed read must leave the rest of the tab working.
-  // Not read in the simulation, which leaves the card out (see the note above).
-  const readPayments = useCallback(() => IN_SIM ? Promise.resolve({ ok: true, rows: [] }) :
+  const readPayments = useCallback(() =>
     supa(PAY_PATH, {}, session.access_token).then(
       (r) => ({ ok: true, rows: Array.isArray(r) ? r : [] }),
       () => ({ ok: false, rows: [] })),
@@ -168,13 +165,13 @@ export function InvestmentsTab({
       sub: `${totals.approved_count || 0} sanctioned`, c: T.positive },
     { label: "Released", value: fmtFull(totals.released_total),
       sub: "Budget released to date", c: T.positive },
-    ...(IN_SIM ? [] : [{ label: "Payments Made", value: payFailed ? "—" : fmtFull(pay.gross),
+    { label: "Payments Made", value: payFailed ? "—" : fmtFull(pay.gross),
       sub: payFailed ? "Payments could not be loaded just now"
          : pay.n ? `${pay.n} payment${pay.n === 1 ? "" : "s"} · gross` : "No payments listed yet",
-      c: T.cyan, opens: true }]),
+      c: T.cyan, opens: true },
   ] : [];
   const gap = SP.md;
-  // Six cards: 6, 3, 2 or 1 per row. Five (the simulation): the strip as it was.
+  // Six cards: 6, 3, 2 or 1 per row.
   const cols = stripW && kpis.length === 6
     ? ([6, 3, 2].find((c) => (stripW - (c - 1) * gap) / c >= MIN_CARD) || 1) : 0;
 

@@ -54,7 +54,7 @@ const KNOWN = new Set([
   "webauthn_challenges", "push_subscriptions", "pmo_active_session", "milestones", "epdd_pdds", "epdd_files",
   "epdd_reviews", "epdd_sync_runs", "epdd_state", "board_reports", "board_report_recipients",
   "project_todos", "project_pcrs",   // 20 Oct 2026: not in the snapshot, so they read as empty
-  "project_payments",                // 21 Oct 2026 (Investments → Payments Made): not in the snapshot, so the card is left out of the simulation; reads as empty if asked
+  "project_payments",                // 22 Oct 2026: in the snapshot (both Payments Made cards and windows)
   // views
   "portfolio_metrics", "portfolio_dashboard", "project_metrics", "investment_metrics", "cashflow_monthly",
   "at_risk_projects", "pdd_pending_projects", "project_task_rollup", "project_risks_scored", "lessons_learned_full",
@@ -88,6 +88,7 @@ const FK = {
   project_raci: { project_id: "projects", user_id: "user_profiles" },
   project_tasks: { project_id: "projects", parent_id: "project_tasks" },
   project_deliverables: { project_id: "projects", pdd_id: "epdd_pdds" },
+  project_payments: { project_id: "projects", created_by: "user_profiles" },
   project_task_rollup: { project_id: "projects" },
   lessons_learned: { project_id: "projects" }, lessons_learned_full: { project_id: "projects" },
   benefits_realized: { project_id: "projects" }, benefits_realized_full: { project_id: "projects" },

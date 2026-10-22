@@ -26,7 +26,7 @@ ok("baseline", () => {
   const p = plan();
   assert.equal(p.v, 1);
   assert.deepEqual(p.asOf, { takenAt: NOW, pktDate: "2031-03-10", utcDate: "2031-03-10", hhmm: "10:30", dateText: "10 Mar 2031", fyLabel: "FY 2030-31" });
-  assert.deepEqual(p.dashboard, { capexTotal: 162e6, capexCount: 14, dfTotal: 162e6, dfLive: true, progN: 3, progClause: "caveat" });
+  assert.deepEqual(p.dashboard, { capexTotal: 162e6, capexCount: 14, dfTotal: 162e6, dfLive: true, progN: 3, progClause: "caveat", closedN: 1, closedLive: true });
   assert.deepEqual(p.investments, { invN: 1, invFull: true });
   assert.deepEqual(p.pdd, { notSubmitted: 4, reviewer: "in_ed", reviewerN: 2 });
   assert.deepEqual(p.payments, { released: 68e6, relPctText: "42.0%", relPct: 42, paidProjects: 1, paidTotal: 500000, variant: "one" });
