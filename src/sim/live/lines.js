@@ -50,31 +50,31 @@ export const LINES = Object.freeze([
     short: "Current portal data. Money first.", fallbacks: [], bare: null },
 
   // ── 1 Capex dashboard (critical) ─────────────────────────────────────────
-  // {closedN}: ", 3 closed" (PCDs Received card, PMO 22 Oct 2026) [new]; "" when none
-  // has closed or the card shows a typed figure. The short lines leave it out (they save time). The
+  // {closedN}: ", 3 PCDs received" (PCDs Received card, PMO 22 Oct 2026) [new]; "" when none
+  // has closed or the card shows a typed figure. The short lines keep it too (PMO, 22 Oct). The
   // fallbacks are the same lines without it, so a closed count not on screen never stops the run.
   { id: "s01", scene: 1, minHold: 7.5, critical: true,
     main: [
       { name: "caveat", when: (p) => p.dashboard.progClause === "caveat",
         caption: "Total Capex: {capexM} rupees, {capexN} projects{closedN}; health scores cover only {progN}.",
-        short: "Capex: {capexM}; health scores cover only {progN}.",
+        short: "Capex: {capexM}{closedN}; health scores cover only {progN}.",
         figures: [`capexM@${HERO}`, `capexN@${HERO}`, 'progN@[data-tour="hero-cpi-hint"]', `closedN@${PCD}`] },
       { name: "await", when: (p) => p.dashboard.progClause === "await",
         caption: "Total Capex: {capexM} rupees, {capexN} projects{closedN}; health scores await progress reports.",
-        short: "Capex: {capexM}; health scores await progress reports.",                       // [adapted]
+        short: "Capex: {capexM}{closedN}; health scores await progress reports.",                       // [adapted]
         figures: [`capexM@${HERO}`, `capexN@${HERO}`, `closedN@${PCD}`] },
-      { name: "none", caption: "Total Capex: {capexM} rupees, {capexN} projects{closedN}.", short: "Capex: {capexM}.",
+      { name: "none", caption: "Total Capex: {capexM} rupees, {capexN} projects{closedN}.", short: "Capex: {capexM}{closedN}.",
         figures: [`capexM@${HERO}`, `capexN@${HERO}`, `closedN@${PCD}`] },
     ],
-    short: "Capex: {capexM}.",
+    short: "Capex: {capexM}{closedN}.",
     fallbacks: [
       { name: "caveatNoClosed", when: (p) => p.dashboard.progClause === "caveat",
         caption: "Total Capex: {capexM} rupees, {capexN} projects; health scores cover only {progN}.",
-        short: "Capex: {capexM}; health scores cover only {progN}.",
+        short: "Capex: {capexM}{closedN}; health scores cover only {progN}.",
         figures: [`capexM@${HERO}`, `capexN@${HERO}`, 'progN@[data-tour="hero-cpi-hint"]'] },
       { name: "awaitNoClosed", when: (p) => p.dashboard.progClause === "await",
         caption: "Total Capex: {capexM} rupees, {capexN} projects; health scores await progress reports.",
-        short: "Capex: {capexM}; health scores await progress reports.",
+        short: "Capex: {capexM}{closedN}; health scores await progress reports.",
         figures: [`capexM@${HERO}`, `capexN@${HERO}`] },
       { name: "noneNoClosed", when: (p) => p.dashboard.progClause === "none",
         caption: "Total Capex: {capexM} rupees, {capexN} projects.", short: "Capex: {capexM}.",

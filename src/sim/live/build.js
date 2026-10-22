@@ -39,7 +39,7 @@ export const SLOTS = {
   closedN: (p) => {
     const d = p.dashboard, n = d.closedLive ? d.closedN : 0;
     if (!(n > 0)) return { cap: "", say: "", screen: null };
-    return { cap: `, ${n} closed`, say: `, ${sayInt(n)} closed`, screen: `${n} of ${d.capexCount} projects` };
+    return { cap: `, ${n} ${n === 1 ? "PCD" : "PCDs"} received`, say: `, ${sayInt(n)} ${n === 1 ? "PCD" : "PCDs"} received`, screen: `${n} of ${d.capexCount} projects` };
   },
 
   invCount: (p) => ({ cap: plural(p.investments.invN, "project"), say: countSay(p.investments.invN, "project"), screen: String(p.investments.invN) }),

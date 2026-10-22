@@ -202,8 +202,7 @@ export function buildScenes({ plan, lines, meta = {} } = {}) {
   const noProgSay = past.noProgress > 0 ? `${sayInt(past.noProgress)} without` : null;
   const PCD_CARD = '[data-kpi="pcds_received"]';
   const closedN = P.dashboard?.closedLive ? Number(P.dashboard.closedN) || 0 : 0;
-  const closedSay = closedN > 0 ? `${sayInt(closedN)} closed` : null;
-  const countSay = closedSay ? `${sayInt(Number(P.dashboard.capexCount) || 0)} projects, ${closedSay}` : null;
+  const closedSay = closedN > 0 ? `${sayInt(closedN)} ${closedN === 1 ? "PCD" : "PCDs"} received` : null;
 
   // ── scenes ─────────────────────────────────────────────────────────────────────────────────────
   const scenes = [
@@ -256,9 +255,12 @@ export function buildScenes({ plan, lines, meta = {} } = {}) {
         { after: 4.0, when: () => dfLive, unhover: true },
         { when: () => dfLive, spot: ['[data-tour="hero-total"]'] },
         // "health …": only the two "N of M projects" hint lines; the verdict and the indices stay dim.
-        // "…, N projects, three closed": the total's project count and the PCDs Received card (closed
-        // projects) together, from the count until "health", only when the line says the closed clause.
-        { phrase: countSay, ifWord: true, when: () => !!closedSay && !!countSay, spot: ['[data-tour="hero-total"]', PCD_CARD] },
+        // "…, three PCDs received": the total and the PCDs Received card (closed projects) together,
+        // held at least 1.6 s, whenever the line carries the clause (short lines too).
+        // Not tied to word timing (real voices can miss it): at the clause, or at its place in the line.
+        { word: "received", frac: 0.45, when: () => !!closedSay, scroll: PCD_CARD, block: "nearest" },
+        { when: () => !!closedSay, spot: ['[data-tour="hero-total"]', PCD_CARD] },
+        { when: () => !!closedSay, hold: 1.6, short: 1.2 },
         { word: "health", ifWord: true, spot: ['[data-tour="hero-cpi-hint"]', '[data-tour="hero-spi-hint"]'], pad: 4 },
       ],
     },
