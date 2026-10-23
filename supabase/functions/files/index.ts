@@ -85,29 +85,33 @@ async function copy() {
   let bytes = 0;
   const pending: { bucket: string; path: string; size_bytes: number; mime: string | null; etag: string | null }[] =
     await rpc("r2_pending", { p_limit: 200 }, svc);
-  for (const f of pending) {
-    if (Date.now() - started > COPY_MS || bytes > COPY_BYTES) break;
-    try {
-      const src = await fetch(`${SUPA}/storage/v1/object/${encodeURIComponent(f.bucket)}/${enc(f.path)}`, { headers: svc });
-      if (!src.ok) throw new Error(`read ${src.status}`);
-      const body = new Uint8Array(await src.arrayBuffer());
-      const put = await aws.fetch(r2Url(f.bucket, f.path), {
-        method: "PUT", body,
-        headers: { "content-type": f.mime || src.headers.get("content-type") || "application/octet-stream",
-                   "cache-control": "private, max-age=86400" },
-      });
-      if (!put.ok) throw new Error(`write ${put.status} ${(await put.text()).slice(0, 120)}`);
-      const row = await fetch(`${SUPA}/rest/v1/r2_objects?on_conflict=bucket,path`, {
-        method: "POST", headers: { ...svc, Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify({ bucket: f.bucket, path: f.path, size_bytes: body.byteLength, etag: f.etag, copied_at: new Date().toISOString() }),
-      });
-      if (!row.ok) throw new Error(`record ${row.status}`);
-      bytes += body.byteLength;
-      done.push(`${f.bucket}/${f.path}`);
-    } catch (e) {
-      failed.push({ path: `${f.bucket}/${f.path}`, error: String(e).slice(0, 200) });
+  let next = 0;
+  const worker = async () => {
+    while (next < pending.length && Date.now() - started < COPY_MS && bytes < COPY_BYTES) {
+      const f = pending[next++];
+      try {
+        const src = await fetch(`${SUPA}/storage/v1/object/${encodeURIComponent(f.bucket)}/${enc(f.path)}`, { headers: svc });
+        if (!src.ok) throw new Error(`read ${src.status}`);
+        const body = new Uint8Array(await src.arrayBuffer());
+        const put = await aws.fetch(r2Url(f.bucket, f.path), {
+          method: "PUT", body,
+          headers: { "content-type": f.mime || src.headers.get("content-type") || "application/octet-stream",
+                     "cache-control": "private, max-age=86400" },
+        });
+        if (!put.ok) throw new Error(`write ${put.status} ${(await put.text()).slice(0, 120)}`);
+        const row = await fetch(`${SUPA}/rest/v1/r2_objects?on_conflict=bucket,path`, {
+          method: "POST", headers: { ...svc, Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ bucket: f.bucket, path: f.path, size_bytes: body.byteLength, etag: f.etag, copied_at: new Date().toISOString() }),
+        });
+        if (!row.ok) throw new Error(`record ${row.status}`);
+        bytes += body.byteLength;
+        done.push(`${f.bucket}/${f.path}`);
+      } catch (e) {
+        failed.push({ path: `${f.bucket}/${f.path}`, error: String(e).slice(0, 200) });
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
   // Copies whose original was deleted (a removed document, a withdrawn simulation share).
   const orphans: { bucket: string; path: string }[] = await rpc("r2_orphans", { p_limit: 200 }, svc);
   for (const o of orphans) {

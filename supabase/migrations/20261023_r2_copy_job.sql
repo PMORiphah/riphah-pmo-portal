@@ -10,7 +10,7 @@ select cron.schedule('r2-copy', '*/10 * * * *', $job$
       'x-cron-secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'cron_secret')
     ),
     body := '{"action":"copy"}'::jsonb,
-    timeout_milliseconds := 5000
+    timeout_milliseconds := 150000
   );
 $job$);
 
