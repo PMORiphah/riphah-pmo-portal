@@ -6,6 +6,7 @@ import { ClipboardCheck, Search, ArrowLeft, ExternalLink, RefreshCw, FileText, P
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 import { storageUrl } from "./storageUrl.js";
+import { fileLink } from "./fileLinks.js";
 
 // Always run epdd-sync in Singapore, like the 5-minute pg_cron run. Called from the
 // browser it would run in the region nearest the PMO (Mumbai), where the E-PDD
@@ -493,11 +494,15 @@ function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack
     setFileErr(null);
     const w = download ? null : window.open("", "_blank");
     try {
-      const res = await supa(`/storage/v1/object/sign/epdd-files/${encodeStoragePath(f.storage_path)}`,
-        { method:"POST", body: JSON.stringify({ expiresIn: 120 }) }, session.access_token);
-      if (!res.signedURL) throw new Error("Could not create a link for this file");
-      let url = storageUrl(res.signedURL);
-      if (download) url += (url.includes("?") ? "&" : "?") + "download=" + encodeURIComponent(f.file_name);
+      // Cloudflare R2 first (no Supabase bandwidth, see fileLinks.js); Supabase as before when it has no link.
+      let url = await fileLink("epdd-files", f.storage_path, session.access_token, { download: download ? f.file_name : null });
+      if (!url) {
+        const res = await supa(`/storage/v1/object/sign/epdd-files/${encodeStoragePath(f.storage_path)}`,
+          { method:"POST", body: JSON.stringify({ expiresIn: 120 }) }, session.access_token);
+        if (!res.signedURL) throw new Error("Could not create a link for this file");
+        url = storageUrl(res.signedURL);
+        if (download) url += (url.includes("?") ? "&" : "?") + "download=" + encodeURIComponent(f.file_name);
+      }
       if (w) w.location.href = url; else window.location.href = url;
     } catch (e) { if (w) w.close(); setFileErr(e.message); }
   };
@@ -514,10 +519,14 @@ function PddDetail({ T, session, supa, row, files, review, ai, isCompact, onBack
     setFileErr(null);
     const w = window.open("", "_blank");
     try {
-      const res = await supa(`/storage/v1/object/sign/epdd-files/${encodeStoragePath(f.storage_path)}`,
-        { method:"POST", body: JSON.stringify({ expiresIn: 120 }) }, session.access_token);
-      if (!res.signedURL) throw new Error("Could not create a link for the charter");
-      const html = await (await fetch(storageUrl(res.signedURL))).text();
+      let url = await fileLink("epdd-files", f.storage_path, session.access_token);
+      if (!url) {
+        const res = await supa(`/storage/v1/object/sign/epdd-files/${encodeStoragePath(f.storage_path)}`,
+          { method:"POST", body: JSON.stringify({ expiresIn: 120 }) }, session.access_token);
+        if (!res.signedURL) throw new Error("Could not create a link for the charter");
+        url = storageUrl(res.signedURL);
+      }
+      const html = await (await fetch(url)).text();
       if (!w) throw new Error("Allow pop-ups to print the charter");
       // Its images and styles live on the E-PDD portal; the base tag points them there.
       w.document.open();

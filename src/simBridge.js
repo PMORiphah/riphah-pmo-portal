@@ -24,6 +24,7 @@ import { readSnapshot, sameReview } from "./sim/live/snapshot.js";
 import { SUPA_ORIGIN } from "./sim/live/requests.js";
 import { CAPS } from "./sim/live/schema.js";
 import { sha256Hex } from "./sim/live/canon.js";
+import { fileLink } from "./fileLinks.js";
 
 // The portal's public (anon) key, as in src/auth.js. Requests also carry the PMO's own token.
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBybXhrZWNvbXFxbmd2cm15dGNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDUxNzAsImV4cCI6MjA5Nzk4MTE3MH0.4MtGQqpuv9DdPOdoyKTh-RbHG9JAgTV94TJW74apAw8";
@@ -161,14 +162,8 @@ async function reencode(blob, mime) {
   }
 }
 
-/** One site-visit row → { blob, mime, size, sha256, sourcePath, sourceSize, thumb }, or throws a reason. */
-async function prepareItem(row, signal) {
-  const mime = mediaMimeOf(row);
-  if (!IMAGE_MIMES.includes(mime) && !VIDEO_MIMES.includes(mime)) throw new Error("type not supported");
-  const declared = Number(row.file_size) || 0;
-  if (VIDEO_MIMES.includes(mime) && declared > ITEM_MAX) throw new Error("over 50 MB");
-  const tok = currentSession()?.access_token;
-  if (!tok) throw new Error("signed out");
+/** The file from Supabase Storage through a signed link (the way before R2, and its fallback). */
+async function signedFromStorage(row, tok, signal) {
   const sr = await fetch(`${SUPA_ORIGIN}/storage/v1/object/sign/project-attachments/${encodeStoragePath(row.file_path)}`, {
     method: "POST", cache: "no-store", credentials: "omit", signal,
     headers: { apikey: SUPA_KEY, Authorization: "Bearer " + tok, "Content-Type": "application/json" },
@@ -179,7 +174,24 @@ async function prepareItem(row, signal) {
   // portal tab only ever downloads from real storage (src/storageUrl.js's first case).
   const link = sj?.signedURL;
   if (!sr.ok || typeof link !== "string" || !link.startsWith("/object/sign/project-attachments/")) throw new Error("no link");
-  const r = await fetch(SUPA_ORIGIN + "/storage/v1" + link, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", signal });
+  return fetch(SUPA_ORIGIN + "/storage/v1" + link, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", signal });
+}
+
+/** One site-visit row → { blob, mime, size, sha256, sourcePath, sourceSize, thumb }, or throws a reason. */
+async function prepareItem(row, signal) {
+  const mime = mediaMimeOf(row);
+  if (!IMAGE_MIMES.includes(mime) && !VIDEO_MIMES.includes(mime)) throw new Error("type not supported");
+  const declared = Number(row.file_size) || 0;
+  if (VIDEO_MIMES.includes(mime) && declared > ITEM_MAX) throw new Error("over 50 MB");
+  const tok = currentSession()?.access_token;
+  if (!tok) throw new Error("signed out");
+  // Cloudflare R2 first (no Supabase bandwidth, see fileLinks.js); Supabase as before when it has no link or fails.
+  const r2 = await fileLink("project-attachments", row.file_path, tok);
+  let r = r2 ? await fetch(r2, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", signal }).catch((e) => {
+    if (signal?.aborted) throw e;
+    return null;
+  }) : null;
+  if (!r || !r.ok) r = await signedFromStorage(row, tok, signal);
   if (!r.ok) throw new Error("download failed (" + r.status + ")");
   const raw = await r.blob();
   if (declared > 0 && raw.size !== declared) throw new Error("size differs from the record");
