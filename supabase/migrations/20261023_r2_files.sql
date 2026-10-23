@@ -8,7 +8,7 @@
 -- storage policies that already exist: file_access() asks storage.objects AS THE CALLER, so a PM, a guest, the
 -- PMO and a signed-out visitor see exactly the files they see today, and nothing new. A file not yet copied,
 -- or any failure, falls back to today's Supabase link.
--- Additive only: nothing is removed. Rollback: unschedule the job; the portal falls back to Supabase links.
+-- Additive only: nothing is removed. Rollback: unschedule job 3 (20261023_r2_copy_job.sql); the portal falls back to Supabase links.
 
 -- 1. Which files have a copy in R2 (backend only: RLS on, no policies, service role only).
 create table public.r2_objects (
@@ -21,7 +21,7 @@ create table public.r2_objects (
 );
 alter table public.r2_objects enable row level security;
 revoke all on public.r2_objects from anon, authenticated;
-grant select, insert, update, delete on public.r2_objects to service_role;
+grant all on public.r2_objects to service_role;
 
 -- 2. Which of these paths may the caller open? Security INVOKER on purpose: the select on storage.objects runs
 --    under the caller's own JWT, so the existing storage policies decide, unchanged.
@@ -63,20 +63,6 @@ revoke execute on function public.r2_pending(integer) from public, anon, authent
 revoke execute on function public.r2_orphans(integer) from public, anon, authenticated;
 grant execute on function public.r2_pending(integer) to service_role;
 grant execute on function public.r2_orphans(integer) to service_role;
-
--- 4. Job 3: copy new files to R2 every 10 minutes (same auth pattern as jobs 1 and 2).
-select cron.schedule('r2-copy', '*/10 * * * *', $job$
-  SELECT net.http_post(
-    url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'project_url') || '/functions/v1/files',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBybXhrZWNvbXFxbmd2cm15dGNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDUxNzAsImV4cCI6MjA5Nzk4MTE3MH0.4MtGQqpuv9DdPOdoyKTh-RbHG9JAgTV94TJW74apAw8',
-      'x-cron-secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'cron_secret')
-    ),
-    body := '{"action":"copy"}'::jsonb,
-    timeout_milliseconds := 5000
-  );
-$job$);
 
 -- After applying: get_advisors (security); in a rolled-back transaction compare file_access() with the storage
 -- policies for every object as PMO, Guest, Ali, another PM and anon (they must agree on every row).
