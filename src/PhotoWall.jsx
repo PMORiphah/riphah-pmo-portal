@@ -3,6 +3,7 @@ import { Camera, Play, Download, X, ChevronLeft, ChevronRight, ArrowUpRight, Ima
 import { TYPE, SP, R, MOTION } from "./theme.js";
 import { Select, useViewport } from "./ui.jsx";
 import { storageUrl } from "./storageUrl.js";
+import { fileLink } from "./fileLinks.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHOTO WALL
@@ -92,6 +93,13 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
   const getUrl = useCallback(async (item) => {
     if (urlsRef.current[item.id]) return urlsRef.current[item.id];
     try {
+      // Cloudflare R2 first (no Supabase bandwidth, see fileLinks.js); Supabase as before when it has no link.
+      const r2 = await fileLink("project-attachments", item.file_path, session.access_token);
+      if (r2) {
+        urlsRef.current[item.id] = r2;
+        setUrls(u => ({ ...u, [item.id]: r2 }));
+        return r2;
+      }
       const res = await supa(
         `/storage/v1/object/sign/project-attachments/${encodeStoragePath(item.file_path)}`,
         { method: "POST", body: JSON.stringify({ expiresIn: 3600 }) }, session.access_token);
@@ -276,7 +284,7 @@ export function PhotoWallPage({ T, session, supa, onSelectProject }) {
               textAlign: "left" }}>
             {urls[item.id] ? (
               isVideo(item) ? (
-                <video src={urls[item.id]} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted />
+                <video src={urls[item.id]} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted preload="metadata" />
               ) : (
                 <img src={urls[item.id]} alt={item.file_name} loading="lazy"
                   style={{ width: "100%", height: "100%", objectFit: "cover" }} />

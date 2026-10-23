@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment,
 import { createPortal } from "react-dom";
 import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
 import { storageUrl } from "./storageUrl.js";
+import { fileLink } from "./fileLinks.js";
 import { PhotoWallPage } from "./PhotoWall.jsx";
 import { RiskRegisterPage, ProjectRisksPanel } from "./RiskRegister.jsx";
 import { ProjectLessonsPanel } from "./LessonsLearned.jsx";
@@ -7229,6 +7230,10 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
   // intact through the redesign: opening a file and saving it are different
   // intentions and now have different controls.
   const getSignedUrl = async (att, forceDownload) => {
+    // Cloudflare R2 first (no Supabase bandwidth, see fileLinks.js); Supabase as before when it has no link.
+    const r2 = await fileLink("project-attachments", att.file_path, session.access_token,
+                              { download: forceDownload ? att.file_name : null });
+    if (r2) return r2;
     const res = await supa(`/storage/v1/object/sign/project-attachments/${encodeStoragePath(att.file_path)}`, {
       method: "POST", body: JSON.stringify({ expiresIn: 60 }),
     }, session.access_token);
@@ -7254,10 +7259,15 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
   };
 
   // Clicking the card: open in a new tab for viewing.
-  const handleOpen = async (att) => {
-    try { window.open(await getSignedUrl(att, false), "_blank"); }
-    catch (e) { setErr(e.message); }
+  // iOS blocks window.open after an await, so the tab is opened first and pointed at the link once it arrives.
+  const openInNewTab = async (att, forceDownload) => {
+    const w = window.open("", "_blank");
+    try {
+      const url = await getSignedUrl(att, forceDownload);
+      if (w) { w.opener = null; w.location.href = url; } else window.open(url, "_blank");
+    } catch (e) { if (w) w.close(); setErr(e.message); }
   };
+  const handleOpen = (att) => openInNewTab(att, false);
 
   // The Download button: a guaranteed save, not a preview.
   //
@@ -7267,10 +7277,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
   // fetch". Supabase's sign endpoint takes a `download` option that adds
   // Content-Disposition: attachment server-side instead — plain navigation to
   // that URL forces the save with no fetch() and no CORS exposure at all.
-  const handleForceDownload = async (att) => {
-    try { window.open(await getSignedUrl(att, true), "_blank"); }
-    catch (e) { setErr(e.message); }
-  };
+  const handleForceDownload = (att) => openInNewTab(att, true);
 
   // Persist a rearranged sequence. One PATCH per row: the list is small, and a
   // partial failure leaves the rest correctly ordered rather than reverting to

@@ -19,9 +19,18 @@ globalThis.window = { open: (url, name, features) => { opened.push({ url, name, 
 globalThis.document = { querySelector: (sel) => (String(sel).includes("/assets/index-") ? { src: "https://portal.example/app/assets/" + BUILD + "?v=1" } : null) };
 const network = [];
 let server = async (u) => { throw new Error("no network in this test: " + u); };
+// Requests for Cloudflare R2 links (src/fileLinks.js → edge function `files`) are kept apart: by default the
+// function has no link, so the files come from Supabase Storage exactly as before.
+const FILES_FN = "https://prmxkecomqqngvrmytcj.supabase.co/functions/v1/files";
+const linkRequests = [];
+let linkServer = async () => ({ urls: {} });
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url), method = (opts.method || "GET").toUpperCase();
   const req = { url: u, method, headers: opts.headers || {}, body: opts.body, cache: opts.cache, credentials: opts.credentials };
+  if (u === FILES_FN) {
+    linkRequests.push(req);
+    return new Response(JSON.stringify(await linkServer(JSON.parse(req.body))), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
   network.push(req);
   return server(u, method, req);
 };
@@ -209,6 +218,41 @@ await test("a guest's click: GET the stored files only, checked, then exactly me
   assert.ok(!text.includes(TOKEN) && !/\/object\/sign\/|token=/.test(text));
   assert.ok(progress.includes("downloading") && progress.includes("sending") && progress.includes("confirming"));
   assert.equal(globalThis.window.__PMO_SIM_SHARE__.phase, "ready");
+  sim.close();
+});
+
+await test("with R2 links: the stored files come from R2 (each still checked), Supabase only for the PATCH", async () => {
+  signIn(GUEST, "guest");
+  const R2 = "https://acct.r2.cloudflarestorage.com/pmo-portal-files/sim-shares/";
+  const base = guestServer();
+  server = async (u, method, req) => {
+    if (u.startsWith(R2)) {
+      assert.equal(req.credentials, "omit");
+      assert.equal(req.headers.Authorization, undefined, "no token to R2");
+      const b = files.get(decodeURIComponent(u.slice(R2.length).split("?")[0]));
+      return b ? new Response(b, { status: 200 }) : new Response("", { status: 404 });
+    }
+    return base(u, method, req);
+  };
+  linkServer = async (body) => {
+    assert.equal(body.action, "sign");
+    assert.equal(body.bucket, "sim-shares");
+    return { urls: Object.fromEntries(body.paths.map((p) => [p, R2 + encodeURIComponent(p) + "?X-Amz-Signature=x"])) };
+  };
+  const n0 = network.length, l0 = linkRequests.length;
+  let sim = null;
+  onOpen = (nonce) => { sim = fakeSim(nonce); };
+  const res = await S.launchShared({ share, getSession: () => null, onProgress: () => {}, timing: { hello: 3000, ok: 4000 } });
+  onOpen = null;
+  await sim.ended;
+  assert.equal(res.confirmed, true);
+  assert.equal(res.sent, snapshot.media.length);
+  const reqs = network.slice(n0);
+  assert.equal(reqs.filter((r) => r.method === "GET" && r.url.startsWith(R2)).length, snapshot.media.length + 1);
+  assert.equal(reqs.filter((r) => r.url.startsWith(DOWNLOAD)).length, 0, "nothing from Supabase Storage");
+  assert.deepEqual(reqs.filter((r) => r.method !== "GET").map((r) => r.method), ["PATCH"]);
+  assert.ok(linkRequests.length > l0);
+  linkServer = async () => ({ urls: {} });
   sim.close();
 });
 

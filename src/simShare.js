@@ -29,6 +29,7 @@
 // This file is small on purpose: a guest's portal loads it at sign-in, and the hand-over modules
 // (simBridge.js, the validator, the snapshot reader) load only once a share exists (preloadShared).
 import { loadSession } from "./auth.js";
+import { fileLink } from "./fileLinks.js";
 
 export const SHARE_DAYS = 7;                 // a share plays for 7 days after its data was read
 const DAY_MS = 86400000;
@@ -212,6 +213,16 @@ const storagePath = (shareId, name) => `${shareId}/${name}`;
 
 /** One stored file of a share. 400/403/404 = not readable any more (withdrawn, replaced or expired). */
 async function fetchStored(getSession, path, signal) {
+  // Cloudflare R2 first (no Supabase bandwidth, see fileLinks.js); Supabase as before when it has no link or fails.
+  // Every item is still checked against its SHA-256 by the caller.
+  const tok = sessionNow(getSession)?.access_token;
+  const r2 = tok ? await fileLink(BUCKET, path, tok) : null;
+  if (r2) {
+    try {
+      const r = await fetch(r2, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", signal });
+      if (r.ok) return r;
+    } catch { if (signal?.aborted) throw new ShareError("stopped", TEXT.stopped); }
+  }
   for (let attempt = 0; attempt < 2; attempt++) {
     let r;
     try { r = await call(getSession, "GET", `/storage/v1/object/authenticated/${BUCKET}/${path}`, { signal }); }

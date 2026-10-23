@@ -4,6 +4,7 @@ import { FileDiff, ExternalLink, CheckCircle2, UserRound, CircleDashed, Hourglas
 import { TYPE, SP, R, DATA } from "./theme.js";
 import { Button, Skeleton } from "./ui.jsx";
 import { storageUrl } from "./storageUrl.js";
+import { fileLink } from "./fileLinks.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PCR (PMO, 20 Oct 2026)
@@ -74,11 +75,19 @@ function usePcrData(supa, session, projectId) {
 }
 
 async function openDoc(supa, session, doc) {
-  const enc = String(doc.file_path).split("/").map(encodeURIComponent).join("/");
-  const res = await supa(`/storage/v1/object/sign/project-attachments/${enc}`, { method:"POST", body: JSON.stringify({ expiresIn: 60 }) },
-                         session.access_token);
-  if (!res?.signedURL) throw new Error("Could not make a link to the document.");
-  window.open(storageUrl(res.signedURL), "_blank", "noopener");
+  // iOS blocks window.open after an await, so the tab is opened first and pointed at the link once it arrives.
+  const w = window.open("", "_blank");
+  try {
+    let url = await fileLink("project-attachments", doc.file_path, session.access_token);
+    if (!url) {
+      const enc = String(doc.file_path).split("/").map(encodeURIComponent).join("/");
+      const res = await supa(`/storage/v1/object/sign/project-attachments/${enc}`, { method:"POST", body: JSON.stringify({ expiresIn: 60 }) },
+                             session.access_token);
+      if (!res?.signedURL) throw new Error("Could not make a link to the document.");
+      url = storageUrl(res.signedURL);
+    }
+    if (w) { w.opener = null; w.location.href = url; } else window.open(url, "_blank", "noopener");
+  } catch (e) { if (w) w.close(); throw e; }
 }
 
 // ─── Overview card ──────────────────────────────────────────────────────────
