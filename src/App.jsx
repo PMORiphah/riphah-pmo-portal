@@ -9984,8 +9984,8 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
         const lineIds = [...new Set(updates.flatMap(u => (Array.isArray(u.data?.lines) ? u.data.lines : []).map(l => l?.id)).filter(Boolean))];
         if (lineIds.length) {
           try {
-            const ls = await supa(`/rest/v1/project_deliverables?id=in.(${lineIds.join(",")})&select=id,line_no,title`, {}, session.access_token);
-            if (my === threadSeq.current) setLineTitles(Object.fromEntries((ls || []).map(l => [l.id, l])));
+            const ls = await supa(`/rest/v1/project_deliverables?id=in.(${lineIds.join(",")})&select=id,line_no,title,revised_title`, {}, session.access_token);
+            if (my === threadSeq.current) setLineTitles(Object.fromEntries((ls || []).map(l => [l.id, { ...l, title: l.revised_title || l.title }])));
           } catch(_) {}
         }
         if (session.role === "pmo") {
