@@ -42,7 +42,7 @@ import {
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
   Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
-  PackageCheck, FileBarChart, MonitorPlay, ListTodo, FileDiff, BellRing,
+  PackageCheck, FileBarChart, MonitorPlay, ListTodo, FileDiff, BellRing, Boxes,
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -303,6 +303,8 @@ const NAV = [
   // PMO, and anyone who manages a past project (they see only their own).
   { id:"past",     Icon:History,       label:"Past Projects", pastOnly:true },
   { id:"review",   Icon:ClipboardCheck, label:"PMO Review",   pmoOnly:true },
+  // Items procured on FY 25-26 and FY 26-27 projects, from SAP ME2J (PMO, 26 Oct 2026).
+  { id:"inventory", Icon:Boxes,       label:"Inventory",    pmoOnly:true },
   // PMO, and anyone a board report has been shared with (8 Oct 2026).
   { id:"reports",  Icon:FileBarChart,  label:"Monthly Report", reportsOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
@@ -8603,6 +8605,12 @@ const CampusCompare = lazy(() => import("./CampusCompare.jsx").catch(() => {
   return { CampusCompare: () => null };
 }).then(m => ({ default: m.CampusCompare })));
 
+// Inventory (PMO, 26 Oct 2026): loaded only when the page is opened. Reload once on a missing chunk, as above.
+const InventoryPage = lazy(() => import("./Inventory.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
+  return { InventoryPage: () => null };
+}).then(m => ({ default: m.InventoryPage })));
+
 // The PMO's To-Do List on a project (PMO, 20 Oct 2026): loaded only when its tab is opened, so the
 // project page sends no project_todos request until then. Reload once on a missing chunk, as above.
 const ProjectTodos = lazy(() => import("./ProjectTodos.jsx").catch(() => {
@@ -11780,6 +11788,7 @@ const PAGE_TITLES = {
   camp: { title:"Campus / Sites",  subtitle:"Projects and approvals by campus" },
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
   review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
+  inventory: { title:"Inventory", subtitle:"Items procured on FY 25-26 and FY 26-27 projects \u00b7 SAP ME2J" },
   cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
   team: { title:"Team & About",    subtitle:"PMO team and portal information" },
@@ -13050,7 +13059,7 @@ export default function App() {
     // entry is not enough on its own: a restored session, a bookmark or a stale
     // page value can still land here, and Past Projects would have shown an
     // empty list rather than saying anything.
-    ((page === "cashflow" || page === "review") && session?.role !== "pmo") ? "proj" :
+    ((page === "cashflow" || page === "review" || page === "inventory") && session?.role !== "pmo") ? "proj" :
     (page === "past" && session?.role !== "pmo" && !pastAllowed) ? "proj" :
     (page === "reports" && session?.role !== "pmo" && !reportsAllowed && !reportsPinned) ? "proj" :
     page;
@@ -13266,6 +13275,12 @@ export default function App() {
                 const u = new URL(window.location.href); u.searchParams.delete("report");
                 window.history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
               }} />
+          </Suspense>
+        )}
+        {effectivePage === "inventory" && (
+          <Suspense fallback={<div style={{ flex:1 }} />}>
+            <InventoryPage T={T} session={session} supa={supa} onOpenProject={openProject}
+              onOpenPast={(id) => { setPastLink({ kind:"project", id }); navigateToPage("past"); }} />
           </Suspense>
         )}
         {effectivePage === "review" && <PmoReviewPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
