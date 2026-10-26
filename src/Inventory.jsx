@@ -165,7 +165,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     XLSX.writeFile(wb, `Inventory_${todayPKT()}.xlsx`);
   };
 
-  if (rows === null) return <div style={{ padding: SP.xl, color: T.muted, fontSize: 13 }}>Loading the inventory…</div>;
+  if (rows === null) return <div style={{ flex: 1, padding: SP.xl, color: T.muted, fontSize: 13 }}>Loading the inventory…</div>;
 
   const Kpi = ({ icon: Icon, label, value, sub, color }) => (
     <div className="pmo-lift" style={{ flex: "1 1 150px", minWidth: compact ? 0 : 150, padding: "12px 14px", borderRadius: R.lg,
@@ -271,6 +271,8 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   );
 
   return (
+    // The page scrolls inside its own area, like PMO Review: the portal's content column does not scroll by itself.
+    <div className="pmo-scroll" data-inv-scroll style={{ flex: 1, minHeight: 0, overflow: "auto", background: T.page }}>
     <div data-page="inventory" style={{ padding: compact ? SP.md : SP.xl, display: "flex", flexDirection: "column", gap: SP.md }}>
       <style>{`.inv-row:hover{background:${T.surfaceRaised}}`}</style>
       {/* Figures for what is shown */}
@@ -371,6 +373,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
 
       {detail && <InventoryDetail T={T} session={session} supa={supa} row={detail} isMobile={compact} onClose={() => setDetail(null)}
         onOpenProject={(id) => { setDetail(null); onOpenProject?.(id); }} onOpenPast={(id) => { setDetail(null); onOpenPast?.(id); }} />}
+    </div>
     </div>
   );
 }
