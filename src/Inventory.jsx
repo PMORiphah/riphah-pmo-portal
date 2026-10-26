@@ -31,6 +31,8 @@ const COLS = "id,po_number,po_item,fiscal_year,sap_project_code,sap_project_name
   "supplier_code,supplier_name,material,description,material_group,is_service,plant,profit_center,qty,unit,net_price,total,currency," +
   "open_qty,open_value,to_invoice_value,delivery_status";
 const PAGE = 1000;
+const GROUP_KEY = "pmo-inventory-group";
+const GROUPS = { project: "Grouped by project", supplier: "Grouped by supplier", plant: "Grouped by plant" };
 const SHOW = 150;          // rows shown at once in a list before "Show more"
 
 const fmt = (n) => Number(n || 0).toLocaleString("en", { maximumFractionDigits: 0 });
@@ -49,7 +51,15 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const [err, setErr] = useState(null);
   const [q, setQ] = useState("");
   const [f, setF] = useState({ fy: "", project: "", supplier: "", plant: "", pc: "", mg: "", type: "goods", status: "", from: "", to: "" });
-  const [groupBy, setGroupBy] = useState("project");
+  // Not grouped by default (PMO, 26 Oct 2026). A grouping the PMO picks stays, also after leaving the page or
+  // reloading, until it is changed or cleared (its chip's ×). Kept in this browser only.
+  const [groupBy, setGroupByState] = useState(() => {
+    try { const g = localStorage.getItem(GROUP_KEY); return GROUPS[g] ? g : "none"; } catch { return "none"; }
+  });
+  const setGroupBy = (g) => {
+    setGroupByState(g); setOpen({}); setLimit({});
+    try { if (g === "none") localStorage.removeItem(GROUP_KEY); else localStorage.setItem(GROUP_KEY, g); } catch { /* ignore */ }
+  };
   const [sort, setSort] = useState({ key: "total", dir: "desc" });
   const [open, setOpen] = useState({});                // group key → expanded
   const [limit, setLimit] = useState({});              // group key → rows shown
@@ -202,7 +212,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     );
   };
   const Row = ({ r, i }) => {
-    const meta = [r.supplier_name, `PO ${r.po_number}/${r.po_item}`, groupBy !== "project" ? r.sap_project_code : null, r.is_service ? "Service" : null]
+    const meta = [r.supplier_name, `PO ${r.po_number}/${r.po_item}`, groupBy !== "project" ? (r.sap_project_name ? `${r.sap_project_name} (${r.sap_project_code})` : r.sap_project_code) : null, r.is_service ? "Service" : null]
       .filter(Boolean).join(" · ");
     if (compact) return (
       <button key={r.id} onClick={() => setDetail(r)} className="pmo-focusable" data-inv-row
@@ -290,18 +300,25 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         <Input T={T} icon={Search} value={q} onChange={e => { setQ(e.target.value); setLimit({}); }} onClear={() => setQ("")}
           placeholder="Search item, material, PO, supplier or project…" aria-label="Search the inventory"
           style={{ flex: "1 1 280px" }} />
-        <Select T={T} size="sm" value={groupBy} onChange={e => { setGroupBy(e.target.value); setOpen({}); setLimit({}); }} aria-label="Group by">
+        <Select T={T} size="sm" value={groupBy} active={groupBy !== "none"} onChange={e => setGroupBy(e.target.value)} aria-label="Group by">
+          <option value="none">Group by…</option>
           <option value="project">Group by project</option>
           <option value="supplier">Group by supplier</option>
           <option value="plant">Group by plant</option>
-          <option value="none">No grouping</option>
         </Select>
         {compact && <Button T={T} size="sm" variant="ghost" onClick={() => setShowFilters(v => !v)}>{showFilters ? "Hide filters" : `Filters${activeFilters.length ? ` (${activeFilters.length})` : ""}`}</Button>}
         <Button T={T} size="sm" variant="ghost" icon={Download} onClick={download} disabled={!view.length}>Download as Excel</Button>
       </div>
       {(!compact || showFilters) && filterBar}
-      {(activeFilters.length > 0 || searching) && (
+      {(activeFilters.length > 0 || searching || groupBy !== "none") && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          {groupBy !== "none" && (
+            <button data-inv-group-chip onClick={() => setGroupBy("none")} className="pmo-focusable pmo-btn" title="Show the list without grouping"
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 9px", borderRadius: R.pill, cursor: "pointer",
+                background: `${BRAND.gold}1f`, border: `1px solid ${BRAND.gold}66`, color: T.textOf(BRAND.gold), ...TYPE.caption, fontWeight: 700 }}>
+              {GROUPS[groupBy]} <X size={11} />
+            </button>
+          )}
           {activeFilters.map(([k, v]) => (
             <button key={k} onClick={() => set(k, k === "type" ? "goods" : "")} className="pmo-focusable pmo-btn"
               style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 9px", borderRadius: R.pill, cursor: "pointer",
@@ -311,7 +328,10 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
                 : k === "project" ? (opts.project.find(p => p[0] === v)?.[1] || v) : v} <X size={11} />
             </button>
           ))}
-          <button onClick={clearAll} className="pmo-focusable pmo-btn" style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, ...TYPE.caption }}>Clear all</button>
+          {(activeFilters.length > 0 || searching) && (
+            <button onClick={clearAll} className="pmo-focusable pmo-btn" title="Clear the search and filters (the grouping stays)"
+              style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, ...TYPE.caption }}>Clear filters</button>
+          )}
         </div>
       )}
       {err && <div style={{ fontSize: 12.5, color: T.textOf(DATA.danger) }}>{err}</div>}
