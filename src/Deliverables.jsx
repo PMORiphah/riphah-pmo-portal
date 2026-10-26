@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { PackageCheck, Sparkles, Plus, Pencil, Undo2, Check, X, TrendingUp, TrendingDown, FileText } from "lucide-react";
+import { PackageCheck, Sparkles, Plus, Pencil, Undo2, Check, X, TrendingUp, TrendingDown, FileText, ArrowRightLeft } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, CAN_HOVER } from "./ui.jsx";
 
@@ -15,6 +15,11 @@ import { Button, CAN_HOVER } from "./ui.jsx";
    once by the assistant into a draft the PMO confirms. Status, date and note are
    the portal's own; the PMO and the project's manager update them. The next
    phase will ask managers for these updates.
+
+   Revised items (PMO, 26 Oct 2026): when procurement buys something else against a
+   line, the PMO records it in the revised_* columns. The line itself stays as the
+   PDD has it (the PDD sync never writes revised_*), and a "Revised to" column shows
+   whenever any line of the project is revised. Only the PMO revises or undoes.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export const DELIV_STATUS = {
@@ -25,11 +30,22 @@ export const DELIV_STATUS = {
   handed_over: { label:"Handed over", color:DATA.positive },
 };
 const DONE = new Set(["delivered", "installed", "handed_over"]);
-// Done · item · qty · unit cost · total · note · tools
-const GRID = "24px minmax(0,1fr) 90px 100px 110px minmax(120px,200px) 44px";
+// Done · item · qty · unit cost · total · note · tools; with a revision: Done · item · revised to · qty · …
+const GRID = "24px minmax(0,1fr) 90px 100px 110px minmax(120px,200px) 64px";
+const GRID_REV = "24px minmax(0,1fr) minmax(0,1fr) 90px 100px 110px minmax(110px,170px) 64px";
+const REV = DATA.warning;   // amber: revised against the PDD
 const money = (n, cur = "PKR") => n == null ? "—" : `${cur === "PKR" ? "" : cur + " "}${Number(n).toLocaleString("en", { maximumFractionDigits: 2 })}`;
 const qtyText = (r) => r.qty == null ? "—" : `${Number(r.qty).toLocaleString("en")}${r.unit ? ` ${r.unit}` : ""}`;
 const fmtDay = (s) => s ? new Date(String(s).slice(0,10) + "T00:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }) : "";
+/** The revised figures that were given, as one short text ("2 Nos · unit 500 · total 1,000"). */
+const revFigures = (r) => {
+  const parts = [];
+  if (r.revised_qty != null || r.revised_unit) parts.push(`${Number(r.revised_qty ?? r.qty ?? 0).toLocaleString("en")}${(r.revised_unit || r.unit) ? ` ${r.revised_unit || r.unit}` : ""}`);
+  if (r.revised_unit_cost != null) parts.push(`unit ${money(r.revised_unit_cost, r.currency)}`);
+  if (r.revised_total != null) parts.push(`total ${money(r.revised_total, r.currency)}`);
+  return parts.join(" · ");
+};
+const revWho = (r) => [r.revised_by_name ? `Revised by ${r.revised_by_name}` : "Revised", r.revised_at ? fmtDay(r.revised_at) : ""].filter(Boolean).join(" · ");
 
 /** Whether a project has the tab. Asks the database, which knows the rule. */
 export async function hasDeliverables(supa, session, projectId) {
@@ -50,6 +66,7 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
   const [edit, setEdit]   = useState(null);      // row being edited by the PMO ({} = new)
   const [showAside, setShowAside] = useState(false);
   const [hover, setHover] = useState(null);
+  const [revise, setRevise] = useState(null);    // row being revised by the PMO
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +94,15 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
     return m;
   }, [active]);
   const fromPdd = active.some(r => r.source === "pdd");
+  const revised = active.filter(r => r.revised_title);
+  const anyRev = revised.length > 0;
+  // What is actually being bought: a revised total where there is one, else the line's own.
+  const revTotals = useMemo(() => {
+    const m = {};
+    active.forEach(r => { const t = r.revised_total ?? r.total; if (t != null) m[r.currency || "PKR"] = (m[r.currency || "PKR"] || 0) + Number(t); });
+    return m;
+  }, [active]);
+  const totalsDiffer = Object.keys(revTotals).some(c => Number(revTotals[c] || 0) !== Number(totals[c] || 0));
   const pddLabel = (() => {
     const id = active.find(r => r.pdd_id)?.pdd_id; const p = id && pdds[id];
     return p ? `${p.pdd_number} · ${p.epdd_status}` : fromPdd ? "the linked PDD" : null;
@@ -129,9 +155,22 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
         <span style={{ fontSize:14, fontWeight:700, color:T.text }}>
           {done} of {active.length} delivered
         </span>
-        {Object.keys(totals).length > 0 && (
+        {Object.keys(totals).length > 0 && (totalsDiffer ? (
+          <span data-deliv="revised-total" style={{ ...TYPE.caption, color:T.muted }}>
+            <span style={{ color:T.textOf(REV), fontWeight:700 }}>
+              Revised total {Object.entries(revTotals).map(([c, v]) => `${c} ${Number(v).toLocaleString("en")}`).join(" · ")}
+            </span>
+            {" · "}{fromPdd ? "PDD" : "listed"} {Object.entries(totals).map(([c, v]) => `${c} ${Number(v).toLocaleString("en")}`).join(" · ")}
+          </span>
+        ) : (
           <span style={{ ...TYPE.caption, color:T.muted }}>
             {Object.entries(totals).map(([c, v]) => `${c} ${Number(v).toLocaleString("en")}`).join(" · ")}
+          </span>
+        ))}
+        {anyRev && (
+          <span data-deliv="revised-count" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"1px 8px", borderRadius:R.pill,
+            background:`${REV}1f`, border:`1px solid ${REV}55`, ...TYPE.caption, fontWeight:700, color:T.textOf(REV) }}>
+            <ArrowRightLeft size={11} /> {revised.length} revised
           </span>
         )}
         <span style={{ ...TYPE.caption, color:T.dim }}>{pddLabel ? `from ${pddLabel}` : active.length ? "from the charter" : ""}</span>
@@ -175,9 +214,12 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
       ) : (
         <div style={{ border:`1px solid ${T.border}`, borderRadius:R.lg, overflow:"hidden", background:T.surface }}>
           {!isCompact && (
-            <div style={{ display:"grid", gridTemplateColumns:GRID, gap:SP.sm, padding:"7px 12px",
+            <div style={{ display:"grid", gridTemplateColumns: anyRev ? GRID_REV : GRID, gap:SP.sm, padding:"7px 12px",
               background:T.card2, ...TYPE.label, fontSize:9.5, color:T.dim }}>
-              <span title="Delivered" style={{ display:"inline-flex", justifyContent:"center" }}><Check size={11} /></span><span>Item</span><span style={{ textAlign:"right" }}>Qty</span>
+              <span title="Delivered" style={{ display:"inline-flex", justifyContent:"center" }}><Check size={11} /></span>
+              <span>{anyRev ? (fromPdd ? "Item (PDD)" : "Item (original)") : "Item"}</span>
+              {anyRev && <span data-deliv="revised-head" style={{ color:T.textOf(REV) }}>Revised to</span>}
+              <span style={{ textAlign:"right" }}>Qty</span>
               <span style={{ textAlign:"right" }}>Unit cost</span><span style={{ textAlign:"right" }}>Total</span><span>Note</span><span />
             </div>
           )}
@@ -209,6 +251,9 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
             );
             const tools = isPMO && (
               <span style={{ display:"inline-flex", gap:2, opacity: hot || isCompact ? 1 : 0, transition:`opacity ${MOTION.fast}` }}>
+                <button className="pmo-focusable pmo-btn" onClick={() => setRevise(r)} aria-label="Revise item"
+                  title={r.revised_title ? "Change or undo the revision" : "Revise item (a different item is being bought)"}
+                  style={{ background:"none", border:"none", color: r.revised_title ? T.textOf(REV) : T.dim, cursor:"pointer", padding:3 }}><ArrowRightLeft size={12} /></button>
                 <button className="pmo-focusable pmo-btn" onClick={() => setEdit(r)} title="Edit item"
                   style={{ background:"none", border:"none", color:T.dim, cursor:"pointer", padding:3 }}><Pencil size={12} /></button>
                 <button className="pmo-focusable pmo-btn" onClick={() => patch(r.id, { superseded: true })} title="Set aside"
@@ -223,6 +268,18 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
                 {priceTag}
               </span>
             );
+            const revCell = r.revised_title ? (
+              <span data-deliv="revised" title={[revWho(r), r.revised_reason ? `Reason: ${r.revised_reason}` : ""].filter(Boolean).join("\n")}
+                style={{ display:"block", minWidth:0, padding:"3px 0 3px 8px", borderLeft:`2px solid ${REV}` }}>
+                <span style={{ display:"block", fontSize:12.5, fontWeight:600, color:T.text, lineHeight:1.4, overflowWrap:"anywhere" }}>{r.revised_title}</span>
+                {(revFigures(r) || r.revised_reason) && (
+                  <span style={{ display:"block", ...TYPE.caption, color:T.textOf(REV), lineHeight:1.45 }}>
+                    {revFigures(r)}{revFigures(r) && r.revised_reason ? " · " : ""}
+                    {r.revised_reason && <span style={{ color:T.muted }}>{r.revised_reason}</span>}
+                  </span>
+                )}
+              </span>
+            ) : <span style={{ fontSize:12, color:T.dim }}>—</span>;
             const note = canUpdate
               ? <NoteField T={T} value={r.note || ""} onSave={v => patch(r.id, { note: v || null })} />
               : <span style={{ fontSize:12, color:T.muted }}>{r.note || ""}</span>;
@@ -236,16 +293,25 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
                   <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>
                     {qtyText(r)}{r.total != null ? ` · ${r.currency} ${Number(r.total).toLocaleString("en")}` : ""}
                   </div>
+                  {r.revised_title && (
+                    <div data-deliv="revised" style={{ marginTop:5, padding:"4px 0 4px 8px", borderLeft:`2px solid ${REV}`, fontSize:12, lineHeight:1.45 }}>
+                      <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(REV) }}>Revised to: </span>
+                      <span style={{ color:T.text, fontWeight:600, overflowWrap:"anywhere" }}>{r.revised_title}</span>
+                      {revFigures(r) && <span style={{ color:T.textOf(REV) }}> · {revFigures(r)}</span>}
+                      {r.revised_reason && <div style={{ ...TYPE.caption, color:T.muted }}>{r.revised_reason}</div>}
+                    </div>
+                  )}
                   <div style={{ marginTop:4 }}>{note}</div>
                 </div>
                 {tools}
               </div>
             );
             return (
-              <div key={r.id} {...on} style={{ ...rowStyle, display:"grid", gridTemplateColumns:GRID, gap:SP.sm,
+              <div key={r.id} {...on} style={{ ...rowStyle, display:"grid", gridTemplateColumns: anyRev ? GRID_REV : GRID, gap:SP.sm,
                 padding:"7px 12px", alignItems:"center" }}>
                 {box}
                 {title}
+                {anyRev && revCell}
                 <span style={{ fontSize:12.5, color:T.textSoft, textAlign:"right", whiteSpace:"nowrap" }}>{qtyText(r)}</span>
                 <span style={{ fontSize:12.5, color:T.textSoft, textAlign:"right", whiteSpace:"nowrap" }}>{money(r.unit_cost, r.currency)}</span>
                 <span style={{ fontSize:12.5, color:T.text, fontWeight:700, textAlign:"right", whiteSpace:"nowrap" }}>{money(r.total, r.currency)}</span>
@@ -276,6 +342,10 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
         </div>
       )}
 
+      {revise && (
+        <ReviseDeliverable T={T} session={session} supa={supa} row={revise} fromPdd={revise.source === "pdd"}
+          onClose={() => setRevise(null)} onSaved={() => { setRevise(null); load(); }} />
+      )}
       {edit && (
         <EditDeliverable T={T} session={session} supa={supa} projectId={projectId} row={edit}
           nextOrder={(rows || []).reduce((m, r) => Math.max(m, r.sort_order || 0), 0) + 1}
@@ -356,6 +426,89 @@ function EditDeliverable({ T, session, supa, projectId, row, nextOrder, currency
         <div style={{ display:"flex", justifyContent:"flex-end", gap:SP.sm }}>
           <Button T={T} variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button T={T} variant="primary" onClick={save} loading={busy}>{isNew ? "Add" : "Save"}</Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** Revise a line (PMO): what is actually being bought instead. The line itself stays as the PDD has it. */
+function ReviseDeliverable({ T, session, supa, row, fromPdd, onClose, onSaved }) {
+  const had = !!row.revised_title;
+  const [f, setF] = useState({ title: row.revised_title || "", qty: row.revised_qty ?? "", unit: row.revised_unit || "",
+    unit_cost: row.revised_unit_cost ?? "", total: row.revised_total ?? "", reason: row.revised_reason || "" });
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState(null);
+  const num = (v) => v === "" || v == null ? null : Number(v);
+  const send = async (body, which) => {
+    setBusy(which); setErr(null);
+    try {
+      await supa(`/rest/v1/project_deliverables?id=eq.${row.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" },
+        body: JSON.stringify(body) }, session.access_token);
+      onSaved();
+    } catch (e) { setErr(e.message || "Could not save."); setBusy(null); }
+  };
+  const save = () => {
+    if (!f.title.trim()) return setErr("Describe the item that is being bought instead.");
+    for (const k of ["qty", "unit_cost", "total"]) if (f[k] !== "" && !isFinite(Number(f[k]))) return setErr("Quantity and prices must be numbers.");
+    const qty = num(f.qty), uc = num(f.unit_cost);
+    const baseQty = qty ?? (row.qty != null ? Number(row.qty) : null);
+    const total = f.total !== "" ? num(f.total) : (uc != null && baseQty != null ? baseQty * uc : null);
+    send({ revised_title: f.title.trim(), revised_qty: qty, revised_unit: f.unit.trim() || null, revised_unit_cost: uc,
+           revised_total: total, revised_reason: f.reason.trim() || null }, "save");
+  };
+  const undo = () => send({ revised_title: null, revised_qty: null, revised_unit: null, revised_unit_cost: null,
+                            revised_total: null, revised_reason: null }, "undo");
+  const inp = { background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm, padding:"8px 10px",
+    fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", width:"100%", boxSizing:"border-box" };
+  const lab = (t) => <div style={{ fontSize:11.5, color:T.muted, marginBottom:4 }}>{t}</div>;
+  const origFig = [qtyText(row), row.unit_cost != null ? `unit ${money(row.unit_cost, row.currency)}` : null,
+                   row.total != null ? `total ${money(row.total, row.currency)}` : null].filter(Boolean).join(" · ");
+  return createPortal(
+    <div onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position:"fixed", inset:0, zIndex:1350, background:"rgba(3,8,16,0.74)", backdropFilter:"blur(6px)",
+        display:"flex", alignItems:"center", justifyContent:"center", padding:SP.lg }}>
+      <div role="dialog" aria-modal="true" aria-label="Revise deliverable"
+        style={{ width:600, maxWidth:"100%", maxHeight:"92vh", overflowY:"auto", background:T.surface, border:`1px solid ${T.border}`,
+          borderRadius:R.xl, boxShadow:T.shadowLg, padding:SP.xl, boxSizing:"border-box" }}>
+        <div style={{ ...TYPE.display, fontSize:17, color:T.text, marginBottom:SP.sm, display:"flex", alignItems:"center", gap:8 }}>
+          <ArrowRightLeft size={16} color={T.textOf(REV)} /> Revise deliverable
+        </div>
+        <div style={{ fontSize:12.5, color:T.muted, lineHeight:1.55, marginBottom:SP.md }}>
+          When a different item is bought against this line, record it here. The original stays as {fromPdd ? "the PDD has it" : "listed"} and both are shown.
+        </div>
+        <div style={{ padding:"10px 12px", borderRadius:R.md, background:T.card2, border:`1px solid ${T.border}`, marginBottom:SP.md }}>
+          <div style={{ ...TYPE.label, fontSize:9.5, color:T.dim, marginBottom:4 }}>Original{fromPdd ? " (PDD)" : ""}{row.line_no != null ? ` · line ${row.line_no}` : ""}</div>
+          <div style={{ fontSize:13, fontWeight:600, color:T.text, lineHeight:1.45, overflowWrap:"anywhere" }}>{row.title}</div>
+          {origFig && <div style={{ ...TYPE.caption, color:T.muted, marginTop:2 }}>{origFig}</div>}
+        </div>
+        <div style={{ ...TYPE.label, fontSize:9.5, color:T.textOf(REV), marginBottom:6 }}>Revised to</div>
+        <label style={{ display:"block", marginBottom:SP.sm }}>{lab("Item being bought instead")}
+          <textarea rows={2} value={f.title} onChange={e => setF(s => ({ ...s, title: e.target.value }))} autoFocus
+            placeholder="e.g. Dell OptiPlex 7020 instead of HP ProDesk 600" style={{ ...inp, resize:"vertical" }} />
+        </label>
+        <div style={{ display:"grid", gap:SP.sm, gridTemplateColumns:"repeat(auto-fit, minmax(110px, 1fr))", marginBottom:SP.sm }}>
+          {[["qty","Quantity"],["unit","Unit"],["unit_cost","Unit cost"],["total","Total"]].map(([k, t]) => (
+            <label key={k} style={{ display:"block" }}>{lab(t)}
+              <input value={f[k]} onChange={e => setF(s => ({ ...s, [k]: e.target.value }))} style={inp}
+                placeholder={k === "qty" ? (row.qty != null ? String(Number(row.qty)) : "") : k === "unit" ? (row.unit || "") : "unchanged"}
+                inputMode={["qty","unit_cost","total"].includes(k) ? "decimal" : undefined} />
+            </label>
+          ))}
+        </div>
+        <div style={{ ...TYPE.caption, color:T.dim, marginBottom:SP.sm }}>Leave a figure blank if it did not change. A blank total is worked out from quantity × unit cost.</div>
+        <label style={{ display:"block", marginBottom:SP.md }}>{lab("Reason (optional)")}
+          <input value={f.reason} onChange={e => setF(s => ({ ...s, reason: e.target.value }))} maxLength={300}
+            placeholder="e.g. original model discontinued; selected in procurement" style={inp} />
+        </label>
+        {had && <div style={{ ...TYPE.caption, color:T.muted, marginBottom:SP.sm }}>{revWho(row)}</div>}
+        {err && <div style={{ fontSize:12.5, color:T.textOf(DATA.danger), marginBottom:SP.sm }}>{err}</div>}
+        <div style={{ display:"flex", justifyContent:"flex-end", gap:SP.sm, flexWrap:"wrap" }}>
+          {had && <Button T={T} variant="ghost" icon={Undo2} onClick={undo} loading={busy === "undo"} disabled={!!busy}>Undo revision</Button>}
+          <span style={{ flex:1 }} />
+          <Button T={T} variant="ghost" onClick={onClose} disabled={!!busy}>Cancel</Button>
+          <Button T={T} variant="primary" onClick={save} loading={busy === "save"} disabled={!!busy}>{had ? "Save revision" : "Revise"}</Button>
         </div>
       </div>
     </div>,

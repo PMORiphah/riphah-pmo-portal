@@ -379,9 +379,12 @@ export function UpdateForm({ T, session, supa, project, waiting, lastPct, isComp
   const loadLines = useCallback(async () => {
     setLoadErr(null);
     try {
-      const r = await supa(`/rest/v1/project_deliverables?project_id=eq.${project.id}&confirmed=eq.true&superseded=eq.false&select=id,line_no,title,qty,unit,status,status_date,note&order=sort_order.asc,line_no.asc`,
+      const r = await supa(`/rest/v1/project_deliverables?project_id=eq.${project.id}&confirmed=eq.true&superseded=eq.false&select=id,line_no,title,qty,unit,status,status_date,note,revised_title,revised_qty,revised_unit&order=sort_order.asc,line_no.asc`,
                            {}, session.access_token);
-      const list = (Array.isArray(r) ? r : []).filter(l => isItem(l.title));
+      // A revised line is asked about as what is actually being bought; the original is named under it.
+      const list = (Array.isArray(r) ? r : []).filter(l => isItem(l.title))
+        .map(l => l.revised_title ? { ...l, orig_title: l.title, title: l.revised_title,
+                                      qty: l.revised_qty ?? l.qty, unit: l.revised_unit || l.unit } : l);
       setLines(list);
       // What the Deliverables tab already says is the starting choice; a line not started is left to the manager.
       setAnswers(a => {
@@ -514,6 +517,9 @@ export function UpdateForm({ T, session, supa, project, waiting, lastPct, isComp
                         </button>
                       ) : (
                         <div style={{ fontSize:13, fontWeight:600, color:T.text, lineHeight:1.4, wordBreak:"break-word" }}>{l.title || "Item"}</div>
+                      )}
+                      {l.orig_title && (
+                        <div style={{ ...TYPE.caption, color:T.textOf(DATA.warning), marginTop:2, overflowWrap:"anywhere" }}>Revised · PDD item: {l.orig_title}</div>
                       )}
                       <div style={{ ...TYPE.caption, color:T.dim, marginTop:2 }}>
                         {l.qty != null ? `${Number(l.qty).toLocaleString("en")}${l.unit ? ` ${l.unit}` : ""} · ` : ""}
