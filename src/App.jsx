@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment,
 import { createPortal } from "react-dom";
 import { SiteVisitGallery } from "./SiteVisitGallery.jsx";
 import { storageUrl } from "./storageUrl.js";
-import { fileLink } from "./fileLinks.js";
+import { fileLink, uploadToR2, removeFromR2, R2_UPLOAD_MAX } from "./fileLinks.js";
 import { PhotoWallPage } from "./PhotoWall.jsx";
 import { RiskRegisterPage, ProjectRisksPanel } from "./RiskRegister.jsx";
 import { ProjectLessonsPanel } from "./LessonsLearned.jsx";
@@ -7118,11 +7118,15 @@ const storageSafeName = (name) => {
 };
 
 // The largest file storage accepts (Supabase plan limit, 50 MB) and the message when one is larger (PMO, 27 Oct 2026).
-const UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+// Uploads straight to Cloudflare R2 (phase B, 27 Oct 2026) allow 500 MB; on /preview/ first, Supabase elsewhere.
+const R2_UPLOADS = /\/preview\/$/.test(import.meta.env.BASE_URL || "");
+const SUPA_UPLOAD_MAX = 50 * 1024 * 1024;
+const UPLOAD_MAX_BYTES = R2_UPLOADS ? R2_UPLOAD_MAX : SUPA_UPLOAD_MAX;
+const UPLOAD_LIMIT = R2_UPLOADS ? "500 MB" : "50 MB";
 const mbText = (n) => `${(n / 1048576).toFixed(1)} MB`;
 const tooBigText = (files) => files.length === 1
-  ? `"${files[0].name}" is ${mbText(files[0].size)}; the limit is 50 MB per file. Please compress it (for example Adobe Acrobat: Save as Reduced Size PDF, or ilovepdf.com → Compress PDF), check the new file is under 50 MB, and upload that copy.`
-  : `These files are over the 50 MB limit: ${files.map(f => `"${f.name}" (${mbText(f.size)})`).join(", ")}. Please compress them (for example Adobe Acrobat: Save as Reduced Size PDF, or ilovepdf.com → Compress PDF) and upload the smaller copies.`;
+  ? `"${files[0].name}" is ${mbText(files[0].size)}; the limit is ${UPLOAD_LIMIT} per file. Please compress it (for example Adobe Acrobat: Save as Reduced Size PDF, or ilovepdf.com → Compress PDF), check the new file is under ${UPLOAD_LIMIT}, and upload that copy.`
+  : `These files are over the ${UPLOAD_LIMIT} limit: ${files.map(f => `"${f.name}" (${mbText(f.size)})`).join(", ")}. Please compress them (for example Adobe Acrobat: Save as Reduced Size PDF, or ilovepdf.com → Compress PDF) and upload the smaller copies.`;
 
 // Phone cameras produce 3-5MB JPEGs. Site visits happen where signal is poor
 // and the portal shares a 1GB storage cap, so shrinking before upload is worth
@@ -7169,6 +7173,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [upProgress, setUpProgress] = useState(null);   // { name, sent, total, i, n } while a file goes to R2
   const [err, setErr] = useState(null);
   const [globalBytes, setGlobalBytes] = useState(null);
   const fileInputRef = useRef(null);
@@ -7208,7 +7213,22 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
         // Supabase's plan allows 50 MB per file (bucket limit 52,428,800 bytes). Say so before sending
         // the whole file, instead of storage's bare "The object exceeded the maximum allowed size".
         if (file.size > UPLOAD_MAX_BYTES) { tooBig.push(file); continue; }
-        const path = `${projectId}/${crypto.randomUUID()}-${storageSafeName(file.name)}`;
+        const at = files.indexOf(original) + 1;
+        let path = null;
+        if (R2_UPLOADS) {
+          // Straight to R2 with progress; if the upload link cannot be had (nothing sent yet) and the file fits
+          // Supabase's limit, it goes the old way below.
+          setUpProgress({ name: file.name, sent: 0, total: file.size, i: at, n: files.length });
+          try {
+            path = await uploadToR2("project-attachments", projectId, file, storageSafeName(file.name), session.access_token,
+              (sent, total) => setUpProgress({ name: file.name, sent, total, i: at, n: files.length }));
+          } catch (e) {
+            if (e.body?.error === "too_big") { tooBig.push(file); continue; }
+            if (e.stage !== "link" || file.size > SUPA_UPLOAD_MAX) throw e;
+          }
+        }
+        if (!path) {
+        path = `${projectId}/${crypto.randomUUID()}-${storageSafeName(file.name)}`;
         const upRes = await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeStoragePath(path)}`, {
           method: "POST",
           headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token, "Content-Type": file.type || "application/octet-stream" },
@@ -7221,6 +7241,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
             ? `Could not upload "${file.name}" — the file name contains a character storage will not accept. Renaming the file usually fixes it.`
             : /exceeded the maximum allowed size/i.test(raw) ? tooBigText([file])
             : (raw || `Upload failed for ${file.name}`));
+        }
         }
         await supa("/rest/v1/project_attachments", {
           method: "POST", headers: { Prefer: "return=minimal" },
@@ -7236,8 +7257,8 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
       }
       await load(); await loadGlobalTotal();
       if (tooBig.length) setErr(tooBigText(tooBig) + (tooBig.length < files.length ? " The other files were uploaded." : ""));
-    } catch (e) { setErr(e.message); }
-    setUploading(false);
+    } catch (e) { setErr(e.message); await load(); }
+    setUploading(false); setUpProgress(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -7314,6 +7335,8 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
       await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeStoragePath(att.file_path)}`, {
         method: "DELETE", headers: { apikey: SUPA_KEY, Authorization: "Bearer " + session.access_token },
       });
+      // A file uploaded straight to R2 has no Supabase copy; an R2 copy of a Supabase file goes too.
+      if (R2_UPLOADS) await removeFromR2("project-attachments", att.file_path, session.access_token);
       await supa(`/rest/v1/project_attachments?id=eq.${att.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }, session.access_token);
       await load(); await loadGlobalTotal();
     } catch (e) { setErr(e.message); }
@@ -7342,6 +7365,19 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
     );
   })() : null;
 
+  // Upload progress (R2 uploads only): file, bytes sent and a thin bar.
+  const progressLine = upProgress ? (
+    <div data-upload-progress style={{ marginBottom:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:"2px 8px", fontSize:11, color:T.muted, marginBottom:5 }}>
+        <span style={{ overflowWrap:"anywhere" }}>Uploading {upProgress.name}{upProgress.n > 1 ? ` (${upProgress.i} of ${upProgress.n})` : ""}</span>
+        <span>{mbText(upProgress.sent)} of {mbText(upProgress.total)} · {Math.floor(upProgress.sent / Math.max(1, upProgress.total) * 100)}%</span>
+      </div>
+      <div style={{ height:5, background:T.border, borderRadius:3, overflow:"hidden" }}>
+        <div style={{ width:`${Math.min(100, upProgress.sent / Math.max(1, upProgress.total) * 100)}%`, height:"100%", background:T.blue || NAVY, borderRadius:3, transition:"width .3s" }}/>
+      </div>
+    </div>
+  ) : null;
+
   // A caller can take over the presentation while keeping all of the data
   // handling above — which is how the Site Visit tab reuses this wholesale.
   if (render) {
@@ -7349,7 +7385,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
       <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg,
         boxShadow:T.shadow, padding:"20px 22px" }}>
         {render({
-          items, loading, canManage, err, uploading, storageBar,
+          items, loading, canManage, err, uploading, storageBar, progressLine,
           onUpload: handleFiles,
           onDelete: handleDelete,
           onReorder: handleReorder,
@@ -7404,6 +7440,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
         );
       })()}
 
+      {progressLine}
       {err && <div style={{ fontSize:11.5, color:T.textOf(ROSE), marginBottom:10 }}>{err}</div>}
 
       {loading ? (

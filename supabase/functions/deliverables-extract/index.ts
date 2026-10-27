@@ -11,6 +11,7 @@
 //   { all: true, dry?: true }    every eligible project without PDD lines or a confirmed list
 // Gemini order as everywhere: 3.5 Flash Lite on key 1, key 2, then 3.1 Flash Lite on key 1, key 2.
 import { docxText, GEMINI_MODELS, geminiFailure } from "../epdd-sync/ai.ts";
+import { fetchStored } from "../_shared/stored.ts";
 
 type Row = Record<string, unknown>;
 const CORS = {
@@ -171,9 +172,8 @@ Deno.serve(async (req: Request) => {
     const atts = (Array.isArray(attsRaw) ? attsRaw : []) as Row[];
     const charter = atts.find(a => CHARTER.test(String(a.file_name)) && /\.(pdf|docx)$/i.test(String(a.file_name)));
     if (!charter) { results.push({ project: project.name, skipped: "no readable charter (PDF or Word)" }); continue; }
-    const dl = await fetch(`${SUPA}/storage/v1/object/project-attachments/${String(charter.file_path).split("/").map(encodeURIComponent).join("/")}`,
-                           { headers: { apikey: SVC, Authorization: `Bearer ${SVC}` } });
-    if (!dl.ok) { results.push({ project: project.name, error: `download ${dl.status}` }); continue; }
+    const dl = await fetchStored("project-attachments", String(charter.file_path));
+    if (!dl) { results.push({ project: project.name, error: "download: the file is in neither Supabase Storage nor R2" }); continue; }
     const bytes = new Uint8Array(await dl.arrayBuffer());
     // An old-format or rights-protected (encrypted) Word file starts with the OLE signature D0 CF 11 E0.
     if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) {

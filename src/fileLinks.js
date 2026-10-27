@@ -66,3 +66,51 @@ export function fileLink(bucket, path, token, { download = null } = {}) {
   q.paths.add(path);
   return new Promise((resolve) => q.waiters.push(() => resolve(memo.get(k)?.url || null)));
 }
+
+// ─── Uploads straight to R2 (phase B, 27 Oct 2026; /preview/ first) ─────────────────────────────────────────────
+// The function hands out a one-time PUT link for a new path (PMO only, up to 500 MB); the file goes from the
+// browser to R2 and never through Supabase, so the 50 MB storage limit does not apply.
+
+export const R2_UPLOAD_MAX = 500 * 1024 * 1024;
+
+async function call(body, token) {
+  const r = await fetch(FN, {
+    method: "POST", cache: "no-store", credentials: "omit",
+    headers: { apikey: KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || `files ${r.status}`); e.status = r.status; e.body = j; throw e; }
+  return j;
+}
+
+/** Upload one file to R2 for a project. Resolves to the stored path. `onProgress(sentBytes, totalBytes)`.
+ *  Errors carry `.stage`: "link" (nothing was sent; the caller may fall back to Supabase) or "send"/"confirm". */
+export async function uploadToR2(bucket, projectId, file, name, token, onProgress) {
+  let link;
+  try {
+    link = await call({ action: "upload", bucket, project_id: projectId, name, size: file.size,
+                        type: file.type || "application/octet-stream" }, token);
+    if (!link.path || !isR2(link.url)) throw new Error("no upload link");
+  } catch (e) { e.stage = "link"; throw e; }
+  await new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("PUT", link.url);
+    for (const [k, v] of Object.entries(link.headers || {})) x.setRequestHeader(k, v);
+    x.upload.onprogress = (ev) => { if (ev.lengthComputable && onProgress) onProgress(ev.loaded, ev.total); };
+    x.onload = () => (x.status >= 200 && x.status < 300 ? resolve()
+      : reject(Object.assign(new Error(`Upload failed for ${file.name} (${x.status})`), { stage: "send" })));
+    x.onerror = () => reject(Object.assign(new Error(`Upload of ${file.name} was interrupted. Check the connection and try again.`), { stage: "send" }));
+    x.onabort = x.onerror;
+    x.send(file);
+  });
+  try { await call({ action: "confirm", bucket, path: link.path }, token); }
+  catch (e) { e.stage = "confirm"; e.message = `"${file.name}" did not arrive in storage. Please try again.`; throw e; }
+  return link.path;
+}
+
+/** Remove a file from R2 (PMO). Never throws; a file that was never in R2 is fine. */
+export async function removeFromR2(bucket, path, token) {
+  try { await call({ action: "delete", bucket, path }, token); } catch { /* the copy job tidies up what is left */ }
+  for (const k of [...memo.keys()]) if (k.startsWith(`${bucket}|${path}|`)) memo.delete(k);
+}

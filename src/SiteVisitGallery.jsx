@@ -27,7 +27,7 @@ const isImage = (m) => IMAGE_RE.test(m?.mime_type || "") ||
 
 export function SiteVisitGallery({
   T, items, loading, canManage, err,
-  onUpload, onDelete, getUrl, uploading, onReorder,
+  onUpload, onDelete, getUrl, uploading, onReorder, progressLine,
   storageBar,
 }) {
   const [idx, setIdx] = useState(0);
@@ -322,6 +322,7 @@ export function SiteVisitGallery({
 
       {storageBar}
 
+      {progressLine}
       {err && <div style={{ ...TYPE.caption, color:T.textOf(T.danger), marginBottom:SP.sm }}>{err}</div>}
 
       {loading ? (
