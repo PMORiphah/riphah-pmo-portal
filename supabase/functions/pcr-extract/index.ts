@@ -14,6 +14,7 @@
 // the Activity Log see the PMO; a confirmed reading is never overwritten.
 // Gemini order as everywhere: 3.5 Flash Lite on key 1, key 2, then 3.1 Flash Lite on key 1, key 2.
 import { docxText, GEMINI_MODELS, geminiFailure } from "../epdd-sync/ai.ts";
+import { fetchStored } from "../_shared/stored.ts";
 
 type Row = Record<string, unknown>;
 const CORS = {
@@ -169,9 +170,8 @@ Deno.serve(async (req: Request) => {
   const project = ((await (await rest(`projects?id=eq.${att.project_id}&select=id,code,name`)).json()) as Row[])?.[0];
   const keys = ((await (await rest("rpc/get_gemini_keys", { method: "POST", body: "{}" })).json()) as string[] ?? []).filter(Boolean);
   if (!keys.length) return json({ error: "Gemini key missing" }, 500);
-  const dl = await fetch(`${SUPA}/storage/v1/object/project-attachments/${String(att.file_path).split("/").map(encodeURIComponent).join("/")}`,
-                         { headers: { apikey: SVC, Authorization: `Bearer ${SVC}` } });
-  if (!dl.ok) return json({ error: `download ${dl.status}` }, 502);
+  const dl = await fetchStored("project-attachments", String(att.file_path));
+  if (!dl) return json({ error: "download: the file is in neither Supabase Storage nor R2" }, 502);
   const bytes = new Uint8Array(await dl.arrayBuffer());
   if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0)
     return json({ skipped: "the PCR is a protected or old-format Word file that cannot be read; upload it as PDF" });
