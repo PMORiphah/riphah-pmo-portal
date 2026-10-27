@@ -278,6 +278,18 @@ export const injectGlobals = () => {
     .pmo-hot .pmo-verdict-dot { animation: pmoDotWake .9s ease-out 1; }
     .pmo-hot .pmo-verdict-dot::after { animation-duration: 1.5s; }
 
+    /* Tour: the ring arriving on a settled spotlight (TourGuide.jsx). */
+    @keyframes pmoTourArrive {
+      0%   { opacity:0; transform: scale(1.06); }
+      45%  { opacity:1; transform: scale(1); }
+      100% { opacity:.55; transform: scale(1); }
+    }
+    .pmo-tour-arrive {
+      position:absolute; inset:-3px; border-radius:14px; pointer-events:none; opacity:.55;
+      box-shadow: 0 0 0 2px var(--tour-ring), 0 0 22px 2px var(--tour-ring);
+      animation: pmoTourArrive .7s cubic-bezier(.2,.8,.3,1) forwards;
+    }
+
     /* §5 — after a while without input the room quietens; movement wakes it. */
     html[data-idle="1"] .pmo-aurora i { animation-duration: 78s, 78s; opacity:.72; }
     html[data-idle="1"] .pmo-live-dot { animation-duration: 5.2s; }
@@ -507,7 +519,7 @@ export const injectGlobals = () => {
       .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
       .pmo-signin-out,.pmo-card-out,.pmo-confirm,
       .pmo-mote,.pmo-lp1,.pmo-lp2,.pmo-lp3,.pmo-li,.pmo-crest-ring,.pmo-sweep::after,.pmo-field-focus,
-      .pmo-live-dot,.pmo-awaiting,.pmo-verdict,.pmo-verdict-dot,.pmo-verdict-dot::after,.pmo-near,.pmo-near::before,.pmo-worldlight,
+      .pmo-live-dot,.pmo-awaiting,.pmo-verdict,.pmo-verdict-dot,.pmo-verdict-dot::after,.pmo-tour-arrive,.pmo-near,.pmo-near::before,.pmo-worldlight,
       .pmo-world,.pmo-aurora,.pmo-tilt > *,.pmo-tilt .pmo-ico-layer,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
@@ -1222,6 +1234,43 @@ export const SkeletonRows = ({ T, rows = 10 }) => (
 
 // ─── EMPTY STATE ─────────────────────────────────────────────────────────────
 // Never a blank area. Icon, what's true, why, and a way forward (§21).
+// Empty-state drawing (PMO, 27 Oct 2026): one small hand-drawn scene for every empty state, so a blank list reads
+// as "nothing here yet" rather than "broken". Drawn here in the theme's own colours (no image files, no licence):
+// a soft tinted ground, two stacked sheets with faint lines, two gold sparks, and the state's own icon on a badge
+// in front, which carries the meaning. Decorative only (aria-hidden); the title and message say what it means.
+function EmptyArt({ T, c, Icon, compact }) {
+  const w = compact ? 96 : 116, h = compact ? 70 : 84;
+  const sheet = T.mode === "dark" ? T.card2 || T.surface : T.surface;
+  const line = T.borderStrong || T.border;
+  return (
+    <div aria-hidden="true" style={{ position:"relative", width:w, height:h, marginBottom:4 }}>
+      <svg width={w} height={h} viewBox="0 0 116 84" fill="none" style={{ position:"absolute", inset:0 }}>
+        <ellipse cx="58" cy="74" rx="44" ry="7" fill={c} opacity="0.10" />
+        <path d="M20 46c0-20 15-36 38-36s38 14 38 34-12 28-38 28S20 66 20 46z" fill={c} opacity="0.08" />
+        <g transform="rotate(-7 44 40)">
+          <rect x="24" y="16" width="44" height="52" rx="6" fill={sheet} stroke={line} strokeWidth="1.25" />
+          <path d="M32 30h22M32 38h26M32 46h16" stroke={line} strokeWidth="2" strokeLinecap="round" />
+        </g>
+        <g transform="rotate(6 70 40)">
+          <rect x="50" y="12" width="44" height="54" rx="6" fill={sheet} stroke={line} strokeWidth="1.25" />
+          <path d="M58 26h24M58 34h28M58 42h20M58 50h12" stroke={line} strokeWidth="2" strokeLinecap="round" opacity="0.8" />
+        </g>
+        <path d="M100 14l1.6 4 4 1.6-4 1.6-1.6 4-1.6-4-4-1.6 4-1.6z" fill={T.gold} opacity="0.85" />
+        <circle cx="14" cy="28" r="2.2" fill={T.gold} opacity="0.6" />
+      </svg>
+      <div style={{
+        position:"absolute", left:"50%", bottom: compact ? 2 : 4, transform:"translateX(-50%)",
+        width: compact ? 34 : 40, height: compact ? 34 : 40, borderRadius:"50%",
+        background: T.mode === "dark" ? T.surfaceOver || T.surface : T.surface,
+        border:`1.5px solid ${c}55`, boxShadow:`0 4px 14px ${c}2e`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+      }}>
+        <Icon size={compact ? 16 : 18} color={T.textOf ? T.textOf(c) : c} strokeWidth={1.75} />
+      </div>
+    </div>
+  );
+}
+
 export function EmptyState({ T, icon:Icon, title, message, action, tone, compact }) {
   const c = tone || T.info;
   return (
@@ -1230,15 +1279,7 @@ export function EmptyState({ T, icon:Icon, title, message, action, tone, compact
       gap:SP.sm, padding: compact ? `${SP.xxl}px ${SP.lg}px` : `${SP.xxxl}px ${SP.xl}px`,
       textAlign:"center",
     }}>
-      {Icon && (
-        <div style={{
-          width:44, height:44, borderRadius:R.lg, background:`${c}${T.badge}`,
-          display:"flex", alignItems:"center", justifyContent:"center", marginBottom:2,
-          border:`1px solid ${c}26`,
-        }}>
-          <Icon size={19} color={c} strokeWidth={1.75} />
-        </div>
-      )}
+      {Icon && <EmptyArt T={T} c={c} Icon={Icon} compact={compact} />}
       <div style={{ ...TYPE.h3, color:T.text }}>{title}</div>
       {message && <div style={{ ...TYPE.bodySm, color:T.muted, maxWidth:360 }}>{message}</div>}
       {action && <div style={{ marginTop:SP.xs }}>{action}</div>}
