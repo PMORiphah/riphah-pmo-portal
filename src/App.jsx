@@ -7118,8 +7118,9 @@ const storageSafeName = (name) => {
 };
 
 // The largest file storage accepts (Supabase plan limit, 50 MB) and the message when one is larger (PMO, 27 Oct 2026).
-// Uploads straight to Cloudflare R2 (phase B, 27 Oct 2026) allow 500 MB; on /preview/ first, Supabase elsewhere.
-const R2_UPLOADS = /\/preview\/$/.test(import.meta.env.BASE_URL || "");
+// Uploads straight to Cloudflare R2 (phase B, 27 Oct 2026) allow 500 MB; preview first, production since 27 Oct.
+// Set false to send uploads to Supabase again (50 MB).
+const R2_UPLOADS = true;
 const SUPA_UPLOAD_MAX = 50 * 1024 * 1024;
 const UPLOAD_MAX_BYTES = R2_UPLOADS ? R2_UPLOAD_MAX : SUPA_UPLOAD_MAX;
 const UPLOAD_LIMIT = R2_UPLOADS ? "500 MB" : "50 MB";
@@ -7178,7 +7179,9 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
   const [globalBytes, setGlobalBytes] = useState(null);
   const fileInputRef = useRef(null);
   const canManage = session?.role === "pmo";
-  const STORAGE_CAP_BYTES = 1024 * 1024 * 1024; // Supabase Free tier: 1GB total, portal-wide
+  // Cloudflare R2 free tier: 10 GB stored, portal-wide (files are kept in R2 since 27 Oct 2026; beyond it R2 bills
+  // about US$0.015 per GB a month, nothing stops working).
+  const STORAGE_CAP_BYTES = 10 * 1024 * 1024 * 1024;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -7351,14 +7354,14 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
       <div style={{ marginBottom:14 }}>
         <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:"2px 8px", fontSize:10.5, color:T.dim, marginBottom:5 }}>
           <span>Portal storage (all projects)</span>
-          <span>{fmtBytes(globalBytes)} of 1.0 GB used ({pct.toFixed(1)}%)</span>
+          <span>{fmtBytes(globalBytes)} of 10 GB free (Cloudflare R2) ({pct.toFixed(1)}%)</span>
         </div>
         <div style={{ height:5, background:T.border, borderRadius:3, overflow:"hidden" }}>
           <div style={{ width:pct+"%", height:"100%", background:barColor, borderRadius:3, transition:"width .4s" }}/>
         </div>
         {pct >= 80 && (
           <div style={{ fontSize:10.5, color:T.textOf(AMBER), marginTop:5 }}>
-            Approaching the Free-tier storage limit — consider upgrading to Supabase Pro before this fills up.
+            Approaching the 10 GB free storage on Cloudflare R2. Beyond it R2 bills about US$0.015 per GB a month; nothing stops working.
           </div>
         )}
       </div>
@@ -7426,14 +7429,14 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
           <div style={{ marginBottom:14 }}>
             <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:"2px 8px", fontSize:10.5, color:T.dim, marginBottom:5 }}>
               <span>Portal storage (all projects)</span>
-              <span>{fmtBytes(globalBytes)} of 1.0 GB used ({pct.toFixed(1)}%)</span>
+              <span>{fmtBytes(globalBytes)} of 10 GB free (Cloudflare R2) ({pct.toFixed(1)}%)</span>
             </div>
             <div style={{ height:5, background:T.border, borderRadius:3, overflow:"hidden" }}>
               <div style={{ width:pct+"%", height:"100%", background:barColor, borderRadius:3, transition:"width .4s" }}/>
             </div>
             {pct >= 80 && (
               <div style={{ fontSize:10.5, color:T.textOf(AMBER), marginTop:5 }}>
-                Approaching the Free-tier storage limit — consider upgrading to Supabase Pro before this fills up.
+                Approaching the 10 GB free storage on Cloudflare R2. Beyond it R2 bills about US$0.015 per GB a month; nothing stops working.
               </div>
             )}
           </div>
