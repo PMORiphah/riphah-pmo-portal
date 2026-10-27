@@ -3369,6 +3369,12 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   // responds to attention rather than sitting inert.
   const heroLight = useCursorLight(true);
   const [heroHot, setHeroHot] = useState(false);
+  // CPI, SPI and Total CAPEX count up again each time the pointer comes onto the header (PMO, 27 Oct 2026), and
+  // the verdict blinks awake (CSS .pmo-hot .pmo-verdict). Until 15 Oct the count-up happened by accident (the hero
+  // remounted the figures on every re-render); now it is on purpose, and not in the simulation tab, whose figure
+  // checks read the numbers on screen.
+  const [heroReplay, setHeroReplay] = useState(0);
+  const wakeHero = () => { setHeroHot(true); if (!window.__PMO_SIM__) setHeroReplay(n => n + 1); };
   const [data,         setData]         = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
@@ -3644,7 +3650,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
             <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:6 }}>{label}</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
               <span style={{ ...TYPE.metricXL, color: value == null ? T.heroFgDim : T.heroFg }}>
-                {value == null ? "—" : <AnimatedNumber value={fmtR(value)} />}
+                {value == null ? "—" : <AnimatedNumber key={heroReplay} value={fmtR(value)} />}
               </span>
               {value != null && (
                 <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(status.color) }}>{status.label}</span>
@@ -3659,7 +3665,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
           <div data-tour="hero" className={`pmo-in pmo-hero${heroHot ? " pmo-hot" : ""}`}
             ref={heroLight.ref}
             onMouseMove={heroLight.onMouseMove}
-            onMouseEnter={() => setHeroHot(true)}
+            onMouseEnter={wakeHero}
             onMouseLeave={() => { setHeroHot(false); heroLight.onMouseLeave(); }}
             style={{
             animationDelay:"0ms",
@@ -3730,7 +3736,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
               <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:6 }}>Total CAPEX portfolio</div>
               <div style={{ ...TYPE.metricXL, fontSize: vp.isCompact ? 26 : 32, color:T.heroAccent }}>
                 <span style={{ ...TYPE.caption, fontWeight:600, color:T.heroFgMuted, marginRight:6 }}>PKR</span>
-                <AnimatedNumber value={fmtM(d.total_capex)} />
+                <AnimatedNumber key={heroReplay} value={fmtM(d.total_capex)} />
               </div>
               <div style={{ ...TYPE.caption, color:T.heroFgMuted, marginTop:4 }}>
                 {d.total_projects} projects · {fyLabel}

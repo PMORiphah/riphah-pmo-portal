@@ -259,6 +259,25 @@ export const injectGlobals = () => {
     }
     .pmo-awaiting { animation: pmoLivePulse 4.2s ease-in-out infinite; }
 
+    /* Pointer on the dashboard header (PMO, 27 Oct 2026): the verdict blinks awake twice, then breathes faster
+       while the pointer stays; the dot's ring quickens with it. Leaving restores the slow breath. */
+    @keyframes pmoVerdictWake {
+      0%   { opacity:1;   filter: drop-shadow(0 0 10px var(--vg)) brightness(1); }
+      14%  { opacity:.25; filter: drop-shadow(0 0 4px var(--vg))  brightness(.9); }
+      30%  { opacity:1;   filter: drop-shadow(0 0 30px var(--vg)) brightness(1.4); }
+      46%  { opacity:.35; filter: drop-shadow(0 0 6px var(--vg))  brightness(.95); }
+      64%  { opacity:1;   filter: drop-shadow(0 0 28px var(--vg)) brightness(1.3); }
+      100% { opacity:1;   filter: drop-shadow(0 0 12px var(--vg)) brightness(1.05); }
+    }
+    @keyframes pmoVerdictHot {
+      0%,100% { filter: drop-shadow(0 0 12px var(--vg)) brightness(1.05); }
+      50%     { filter: drop-shadow(0 0 26px var(--vg)) brightness(1.25); }
+    }
+    @keyframes pmoDotWake { 0%,100% { transform: scale(1); } 30% { transform: scale(1.45); } 60% { transform: scale(.9); } }
+    .pmo-hot .pmo-verdict { animation: pmoVerdictWake 1s ease-out 1, pmoVerdictHot 1.5s ease-in-out 1s infinite; }
+    .pmo-hot .pmo-verdict-dot { animation: pmoDotWake .9s ease-out 1; }
+    .pmo-hot .pmo-verdict-dot::after { animation-duration: 1.5s; }
+
     /* §5 — after a while without input the room quietens; movement wakes it. */
     html[data-idle="1"] .pmo-aurora i { animation-duration: 78s, 78s; opacity:.72; }
     html[data-idle="1"] .pmo-live-dot { animation-duration: 5.2s; }
@@ -488,7 +507,7 @@ export const injectGlobals = () => {
       .pmo-page,.pmo-panel-r,.pmo-panel-l,.pmo-kenburns,
       .pmo-signin-out,.pmo-card-out,.pmo-confirm,
       .pmo-mote,.pmo-lp1,.pmo-lp2,.pmo-lp3,.pmo-li,.pmo-crest-ring,.pmo-sweep::after,.pmo-field-focus,
-      .pmo-live-dot,.pmo-awaiting,.pmo-verdict,.pmo-verdict-dot::after,.pmo-near,.pmo-near::before,.pmo-worldlight,
+      .pmo-live-dot,.pmo-awaiting,.pmo-verdict,.pmo-verdict-dot,.pmo-verdict-dot::after,.pmo-near,.pmo-near::before,.pmo-worldlight,
       .pmo-world,.pmo-aurora,.pmo-tilt > *,.pmo-tilt .pmo-ico-layer,
       .pmo-btn:active,
       .pmo-sheen,.pmo-hot .pmo-sheen::after,.pmo-hot .pmo-ico-up,.pmo-hot .pmo-ico-tick,
