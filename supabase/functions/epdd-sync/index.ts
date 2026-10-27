@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { DOMParser } from "jsr:@b-fuze/deno-dom";
 import { reviewPdd, RULES_VERSION } from "./review.ts";
 import { AI_VERSION, callGemini, aiChecks, docxText, type AiFile } from "./ai.ts";
+import { fetchStored, putStored } from "../_shared/stored.ts";
 const DOCX_RE = /wordprocessingml\.document|msword/i;
 import { pmoRecipients, push, mail, log, newPddEmail, healthEmail, toAscii,
          type PddNote, type Ctx } from "./notify.ts";
@@ -454,8 +455,9 @@ Deno.serve(async (req: Request) => {
           (prev.status === "done" || Date.now() - Date.parse(String(prev.created_at)) < AI_RETRY_MS)) continue;
       const aiFiles: AiFile[] = [];
       for (const f of picked) {
-        const r = await fetch(`${SUPA}/storage/v1/object/${BUCKET}/${f.storage_path}`, { headers: { apikey: SVC, Authorization: `Bearer ${SVC}` } });
-        if (!r.ok) continue;
+        // Supabase for files copied before 27 Oct 2026, Cloudflare R2 since then.
+        const r = await fetchStored(BUCKET, String(f.storage_path));
+        if (!r) continue;
         const bytes = new Uint8Array(await r.arrayBuffer());
         const isDocx = DOCX_RE.test(String(f.mime)) || /\.docx$/i.test(String(f.file_name));
         const text = isDocx ? docxText(bytes) : undefined;
@@ -781,9 +783,8 @@ Deno.serve(async (req: Request) => {
         if (isPrint && !/PROJECT DESCRIPTION DOCUMENT/i.test(new TextDecoder().decode(bytes))) throw new Error("print page did not contain the PDD (signed out?)");
         const safe = String(f.file_name).replace(/[^A-Za-z0-9._()-]+/g, "_").slice(-150);
         const path = `${f.pdd_id}/${f.category}/${f.id}_${safe}`;
-        const up = await fetch(`${SUPA}/storage/v1/object/${BUCKET}/${path}`, { method: "POST",
-          headers: { apikey: SVC, Authorization: `Bearer ${SVC}`, "Content-Type": isPrint ? "text/html; charset=utf-8" : ct, "x-upsert": "true" }, body: bytes });
-        if (!up.ok) throw new Error(`storage ${up.status}: ${(await up.text()).slice(0, 200)}`);
+        // Straight into Cloudflare R2 since 27 Oct 2026 (files phase B), so E-PDD copies no longer fill Supabase's 1 GB.
+        await putStored(BUCKET, path, bytes, isPrint ? "text/html; charset=utf-8" : ct);
         Object.assign(patch, { status: "stored", storage_path: path, size_bytes: bytes.length, mime: ct,
                                sha256: await sha256(bytes), error: null });
         stats.files_stored++;

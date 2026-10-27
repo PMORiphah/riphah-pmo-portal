@@ -29,7 +29,7 @@
 // This file is small on purpose: a guest's portal loads it at sign-in, and the hand-over modules
 // (simBridge.js, the validator, the snapshot reader) load only once a share exists (preloadShared).
 import { loadSession } from "./auth.js";
-import { fileLink } from "./fileLinks.js";
+import { fileLink, uploadShareFile, listShareFiles, removeFromR2 } from "./fileLinks.js";
 
 export const SHARE_DAYS = 7;                 // a share plays for 7 days after its data was read
 const DAY_MS = 86400000;
@@ -434,11 +434,12 @@ async function sharedHandOver({ ch, nonce, share, getSession, onProgress, run, r
 // ── PMO: the share ───────────────────────────────────────────────────────────
 const mediaNames = (count) => Array.from({ length: count }, (_, i) => engine.snapshot.mediaKeyOf(i));
 
-/** Map(name → size or null) of the files in a share's folder. */
+/** Map(name → size or null) of the files in a share's folder: Cloudflare R2 (shares made since 27 Oct 2026)
+ *  and Supabase Storage (earlier shares). */
 async function listFolder(getSession, shareId) {
   const rows = await rest(getSession, "POST", `/storage/v1/object/list/${BUCKET}`,
     { prefix: shareId, limit: 1000, offset: 0, sortBy: { column: "name", order: "asc" } }, null);
-  const out = new Map();
+  const out = await listShareFiles(shareId, sessionNow(getSession)?.access_token);
   for (const x of Array.isArray(rows) ? rows : []) if (x && typeof x.name === "string" && x.id) out.set(x.name, Number(x.metadata?.size) || null);
   return out;
 }
@@ -449,26 +450,24 @@ async function removeFiles(getSession, share) {
   try {
     await rest(getSession, "DELETE", `/storage/v1/object/${BUCKET}`, { prefixes: names.map((n) => storagePath(share.id, n)) }, null);
   } catch { /* checked below */ }
+  await removeFromR2(BUCKET, names.map((n) => storagePath(share.id, n)), sessionNow(getSession)?.access_token);
   const left = await listFolder(getSession, share.id).catch(() => null);
   if (!left || left.size) return false;
   await rest(getSession, "PATCH", `/rest/v1/sim_shares?id=eq.${share.id}`, { files_removed_at: new Date().toISOString() }).catch(() => {});
   return true;
 }
 
+// Straight to Cloudflare R2 since 27 Oct 2026 (files phase B), so shared copies no longer fill Supabase's 1 GB.
 async function uploadOne(getSession, path, blob, mime) {
+  const [shareId, name] = path.split("/");
+  const typed = blob.type === mime ? blob : new Blob([blob], { type: mime });
   for (let attempt = 0; attempt < 3; attempt++) {
-    let r = null;
-    try {
-      r = await call(getSession, "POST", `/storage/v1/object/${BUCKET}/${path}`,
-        { body: blob, headers: { "Content-Type": mime, "x-upsert": "false", "cache-control": "no-store" } });
-    } catch (e) { if (e instanceof ShareError) throw e; r = null; }
-    if (r?.ok) return;
-    if (r) {
-      const data = await r.json().catch(() => null);
-      const code = String(data?.statusCode ?? r.status);
-      if (code === "409") return;                           // an earlier attempt landed (uploads never overwrite)
-      if (r.status === 401) throw new ShareError("signed-out", TEXT.signedOut);
-      if (code === "403" || r.status === 403) throw new ShareError("forbidden", TEXT.forbidden);
+    const tok = sessionNow(getSession)?.access_token;
+    if (!tok) throw new ShareError("signed-out", TEXT.signedOut);
+    try { await uploadShareFile(shareId, name, typed, tok); return; }
+    catch (e) {
+      if (e?.status === 401) throw new ShareError("signed-out", TEXT.signedOut);
+      if (e?.status === 403) throw new ShareError("forbidden", TEXT.forbidden);
     }
   }
   throw new ShareError("upload", TEXT.upload);

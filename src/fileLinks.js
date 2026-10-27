@@ -87,9 +87,25 @@ async function call(body, token) {
 /** Upload one file to R2 for a project. Resolves to the stored path. `onProgress(sentBytes, totalBytes)`.
  *  Errors carry `.stage`: "link" (nothing was sent; the caller may fall back to Supabase) or "send"/"confirm". */
 export async function uploadToR2(bucket, projectId, file, name, token, onProgress) {
+  return putToR2({ bucket, project_id: projectId, name }, file, token, onProgress);
+}
+
+/** A file of a shared simulation (PMO): sim-shares/<share id>/<name>. Resolves to the stored path. */
+export function uploadShareFile(shareId, name, blob, token) {
+  return putToR2({ bucket: "sim-shares", share_id: shareId, name }, blob, token);
+}
+
+/** The files of a shared simulation in R2 (PMO): Map(name → size). Throws on failure. */
+export async function listShareFiles(shareId, token) {
+  const j = await call({ action: "list", bucket: "sim-shares", prefix: shareId }, token);
+  return new Map((Array.isArray(j.files) ? j.files : []).map((f) => [f.name, f.size ?? null]));
+}
+
+async function putToR2(where, file, token, onProgress) {
+  const { bucket } = where;
   let link;
   try {
-    link = await call({ action: "upload", bucket, project_id: projectId, name, size: file.size,
+    link = await call({ action: "upload", ...where, size: file.size,
                         type: file.type || "application/octet-stream" }, token);
     if (!link.path || !isR2(link.url)) throw new Error("no upload link");
   } catch (e) { e.stage = "link"; throw e; }
@@ -99,18 +115,19 @@ export async function uploadToR2(bucket, projectId, file, name, token, onProgres
     for (const [k, v] of Object.entries(link.headers || {})) x.setRequestHeader(k, v);
     x.upload.onprogress = (ev) => { if (ev.lengthComputable && onProgress) onProgress(ev.loaded, ev.total); };
     x.onload = () => (x.status >= 200 && x.status < 300 ? resolve()
-      : reject(Object.assign(new Error(`Upload failed for ${file.name} (${x.status})`), { stage: "send" })));
-    x.onerror = () => reject(Object.assign(new Error(`Upload of ${file.name} was interrupted. Check the connection and try again.`), { stage: "send" }));
+      : reject(Object.assign(new Error(`Upload failed for ${file.name || where.name} (${x.status})`), { stage: "send" })));
+    x.onerror = () => reject(Object.assign(new Error(`Upload of ${file.name || where.name} was interrupted. Check the connection and try again.`), { stage: "send" }));
     x.onabort = x.onerror;
     x.send(file);
   });
   try { await call({ action: "confirm", bucket, path: link.path }, token); }
-  catch (e) { e.stage = "confirm"; e.message = `"${file.name}" did not arrive in storage. Please try again.`; throw e; }
+  catch (e) { e.stage = "confirm"; e.message = `"${file.name || where.name}" did not arrive in storage. Please try again.`; throw e; }
   return link.path;
 }
 
-/** Remove a file from R2 (PMO). Never throws; a file that was never in R2 is fine. */
+/** Remove a file (or several: an array of paths) from R2 (PMO). Never throws; a file that was never in R2 is fine. */
 export async function removeFromR2(bucket, path, token) {
-  try { await call({ action: "delete", bucket, path }, token); } catch { /* the copy job tidies up what is left */ }
-  for (const k of [...memo.keys()]) if (k.startsWith(`${bucket}|${path}|`)) memo.delete(k);
+  const paths = Array.isArray(path) ? path : [path];
+  try { await call({ action: "delete", bucket, paths }, token); } catch { /* the copy job tidies up what is left */ }
+  for (const k of [...memo.keys()]) if (paths.some((p) => k.startsWith(`${bucket}|${p}|`))) memo.delete(k);
 }

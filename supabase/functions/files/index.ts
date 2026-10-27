@@ -15,7 +15,10 @@
 //   {action:"upload", bucket, project_id, name, size, type}  → {path, url}: a one-time PUT link (30 min) for a new
 //                                       path; the file goes from the browser to R2, never through Supabase
 //   {action:"confirm", bucket, path}   → {size}: checks the file arrived and records its size
-//   {action:"delete", bucket, path}    → removes the file from R2 (the Documents record is removed by the page)
+//   {action:"delete", bucket, path | paths} → removes the file(s) from R2 (the Documents record is removed by the page)
+// Shared simulations (sim-shares, PMO only): upload with {share_id, name} instead of project_id (path
+// <share id>/<name>, names snapshot.json and m001…), and {action:"list", bucket, prefix: share id} → {files:[{name, size}]}.
+// E-PDD copies are written straight to R2 by epdd-sync (_shared/stored.ts).
 // A file uploaded this way exists only in R2 (r2_objects.origin = 'r2'); r2_orphans() removes it only when no
 // Documents record points to it and it is over a day old (an upload whose record was never saved).
 import { AwsClient } from "npm:aws4fetch@1.0.20";
@@ -143,20 +146,31 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const safeName = (n: string) => n.replace(/[\/\\\u0000-\u001f\u007f]/g, "_").trim().slice(0, 180) || "file";
 
 async function mayUpload(auth: string, bucket: string) {
-  return (await rpc("can_upload_file", { p_bucket: bucket }, { apikey: ANON, authorization: auth, "content-type": "application/json" })) === true;
+  const h = { apikey: ANON, authorization: auth, "content-type": "application/json" };
+  if (bucket === "sim-shares") return (await rpc("is_pmo", {}, h)) === true;   // as its storage policies: the PMO writes
+  return (await rpc("can_upload_file", { p_bucket: bucket }, h)) === true;
 }
+const SIM_NAME = /^(snapshot\.json|m\d{3,4})$/;
 
 async function upload(auth: string, b: Record<string, unknown>) {
   const bucket = String(b.bucket || ""), projectId = String(b.project_id || ""), size = Number(b.size);
   const type = String(b.type || "application/octet-stream").slice(0, 120);
   if (!(await mayUpload(auth, bucket))) return json({ error: "Only the PMO can upload files." }, 403);
-  if (!UUID.test(projectId)) return json({ error: "unknown project" }, 400);
   if (!Number.isFinite(size) || size <= 0) return json({ error: "empty file" }, 400);
   if (size > UPLOAD_MAX) return json({ error: "too_big", limit: UPLOAD_MAX }, 413);
-  const path = `${projectId}/${crypto.randomUUID()}-${safeName(String(b.name || "file"))}`;
+  let path: string;
+  if (bucket === "sim-shares") {
+    const share = String(b.share_id || ""), name = String(b.name || "");
+    if (!UUID.test(share) || !SIM_NAME.test(name)) return json({ error: "unknown file" }, 400);
+    path = `${share}/${name}`;
+  } else {
+    if (!UUID.test(projectId)) return json({ error: "unknown project" }, 400);
+    path = `${projectId}/${crypto.randomUUID()}-${safeName(String(b.name || "file"))}`;
+  }
   // Recorded first, so an upload whose Documents record is never saved is still found and removed after a day.
-  const row = await fetch(`${SUPA}/rest/v1/r2_objects`, {
-    method: "POST", headers: { ...svc, Prefer: "return=minimal" },
+  // A repeated upload of the same share file replaces the record.
+  const row = await fetch(`${SUPA}/rest/v1/r2_objects?on_conflict=bucket,path`, {
+    method: "POST", headers: { ...svc, Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify({ bucket, path, size_bytes: size, origin: "r2", copied_at: new Date().toISOString() }),
   });
   if (!row.ok) throw new Error(`record ${row.status}`);
@@ -182,14 +196,31 @@ async function confirm(auth: string, b: Record<string, unknown>) {
 }
 
 async function remove(auth: string, b: Record<string, unknown>) {
-  const bucket = String(b.bucket || ""), path = String(b.path || "");
+  const bucket = String(b.bucket || "");
+  const paths = (Array.isArray(b.paths) ? b.paths : [b.path]).map(String).slice(0, 300);
   if (!(await mayUpload(auth, bucket))) return json({ error: "Only the PMO can remove files." }, 403);
-  if (!/^[0-9a-f-]{36}\//i.test(path)) return json({ error: "unknown file" }, 400);
-  const del = await aws.fetch(r2Url(bucket, path), { method: "DELETE" });
-  if (!del.ok && del.status !== 404) return json({ error: `remove ${del.status}` }, 502);
-  const q = new URLSearchParams({ bucket: `eq.${bucket}`, path: `eq.${path}` });
-  await fetch(`${SUPA}/rest/v1/r2_objects?${q}`, { method: "DELETE", headers: { ...svc, Prefer: "return=minimal" } });
-  return json({ removed: true });
+  if (!paths.length || paths.some((p) => !/^[0-9a-f-]{36}\//i.test(p))) return json({ error: "unknown file" }, 400);
+  for (let i = 0; i < paths.length; i += 8) {
+    const part = paths.slice(i, i + 8);
+    const res = await Promise.all(part.map((p) => aws.fetch(r2Url(bucket, p), { method: "DELETE" })));
+    const bad = res.find((r) => !r.ok && r.status !== 404);
+    if (bad) return json({ error: `remove ${bad.status}` }, 502);
+    const q = new URLSearchParams({ bucket: `eq.${bucket}`, path: `in.(${part.map((p) => `"${p.replace(/"/g, "")}"`).join(",")})` });
+    await fetch(`${SUPA}/rest/v1/r2_objects?${q}`, { method: "DELETE", headers: { ...svc, Prefer: "return=minimal" } });
+  }
+  return json({ removed: paths.length });
+}
+
+// The files of one shared simulation in R2 (PMO): what the launcher checks before sharing and after removing.
+async function list(auth: string, b: Record<string, unknown>) {
+  const bucket = String(b.bucket || ""), prefix = String(b.prefix || "");
+  if (bucket !== "sim-shares" || !UUID.test(prefix)) return json({ error: "unknown folder" }, 400);
+  if (!(await mayUpload(auth, bucket))) return json({ error: "Only the PMO can list files." }, 403);
+  const q = new URLSearchParams({ bucket: `eq.${bucket}`, path: `like.${prefix}/*`, select: "path,size_bytes", limit: "1000" });
+  const r = await fetch(`${SUPA}/rest/v1/r2_objects?${q}`, { headers: svc });
+  if (!r.ok) throw new Error(`r2_objects ${r.status}`);
+  const rows: { path: string; size_bytes: number | null }[] = await r.json();
+  return json({ files: rows.map((x) => ({ name: x.path.slice(prefix.length + 1), size: x.size_bytes })) });
 }
 
 // ─── entry ───────────────────────────────────────────────────────────────────
@@ -207,6 +238,7 @@ Deno.serve(async (req) => {
     if (body.action === "upload") return await upload(auth, body);
     if (body.action === "confirm") return await confirm(auth, body);
     if (body.action === "delete") return await remove(auth, body);
+    if (body.action === "list") return await list(auth, body);
     if (body.action === "copy") {
       const cron = env("CRON_SECRET") && req.headers.get("x-cron-secret") === env("CRON_SECRET");
       if (!cron && (await rpc("is_pmo", {}, { apikey: ANON, authorization: auth, "content-type": "application/json" })) !== true) {
