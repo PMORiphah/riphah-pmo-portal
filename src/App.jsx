@@ -3369,6 +3369,11 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
   // responds to attention rather than sitting inert.
   const heroLight = useCursorLight(true);
   const [heroHot, setHeroHot] = useState(false);
+  // CPI / SPI count up again each time the pointer comes onto them (PMO, 27 Oct 2026). Until 15 Oct this happened
+  // by accident (the hero remounted them on every re-render); now it is on purpose, and not in the simulation tab,
+  // whose figure checks read the numbers on screen.
+  const [idxReplay, setIdxReplay] = useState({ CPI: 0, SPI: 0 });
+  const replayIdx = (label) => { if (!window.__PMO_SIM__) setIdxReplay(r => ({ ...r, [label]: (r[label] || 0) + 1 })); };
   const [data,         setData]         = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [err,          setErr]          = useState(null);
@@ -3640,11 +3645,11 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
             tone={value == null ? T.neutral : status.color}
             title={label} line={IDX_INSIGHT[label]}
             stat={value == null ? "No project reports both a baseline and actuals yet" : `${status.label} · threshold 0.95`}>
-          <div style={{ position:"relative", minWidth:96, cursor:"help" }}>
+          <div onMouseEnter={() => replayIdx(label)} style={{ position:"relative", minWidth:96, cursor:"help" }}>
             <div style={{ ...TYPE.label, color:T.heroFgSoft, marginBottom:6 }}>{label}</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
               <span style={{ ...TYPE.metricXL, color: value == null ? T.heroFgDim : T.heroFg }}>
-                {value == null ? "—" : <AnimatedNumber value={fmtR(value)} />}
+                {value == null ? "—" : <AnimatedNumber key={idxReplay[label]} value={fmtR(value)} />}
               </span>
               {value != null && (
                 <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(status.color) }}>{status.label}</span>
