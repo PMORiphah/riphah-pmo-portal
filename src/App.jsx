@@ -7117,6 +7117,13 @@ const storageSafeName = (name) => {
   return (safe || "file") + ext;
 };
 
+// The largest file storage accepts (Supabase plan limit, 50 MB) and the message when one is larger (PMO, 27 Oct 2026).
+const UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+const mbText = (n) => `${(n / 1048576).toFixed(1)} MB`;
+const tooBigText = (files) => files.length === 1
+  ? `"${files[0].name}" is ${mbText(files[0].size)}; the limit is 50 MB per file. Please compress it (for example Adobe Acrobat: Save as Reduced Size PDF, or ilovepdf.com → Compress PDF), check the new file is under 50 MB, and upload that copy.`
+  : `These files are over the 50 MB limit: ${files.map(f => `"${f.name}" (${mbText(f.size)})`).join(", ")}. Please compress them (for example Adobe Acrobat: Save as Reduced Size PDF, or ilovepdf.com → Compress PDF) and upload the smaller copies.`;
+
 // Phone cameras produce 3-5MB JPEGs. Site visits happen where signal is poor
 // and the portal shares a 1GB storage cap, so shrinking before upload is worth
 // far more than it costs: faster uploads, fewer failures, and several times as
@@ -7194,9 +7201,13 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
     setUploading(true); setErr(null);
+    const tooBig = [];
     try {
       for (const original of files) {
         const file = await compressImage(original);
+        // Supabase's plan allows 50 MB per file (bucket limit 52,428,800 bytes). Say so before sending
+        // the whole file, instead of storage's bare "The object exceeded the maximum allowed size".
+        if (file.size > UPLOAD_MAX_BYTES) { tooBig.push(file); continue; }
         const path = `${projectId}/${crypto.randomUUID()}-${storageSafeName(file.name)}`;
         const upRes = await fetch(`${SUPA_URL}/storage/v1/object/project-attachments/${encodeStoragePath(path)}`, {
           method: "POST",
@@ -7208,6 +7219,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
           const raw = e.message || "";
           throw new Error(/invalid key/i.test(raw)
             ? `Could not upload "${file.name}" — the file name contains a character storage will not accept. Renaming the file usually fixes it.`
+            : /exceeded the maximum allowed size/i.test(raw) ? tooBigText([file])
             : (raw || `Upload failed for ${file.name}`));
         }
         await supa("/rest/v1/project_attachments", {
@@ -7223,6 +7235,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
         }, session.access_token);
       }
       await load(); await loadGlobalTotal();
+      if (tooBig.length) setErr(tooBigText(tooBig) + (tooBig.length < files.length ? " The other files were uploaded." : ""));
     } catch (e) { setErr(e.message); }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
