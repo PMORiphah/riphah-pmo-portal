@@ -136,7 +136,17 @@ export function ReportDocument({ rep }) {
   return (
     <div>
       {pg(1, <>
-        <div data-tour="report-head" style={{ background:C.navy, color:"#fff", margin:"-36px -44px 0", padding:"26px 44px 22px" }}>
+        <div data-tour="report-head" style={{ background:C.navy, color:"#fff", margin:"-36px -44px 0", padding:"26px 44px 22px", position:"relative", overflow:"hidden", isolation:"isolate" }}>
+          {/* Cover mark (PMO, 27 Oct 2026): the portal's double-arch signature, drawn as vectors so it stays sharp in
+              the PDF, with a faint gold arc behind it. Decorative only. */}
+          <svg aria-hidden="true" viewBox="0 0 230 140" preserveAspectRatio="xMaxYMax meet"
+            style={{ position:"absolute", right:0, bottom:0, height:"100%", width:"auto", pointerEvents:"none", zIndex:-1 }}>
+            <circle cx="214" cy="150" r="128" fill="none" stroke={C.gold} strokeOpacity=".38" strokeWidth="1.4" />
+            <circle cx="214" cy="150" r="100" fill="none" stroke={C.gold} strokeOpacity=".22" strokeWidth="1.2" />
+            <circle cx="214" cy="150" r="72" fill="none" stroke={C.gold} strokeOpacity=".12" strokeWidth="1" />
+            <path d="M230 140 L230 70 Q230 30 195 22 Q199 40 184 54 Q202 60 202 82 L202 140 Z" fill="#fff" fillOpacity=".13" />
+            <path d="M230 140 L230 85 Q230 55 205 50 Q207 64 196 74 Q209 78 209 94 L209 140 Z" fill="#fff" fillOpacity=".2" />
+          </svg>
           <div style={{ fontSize:9.5, letterSpacing:3, opacity:.6, textTransform:"uppercase" }}><span data-org>Riphah International University</span> · Project Management Office</div>
           <div style={{ fontSize:26, fontWeight:700, marginTop:8 }}>{title}</div>
           <div style={{ fontSize:15, marginTop:2, color:"#F3C877", fontWeight:600 }}>{f.period}</div>

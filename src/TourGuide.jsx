@@ -301,7 +301,13 @@ function TourOverlay({ T, step, index, total, rect, phase, speech, onNext, onBac
         border: rect ? `1.5px solid ${ring}99` : "none",
         transition: `top .42s ${EASE}, left .42s ${EASE}, width .42s ${EASE}, height .42s ${EASE}, opacity .3s ease`,
         opacity: rect ? 1 : 0,
-      }} onClick={(e) => e.stopPropagation()} />
+      }} onClick={(e) => e.stopPropagation()}>
+        {/* Arrival (PMO, 27 Oct 2026): once the spotlight has settled on a step's target, a soft ring draws in
+            around it and stays as a faint glow, so the eye lands on it. Static under reduced motion. */}
+        {rect && phase === "ready" && (
+          <span key={index} className="pmo-tour-arrive" style={{ "--tour-ring": ring }} />
+        )}
+      </div>
 
       {!rect && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1799, background: dim,

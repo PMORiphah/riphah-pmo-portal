@@ -4422,6 +4422,9 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
   const [counts,   setCounts]   = useState({projects:0,comments:0});
   const [importing,setImporting]= useState(false);
   const [progress, setProgress] = useState("");
+  // How far the import is, 0-100 (PMO, 27 Oct 2026): the fixed steps take small fixed shares, and the project rows,
+  // which are most of the work, move the bar by the rows actually inserted.
+  const [pct,      setPct]      = useState(0);
   const [fileName, setFileName] = useState("");
 
   const handleFile = async (file) => {
@@ -4478,7 +4481,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
     setImporting(true);
     try {
       // 1. Snapshot current data
-      setProgress("Saving snapshot of current data…");
+      setProgress("Saving snapshot of current data…"); setPct(3);
       const current = await supa("/rest/v1/projects?select=*",{},session.access_token);
       const snap = await supa("/rest/v1/snapshots",{method:"POST",body:JSON.stringify({
         label:`Before import on ${new Date().toLocaleDateString("en-GB")} — ${current.length} projects`,
@@ -4488,7 +4491,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       const snapId = snap[0]?.id;
 
       // 2. Resolve / create lookup values
-      setProgress("Creating new classification values…");
+      setProgress("Creating new classification values…"); setPct(10);
       const lmap = {
         sectors:      Object.fromEntries(lookups.sectors.map(x=>[x.name.toLowerCase(),x.id])),
         regions:      Object.fromEntries(lookups.regions.map(x=>[x.name.toLowerCase(),x.id])),
@@ -4511,7 +4514,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       //
       // Re-linking afterwards is manual, so the import now stops and asks
       // whenever files would be detached.
-      setProgress("Checking for uploaded files");
+      setProgress("Checking for uploaded files"); setPct(14);
       const atRisk = await supa(
         "/rest/v1/project_attachments?select=id,file_name,kind,project_id",
         {}, session.access_token).catch(() => []);
@@ -4544,7 +4547,7 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       }
 
       // 3. Delete all existing projects (CASCADE removes comments / milestones / assignments)
-      setProgress("Removing existing project data…");
+      setProgress("Removing existing project data…"); setPct(18);
       await supa("/rest/v1/projects?id=not.is.null",{method:"DELETE",headers:{"Prefer":"return=minimal"}},session.access_token);
 
       // 4. Build and insert new rows in batches of 100
@@ -4653,11 +4656,13 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
       const BATCH = 100;
       for (let i=0; i<toInsert.length; i+=BATCH) {
         setProgress(`Inserting projects ${i+1}–${Math.min(i+BATCH,toInsert.length)} of ${toInsert.length}…`);
+        setPct(22 + Math.round(73 * i / Math.max(1, toInsert.length)));
         await supa("/rest/v1/projects",{method:"POST",body:JSON.stringify(toInsert.slice(i,i+BATCH)),headers:{"Prefer":"return=minimal"}},session.access_token);
+        setPct(22 + Math.round(73 * Math.min(i+BATCH, toInsert.length) / Math.max(1, toInsert.length)));
       }
 
       // 5. Log to activity_log
-      setProgress("Logging import…");
+      setProgress("Logging import…"); setPct(97);
       await supa("/rest/v1/activity_log",{method:"POST",body:JSON.stringify({
         actor_id:session.user_id,actor_name:session.full_name||session.username,actor_role:session.role,
         action:"import",entity_type:"projects",entity_id:snapId?String(snapId):null,
@@ -4665,8 +4670,8 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
         details:{snapshot_id:snapId,imported:parsed.length,replaced:current.length,comments_deleted:counts.comments,filename:fileName}
       }),headers:{"Prefer":"return=minimal"}},session.access_token);
 
-      setProgress(""); setStep("done");
-    } catch(e) { setErrors(prev=>[...prev,"Import failed: "+e.message]); setProgress(""); setImporting(false); }
+      setPct(100); setProgress(""); setStep("done");
+    } catch(e) { setErrors(prev=>[...prev,"Import failed: "+e.message]); setProgress(""); setPct(0); setImporting(false); }
   };
 
   const totalNew = Object.values(newL).reduce((s,a)=>s+a.length,0);
@@ -4774,7 +4779,14 @@ function ImportExcelModal({ T, session, lookups, onImported, onClose }) {
             )}
 
             {/* Progress */}
-            {progress&&<div style={{background:`${T.positive}${T.wash}`,border:`1px solid ${T.positive}44`,borderRadius:R.md,padding:`${SP.sm}px ${SP.md}px`,marginBottom:SP.md,...TYPE.bodySm,color:T.textOf(T.positive),display:"flex",alignItems:"center",gap:7}}><Spinner size={13} color={T.positive} />{progress}</div>}
+            {progress&&<div style={{background:`${T.positive}${T.wash}`,border:`1px solid ${T.positive}44`,borderRadius:R.md,padding:`${SP.sm}px ${SP.md}px`,marginBottom:SP.md,...TYPE.bodySm,color:T.textOf(T.positive)}}>
+              <div style={{display:"flex",alignItems:"center",gap:7}}><Spinner size={13} color={T.positive} /><span style={{flex:1}}>{progress}</span><b>{pct}%</b></div>
+              <div role="progressbar" aria-label="Import progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
+                style={{height:6,borderRadius:3,background:`${T.positive}26`,marginTop:7,overflow:"hidden"}}>
+                <div style={{height:"100%",width:"100%",borderRadius:3,background:T.positive,transformOrigin:"left",
+                  transform:`scaleX(${pct/100})`,transition:`transform ${MOTION.slow}`}} />
+              </div>
+            </div>}
 
             <div style={{display:"flex", gap:SP.sm, justifyContent:"flex-end"}}>
               <Button T={T} variant="ghost" onClick={onClose} disabled={importing}>Cancel</Button>
