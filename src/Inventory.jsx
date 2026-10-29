@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { Boxes, Search, Download, ChevronDown, ChevronRight, X, ExternalLink, PackageCheck, Truck, Wrench, Building2, Users, FileText } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
+import { Boxes, Search, Download, Upload, ChevronDown, ChevronRight, X, ExternalLink, PackageCheck, Truck, Wrench, Building2, Users, FileText } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Select, Modal, CAN_HOVER, useViewport } from "./ui.jsx";
 import { InventoryCharts } from "./InventoryCharts.jsx";
+const InventoryImport = lazy(() => import("./InventoryImport.jsx").then(m => ({ default: m.InventoryImport })));
 
 /* ═══════════════════════════════════════════════════════════════════════════
    INVENTORY (PMO, 26 Oct 2026)
@@ -19,6 +20,10 @@ import { InventoryCharts } from "./InventoryCharts.jsx";
    each profit centre come from the PMO-only setting inventory_profit_centres; a profit centre shared by two
    sites (FMSD 1197 / 2197, Central Secretariat 2001) is split by the line's store. A project name opens it in the portal when the code is an FY 26-27
    project or on Past Projects; finished FY 25-26 projects keep their SAP name.
+   Import SAP sheet (PMO, 29 Oct 2026; InventoryImport.jsx): the PMO loads ME2J exports here. A line SAP has
+   deleted is marked sap_deleted; a line of the sheet's fiscal year that a later sheet no longer has is kept and
+   marked not_in_sheet_since ("Not in latest SAP sheet"). Both stay out of the list and totals unless the
+   "SAP status" filter asks for them.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export const PLANTS = {
@@ -34,7 +39,11 @@ const STATUS = {
 };
 const COLS = "id,po_number,po_item,fiscal_year,sap_project_code,sap_project_name,project_id,past_project_id,po_date,po_type," +
   "supplier_code,supplier_name,material,description,material_group,is_service,plant,profit_center,qty,unit,net_price,total,currency," +
-  "open_qty,open_value,to_invoice_value,delivery_status";
+  "open_qty,open_value,to_invoice_value,delivery_status,sap_deleted,not_in_sheet_since";
+const SAP_STATE = {
+  missing: { label: "Not in latest SAP sheet", color: DATA.warning },
+  deleted: { label: "Deleted in SAP", color: DATA.danger },
+};
 const PAGE = 1000;
 const GROUP_KEY = "pmo-inventory-group";
 const GROUPS = { site: "Grouped by campus / site", pc: "Grouped by profit centre", project: "Grouped by project", supplier: "Grouped by supplier", plant: "Grouped by plant" };
@@ -61,7 +70,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState(null);
   const [q, setQ] = useState("");
-  const [f, setF] = useState({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "goods", status: "", from: "", to: "" });
+  const [f, setF] = useState({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "goods", status: "", sap: "", from: "", to: "" });
   // Not grouped by default (PMO, 26 Oct 2026). A grouping the PMO picks stays, also after leaving the page or
   // reloading, until it is changed or cleared (its chip's ×). Kept in this browser only.
   const [groupBy, setGroupByState] = useState(() => {
@@ -77,6 +86,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const [detail, setDetail] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [map, setMap] = useState(null);                // setting inventory_profit_centres
+  const [importing, setImporting] = useState(false);
   const [showCharts, setShowChartsState] = useState(() => { try { return localStorage.getItem(CHARTS_KEY) !== "off"; } catch { return true; } });
   const setShowCharts = (v) => { setShowChartsState(v); try { if (v) localStorage.removeItem(CHARTS_KEY); else localStorage.setItem(CHARTS_KEY, "off"); } catch { /* ignore */ } };
 
@@ -85,7 +95,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     try {
       const all = [];
       for (let off = 0; ; off += PAGE) {
-        const r = await supa(`/rest/v1/inventory_items?select=${COLS}&sap_deleted=eq.false&order=po_date.desc,po_number.asc,po_item.asc&limit=${PAGE}&offset=${off}`,
+        const r = await supa(`/rest/v1/inventory_items?select=${COLS}&order=po_date.desc,po_number.asc,po_item.asc&limit=${PAGE}&offset=${off}`,
                              {}, session.access_token);
         const part = Array.isArray(r) ? r : [];
         all.push(...part);
@@ -99,7 +109,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
       setRows(all.map(r => {
         const pc = pcOf(r.sap_project_code), e = pc ? pcs[pc] : null;
         const site = e?.site || e?.by_store?.[r.profit_center] || stores[r.profit_center] || NO_SITE;
-        return { ...r, pc, pc_name: e?.name || null, site };
+        return { ...r, pc, pc_name: e?.name || null, site, sapState: r.sap_deleted ? "deleted" : r.not_in_sheet_since ? "missing" : "active" };
       }));
     } catch (e) { setErr(e.message || "Could not load the inventory."); setRows([]); }
   }, [supa, session]);
@@ -124,6 +134,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const view = useMemo(() => {
     const words = norm(q).split(/\s+/).filter(Boolean);
     return (rows || []).filter(r => {
+      if ((f.sap || "active") !== r.sapState) return false;
       if (f.fy && r.fiscal_year !== f.fy) return false;
       if (f.project && r.sap_project_code !== f.project) return false;
       if (f.supplier && r.supplier_name !== f.supplier) return false;
@@ -153,6 +164,19 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     suppliers: new Set(view.map(r => r.supplier_name)).size,
     other: view.filter(r => r.currency !== "PKR"),
   }), [view]);
+
+  const sapCount = useMemo(() => {
+    const c = { missing: 0, deleted: 0 };
+    (rows || []).forEach(r => { if (r.sapState !== "active") c[r.sapState]++; });
+    return c;
+  }, [rows]);
+  const [lastImport, setLastImport] = useState(null);
+  useEffect(() => {
+    if (!rows) return;
+    supa(`/rest/v1/activity_log?entity_type=eq.inventory_items&action=eq.import&select=created_at&order=created_at.desc&limit=1`, {}, session.access_token)
+      .then(x => { const t = Array.isArray(x) && x[0]?.created_at; setLastImport(t ? new Date(t).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Karachi" }) + " PKT" : null); })
+      .catch(() => {});
+  }, [rows, supa, session]);
 
   const sorter = useCallback((a, b) => {
     const k = sort.key, d = sort.dir === "asc" ? 1 : -1;
@@ -190,7 +214,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const searching = q.trim().length > 0;
   const isOpen = (k) => groupBy === "none" || searching || groups.length === 1 || !!open[k];
   const activeFilters = Object.entries(f).filter(([k, v]) => v && !(k === "type" && v === "goods"));
-  const clearAll = () => { setF({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "goods", status: "", from: "", to: "" }); setQ(""); setLimit({}); };
+  const clearAll = () => { setF({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "goods", status: "", sap: "", from: "", to: "" }); setQ(""); setLimit({}); };
 
   const download = async () => {
     const XLSX = await import("xlsx");
@@ -222,7 +246,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     </div>
   );
   const chip = (s) => {
-    const m = STATUS[s] || { label: s, color: T.muted };
+    const m = STATUS[s] || SAP_STATE[s] || { label: s, color: T.muted };
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap", ...TYPE.caption, fontWeight: 700, color: T.textOf(m.color) }}>
         <span style={{ width: 7, height: 7, borderRadius: 9, background: m.color, flexShrink: 0 }} />{m.label}
@@ -246,7 +270,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     );
   };
   const Row = ({ r, i }) => {
-    const meta = [r.supplier_name, `PO ${r.po_number}/${r.po_item}`, groupBy !== "project" ? (r.sap_project_name ? `${r.sap_project_name} (${r.sap_project_code})` : r.sap_project_code) : null, groupBy !== "site" ? r.site : null, r.is_service ? "Service" : null]
+    const meta = [SAP_STATE[r.sapState]?.label, r.supplier_name, `PO ${r.po_number}/${r.po_item}`, groupBy !== "project" ? (r.sap_project_name ? `${r.sap_project_name} (${r.sap_project_code})` : r.sap_project_code) : null, groupBy !== "site" ? r.site : null, r.is_service ? "Service" : null]
       .filter(Boolean).join(" · ");
     if (compact) return (
       <button key={r.id} onClick={() => setDetail(r)} className="pmo-focusable" data-inv-row
@@ -257,7 +281,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         <div style={{ display: "flex", alignItems: "center", gap: SP.sm, marginTop: 4, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{r.currency === "PKR" ? `PKR ${fmt(r.total)}` : `${r.currency} ${fmtQ(r.total)}`}</span>
           <span style={{ ...TYPE.caption, color: T.dim }}>{fmtQ(r.qty)} {r.unit} · {fmtDay(r.po_date)}</span>
-          <span style={{ marginLeft: "auto" }}>{chip(r.delivery_status)}</span>
+          <span style={{ marginLeft: "auto" }}>{r.sapState !== "active" ? chip(r.sapState) : chip(r.delivery_status)}</span>
         </div>
       </button>
     );
@@ -275,7 +299,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
           {r.currency === "PKR" ? fmt(r.total) : <span title={`${r.currency} ${fmtQ(r.total)}`}>{r.currency} {fmtQ(r.total)}</span>}
         </span>
         <span style={{ fontSize: 12, color: T.muted, textAlign: "right", whiteSpace: "nowrap" }}>{fmtDay(r.po_date)}</span>
-        {chip(r.delivery_status)}
+        {r.sapState !== "active" ? chip(r.sapState) : chip(r.delivery_status)}
       </div>
     );
   };
@@ -304,6 +328,14 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         <option value="services">Services only</option>
         <option value="all">Goods and services</option>
       </Select>
+      {(sapCount.missing > 0 || sapCount.deleted > 0) && (
+        <Select T={T} size="sm" value={f.sap} active={!!f.sap} onChange={e => set("sap", e.target.value)} aria-label="SAP status"
+          style={{ flex: compact ? "1 1 100%" : "0 1 auto" }}>
+          <option value="">Lines in the latest SAP sheet</option>
+          {sapCount.missing > 0 && <option value="missing">Not in latest SAP sheet ({fmt(sapCount.missing)})</option>}
+          {sapCount.deleted > 0 && <option value="deleted">Deleted in SAP ({fmt(sapCount.deleted)})</option>}
+        </Select>
+      )}
       <label style={{ display: "inline-flex", alignItems: "center", gap: 6, ...TYPE.caption, color: T.muted, flex: compact ? "1 1 100%" : "0 0 auto" }}>
         PO date
         <input type="date" value={f.from} onChange={e => set("from", e.target.value)} aria-label="PO date from"
@@ -361,6 +393,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         </Select>
         {compact && <Button T={T} size="sm" variant="ghost" onClick={() => setShowFilters(v => !v)}>{showFilters ? "Hide filters" : `Filters${activeFilters.length ? ` (${activeFilters.length})` : ""}`}</Button>}
         <Button T={T} size="sm" variant="ghost" icon={Download} onClick={download} disabled={!view.length}>Download as Excel</Button>
+        <Button T={T} size="sm" variant="accent" icon={Upload} onClick={() => setImporting(true)}>Import SAP sheet</Button>
       </div>
       {(!compact || showFilters) && filterBar}
       {(activeFilters.length > 0 || searching || groupBy !== "none") && (
@@ -376,7 +409,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
             <button key={k} onClick={() => set(k, k === "type" ? "goods" : "")} className="pmo-focusable pmo-btn"
               style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 9px", borderRadius: R.pill, cursor: "pointer",
                 background: `${BRAND.blueBright}1a`, border: `1px solid ${BRAND.blueBright}55`, color: T.textOf(BRAND.blueBright), ...TYPE.caption, fontWeight: 700 }}>
-              {k === "plant" ? plantName(v) : k === "status" ? STATUS[v]?.label : k === "type" ? (v === "all" ? "Goods and services" : "Services only")
+              {k === "plant" ? plantName(v) : k === "status" ? STATUS[v]?.label : k === "sap" ? SAP_STATE[v]?.label : k === "type" ? (v === "all" ? "Goods and services" : "Services only")
                 : k === "pc" ? (opts.pc.find(p => p[0] === v)?.[1] || `Profit centre ${v}`) : k === "mg" ? `Material group ${v}` : k === "from" ? `From ${fmtDay(v)}` : k === "to" ? `To ${fmtDay(v)}`
                 : k === "project" ? (opts.project.find(p => p[0] === v)?.[1] || v) : v} <X size={11} />
             </button>
@@ -441,9 +474,14 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         </div>
       )}
       <div style={{ ...TYPE.caption, color: T.dim }}>
-        Source: SAP ME2J (purchase orders by project). Lines deleted in SAP are left out. Delivery status from SAP's "still to be delivered".
+        Source: SAP ME2J (purchase orders by project){lastImport ? `, last import ${lastImport}` : ""}. Lines deleted in SAP or missing from the latest sheet are kept but left out of the list and totals (see “SAP status”). Delivery status from SAP's "still to be delivered".
       </div>
 
+      {importing && (
+        <Suspense fallback={null}>
+          <InventoryImport T={T} session={session} supa={supa} map={map} isMobile={compact} onClose={() => setImporting(false)} onDone={load} />
+        </Suspense>
+      )}
       {detail && <InventoryDetail T={T} session={session} supa={supa} row={detail} isMobile={compact} onClose={() => setDetail(null)}
         onOpenProject={(id) => { setDetail(null); onOpenProject?.(id); }} onOpenPast={(id) => { setDetail(null); onOpenPast?.(id); }} />}
     </div>
@@ -490,6 +528,8 @@ function InventoryDetail({ T, session, supa, row: r, isMobile, onClose, onOpenPr
         {line("Quantity", `${fmtQ(r.qty)} ${r.unit || ""}`)}
         {line("Net price", `${r.currency} ${fmtQ(r.net_price)}`)}
         {line("Total", <b>{r.currency} {fmtQ(r.total)}</b>)}
+        {r.sapState !== "active" && line("SAP status", <span style={{ color: T.textOf(SAP_STATE[r.sapState].color), fontWeight: 700 }}>
+          {SAP_STATE[r.sapState].label}{r.sapState === "missing" ? ` since ${fmtDay(String(new Date(new Date(r.not_in_sheet_since).getTime() + 5 * 3600e3).toISOString()))}` : ""}</span>)}
         {line("Delivery", <span style={{ color: T.textOf(st?.color || T.muted), fontWeight: 700 }}>{st?.label || r.delivery_status}</span>)}
         {line("Still to be delivered", `${fmtQ(r.open_qty)} ${r.unit || ""} · ${r.currency} ${fmtQ(r.open_value)}`)}
         {line("Still to be invoiced", `${r.currency} ${fmtQ(r.to_invoice_value)}`)}
