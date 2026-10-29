@@ -352,33 +352,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     <div className="pmo-scroll" data-inv-scroll style={{ flex: 1, minHeight: 0, overflow: "auto", background: T.page }}>
     <div data-page="inventory" style={{ padding: compact ? SP.md : SP.xl, display: "flex", flexDirection: "column", gap: SP.md }}>
       <style>{`.inv-row:hover{background:${T.surfaceRaised}}`}</style>
-      {/* Figures for what is shown */}
-      <div style={compact ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: SP.sm } : { display: "flex", gap: SP.sm, flexWrap: "wrap" }}>
-        <Kpi icon={Boxes} label="Items" value={fmt(kpi.lines)} sub={f.type === "goods" ? "goods lines" : f.type === "services" ? "service lines" : "PO lines"} color={BRAND.blueBright} />
-        <Kpi icon={PackageCheck} label="Total value" value={`PKR ${fmtM(kpi.value)}`}
-          sub={kpi.other.length ? `+ ${kpi.other.map(r => `${r.currency} ${fmtQ(r.total)}`).join(", ")}` : "ordered"} color={DATA.positive} />
-        <Kpi icon={Truck} label="Still to be delivered" value={`PKR ${fmtM(kpi.openValue)}`} sub={`${fmt(kpi.openLines)} lines not fully delivered`} color={DATA.warning} />
-        <Kpi icon={Building2} label="Projects" value={fmt(kpi.projects)} color={BRAND.gold} />
-        <Kpi icon={Users} label="Suppliers" value={fmt(kpi.suppliers)} color="#8B7CF6" />
-      </div>
-
-      {/* Insights (PMO, 29 Oct 2026): four charts over the lines the list shows; a click filters the list */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ ...TYPE.label, color: T.muted }}>Insights</div>
-        <Button T={T} size="sm" variant="ghost" onClick={() => setShowCharts(!showCharts)} data-inv-charts-toggle>{showCharts ? "Hide charts" : "Show charts"}</Button>
-      </div>
-      {showCharts && view.length > 0 && (
-        <InventoryCharts T={T} rows={view} compact={compact} onPick={(kind, v) => {
-          if (!v) return;
-          if (kind === "month") {
-            const [y, m] = v.split("-").map(Number);
-            const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-            setF(s => ({ ...s, from: `${v}-01`, to: `${v}-${String(last).padStart(2, "0")}` })); setLimit({});
-          } else set(kind, v);
-        }} />
-      )}
-
-      {/* Search, grouping, filters */}
+      {/* Search, grouping, filters: at the top, above the figures and charts (PMO, 29 Oct 2026) */}
       <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap", alignItems: "center" }}>
         <Input T={T} icon={Search} value={q} onChange={e => { setQ(e.target.value); setLimit({}); }} onClear={() => setQ("")}
           placeholder="Search item, material, PO, supplier or project…" aria-label="Search the inventory"
@@ -421,6 +395,33 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         </div>
       )}
       {err && <div style={{ fontSize: 12.5, color: T.textOf(DATA.danger) }}>{err}</div>}
+
+      {/* Figures for what is shown */}
+      <div style={compact ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: SP.sm } : { display: "flex", gap: SP.sm, flexWrap: "wrap" }}>
+        <Kpi icon={Boxes} label="Items" value={fmt(kpi.lines)} sub={f.type === "goods" ? "goods lines" : f.type === "services" ? "service lines" : "PO lines"} color={BRAND.blueBright} />
+        <Kpi icon={PackageCheck} label="Total value" value={`PKR ${fmtM(kpi.value)}`}
+          sub={kpi.other.length ? `+ ${kpi.other.map(r => `${r.currency} ${fmtQ(r.total)}`).join(", ")}` : "ordered"} color={DATA.positive} />
+        <Kpi icon={Truck} label="Still to be delivered" value={`PKR ${fmtM(kpi.openValue)}`} sub={`${fmt(kpi.openLines)} lines not fully delivered`} color={DATA.warning} />
+        <Kpi icon={Building2} label="Projects" value={fmt(kpi.projects)} color={BRAND.gold} />
+        <Kpi icon={Users} label="Suppliers" value={fmt(kpi.suppliers)} color="#8B7CF6" />
+      </div>
+
+      {/* Insights (PMO, 29 Oct 2026): four charts over the lines the list shows; a click filters the list */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ ...TYPE.label, color: T.muted }}>Insights</div>
+        <Button T={T} size="sm" variant="ghost" onClick={() => setShowCharts(!showCharts)} data-inv-charts-toggle>{showCharts ? "Hide charts" : "Show charts"}</Button>
+      </div>
+      {showCharts && view.length > 0 && (
+        <InventoryCharts T={T} rows={view} compact={compact} onPick={(kind, v) => {
+          if (!v) return;
+          if (kind === "month") {
+            const [y, m] = v.split("-").map(Number);
+            const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+            setF(s => ({ ...s, from: `${v}-01`, to: `${v}-${String(last).padStart(2, "0")}` })); setLimit({});
+          } else set(kind, v);
+        }} />
+      )}
+
 
       {/* The list */}
       {view.length === 0 ? (
