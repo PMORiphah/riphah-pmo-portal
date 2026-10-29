@@ -11,8 +11,12 @@ import { Button, Input, Select, Modal, CAN_HOVER, useViewport } from "./ui.jsx";
    inventory_items, PMO only by RLS. Goods are shown by default, services
    (design, civil works) one filter away. Delivery status is worked out by the
    database from SAP's "still to be delivered". Plants are named as the PMO gave
-   them; profit centres (ME2J's storage location) and material groups stay as
-   numbers. A project name opens it in the portal when the code is an FY 26-27
+   them; material groups stay as numbers.
+   Profit centre and campus / site (PMO, 29 Oct 2026): the profit centre is the 4 digits in the SAP project ID
+   (IT = Trust, RU = Riphah . 26 = FY 25-26 . 1107 = profit centre - 04 = 4th project of it that year). The ME2J
+   "Storage location" column (stored in profit_center) is the store, not the profit centre. Names and the site of
+   each profit centre come from the PMO-only setting inventory_profit_centres; a profit centre shared by two
+   sites (FMSD 1197 / 2197, Central Secretariat 2001) is split by the line's store. A project name opens it in the portal when the code is an FY 26-27
    project or on Past Projects; finished FY 25-26 projects keep their SAP name.
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -32,7 +36,11 @@ const COLS = "id,po_number,po_item,fiscal_year,sap_project_code,sap_project_name
   "open_qty,open_value,to_invoice_value,delivery_status";
 const PAGE = 1000;
 const GROUP_KEY = "pmo-inventory-group";
-const GROUPS = { project: "Grouped by project", supplier: "Grouped by supplier", plant: "Grouped by plant" };
+const GROUPS = { site: "Grouped by campus / site", pc: "Grouped by profit centre", project: "Grouped by project", supplier: "Grouped by supplier", plant: "Grouped by plant" };
+const SETTING = "inventory_profit_centres";
+const NO_SITE = "Not assigned";
+// Profit centre from the SAP project ID: IT.261107-04 → 1107.
+const pcOf = (code) => (/^[A-Z]+\.\d{2}(\d{4})-/.exec(String(code || "")) || [])[1] || null;
 const SHOW = 150;          // rows shown at once in a list before "Show more"
 
 const fmt = (n) => Number(n || 0).toLocaleString("en", { maximumFractionDigits: 0 });
@@ -41,6 +49,7 @@ const fmtM = (n) => { const v = Number(n || 0); return v >= 1e6 ? `${(v / 1e6).t
 const fmtDay = (s) => s ? new Date(String(s).slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
 const pkr = (r) => r.currency === "PKR" ? Number(r.total || 0) : 0;
 const plantName = (p) => PLANTS[p] || (p ? `Plant ${p}` : "—");
+const pcLabel = (r) => r.pc ? `${r.pc}${r.pc_name ? ` · ${r.pc_name}` : ""}` : "—";
 const norm = (s) => String(s || "").toLowerCase();
 const todayPKT = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
 
@@ -50,7 +59,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState(null);
   const [q, setQ] = useState("");
-  const [f, setF] = useState({ fy: "", project: "", supplier: "", plant: "", pc: "", mg: "", type: "goods", status: "", from: "", to: "" });
+  const [f, setF] = useState({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "goods", status: "", from: "", to: "" });
   // Not grouped by default (PMO, 26 Oct 2026). A grouping the PMO picks stays, also after leaving the page or
   // reloading, until it is changed or cleared (its chip's ×). Kept in this browser only.
   const [groupBy, setGroupByState] = useState(() => {
@@ -65,6 +74,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const [limit, setLimit] = useState({});              // group key → rows shown
   const [detail, setDetail] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [map, setMap] = useState(null);                // setting inventory_profit_centres
 
   const load = useCallback(async () => {
     setErr(null);
@@ -77,22 +87,35 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         all.push(...part);
         if (part.length < PAGE) break;
       }
-      setRows(all);
+      // Names and sites; without the setting the codes still show and every line reads "Not assigned".
+      const st = await supa(`/rest/v1/settings?key=eq.${SETTING}&select=value`, {}, session.access_token).catch(() => []);
+      const m = (Array.isArray(st) && st[0]?.value) || {};
+      setMap(m);
+      const pcs = m.profit_centres || {}, stores = m.stores || {};
+      setRows(all.map(r => {
+        const pc = pcOf(r.sap_project_code), e = pc ? pcs[pc] : null;
+        const site = e?.site || e?.by_store?.[r.profit_center] || stores[r.profit_center] || NO_SITE;
+        return { ...r, pc, pc_name: e?.name || null, site };
+      }));
     } catch (e) { setErr(e.message || "Could not load the inventory."); setRows([]); }
   }, [supa, session]);
   useEffect(() => { load(); }, [load]);
 
   const set = (k, v) => { setF(s => ({ ...s, [k]: v })); setLimit({}); };
   const opts = useMemo(() => {
-    const m = { fy: new Set(), project: new Map(), supplier: new Set(), plant: new Set(), pc: new Set(), mg: new Set() };
+    const m = { fy: new Set(), project: new Map(), supplier: new Set(), plant: new Set(), pc: new Map(), site: new Set(), mg: new Set() };
     (rows || []).forEach(r => {
       m.fy.add(r.fiscal_year); m.project.set(r.sap_project_code, r.sap_project_name || r.sap_project_code);
       if (r.supplier_name) m.supplier.add(r.supplier_name); if (r.plant) m.plant.add(r.plant);
-      if (r.profit_center) m.pc.add(r.profit_center); if (r.material_group) m.mg.add(r.material_group);
+      if (r.pc) m.pc.set(r.pc, pcLabel(r)); m.site.add(r.site); if (r.material_group) m.mg.add(r.material_group);
     });
     const s = (x) => [...x].sort((a, b) => String(a).localeCompare(String(b), "en", { numeric: true }));
-    return { fy: s(m.fy), project: [...m.project].sort((a, b) => a[1].localeCompare(b[1])), supplier: s(m.supplier), plant: s(m.plant), pc: s(m.pc), mg: s(m.mg) };
-  }, [rows]);
+    // Sites in the setting's order (the portal's usual campus order), anything else after them.
+    const order = (map?.sites || []);
+    const site = [...m.site].sort((a, b) => ((order.indexOf(a) + 1) || 999) - ((order.indexOf(b) + 1) || 999) || a.localeCompare(b));
+    return { fy: s(m.fy), project: [...m.project].sort((a, b) => a[1].localeCompare(b[1])), supplier: s(m.supplier), plant: s(m.plant),
+      pc: [...m.pc].sort((a, b) => a[0].localeCompare(b[0], "en", { numeric: true })), site, mg: s(m.mg) };
+  }, [rows, map]);
 
   const view = useMemo(() => {
     const words = norm(q).split(/\s+/).filter(Boolean);
@@ -101,7 +124,8 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
       if (f.project && r.sap_project_code !== f.project) return false;
       if (f.supplier && r.supplier_name !== f.supplier) return false;
       if (f.plant && r.plant !== f.plant) return false;
-      if (f.pc && r.profit_center !== f.pc) return false;
+      if (f.pc && r.pc !== f.pc) return false;
+      if (f.site && r.site !== f.site) return false;
       if (f.mg && r.material_group !== f.mg) return false;
       if (f.type === "goods" && r.is_service) return false;
       if (f.type === "services" && !r.is_service) return false;
@@ -109,7 +133,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
       if (f.from && (!r.po_date || r.po_date < f.from)) return false;
       if (f.to && (!r.po_date || r.po_date > f.to)) return false;
       if (words.length) {
-        const hay = norm(`${r.description} ${r.material} ${r.po_number} ${r.supplier_name} ${r.supplier_code} ${r.sap_project_code} ${r.sap_project_name} ${r.material_group} ${r.profit_center} ${plantName(r.plant)}`);
+        const hay = norm(`${r.description} ${r.material} ${r.po_number} ${r.supplier_name} ${r.supplier_code} ${r.sap_project_code} ${r.sap_project_name} ${r.material_group} ${r.pc || ""} ${r.pc_name || ""} ${r.site} ${plantName(r.plant)}`);
         if (!words.every(w => hay.includes(w))) return false;
       }
       return true;
@@ -137,7 +161,8 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     if (groupBy === "none") return [{ key: "all", label: null, rows: [...view].sort(sorter) }];
     const m = new Map();
     view.forEach(r => {
-      const key = groupBy === "project" ? r.sap_project_code : groupBy === "supplier" ? (r.supplier_name || "—") : (r.plant || "—");
+      const key = groupBy === "project" ? r.sap_project_code : groupBy === "supplier" ? (r.supplier_name || "—")
+        : groupBy === "site" ? r.site : groupBy === "pc" ? (r.pc || "—") : (r.plant || "—");
       if (!m.has(key)) m.set(key, []);
       m.get(key).push(r);
     });
@@ -146,8 +171,12 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
       return {
         key, rows: rs.sort(sorter), value: rs.reduce((a, r) => a + pkr(r), 0),
         open: rs.filter(r => r.delivery_status !== "delivered").length,
-        label: groupBy === "project" ? (first.sap_project_name || key) : groupBy === "plant" ? plantName(key) : key,
-        sub: groupBy === "project" ? `${key}${first.fiscal_year ? ` · ${first.fiscal_year}` : ""}` : groupBy === "supplier" ? (first.supplier_code || "") : key !== "—" ? `Plant ${key}` : "",
+        label: groupBy === "project" ? (first.sap_project_name || key) : groupBy === "plant" ? plantName(key)
+          : groupBy === "pc" ? (first.pc_name || (key !== "—" ? `Profit centre ${key}` : "No profit centre")) : key,
+        sub: groupBy === "project" ? `${key}${first.fiscal_year ? ` · ${first.fiscal_year}` : ""}` : groupBy === "supplier" ? (first.supplier_code || "")
+          : groupBy === "pc" ? (key !== "—" ? `Profit centre ${key} · ${first.site}` : "")
+          : groupBy === "site" ? (() => { const n = new Set(rs.map(x => x.pc).filter(Boolean)); return `${n.size} profit centre${n.size === 1 ? "" : "s"}`; })()
+          : key !== "—" ? `Plant ${key}` : "",
         projectId: groupBy === "project" ? first.project_id : null,
         pastId: groupBy === "project" ? first.past_project_id : null,
       };
@@ -157,16 +186,17 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const searching = q.trim().length > 0;
   const isOpen = (k) => groupBy === "none" || searching || groups.length === 1 || !!open[k];
   const activeFilters = Object.entries(f).filter(([k, v]) => v && !(k === "type" && v === "goods"));
-  const clearAll = () => { setF({ fy: "", project: "", supplier: "", plant: "", pc: "", mg: "", type: "goods", status: "", from: "", to: "" }); setQ(""); setLimit({}); };
+  const clearAll = () => { setF({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "goods", status: "", from: "", to: "" }); setQ(""); setLimit({}); };
 
   const download = async () => {
     const XLSX = await import("xlsx");
     const head = ["Fiscal year", "SAP project code", "Project name", "PO number", "PO item", "PO date", "PO type", "Supplier code", "Supplier",
-      "Material", "Description", "Material group", "Goods / service", "Plant", "Plant name", "Profit centre", "Quantity", "Unit", "Net price",
+      "Material", "Description", "Material group", "Goods / service", "Plant", "Plant name", "Profit centre", "Profit centre name", "Campus / site",
+      "Storage location", "Quantity", "Unit", "Net price",
       "Total", "Currency", "Still to be delivered (qty)", "Still to be delivered (value)", "Still to be invoiced (value)", "Delivery status"];
     const body = [...view].sort((a, b) => a.sap_project_code.localeCompare(b.sap_project_code) || String(a.po_number).localeCompare(String(b.po_number)) || Number(a.po_item) - Number(b.po_item))
       .map(r => [r.fiscal_year, r.sap_project_code, r.sap_project_name, r.po_number, r.po_item, r.po_date, r.po_type, r.supplier_code, r.supplier_name,
-        r.material, r.description, r.material_group, r.is_service ? "Service" : "Goods", r.plant, plantName(r.plant), r.profit_center,
+        r.material, r.description, r.material_group, r.is_service ? "Service" : "Goods", r.plant, plantName(r.plant), r.pc, r.pc_name, r.site, r.profit_center,
         Number(r.qty), r.unit, Number(r.net_price), Number(r.total), r.currency, Number(r.open_qty), Number(r.open_value), Number(r.to_invoice_value),
         STATUS[r.delivery_status]?.label || r.delivery_status]);
     const ws = XLSX.utils.aoa_to_sheet([head, ...body]);
@@ -212,7 +242,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     );
   };
   const Row = ({ r, i }) => {
-    const meta = [r.supplier_name, `PO ${r.po_number}/${r.po_item}`, groupBy !== "project" ? (r.sap_project_name ? `${r.sap_project_name} (${r.sap_project_code})` : r.sap_project_code) : null, r.is_service ? "Service" : null]
+    const meta = [r.supplier_name, `PO ${r.po_number}/${r.po_item}`, groupBy !== "project" ? (r.sap_project_name ? `${r.sap_project_name} (${r.sap_project_code})` : r.sap_project_code) : null, groupBy !== "site" ? r.site : null, r.is_service ? "Service" : null]
       .filter(Boolean).join(" · ");
     if (compact) return (
       <button key={r.id} onClick={() => setDetail(r)} className="pmo-focusable" data-inv-row
@@ -250,10 +280,11 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap", alignItems: "center" }}>
       {[
         ["fy", "All years", opts.fy.map(v => [v, v])],
+        ["site", "All campuses / sites", opts.site.map(v => [v, v])],
+        ["pc", "All profit centres", opts.pc.map(([v, l]) => [v, l])],
         ["project", "All projects", opts.project.map(([c, n]) => [c, `${n} (${c})`])],
         ["supplier", "All suppliers", opts.supplier.map(v => [v, v])],
         ["plant", "All plants", opts.plant.map(v => [v, `${plantName(v)} (${v})`])],
-        ["pc", "All profit centres", opts.pc.map(v => [v, `Profit centre ${v}`])],
         ["mg", "All material groups", opts.mg.map(v => [v, `Material group ${v}`])],
         ["status", "Any delivery", Object.entries(STATUS).map(([k, v]) => [k, v.label])],
       ].map(([k, all, list]) => (
@@ -302,6 +333,8 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
           style={{ flex: "1 1 280px" }} />
         <Select T={T} size="sm" value={groupBy} active={groupBy !== "none"} onChange={e => setGroupBy(e.target.value)} aria-label="Group by">
           <option value="none">Group by…</option>
+          <option value="site">Group by campus / site</option>
+          <option value="pc">Group by profit centre</option>
           <option value="project">Group by project</option>
           <option value="supplier">Group by supplier</option>
           <option value="plant">Group by plant</option>
@@ -324,7 +357,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
               style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 9px", borderRadius: R.pill, cursor: "pointer",
                 background: `${BRAND.blueBright}1a`, border: `1px solid ${BRAND.blueBright}55`, color: T.textOf(BRAND.blueBright), ...TYPE.caption, fontWeight: 700 }}>
               {k === "plant" ? plantName(v) : k === "status" ? STATUS[v]?.label : k === "type" ? (v === "all" ? "Goods and services" : "Services only")
-                : k === "pc" ? `Profit centre ${v}` : k === "mg" ? `Material group ${v}` : k === "from" ? `From ${fmtDay(v)}` : k === "to" ? `To ${fmtDay(v)}`
+                : k === "pc" ? (opts.pc.find(p => p[0] === v)?.[1] || `Profit centre ${v}`) : k === "mg" ? `Material group ${v}` : k === "from" ? `From ${fmtDay(v)}` : k === "to" ? `To ${fmtDay(v)}`
                 : k === "project" ? (opts.project.find(p => p[0] === v)?.[1] || v) : v} <X size={11} />
             </button>
           ))}
@@ -431,7 +464,9 @@ function InventoryDetail({ T, session, supa, row: r, isMobile, onClose, onOpenPr
         {line("Material group", r.material_group)}
         {line("Goods / service", r.is_service ? "Service" : "Goods")}
         {line("Plant", r.plant ? `${plantName(r.plant)} (${r.plant})` : null)}
-        {line("Profit centre", r.profit_center)}
+        {line("Profit centre", r.pc ? `${r.pc}${r.pc_name ? ` · ${r.pc_name}` : ""}` : null)}
+        {line("Campus / site", r.site)}
+        {line("Storage location", r.profit_center)}
         {line("Quantity", `${fmtQ(r.qty)} ${r.unit || ""}`)}
         {line("Net price", `${r.currency} ${fmtQ(r.net_price)}`)}
         {line("Total", <b>{r.currency} {fmtQ(r.total)}</b>)}
