@@ -11859,7 +11859,7 @@ const PAGE_TITLES = {
   camp: { title:"Campus / Sites",  subtitle:"Projects and approvals by campus" },
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
   review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
-  inventory: { title:"Inventory", subtitle:"Items procured on FY 25-26 and FY 26-27 projects \u00b7 SAP ME2J" },
+  inventory: { title:"Inventory", subtitle:"Items procured from FY 25-26 till present \u00b7 SAP ME2J" },
   cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
   team: { title:"Team & About",    subtitle:"PMO team and portal information" },
