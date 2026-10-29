@@ -24,7 +24,7 @@ import { TYPE, SP, R, MOTION, CATEGORICAL } from "./theme.js";
 // tears down and recreates the component, which unconditionally clears
 // whatever internal state Recharts was holding, regardless of which event
 // it was or wasn't listening for.
-function useDismissChartTooltipOnScroll() {
+export function useDismissChartTooltipOnScroll() {
   const [remountKey, setRemountKey] = useState(0);
   useEffect(() => {
     const dismiss = () => setRemountKey(k => k + 1);

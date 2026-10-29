@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Boxes, Search, Download, ChevronDown, ChevronRight, X, ExternalLink, PackageCheck, Truck, Wrench, Building2, Users, FileText } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Select, Modal, CAN_HOVER, useViewport } from "./ui.jsx";
+import { InventoryCharts } from "./InventoryCharts.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    INVENTORY (PMO, 26 Oct 2026)
@@ -38,6 +39,7 @@ const PAGE = 1000;
 const GROUP_KEY = "pmo-inventory-group";
 const GROUPS = { site: "Grouped by campus / site", pc: "Grouped by profit centre", project: "Grouped by project", supplier: "Grouped by supplier", plant: "Grouped by plant" };
 const SETTING = "inventory_profit_centres";
+const CHARTS_KEY = "pmo-inventory-charts";       // "off" when the PMO hid the charts (this browser only)
 const NO_SITE = "Not assigned";
 // Profit centre from the SAP project ID: IT.261107-04 → 1107.
 const pcOf = (code) => (/^[A-Z]+\.\d{2}(\d{4})-/.exec(String(code || "")) || [])[1] || null;
@@ -75,6 +77,8 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const [detail, setDetail] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [map, setMap] = useState(null);                // setting inventory_profit_centres
+  const [showCharts, setShowChartsState] = useState(() => { try { return localStorage.getItem(CHARTS_KEY) !== "off"; } catch { return true; } });
+  const setShowCharts = (v) => { setShowChartsState(v); try { if (v) localStorage.removeItem(CHARTS_KEY); else localStorage.setItem(CHARTS_KEY, "off"); } catch { /* ignore */ } };
 
   const load = useCallback(async () => {
     setErr(null);
@@ -325,6 +329,22 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         <Kpi icon={Building2} label="Projects" value={fmt(kpi.projects)} color={BRAND.gold} />
         <Kpi icon={Users} label="Suppliers" value={fmt(kpi.suppliers)} color="#8B7CF6" />
       </div>
+
+      {/* Insights (PMO, 29 Oct 2026): four charts over the lines the list shows; a click filters the list */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ ...TYPE.label, color: T.muted }}>Insights</div>
+        <Button T={T} size="sm" variant="ghost" onClick={() => setShowCharts(!showCharts)} data-inv-charts-toggle>{showCharts ? "Hide charts" : "Show charts"}</Button>
+      </div>
+      {showCharts && view.length > 0 && (
+        <InventoryCharts T={T} rows={view} compact={compact} onPick={(kind, v) => {
+          if (!v) return;
+          if (kind === "month") {
+            const [y, m] = v.split("-").map(Number);
+            const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+            setF(s => ({ ...s, from: `${v}-01`, to: `${v}-${String(last).padStart(2, "0")}` })); setLimit({});
+          } else set(kind, v);
+        }} />
+      )}
 
       {/* Search, grouping, filters */}
       <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap", alignItems: "center" }}>
