@@ -136,18 +136,7 @@ function StatTile({ T, label, value, sub, colour, Icon, insight, index = 0, icon
 }
 
 /* ── The page ────────────────────────────────────────────────────────────── */
-// Same motion as charts.jsx's useChartMotion (kept here so this page does not import charts.jsx statically): the
-// first draw-in at its own length, then a filter change glides the bars from their old values in 380 ms; with
-// reduced motion the final state shows at once.
-function useChartMotion() {
-  const [drawn, setDrawn] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setDrawn(true), 1300); return () => clearTimeout(t); }, []);
-  const still = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  return (firstMs) => ({ isAnimationActive: !still, animationDuration: drawn ? 380 : firstMs, animationEasing: "ease-out" });
-}
-
 export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) {
-  const mo = useChartMotion();
   const [rows, setRows]   = useState(null);
   const [rel, setRel]     = useState([]);
   const [err, setErr]     = useState(null);
@@ -433,10 +422,10 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
                 <Legend verticalAlign="top" align="right" height={26} iconType="plainline" iconSize={14}
                   wrapperStyle={{ ...TYPE.caption, paddingBottom:6 }}
                   formatter={(v, entry) => <span style={{ ...TYPE.caption, color:T.textOf(entry?.color) }}>{v}</span>} />
-                <Bar dataKey="capex" name="CAPEX" stackId="a" fill="url(#cfCap)" {...mo(850)} />
-                <Bar dataKey="pmdc"  name="PMDC"  stackId="a" fill="url(#cfPmdc)" radius={[4,4,0,0]} {...mo(850)} />
+                <Bar dataKey="capex" name="CAPEX" stackId="a" fill="url(#cfCap)" animationDuration={850} />
+                <Bar dataKey="pmdc"  name="PMDC"  stackId="a" fill="url(#cfPmdc)" radius={[4,4,0,0]} animationDuration={850} />
                 <Line yAxisId="c" type="monotone" dataKey="cumulative" name="Cumulative"
-                  stroke={DATA.positive} strokeWidth={2.25} dot={false} {...mo(1100)} />
+                  stroke={DATA.positive} strokeWidth={2.25} dot={false} animationDuration={1100} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -546,7 +535,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
                   <Tooltip cursor={{ fill:`${DATA.warning}12` }}
                     content={(p) => <ChartTooltip {...p} T={T} fmt={fmtM} />} />
                   <Bar dataKey="pmdc" name="PMDC" fill={DATA.warning} fillOpacity={0.85}
-                    radius={[5,5,0,0]} {...mo(850)} />
+                    radius={[5,5,0,0]} animationDuration={850} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -577,7 +566,7 @@ export function CashflowsPage({ T, session, supa, isCompact, onSelectProject }) 
                   <Tooltip cursor={{ fill:`${T.info}12` }}
                     content={(p) => <ChartTooltip {...p} T={T} fmt={fmtM} />} />
                   <Bar dataKey="investment" name="Investment" fill={T.info} fillOpacity={0.85}
-                    radius={[5,5,0,0]} {...mo(850)} />
+                    radius={[5,5,0,0]} animationDuration={850} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
