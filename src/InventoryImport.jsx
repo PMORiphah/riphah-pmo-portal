@@ -194,7 +194,7 @@ export function InventoryImport({ T, session, supa, map, isMobile, onClose, onDo
             {risky.map(s => (
               <div key={s.fy} style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: R.md, background: `${DATA.warning}14`, border: `1px solid ${DATA.warning}66`, fontSize: 12.5, color: T.text, lineHeight: 1.5 }}>
                 <AlertTriangle size={15} color={T.textOf(DATA.warning)} style={{ flexShrink: 0, marginTop: 2 }} />
-                <span>This sheet does not have {fmt(s.missing)} of the {fmt(s.active)} {s.fy} lines in the portal ({Math.round(s.share * 100)}%). If the export was cut short, choose the complete sheet instead.</span>
+                <span>This sheet does not have {fmt(s.missing)} of the {fmt(s.active)} {s.fy} lines the portal holds for its projects ({Math.round(s.share * 100)}%). If the export was cut short, choose the complete sheet instead.</span>
               </div>
             ))}
             {risky.length > 0 && (
@@ -222,7 +222,7 @@ export function InventoryImport({ T, session, supa, map, isMobile, onClose, onDo
                 read.skipped.noCode ? `${fmt(read.skipped.noCode)} lines without an SAP project ID are skipped` : null,
                 read.skipped.duplicate ? `${fmt(read.skipped.duplicate)} repeated lines are imported once` : null,
                 unlinked ? `${fmt(unlinked)} new projects have no matching project code in the portal yet (they keep their SAP name)` : null,
-                "Lines of other fiscal years are not touched"].filter(Boolean).join(" · ")}.
+                "Lines of projects not in this sheet are not touched"].filter(Boolean).join(" · ")}.
             </div>
             {step === "saving" && (
               <div>
