@@ -69,7 +69,7 @@ function Grads({ id, color }) {
   );
 }
 
-const DRAW_MS = 2650; // the last draw-in (sites, third bar) ends at 250 + 2 × 550 + 1300 ms
+const DRAW_MS = 1500; // everything has drawn in by 1.5 s (PMO); sites' third bar ends at 100 + 2 × 300 + 800 ms
 
 export function InventoryCharts({ T, rows, compact, onPick }) {
   // PMO, 29 Oct 2026: the charts draw in once, slowly, when the tab opens; scrolling, hover and
@@ -168,7 +168,7 @@ export function InventoryCharts({ T, rows, compact, onPick }) {
               <Tooltip cursor={{ fill: T.rowHover }} content={(p) => <InvTip {...p} T={T} fmt={fmtPKR}
                 foot={p.payload?.[0] ? `${p.payload[0].payload.lines} lines · ${fmtPKR(p.payload[0].payload.total)}` : null} />} />
               {[["del", "Delivered", "url(#invDel)"], ["part", "Partly: still to come", "url(#invPart)"], ["open", "Not delivered", "url(#invOpen)"]].map(([k, n, fill], i) => (
-                <Bar key={k} dataKey={k} name={n} stackId="s" fill={fill} radius={i === 2 ? [0, 5, 5, 0] : 0} {...A(250 + i * 550, 1300)}
+                <Bar key={k} dataKey={k} name={n} stackId="s" fill={fill} radius={i === 2 ? [0, 5, 5, 0] : 0} {...A(100 + i * 300, 800)}
                   onClick={(d) => onPick?.("site", d?.name)} style={{ cursor: "pointer" }} />
               ))}
             </BarChart>
@@ -185,7 +185,7 @@ export function InventoryCharts({ T, rows, compact, onPick }) {
                 </linearGradient>))}
               </defs>
               <Pie data={health.slices} dataKey="value" nameKey="name" innerRadius="64%" outerRadius="86%" paddingAngle={health.slices.length > 1 ? 2.5 : 0}
-                cornerRadius={5} stroke="none" startAngle={90} endAngle={-270} {...A(250, 2000)}
+                cornerRadius={5} stroke="none" startAngle={90} endAngle={-270} {...A(100, 1300)}
                 activeIndex={hoverSlice ?? undefined}
                 activeShape={(p) => <g><Sector {...p} outerRadius={p.outerRadius + 7} /><Sector {...p} innerRadius={p.outerRadius + 11} outerRadius={p.outerRadius + 14} opacity={0.45} /></g>}
                 onMouseEnter={(_, i) => setHoverSlice(i)} onMouseLeave={() => setHoverSlice(null)}
@@ -231,9 +231,9 @@ export function InventoryCharts({ T, rows, compact, onPick }) {
               <Tooltip cursor={{ fill: T.rowHover }} content={(p) => <InvTip {...p} T={T} fmt={fmtPKR}
                 foot={p.payload?.[0] ? `${p.payload[0].payload.lines} lines ordered` : null} />} />
               {fyMark && <ReferenceLine x={fyMark} stroke={C_GOLD} strokeDasharray="4 3" label={{ value: "FY 26-27", position: "insideTopLeft", fill: T.textOf ? T.textOf(C_GOLD) : C_GOLD, fontSize: 10, fontWeight: 700, fontFamily: TYPE.body.fontFamily }} />}
-              <Bar dataKey="value" name="Ordered" fill="url(#invMon)" radius={[5, 5, 0, 0]} {...A(250, 1500)}
+              <Bar dataKey="value" name="Ordered" fill="url(#invMon)" radius={[5, 5, 0, 0]} {...A(100, 900)}
                 onClick={(d) => onPick?.("month", d?.ym)} style={{ cursor: "pointer" }} />
-              <Line yAxisId="c" type="monotone" dataKey="cum" name="Running total" stroke={C_GOLD} strokeWidth={2.4} dot={false} {...A(1100, 1500)} />
+              <Line yAxisId="c" type="monotone" dataKey="cum" name="Running total" stroke={C_GOLD} strokeWidth={2.4} dot={false} {...A(500, 1000)} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>, { "data-chart": "months" })}
@@ -250,9 +250,9 @@ export function InventoryCharts({ T, rows, compact, onPick }) {
                 const d = p.payload?.[0]?.payload;
                 return <InvTip {...p} label={d?.name || p.label} T={T} fmt={fmtPKR} colors={{ del: "#8B7CF6" }} foot={d ? `${d.lines} lines · ${d.pct}% delivered` : null} />;
               }} />
-              <Bar dataKey="del" name="Delivered" stackId="v" fill="url(#invSup)" {...A(250, 1400)}
+              <Bar dataKey="del" name="Delivered" stackId="v" fill="url(#invSup)" {...A(100, 800)}
                 onClick={(d) => onPick?.("supplier", d?.name)} style={{ cursor: "pointer" }} />
-              <Bar dataKey={(d) => d.value - d.del} name="Not yet delivered" stackId="v" fill="#8B7CF6" fillOpacity={0.28} radius={[0, 5, 5, 0]} {...A(1250, 1100)}
+              <Bar dataKey={(d) => d.value - d.del} name="Not yet delivered" stackId="v" fill="#8B7CF6" fillOpacity={0.28} radius={[0, 5, 5, 0]} {...A(600, 700)}
                 onClick={(d) => onPick?.("supplier", d?.name)} style={{ cursor: "pointer" }} />
             </BarChart>
           </ResponsiveContainer>
