@@ -12,31 +12,26 @@ import {
 } from "recharts";
 import { TYPE, SP, R, MOTION, CATEGORICAL } from "./theme.js";
 
-// Recharts' tooltip is driven internally by onMouseLeave, which iOS Safari (and touch generally) doesn't reliably
-// fire, so a tapped tooltip could sit stuck over content scrolling underneath (recharts#1109, #2100, #6946).
-// Until 27 Oct 2026 every chart was remounted on each scroll to clear it, which also made every chart vanish and
-// draw itself again from zero whenever the page scrolled. Now a scroll only forces the tooltip off (Tooltip
-// `active={false}`), and the next touch or pointer move on the chart gives it back to Recharts.
-function useTooltipGuard() {
-  const [hidden, setHidden] = useState(false);
+// Recharts' tooltip is driven internally by onMouseLeave, which iOS Safari
+// (and touch generally) doesn't reliably fire — a tap opens the tooltip but
+// nothing ever closes it, so it can sit stuck over content that scrolls
+// underneath. This is a long-standing, still-open upstream limitation
+// (recharts/recharts#1109, #2100, #6946), not something fixable from the
+// props Recharts exposes. Dispatching a synthetic mouseleave doesn't
+// reliably clear it either — Recharts' internal active-tooltip state
+// doesn't consistently respond to a synthetic event the way it does to a
+// genuine one. Forcing a remount does: changing the chart's key on scroll
+// tears down and recreates the component, which unconditionally clears
+// whatever internal state Recharts was holding, regardless of which event
+// it was or wasn't listening for.
+function useDismissChartTooltipOnScroll() {
+  const [remountKey, setRemountKey] = useState(0);
   useEffect(() => {
-    const hide = () => setHidden(true);
-    window.addEventListener("scroll", hide, { passive: true, capture: true });
-    return () => window.removeEventListener("scroll", hide, { capture: true });
+    const dismiss = () => setRemountKey(k => k + 1);
+    window.addEventListener("scroll", dismiss, { passive: true, capture: true });
+    return () => window.removeEventListener("scroll", dismiss, { capture: true });
   }, []);
-  return { active: hidden ? false : undefined, wake: () => { if (hidden) setHidden(false); } };
-}
-
-// Motion (PMO, 27 Oct 2026): a chart draws itself in once, at its own length; after that a filter or data change
-// glides each bar, slice or line from its old value to the new one in GLIDE_MS instead of redrawing. With reduced
-// motion the chart shows the final state at once.
-export const GLIDE_MS = 380;
-const stillMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-export function useChartMotion() {
-  const [drawn, setDrawn] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setDrawn(true), 1300); return () => clearTimeout(t); }, []);
-  const still = stillMotion();
-  return (firstMs) => ({ isAnimationActive: !still, animationDuration: drawn ? GLIDE_MS : firstMs, animationEasing: "ease-out" });
+  return remountKey;
 }
 
 const axisStyle = (T) => ({
@@ -94,8 +89,7 @@ export function ChartTooltip({ T, active, payload, label, fmt, footer }) {
 // Dashed planned line over a filled actual area, hover crosshair, variance in
 // the tooltip (§10).
 export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
-  const tip = useTooltipGuard();
-  const mo = useChartMotion();
+  const chartRemountKey = useDismissChartTooltipOnScroll();
 
   // §9 — the newest actual reading carries a slow pulse, so the series reads as
   // something still being written rather than a finished picture. Only the
@@ -129,9 +123,9 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
   const emph = (key) => (focus === key ? 1 : focus ? 0.6 : 1);
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer key={chartRemountKey} width="100%" height={height}>
       <AreaChart data={data} margin={{ top:8, right:isMobile?4:12, left:isMobile?-2:-6, bottom:0 }}
-        onMouseLeave={() => setFocus(null)} onMouseMove={tip.wake} onTouchStart={tip.wake}>
+        onMouseLeave={() => setFocus(null)}>
         <defs>
           {/* Soft halo applied to the active data point (§12) */}
           <filter id="pmoDotGlow" x="-70%" y="-70%" width="240%" height="240%">
@@ -154,7 +148,7 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
         <YAxis tick={axisStyle(T)} tickLine={false} axisLine={false}
           tickFormatter={fmt} width={isMobile ? 52 : 60} />
 
-        <Tooltip active={tip.active}
+        <Tooltip
           cursor={{ stroke:T.borderStrong, strokeWidth:1, strokeDasharray:"3 3" }}
           content={(p) => (
             <ChartTooltip {...p} T={T} fmt={fmt} footer={(pl) => {
@@ -183,7 +177,7 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
           activeDot={{ r:6, strokeWidth:2, stroke:T.surface, fill:T.info,
             filter:"url(#pmoDotGlow)" }}
           onMouseEnter={() => setFocus("planned")}
-          {...mo(900)}
+          animationDuration={900}
           style={{ transition:"stroke-opacity .2s, stroke-width .2s" }} />
         <Area type="monotone" dataKey="actual" name="Actual" stroke={T.positive}
           strokeWidth={focus === "actual" ? 3 : 2.25}
@@ -193,7 +187,7 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
           activeDot={{ r:7, strokeWidth:2, stroke:T.surface, fill:T.positive,
             filter:"url(#pmoDotGlow)" }}
           onMouseEnter={() => setFocus("actual")}
-          {...mo(1100)}
+          animationDuration={1100}
           style={{ transition:"stroke-opacity .2s, stroke-width .2s" }} />
       </AreaChart>
     </ResponsiveContainer>
@@ -205,12 +199,11 @@ export function PlannedActualChart({ T, data, height = 300, fmt, isMobile }) {
 export function Donut({ T, data, height = 230, total, totalLabel, onSlice, activeKey, fmt }) {
   const shown = data.filter(d => d.value > 0);
   const [hoverKey, setHoverKey] = useState(null);
-  const tip = useTooltipGuard();
-  const mo = useChartMotion();
+  const chartRemountKey = useDismissChartTooltipOnScroll();
   return (
     <div style={{ position:"relative", width:"100%", height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart onMouseMove={tip.wake} onTouchStart={tip.wake}>
+      <ResponsiveContainer key={chartRemountKey} width="100%" height="100%">
+        <PieChart>
           <defs>
             <filter id="pmoSliceGlow" x="-30%" y="-30%" width="160%" height="160%">
               <feGaussianBlur stdDeviation="2.5" result="b" />
@@ -227,7 +220,7 @@ export function Donut({ T, data, height = 230, total, totalLabel, onSlice, activ
             data={shown} dataKey="value" nameKey="name"
             innerRadius="63%" outerRadius="88%"
             paddingAngle={shown.length > 1 ? 2 : 0}
-            stroke="none" {...mo(900)}
+            stroke="none" animationDuration={900}
             onClick={(e) => onSlice?.(e?.payload?.key)}
           >
             {shown.map((d, i) => {
@@ -246,7 +239,7 @@ export function Donut({ T, data, height = 230, total, totalLabel, onSlice, activ
               );
             })}
           </Pie>
-          <Tooltip active={tip.active} content={(p) => <ChartTooltip {...p} T={T} fmt={fmt} />} />
+          <Tooltip content={(p) => <ChartTooltip {...p} T={T} fmt={fmt} />} />
         </PieChart>
       </ResponsiveContainer>
       <div style={{
@@ -265,18 +258,16 @@ export function Donut({ T, data, height = 230, total, totalLabel, onSlice, activ
 // is that one stage holds almost everything, and flattening that would hide the
 // bottleneck the chart exists to reveal (§12).
 export function StageBars({ T, data, onPick, activeKey, height = 240 }) {
-  const tip = useTooltipGuard();
-  const mo = useChartMotion();
+  const chartRemountKey = useDismissChartTooltipOnScroll();
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} layout="vertical" margin={{ top:0, right:34, left:0, bottom:0 }} barCategoryGap={7}
-        onMouseMove={tip.wake} onTouchStart={tip.wake}>
+    <ResponsiveContainer key={chartRemountKey} width="100%" height={height}>
+      <BarChart data={data} layout="vertical" margin={{ top:0, right:34, left:0, bottom:0 }} barCategoryGap={7}>
         <CartesianGrid stroke={T.border} horizontal={false} />
         <XAxis type="number" tick={axisStyle(T)} tickLine={false} axisLine={{ stroke:T.border }} allowDecimals={false} />
         <YAxis type="category" dataKey="name" tick={{ ...axisStyle(T), fontSize:11 }}
           tickLine={false} axisLine={false} width={116} />
-        <Tooltip active={tip.active} cursor={{ fill:T.rowHover }} content={(p) => <ChartTooltip {...p} T={T} />} />
-        <Bar dataKey="value" name="Projects" radius={[0,5,5,0]} {...mo(850)}
+        <Tooltip cursor={{ fill:T.rowHover }} content={(p) => <ChartTooltip {...p} T={T} />} />
+        <Bar dataKey="value" name="Projects" radius={[0,5,5,0]} animationDuration={850}
           onClick={(e) => onPick?.(e?.key)}>
           {data.map((d, i) => (
             <Cell key={i} fill={d.color}
@@ -306,13 +297,11 @@ export function Sparkline({ T, data, color, height = 30 }) {
 export function CategoryBars({ T, data, height = 300, fmt, color, horizontal, onPick }) {
   const c = color || T.info;
   const [hoverIdx, setHoverIdx] = useState(null);
-  const tip = useTooltipGuard();
-  const mo = useChartMotion();
+  const chartRemountKey = useDismissChartTooltipOnScroll();
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer key={chartRemountKey} width="100%" height={height}>
       <BarChart data={data} layout={horizontal ? "vertical" : "horizontal"}
-        margin={{ top:6, right:14, left:horizontal ? 0 : -8, bottom:0 }} barCategoryGap={horizontal ? 8 : "22%"}
-        onMouseMove={tip.wake} onTouchStart={tip.wake}>
+        margin={{ top:6, right:14, left:horizontal ? 0 : -8, bottom:0 }} barCategoryGap={horizontal ? 8 : "22%"}>
         <CartesianGrid stroke={T.border} vertical={horizontal} horizontal={!horizontal} />
         {horizontal ? (
           <>
@@ -325,9 +314,9 @@ export function CategoryBars({ T, data, height = 300, fmt, color, horizontal, on
             <YAxis tick={axisStyle(T)} tickLine={false} axisLine={false} tickFormatter={fmt} width={52} />
           </>
         )}
-        <Tooltip active={tip.active} cursor={{ fill:T.rowHover }} content={(p) => <ChartTooltip {...p} T={T} fmt={fmt} />} />
+        <Tooltip cursor={{ fill:T.rowHover }} content={(p) => <ChartTooltip {...p} T={T} fmt={fmt} />} />
         <Bar dataKey="value" name="Value" radius={horizontal ? [0,5,5,0] : [5,5,0,0]}
-          {...mo(850)} onClick={(e) => onPick?.(e?.key)}>
+          animationDuration={850} onClick={(e) => onPick?.(e?.key)}>
           {data.map((d, i) => (
             <Cell key={i} fill={d.color || c} style={{ cursor:onPick ? "pointer" : "default" }} />
           ))}
@@ -355,7 +344,6 @@ export function ShareDonut({
   height = 300, onPick, activeKey,
 }) {
   const [hoverIdx, setHoverIdx] = useState(null);
-  const mo = useChartMotion();
   const rows = (data || []).filter(d => (d.value || 0) > 0);
   if (!rows.length) return null;
 
@@ -401,7 +389,7 @@ export function ShareDonut({
               cornerRadius={4}
               stroke="none"
               startAngle={90} endAngle={-270}
-              {...mo(1000)}
+              animationDuration={1000} animationEasing="ease-out"
               activeIndex={hoverIdx ?? undefined}
               activeShape={renderActive}
               onMouseEnter={(_, i) => setHoverIdx(i)}
