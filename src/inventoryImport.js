@@ -10,7 +10,7 @@
      changed    in both, some figure or text differs           → updated
      back       marked earlier, in the sheet again              → updated, mark cleared
      deleted    SAP deletion flag "L" on a line the portal has  → marked "Deleted in SAP"
-     missing    the portal has it (same fiscal year), the sheet → marked "Not in latest SAP sheet"
+     missing    the portal has it (same project), the sheet      → marked "Not in latest SAP sheet"
                 does not                                          (kept, out of the totals; PMO decision)
      skipped    deleted in SAP and never loaded, or no project code
    Key = PO number + PO item. The fiscal year comes from the SAP project ID
@@ -97,7 +97,7 @@ export function readMe2j(rows, fileName = "SAP sheet") {
     if (!fy) { skipped.noCode++; return; }
     fiscalYears.add(fy);
     const k = `${po}/${item}`;
-    if (str(at(r, "del")) === "L") { deletedKeys.set(k, { po_number: po, po_item: item, fiscal_year: fy, description: str(at(r, "text")) }); return; }
+    if (str(at(r, "del")) === "L") { deletedKeys.set(k, { po_number: po, po_item: item, fiscal_year: fy, sap_project_code: code, description: str(at(r, "text")) }); return; }
     if (byKey.has(k)) skipped.duplicate++;
     const sup = str(at(r, "supplier")) || "";
     const sm = /^(\d+)\s+(.*)$/.exec(sup);
@@ -171,17 +171,21 @@ export function planImport(read, existing, projects = [], past = []) {
     else if (!cur.sap_deleted) out.markDeleted.push(cur);
     else out.unchanged++;
   }
-  // Only fiscal years the sheet covers: an FY 26-27 sheet never marks FY 25-26 lines.
+  // Only projects the sheet covers (PMO, 29 Oct 2026): an export of some projects never marks the lines of
+  // projects it leaves out, so an FY 26-27 export that also carries QIE / Malakand (FY 25-26 codes) does not
+  // mark the rest of FY 25-26. A full-year export covers every project, so it still finds every missing line.
+  const codes = new Set([...read.lines.map(l => l.sap_project_code), ...[...read.deletedKeys.values()].map(d => d.sap_project_code)]);
   const fys = new Set(read.fiscalYears);
+  const covered = (r) => fys.has(r.fiscal_year) && codes.has(r.sap_project_code);
   for (const r of existing) {
     const k = `${r.po_number}/${r.po_item}`;
-    if (inSheet.has(k) || !fys.has(r.fiscal_year) || r.sap_deleted) continue;
+    if (inSheet.has(k) || !covered(r) || r.sap_deleted) continue;
     if (r.not_in_sheet_since) out.stillMissing++;
     else out.markMissing.push(r);
   }
-  // Per fiscal year: how many of the portal's active lines this sheet would mark (a short export shows up here).
+  // Per fiscal year: how many of the portal's active lines of the sheet's projects it would mark (a cut-short export shows up here).
   out.missingShare = read.fiscalYears.map(fy => {
-    const active = existing.filter(r => r.fiscal_year === fy && !r.sap_deleted && !r.not_in_sheet_since).length;
+    const active = existing.filter(r => r.fiscal_year === fy && covered(r) && !r.sap_deleted && !r.not_in_sheet_since).length;
     const n = out.markMissing.filter(r => r.fiscal_year === fy).length;
     return { fy, active, missing: n, share: active ? n / active : 0 };
   });
