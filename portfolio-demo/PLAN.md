@@ -41,8 +41,11 @@ One self-contained file, `dist/index.html`, uploaded by the builder to Vercel as
 4. Guided tour — DONE: 9 chapters, 29 steps.
 5. "Make it yours" and currency — DONE (USD default; GBP / AED / PKR at fixed demo rates).
 6. Analytics — DONE in code (ANALYTICS.md); waiting for the builder's PostHog project key.
-7. Tests, screenshots, Vercel / PostHog / `?src=` guides, CLAUDE.md note (builder uploads to Vercel).
+7. Tests, screenshots, Vercel / PostHog / `?src=` guides, CLAUDE.md note — DONE (domain lock, CSP, `tests/run.mjs`, `screenshots/`, GUIDE.md); the builder uploads to Vercel.
 
-## Build
-    node portfolio-demo/build.mjs            # → portfolio-demo/dist/index.html (scan runs automatically)
+## Build and test
+    node portfolio-demo/build.mjs            # → portfolio-demo/dist/index.html + vercel.json (scan runs automatically)
+    DEMO_POSTHOG_KEY=phc_… node portfolio-demo/build.mjs   # with analytics
+    node portfolio-demo/tests/run.mjs        # every test + request log
+    node portfolio-demo/tests/screens.mjs    # portfolio screenshots → screenshots/
 Denylist fingerprints: `node portfolio-demo/scan/make-denylist.mjs <private list outside the repo>`.

@@ -16,6 +16,7 @@ import { recomputeViews } from "../data/views.mjs";
 import { loadFiles, saveFile, clearFiles } from "./demoFiles.js";
 import { EntryScreen, DemoBar, BAR_H } from "./demoShell.jsx";
 import { guardLinks } from "./demoLinks.js";
+import { lockReason, showLock } from "./demoLock.js";
 import { track, startAnalytics, setContext, flushNow, flushThen, ANALYTICS_HOST, analyticsOn } from "./demoAnalytics.js";
 import { Tour, readTour, writeTour } from "./demoTour.jsx";
 import { totalMinutes } from "./tourChapters.js";
@@ -23,6 +24,10 @@ import { loadBrand, saveBrand, installText, compact, CURRENCIES, KEY as BRAND_KE
 import { convertRow } from "./demoMoney.js";
 import { Customise } from "./demoCustomise.jsx";
 import { setMoneyFormat } from "./demoAssistant.js";
+
+// Where the demo may run (domain lock, no framing): anywhere else, a notice and nothing more.
+const locked = lockReason();
+if (locked) { showLock(locked); await new Promise(() => {}); }
 
 const DAY = seed.NOW.slice(0, 10);
 setDemoDay(DAY);

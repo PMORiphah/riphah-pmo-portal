@@ -8,3 +8,4 @@ scan/.approved-images.json
 dist/
 data/media.json
 .posthog-key
+tests/out/

@@ -62,7 +62,9 @@ export const RULES = [
   ["project ref", /prmxkecomqqngvrmytcj/g, "demo-project"],
   ["file host", ".r2.cloudflarestorage.com", ".files.demo.invalid"],
   // Offline and demo-only behaviour.
-  ["ui: web fonts", /f\.href = "https:\/\/fonts\.googleapis\.com\/[^"]*";/, 'f.href = "data:text/css,";'],
+  // The fonts are embedded in the page (build.mjs); the portal's Google Fonts link is not added at all.
+  ["ui: web fonts", /const f = document\.createElement\("link"\);\s*f\.rel = "stylesheet";\s*f\.href = "https:\/\/fonts\.googleapis\.com\/[^"]*";\s*document\.head\.appendChild\(f\);/,
+    "/* web fonts: embedded in the demo page */"],
   ["App: PMO simulation button", "const SIM_ENABLED = true;", "const SIM_ENABLED = false;"],
   // The demo's guided tour drives the portal through the same navigation object as the portal's own tour,
   // and the portal's "Take the tour" buttons (sidebar, invite, assistant) open the demo's tour.
@@ -92,6 +94,15 @@ export const RULES = [
     "    onAbandon: markTourAbandon,\n  };\n  if (window.__DEMO__) { window.__DEMO__.nav = tourNav; window.__DEMO__.view = { page, projectId: selectedProjectId }; window.__DEMO__.openProject = openProject; window.__DEMO__.onView?.(page, selectedProjectId); }\n"],
   ["TourGuide: demo tour", "  const startDefault = useCallback(() => {\n    const list = nav?.buildSteps?.();",
     "  const startDefault = useCallback(() => {\n    if (window.__DEMO__?.startTour) { window.__DEMO__.startTour(); return; }\n    const list = nav?.buildSteps?.();"],
+  // The sign-in screen's photo of the real campus is not part of the demo: a plain background instead.
+  ["App: sign-in photo", 'backgroundImage:"url(" + import.meta.env.BASE_URL + (vpL.width < 900 ? "campus-bg-mobile.jpg" : "campus-bg.jpg") + ")",',
+    'backgroundImage:"none",'],
+  // The welcome e-mail's screenshots show the real sign-in page and are not part of the demo: each is a
+  // neutral placeholder drawn in place (no file is requested).
+  ["welcome e-mail: screenshots", '`<img src="${img(file)}" width="656"',
+    '`<img src="${"data:image/svg+xml;charset=utf-8," + encodeURIComponent("<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'656\' height=\'260\'><rect width=\'656\' height=\'260\' rx=\'10\' fill=\'#e8eef5\'/><text x=\'328\' y=\'122\' font-family=\'Arial,sans-serif\' font-size=\'18\' text-anchor=\'middle\' fill=\'#4c6178\'>Screenshot of your portal</text><text x=\'328\' y=\'150\' font-family=\'Arial,sans-serif\' font-size=\'14\' text-anchor=\'middle\' fill=\'#8aa0b8\'>(added in your deployment)</text></svg>")}" width="656"'],
+  // The install prompt's app icon: the visitor's own crest (generated in the page; no file).
+  ["InstallPrompt: icon", 'src={import.meta.env.BASE_URL + "icon-192.png"}', 'src={(window.__DEMO_BRAND__ && window.__DEMO_BRAND__.crest) || ""}'],
   // The demo bar sits above the portal: the portal's outer frame is shortened by its height.
   ["App: shell height", '<div style={{ display:"flex", height:"100vh", fontFamily:TYPE.body.fontFamily,',
     '<div style={{ display:"flex", height:"calc(100vh - var(--demo-bar, 0px))", fontFamily:TYPE.body.fontFamily,'],

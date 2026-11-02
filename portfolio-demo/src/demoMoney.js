@@ -33,7 +33,7 @@ const deep = (o, f, keys) => {
 // Amounts written in text: "PKR 4,125,000", "PKR 3.5M", or a published figure such as "948.17M".
 const fmtNum = (n, decimals) => n.toLocaleString("en", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 export const convText = (s, f) => typeof s !== "string" ? s : s
-  .replace(/\bPKR\s?([\d,]+(?:\.\d+)?)\s?(M|million)?\b/g, (m, n, unit) => {
+  .replace(/\bPKR\s?([\d,]*\d(?:\.\d+)?)(?:\s?(M|million)\b)?/g, (m, n, unit) => {
     const v = parseFloat(n.replace(/,/g, "")) * (unit ? 1e6 : 1) * f;
     return "PKR " + (unit || v >= 1e6 ? window.__dmM?.(v, 1) ?? fmtNum(v / 1e6, 1) + "M" : fmtNum(Math.round(v), 0));
   })
@@ -70,7 +70,8 @@ export function convertRow(table, row, f) {
   if (table === "settings" && "value" in row) set("value", settingOut(row.key, row.value, f));
   if (table === "comments" && row.body) set("body", convText(row.body, f));
   if (table === "epdd_reviews") {
-    if (row.checks) set("checks", JSON.parse(JSON.stringify(row.checks), (k, v) => (typeof v === "string" ? convText(v, f) : v)));
+    // Text in the checks, and the matched plan project's DF (checks[].linked / candidates[].df).
+    if (row.checks) set("checks", JSON.parse(JSON.stringify(row.checks), (k, v) => (typeof v === "string" ? convText(v, f) : k === "df" && typeof v === "number" ? r2(v * f) : v)));
     if (row.summary) set("summary", convText(row.summary, f));
   }
   if (table === "activity_log" && row.details && (row.details.old || row.details.new)) {

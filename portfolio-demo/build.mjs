@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { scanText } from "./scan/scan.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
-const RAW = HERE + "dist-raw/", OUT = HERE + "dist/";
+const RAW = HERE + "dist-raw/", OUT = process.env.DEMO_OUT ? process.env.DEMO_OUT.replace(/\/?$/, "/") : HERE + "dist/";   // DEMO_OUT: tests build a copy elsewhere
 
 if (!existsSync(HERE + "data/seed.json")) execFileSync("node", ["gen.mjs"], { cwd: HERE + "data", stdio: "inherit" });
 
@@ -67,12 +67,26 @@ const NOTICE = `© 2026 ${OWNER}. All rights reserved. Interactive demo shown to
 html = html.replace(/^<!doctype html>/i, (d) => `${d}\n<!-- ${NOTICE} -->`)
   .replace("<head>", () => `<head><meta name="author" content="${OWNER}"><meta name="copyright" content="© 2026 ${OWNER}. All rights reserved.">`);
 if (!html.includes(NOTICE)) throw new Error("copyright notice missing");
+// Content-Security-Policy in the file itself: even a copied or modified page may talk to nothing but
+// the analytics address (when a key is built in), and load nothing from outside.
+const hasKey = /phc_[A-Za-z0-9]{20,}/.test(html);
+const CSP = ["default-src 'none'", "script-src 'unsafe-inline'", "style-src 'unsafe-inline'", "img-src 'self' data: blob:", "font-src data:",
+  "media-src data: blob:", `connect-src 'self' data: blob:${hasKey ? " https://eu.i.posthog.com" : ""}`, "frame-src blob:", "object-src blob:",
+  "worker-src blob:", "manifest-src 'none'", "base-uri 'none'", "form-action 'none'"].join("; ");
+html = html.replace("<head>", () => `<head><meta http-equiv="Content-Security-Policy" content="${CSP}">`);
 
 mkdirSync(OUT, { recursive: true });
 writeFileSync(OUT + "index.html", html);
+// Vercel settings next to the page, so the dist folder can be uploaded as it is: no framing by other
+// sites (also enforced in the page), no MIME sniffing, no camera / microphone / location.
+writeFileSync(OUT + "vercel.json", JSON.stringify({ cleanUrls: true, headers: [{ source: "/(.*)", headers: [
+  { key: "X-Frame-Options", value: "DENY" }, { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+  { key: "X-Content-Type-Options", value: "nosniff" }, { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }, { key: "X-Robots-Tag", value: "noindex" },
+] }] }, null, 2) + "\n");
 rmSync(RAW, { recursive: true, force: true });
 const mb = (Buffer.byteLength(html) / 1048576).toFixed(2);
-console.log(`dist/index.html  ${mb} MB`);
+console.log(`${OUT.replace(HERE, "")}index.html  ${mb} MB`);
 const idle = unusedRules();
 if (idle.length) console.log(`brand rules that matched nothing: ${idle.join(", ")}`);
 

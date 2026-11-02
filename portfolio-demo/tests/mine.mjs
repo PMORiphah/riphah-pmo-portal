@@ -1,0 +1,108 @@
+import { chromium } from "./pw.mjs"; import http from "node:http"; import fs from "node:fs";
+const file = process.argv[2], out = process.argv[3], port = 5211, base = `http://localhost:${port}/`;
+const seed = JSON.parse(fs.readFileSync(new URL("../data/seed.json", import.meta.url), "utf8"));
+const srv = http.createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(fs.readFileSync(file)); }).listen(port);
+const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? "PASS" : "FAIL"} ${m}`); };
+const ctx = await b.newContext({ viewport: { width: 1366, height: 800 } }); const pg = await ctx.newPage();
+const errs = [], outside = [];
+pg.on("pageerror", e => errs.push(String(e).slice(0, 200))); pg.on("console", m => m.type() === "error" && errs.push(m.text().slice(0, 200)));
+await ctx.route("**/*", (rt) => { const u = rt.request().url(); if (u.startsWith(base) || u.startsWith("data:") || u.startsWith("blob:")) return rt.continue(); outside.push(u); return rt.abort(); });
+const api = (method, path, body, prefer) => pg.evaluate(async ([method, path, body, prefer]) => {
+  const s = JSON.parse(sessionStorage.getItem("pmo_session"));
+  const r = await fetch("https://api.demo.invalid" + path, { method, body: body == null ? undefined : JSON.stringify(body), headers: { apikey: "x", Authorization: "Bearer " + s.access_token, "Content-Type": "application/json", ...(prefer ? { Prefer: prefer } : {}) } });
+  let j = null; try { j = await r.json(); } catch {} return { status: r.status, body: j };
+}, [method, path, body, prefer]);
+const visible = () => pg.evaluate(() => { const c = document.getElementById("root").cloneNode(true); return c.innerText || document.getElementById("root").innerText; });
+const rootText = () => pg.evaluate(() => document.getElementById("root").textContent);
+const capexDf = seed.tables.projects.filter(p => p.portfolio === "capex").reduce((s, p) => s + p.df_recommended_amount, 0);
+const fmt1 = (v) => (v / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";
+
+await pg.goto(base + "?role=pmo"); await pg.waitForTimeout(4000);
+// 1. default USD
+let t = await rootText();
+ok(!/\bPKR\b/.test(t), `default: no "PKR" on the dashboard (${(t.match(/PKR/g) || []).length})`);
+const usdTotal = fmt1(capexDf / 280);
+ok(t.includes(usdTotal) && /USD/.test(t), `default: total CAPEX shows USD ${usdTotal} (= ${capexDf.toLocaleString()} ÷ 280, summed from the data)`);
+const dash = (await api("GET", "/rest/v1/portfolio_dashboard?select=total_capex,budget_consumed")).body[0];
+ok(Math.abs(dash.total_capex - capexDf / 280) < 0.01, `backend total_capex in USD = sum of projects ÷ 280 (${dash.total_capex})`);
+await pg.screenshot({ path: `${out}/usd-dashboard.png` });
+await pg.locator("nav, aside").getByText("Projects", { exact: true }).first().click(); await pg.waitForTimeout(1500);
+t = await rootText(); ok(/\d\.\dK/.test(t) && !/\bPKR\b/.test(t), "projects list: smaller amounts read as K, no PKR " + (t.match(/.{0,40}(PKR).{0,30}/g)||[]).slice(0,3).join(" | ") + " K:" + /\d(\.\d)?K\b/.test(t));
+await pg.screenshot({ path: `${out}/usd-projects.png` });
+// proposal checks: converted amounts keep their spacing, the matched plan project's DF is converted too
+await pg.evaluate(() => window.__DEMO__.nav.setPage("review")); await pg.waitForTimeout(1500);
+await pg.getByText("Anatomy Museum Display Cabinets").first().click(); await pg.waitForTimeout(1800);
+t = await rootText();
+ok(!/\d,\d{3}(is|above|for)\b/.test(t) && /USD 14,732 is USD 1,875 above/.test(t), "proposal checks: converted amounts read 'USD 14,732 is USD 1,875 above…'");
+ok(!/3,600,000/.test(t) && /12,857/.test(t), "proposal checks: the plan project's DF is converted (12,857, not 3,600,000)");
+// 2. open Inventory, then customise everything
+await pg.locator("nav, aside").getByText("Inventory", { exact: true }).first().click(); await pg.waitForTimeout(1500);
+await pg.locator('[data-demo="customise"]').click(); await pg.locator("[data-customise]").waitFor();
+await pg.fill('[data-mc="name"]', "Northfield Health Trust");
+await pg.locator('[data-mc-logo="shield"]').click();
+await pg.locator('[data-mc-primary="#1F8A70"]').click(); await pg.locator('[data-mc-accent="#F472B6"]').click();
+await pg.locator('[data-mc-currency="GBP"]').click();
+await pg.selectOption('[data-mc="site"]', "site"); await pg.selectOption('[data-mc="manager"]', "lead"); await pg.selectOption('[data-mc="office"]', "office");
+ok((await pg.locator('[data-customise]').innerText()).includes("1 USD = 280 PKR") && (await pg.locator('[data-mc-currency="PKR"]').innerText()) === "PKR", "the panel's own text is not rewritten");
+ok((await pg.locator('[data-mc-preview="total"]').innerText()).startsWith("GBP"), `preview updates live: ${await pg.locator('[data-mc-preview="total"]').innerText()}`);
+await pg.screenshot({ path: `${out}/panel.png` });
+await pg.locator('[data-mc="apply"]').click(); await pg.waitForTimeout(4500);
+t = await rootText();
+ok(/Inventory/.test(await pg.locator("#root").innerText()) && await pg.locator("text=Items procured").count() > 0, "after Apply the visitor is still on Inventory");
+const logoSrc = await pg.evaluate(() => [...document.querySelectorAll("img")].map(i => i.src).find(s => s.startsWith("data:image/svg+xml")) || "");
+ok(atob(logoSrc.split(",")[1] || "").includes("NORTHFIELD HEALTH TRUST"), "sidebar logo carries the organisation's name");
+ok(!/Your Organisation/.test(t), "no 'Your Organisation' left on the page");
+ok(!/\bPKR\b|\bUSD\b/.test(t) && /\bGBP\b/.test(t), "currency shows GBP everywhere on the page");
+await pg.locator("nav, aside").getByText("Capex Dashboard", { exact: true }).first().click(); await pg.waitForTimeout(1500);
+t = await rootText();
+ok(t.includes(fmt1(capexDf / 355)), `GBP total = sum ÷ 355 (${fmt1(capexDf / 355)})`);
+const nav = await pg.locator("nav, aside").first().innerText();
+ok(/Sites/.test(nav) && !/Campus/.test(nav), "navigation says Sites, not Campus");
+ok(/Projects Office/.test(t) && !/\bPMO\b/.test(t), "PMO is called Projects Office: " + (t.match(/.{0,30}\bPMO\b.{0,30}/g) || []).slice(0,4).join(" | "));
+const col = await pg.evaluate(() => window.__DEMO_BRAND__.colors.blue);
+ok(col === "#1F8A70", "the portal's palette uses the chosen main colour");
+await pg.screenshot({ path: `${out}/gbp-dashboard.png` });
+await pg.locator("nav, aside").getByText("Users", { exact: false }).first().click().catch(() => {}); await pg.waitForTimeout(800);
+// 3. an edit in GBP is stored right
+const STORY = "b0000001-0000-4000-8000-000000000076";
+const before = (await api("GET", `/rest/v1/projects?id=eq.${STORY}&select=amount_released`)).body[0].amount_released;
+await api("PATCH", `/rest/v1/projects?id=eq.${STORY}`, { amount_released: before + 1000 }, "return=minimal");
+const after = (await api("GET", `/rest/v1/projects?id=eq.${STORY}&select=amount_released`)).body[0].amount_released;
+ok(Math.abs(after - before - 1000) < 0.02, `an edit of +1,000 GBP reads back as +1,000 GBP (${before} → ${after})`);
+await pg.waitForTimeout(600);
+const stored = await pg.evaluate(() => JSON.parse(localStorage.getItem("cpp-demo-data")).tables.projects.find(p => p.id === "b0000001-0000-4000-8000-000000000076").amount_released);
+const orig = seed.tables.projects.find(p => p.id === STORY).amount_released;
+ok(Math.abs(stored - orig - 355000) < 10, `… and is stored as +355,000 in the base currency (${orig} → ${stored})`);
+// 4. logo upload
+await pg.locator('[data-demo="customise"]').click(); await pg.locator("[data-customise]").waitFor();
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAHElEQVR42mNk+M9Qz0AEYBxVSF+FjAwMDAwYAAAyEgHtVVHSQQAAAABJRU5ErkJggg==", "base64");
+await pg.setInputFiles('[data-mc="upload"]', { name: "logo.png", mimeType: "image/png", buffer: png }); await pg.waitForTimeout(400);
+await pg.locator('[data-mc="apply"]').click(); await pg.waitForTimeout(4500);
+ok(await pg.evaluate(() => [...document.querySelectorAll("img")].some(i => i.src.startsWith("data:image/png"))), "an uploaded logo replaces the mark");
+// 5. reset keeps the look; PKR = raw data
+await pg.locator('[data-demo="reset"]').click(); await pg.locator('[data-demo="reset-confirm"]').click(); await pg.waitForTimeout(4500);
+ok((await pg.evaluate(() => window.__DEMO_BRAND__.name)) === "Northfield Health Trust", "Reset demo keeps the look");
+ok((await api("GET", `/rest/v1/projects?id=eq.${STORY}&select=amount_released`)).body[0].amount_released === Math.round(orig / 355 * 100) / 100, "… and puts the figures back");
+await pg.locator('[data-demo="customise"]').click(); await pg.locator('[data-mc-currency="PKR"]').click(); await pg.locator('[data-mc="apply"]').click(); await pg.waitForTimeout(4500);
+const pkr = (await api("GET", "/rest/v1/portfolio_dashboard?select=total_capex")).body[0].total_capex;
+ok(pkr === capexDf, `PKR shows the data as stored (${pkr})`);
+await pg.locator('[data-demo="customise"]').click(); await pg.locator('[data-mc="defaults"]').click(); await pg.locator('[data-mc="apply"]').click(); await pg.waitForTimeout(4500);
+t = await rootText();
+ok(/Your Organisation|USD/.test(t) && (await pg.evaluate(() => window.__DEMO_BRAND__.currency)) === "USD", "Back to defaults restores the demo look");
+ok(errs.length === 0, `no errors (${errs.length}) ${errs[0] || ""}`);
+ok(outside.length === 0, `no outside requests (${outside.length})`);
+await ctx.close();
+// phone
+const ph = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); const pp = await ph.newPage();
+await ph.route("**/*", (rt) => { const u = rt.request().url(); return u.startsWith(base) || u.startsWith("data:") || u.startsWith("blob:") ? rt.continue() : rt.abort(); });
+await pp.goto(base + "?role=pmo"); await pp.waitForTimeout(3500);
+const bar = await pp.evaluate(() => { const b = document.querySelector(".dm-bar"); return { sw: b.scrollWidth, cw: b.clientWidth, page: document.scrollingElement.scrollWidth }; });
+ok(bar.sw <= bar.cw + 1 && bar.page <= 390, `phone: bar fits (${bar.sw}/${bar.cw})`);
+await pp.screenshot({ path: `${out}/phone-bar.png` });
+await pp.locator('[data-demo="customise"]').click(); await pp.locator("[data-customise]").waitFor(); await pp.waitForTimeout(400);
+const pw = await pp.evaluate(() => { const r = document.querySelector("[data-customise]").getBoundingClientRect(); return [r.left, r.right, r.bottom]; });
+ok(pw[0] >= 0 && pw[1] <= 390 && pw[2] <= 844, `phone: panel is a bottom sheet on screen (${pw.join(",")})`);
+await pp.screenshot({ path: `${out}/phone-panel.png` });
+console.log(`\n${pass} pass, ${fail} fail`);
+await b.close(); srv.close();

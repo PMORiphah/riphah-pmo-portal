@@ -1,0 +1,55 @@
+import { chromium } from "./pw.mjs"; import http from "node:http"; import fs from "node:fs";
+const port = 5214, base = `http://localhost:${port}/`;
+const srv = http.createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(fs.readFileSync(process.argv[2])); }).listen(port);
+const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? "PASS" : "FAIL"} ${m}`); };
+const ctx = await b.newContext({ viewport: { width: 1366, height: 800 } });
+const requests = [], batches = [];
+await ctx.route("**/*", async (rt) => {
+  const req = rt.request(), u = req.url();
+  requests.push(`${req.method()} ${u.slice(0, 80)}`);
+  if (u.startsWith(base) || u.startsWith("data:") || u.startsWith("blob:")) return rt.continue();
+  if (u.startsWith("https://eu.i.posthog.com/")) { batches.push({ url: u, type: req.headers()["content-type"], body: req.postData() }); return rt.fulfill({ status: 200, contentType: "application/json", body: '{"status":1}' }); }
+  return rt.abort();
+});
+const pg = await ctx.newPage(); const errs = []; pg.on("pageerror", e => errs.push(String(e)));
+await pg.goto(base + "?src=upwork"); await pg.waitForTimeout(1200);
+await pg.locator('.dm-role[data-role="guest"]').click(); await pg.locator('[data-start="explore"]').click(); await pg.waitForTimeout(3500);
+const nav = async (t) => { await pg.locator("nav, aside").getByText(t, { exact: true }).first().click(); await pg.waitForTimeout(1200); };
+await nav("Projects");
+await pg.locator('#root [role="combobox"]').first().click(); await pg.waitForTimeout(300);
+await pg.locator('[role="option"]').nth(1).click(); await pg.waitForTimeout(400);
+await pg.getByText("Clinical Skills Lab Upgrade").first().click(); await pg.waitForTimeout(1500);
+await nav("Risk Register");
+await pg.evaluate(async () => { const s = JSON.parse(sessionStorage.getItem("pmo_session")); await fetch("https://api.demo.invalid/functions/v1/ask", { method: "POST", headers: { apikey: "x", Authorization: "Bearer " + s.access_token, "Content-Type": "application/json" }, body: JSON.stringify({ question: "Which projects are overdue?", history: [] }) }); });
+await pg.locator('[data-demo="cta"]').first().click().catch(() => {}); await pg.waitForTimeout(500);
+await pg.locator('[data-demo="tour"]').click(); await pg.locator("[data-tour-card]").waitFor({ timeout: 15000 }); await pg.waitForTimeout(3000);
+await pg.locator('[data-tour-ctl="play"]').click(); await pg.locator('[data-tour-ctl="next"]').click(); await pg.waitForTimeout(2000);
+await pg.keyboard.press("Escape"); await pg.waitForTimeout(4500);
+await pg.locator('[data-demo="customise"]').click(); await pg.fill('[data-mc="name"]', "Secret Name Ltd"); await pg.locator('[data-mc-currency="GBP"]').click(); await pg.locator('[data-mc="apply"]').click(); await pg.waitForTimeout(4000);
+await pg.locator('[data-demo="role"]').click(); await pg.locator('.dm-menu [data-role="project_manager"]').click(); await pg.waitForTimeout(4000);
+await pg.locator('[data-demo="reset"]').click(); await pg.locator('[data-demo="reset-confirm"]').click(); await pg.waitForTimeout(4000);
+await pg.waitForTimeout(31000);   // one heartbeat
+await pg.close({ runBeforeUnload: true }); await new Promise(r => setTimeout(r, 1500));
+const events = batches.flatMap(x => { try { return JSON.parse(x.body).batch; } catch { return []; } });
+const names = new Set(events.map(e => e.event));
+console.log(`  ${batches.length} batches, ${events.length} events: ${[...names].join(", ")}`);
+const outside = requests.filter(r => !r.includes(base) && !/ (data|blob):/.test(r) && !r.startsWith("GET https://www.upwork.com/freelancers/~015400e3035d103eb3"));   // the CTA: a new tab the visitor opens
+ok(outside.length > 0 && outside.every(r => r.startsWith("POST https://eu.i.posthog.com/batch/")), `the only outside requests are POSTs to eu.i.posthog.com/batch/ (${outside.length}; others: ${outside.filter(r => !r.startsWith("POST https://eu.i.posthog.com/batch/")).join(" ") || "none"})`);
+ok(batches.every(x => /text\/plain/.test(x.type || "")), "sent as text/plain (no preflight)");
+ok(batches.every(x => JSON.parse(x.body).api_key === "phc_TESTKEYdemo000000000000000000000"), "carries the project key only");
+for (const n of ["visit_start", "mode_chosen", "tab_view", "project_opened", "role_switch", "tour_open", "tour_step_view", "tour_exit", "feature_used", "cta_click", "heartbeat"]) ok(names.has(n), `event ${n}`);
+const feats = new Set(events.filter(e => e.event === "feature_used").map(e => e.properties.feature));
+ok(["filter", "assistant", "customise_open", "customise_apply", "currency_switch", "reset"].every(f => feats.has(f)), `feature_used kinds: ${[...feats].join(", ")}`);
+const vs = events.find(e => e.event === "visit_start")?.properties || {};
+ok(vs.src === "upwork" && vs.device === "desktop" && /^\d+x\d+$/.test(vs.screen) && vs.language && vs.referrer, `visit_start: src ${vs.src}, device ${vs.device}, screen ${vs.screen}, language ${vs.language}, referrer ${vs.referrer}`);
+ok(new Set(events.map(e => e.properties.distinct_id)).size === 1 && new Set(events.map(e => e.properties.$session_id)).size === 1, "one anonymous visitor id and one visit id across reloads, role switch and reset");
+ok(events.every(e => e.properties.$process_person_profile === false && e.properties.$geoip_disable === true), "no person profiles, GeoIP off on every event");
+ok(events.filter(e => e.event === "tab_view").every(e => e.properties.role), `tab_view carries the role (${[...new Set(events.filter(e => e.event === "tab_view").map(e => e.properties.role))].join(", ")})`);
+const st = events.find(e => e.event === "tour_exit")?.properties; ok(st && st.chapter && st.step, `tour_exit has chapter ${st?.chapter} and step ${st?.step}`);
+const all = batches.map(x => x.body).join(" ");
+ok(!/Secret Name|Nadia|Sana|Whitcombe|Fairweather|@|Which projects are overdue|pmo\.admin/.test(all), "no names, typed text, e-mail addresses or usernames in what is sent");
+ok(events.every(e => Math.abs(Date.parse(e.timestamp) - Date.now()) < 3 * 864e5), `timestamps are real time, not the demo's calendar (${events[0].timestamp})`);
+ok(errs.length === 0, `no errors (${errs.length})`);
+console.log(`\n${pass} pass, ${fail} fail`);
+await b.close(); srv.close();

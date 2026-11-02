@@ -23,6 +23,18 @@ Production system the PMO at Riphah International University / IIMCT uses daily 
 - **Waleed Jamshed (`WJamshed`) is deliberately a guest** with project assignments (5 at Lahore on 14 Oct 2026). Do not change him to project_manager (it removes his nav pages).
 - Test accounts: `PMO` (pmo), `Guest` (guest, display name "Abdullah"), `Ali` (PM, Mr. Ali Naqi, 2 projects at Central Secretariat). Leftover test accounts: `pmaudittest`, `Claude` guest.
 
+## Portfolio demo (branch `portfolio-demo`, folder `portfolio-demo/`; never merged)
+
+A public, white-label copy of the portal for the builder's Upwork / Fiverr portfolio: one offline file,
+`portfolio-demo/dist/index.html`, hosted at `capital-projects-portal-demo.vercel.app` (personal Vercel
+account, never the `riphah-pmo` team). It reuses the portal's `src/` unchanged; `portfolio-demo/brand.mjs` rewrites the
+organisation's name, logo, addresses and real site words at build time.
+- **Never real data.** Only the fictional data from `portfolio-demo/data/gen.mjs` (+ `extra.mjs`, `views.mjs`). Never read from or write to the real Supabase project for the demo. Never add real names, projects, figures, files or photos.
+- **Rebuild:** `node portfolio-demo/build.mjs` (regenerate data first with `node portfolio-demo/data/gen.mjs` after changing it). The build fails on any privacy-scan match (`portfolio-demo/scan/`: patterns + fingerprints of real names, built from a private list kept outside the repo). With analytics: `DEMO_POSTHOG_KEY=phc_… node portfolio-demo/build.mjs` (the key never goes in the repo).
+- **Test:** `node portfolio-demo/tests/run.mjs` (builds, runs every suite, prints the request log). Screenshots: `node portfolio-demo/tests/screens.mjs`.
+- Guides: `portfolio-demo/GUIDE.md` (Vercel, analytics, report, `?src=` links), `portfolio-demo/ANALYTICS.md`, `portfolio-demo/PLAN.md`.
+- If a portal change moves a string a rule depends on, the build lists the rule as unused; fix the rule, never weaken the scan.
+
 ## Architecture
 
 - React 18 + Vite SPA, static on GitHub Pages (legacy branch build of `main` at repo root). **No CI: pushing to `main` is the deploy.**
