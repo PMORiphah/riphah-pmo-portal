@@ -16,6 +16,8 @@ export function extraTables(t, { NOW, uid }) {
   const pmOf = (pid) => t.user_profiles.find((u) => u.id === t.project_assignments.find((a) => a.project_id === pid)?.user_id);
 
   for (const p of t.projects) p.pcr = false;
+  // The demo has its own guided tour: the portal's tour invite card is not offered at sign-in.
+  for (const u of t.user_profiles) { u.tutorial_offered_at ||= "2026-07-05T06:00:00Z"; u.tutorial_dismissed_at ||= "2026-07-05T06:00:10Z"; }
 
   /* ── Itemised payments: each project's payments_made, split into payments that add up exactly ── */
   const VENDORS = ["Northwind Builders", "Apex Engineering Services", "Bluegate Technologies", "Crescent Medical Supplies", "Harbour Furniture Co.",

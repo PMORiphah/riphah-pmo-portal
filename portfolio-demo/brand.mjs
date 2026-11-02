@@ -63,6 +63,12 @@ export const RULES = [
   // Offline and demo-only behaviour.
   ["ui: web fonts", /f\.href = "https:\/\/fonts\.googleapis\.com\/[^"]*";/, 'f.href = "data:text/css,";'],
   ["App: PMO simulation button", "const SIM_ENABLED = true;", "const SIM_ENABLED = false;"],
+  // The demo's guided tour drives the portal through the same navigation object as the portal's own tour,
+  // and the portal's "Take the tour" buttons (sidebar, invite, assistant) open the demo's tour.
+  ["App: tour navigation for the demo", "    onAbandon: markTourAbandon,\n  };\n",
+    "    onAbandon: markTourAbandon,\n  };\n  if (window.__DEMO__) window.__DEMO__.nav = tourNav;\n"],
+  ["TourGuide: demo tour", "  const startDefault = useCallback(() => {\n    const list = nav?.buildSteps?.();",
+    "  const startDefault = useCallback(() => {\n    if (window.__DEMO__?.startTour) { window.__DEMO__.startTour(); return; }\n    const list = nav?.buildSteps?.();"],
   // The demo bar sits above the portal: the portal's outer frame is shortened by its height.
   ["App: shell height", '<div style={{ display:"flex", height:"100vh", fontFamily:TYPE.body.fontFamily,',
     '<div style={{ display:"flex", height:"calc(100vh - var(--demo-bar, 0px))", fontFamily:TYPE.body.fontFamily,'],

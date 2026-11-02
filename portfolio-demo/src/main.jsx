@@ -16,6 +16,8 @@ import { loadFiles, saveFile, clearFiles } from "./demoFiles.js";
 import { EntryScreen, DemoBar, BAR_H } from "./demoShell.jsx";
 import { guardLinks } from "./demoLinks.js";
 import { track } from "./demoAnalytics.js";
+import { Tour, readTour, writeTour } from "./demoTour.jsx";
+import { totalMinutes } from "./tourChapters.js";
 
 const DAY = seed.NOW.slice(0, 10);
 setDemoDay(DAY);
@@ -96,10 +98,10 @@ if (!entered) {
   const facts = [["capital projects", capex.length], ["sites", new Set(capex.map((p) => p.campus)).size],
     ["project managers", tables.user_profiles.filter((u) => u.role === "project_manager" && u.is_active).length],
     ["purchase-order lines", (tables.inventory_items || []).length], ["roles to try", 3]];
-  ({ role, mode } = await new Promise((resolve) => shell.render(<EntryScreen initialRole={role} facts={facts} onStart={resolve} />)));
+  ({ role, mode } = await new Promise((resolve) => shell.render(<EntryScreen initialRole={role} facts={facts} tourMinutes={totalMinutes()} onStart={resolve} />)));
   safe(() => localStorage.setItem(ROLE_KEY, role));
   safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));   // a reload explores; the tour starts once
-  track("demo_start", { role, mode });
+  track("mode_chosen", { role, mode });
 }
 
 const me = tables.user_profiles.find((u) => u.username === PERSONAS[role]?.username) || tables.user_profiles.find((u) => u.role === "pmo");
@@ -120,10 +122,26 @@ const switchRole = (r) => {
   safe(() => localStorage.setItem(ROLE_KEY, x)); safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));
   reloadClean();
 };
+// ── the guided tour, in its own root; its place survives a reload (steps that run as another role) ──
+const tourEl = Object.assign(document.createElement("div"), { id: "demo-tour" });
+document.body.appendChild(tourEl);
+const tourRoot = createRoot(tourEl);
+let touring = false;
+const closeTour = (backTo) => {
+  touring = false;
+  tourRoot.render(null);
+  if (backTo) switchRole(backTo);
+};
+const openTour = (state) => {
+  touring = true;
+  tourRoot.render(<Tour key={Date.now()} role={role} switchRole={switchRole} startState={state} onClose={closeTour} />);
+};
 const startTour = () => {
-  track("tour_open", { role });
-  if (window.__DEMO__.tour?.start) window.__DEMO__.tour.start();
-  else notify("The guided tour opens here.");
+  if (touring) return;
+  const saved = readTour();
+  const resume = saved && !saved.done && saved.idx > 0 ? saved.idx : 0;
+  track("tour_open", { role, resume: resume + 1 });
+  openTour({ idx: resume, voice: !!saved?.voice, playing: true, returnRole: saved?.returnRole || role });
 };
 window.__DEMO__ = {
   unhandled: [], role, mode, personas: PERSONAS, switchRole, reset, startTour, tour: null,
@@ -140,10 +158,16 @@ prepareSession(store);
 document.documentElement.style.setProperty("--demo-bar", BAR_H + "px");
 const appRoot = document.getElementById("root");
 appRoot.style.marginTop = BAR_H + "px";
-shell.render(<DemoBar role={role} onRole={switchRole} onTour={startTour} onReset={reset} changedAt={window.__DEMO__.changedAt} />);
+// Choosing a role by hand ends a running tour (it would otherwise take the visitor back to its step).
+const chooseRole = (r) => { const t = readTour(); if (t?.active) writeTour({ ...t, active: false, returnRole: null }); switchRole(r); };
+shell.render(<DemoBar role={role} onRole={chooseRole} onTour={startTour} onReset={reset} changedAt={window.__DEMO__.changedAt} />);
 // Drop ?role= / ?start from the address so a reload keeps the visitor's own choices.
 if (location.search) history.replaceState(null, "", location.pathname + location.hash);
 
 const { default: App } = await import("../../src/App.jsx");
 createRoot(appRoot).render(<App />);
-if (mode === "tour") setTimeout(startTour, 1200);
+// Wait for the portal to finish its first render (its navigation object), then start or resume the tour.
+const whenNav = (f, n = 0) => (window.__DEMO__.nav || n > 60 ? f() : setTimeout(() => whenNav(f, n + 1), 100));
+const resuming = readTour();
+if (resuming?.active) whenNav(() => openTour({ ...resuming, playing: resuming.playing !== false }));
+else if (mode === "tour") whenNav(() => setTimeout(startTour, 600));

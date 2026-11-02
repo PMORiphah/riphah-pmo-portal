@@ -2,6 +2,7 @@
 // exploration, privacy line, copyright and terms), the demo bar above the portal (role switch,
 // guided tour, reset, contact) and the reset confirmation. Rendered in its own root, outside the App.
 import React, { useEffect, useState } from "react";
+import { track } from "./demoAnalytics.js";
 
 export const OWNER = "Abdullah Azhar";
 export const OWNER_URL = "https://www.upwork.com/freelancers/~015400e3035d103eb3";
@@ -18,7 +19,7 @@ export const ROLES = [
 ];
 export const roleTitle = (id) => ROLES.find((r) => r.id === id)?.title || "PMO admin";
 
-const PRIVACY = "Everything here is fictional. What you change stays in this browser; nothing is sent anywhere. The demo counts anonymous visits and clicks (no cookies, no personal data) to improve it.";
+const PRIVACY = "Demo: all data is fictional, and what you change stays in this browser. This demo records anonymous usage (pages and steps viewed) to improve it. No personal data is collected.";
 export const TERMS = `© ${YEAR} ${OWNER}. All rights reserved. This demo lets prospective clients see the author's work and may be used online for that purpose only. ` +
   "Copying, saving for redistribution, decompiling, reverse-engineering, scraping, reselling or reusing its code, design or content, in whole or in part, " +
   "or building a product from it, needs the author's written permission. All organisations, people, projects and figures are fictional; any resemblance is coincidental. " +
@@ -72,6 +73,10 @@ const CSS = `
 .dm-bar .b{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:1px solid rgba(148,178,214,.22);background:rgba(255,255,255,.04);font-size:12.5px;font-weight:600;white-space:nowrap}
 .dm-bar .b:hover{border-color:#7fd1c7}
 .dm-bar .b.accent{background:#2a9d8f;border-color:#2a9d8f;color:#fff}
+.dm-bar .b.cta{text-decoration:none;color:#f3d39b;border-color:rgba(224,169,74,.45)}
+.dm-bar .b.cta:hover{border-color:#e0a94a}
+@media (max-width:1180px){.dm-bar .hide-m{display:none}}
+@media (max-width:360px){.dm-bar .hide-xs{display:none}}
 .dm-bar .copy{color:#a3b6cc;font-size:12px;white-space:nowrap;text-decoration:none}
 .dm-bar .copy:hover{color:#eef4fb}
 .dm-menu{position:fixed;top:${BAR_H + 6}px;z-index:2147482500;min-width:280px;max-width:calc(100vw - 24px);background:#11233a;color:#eef4fb;border:1px solid rgba(148,178,214,.22);border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.35);padding:6px}
@@ -106,7 +111,7 @@ const Emblem = ({ size = 34 }) => (
 );
 
 /** The start screen. onStart({ role, mode: "tour" | "explore" }). */
-export function EntryScreen({ initialRole = "pmo", facts, onStart }) {
+export function EntryScreen({ initialRole = "pmo", facts, tourMinutes = 6, onStart }) {
   useCss();
   const [role, setRole] = useState(initialRole);
   const [terms, setTerms] = useState(false);
@@ -142,13 +147,13 @@ export function EntryScreen({ initialRole = "pmo", facts, onStart }) {
         <div className="dm-step">2 · Start</div>
         <div className="dm-go">
           <button type="button" className="dm-btn primary" data-start="tour" onClick={() => onStart({ role, mode: "tour" })}>
-            Take the guided tour <small>· about 4 minutes</small></button>
+            Take the guided tour <small>· 9 chapters, about {tourMinutes} minutes</small></button>
           <button type="button" className="dm-btn" data-start="explore" onClick={() => onStart({ role, mode: "explore" })}>Explore freely</button>
         </div>
 
         <div className="dm-foot">
           <p>{PRIVACY}</p>
-          <p>Designed and built by <a className="dm-link" href={OWNER_URL} target="_blank" rel="noopener noreferrer">{OWNER} · hire me on Upwork ↗</a>.
+          <p>Designed and built by <a className="dm-link" href={OWNER_URL} target="_blank" rel="noopener noreferrer" onClick={() => track("cta_click", { where: "entry" })}>{OWNER} · hire me on Upwork ↗</a>.
             {" "}A portal like this can be set up for your organisation, with your own name, logo, currency and terms.</p>
           <p>© {YEAR} {OWNER}. All rights reserved. <button type="button" className="dm-terms" aria-expanded={terms} onClick={() => setTerms(!terms)}>Terms of use</button></p>
           {terms && <p data-terms>{TERMS}</p>}
@@ -175,13 +180,14 @@ export function DemoBar({ role, onRole, onTour, onReset, changedAt }) {
   return (
     <div className="dm">
       <div className="dm-bar" role="region" aria-label="Demo controls">
-        <span className="dm-pill"><i />Demo</span>
-        <span className="grow"><span className="hide-s">Fictional data · your changes stay in this browser{changedAt ? " · your changes are saved" : ""}</span></span>
+        <span className="dm-pill" data-demo="banner"><i /><span>Demo<span className="hide-xs">: all data is fictional</span></span></span>
+        <span className="grow"><span className="hide-s">Your changes stay in this browser{changedAt ? " and are saved" : ""}</span></span>
         <button type="button" className="b" aria-haspopup="menu" aria-expanded={menu === "role"} data-demo="role" onClick={(e) => open("role", e)}>
           <span className="hide-s">Viewing as</span> {roleTitle(role)} ▾</button>
         <button type="button" className="b accent hide-s" data-demo="tour" onClick={onTour}>Guided tour</button>
         <button type="button" className="b hide-s" data-demo="reset" onClick={() => setConfirm(true)}>Reset demo</button>
-        <a className="copy hide-s" href={OWNER_URL} target="_blank" rel="noopener noreferrer" title="Hire the author on Upwork">© {YEAR} {OWNER} ↗</a>
+        <a className="b cta hide-s" href={OWNER_URL} target="_blank" rel="noopener noreferrer" data-demo="cta" onClick={() => track("cta_click", { where: "bar" })}>Want this for your organisation? ↗</a>
+        <a className="copy hide-m" href={OWNER_URL} target="_blank" rel="noopener noreferrer" title="Hire the author on Upwork">© {YEAR} {OWNER}</a>
         <button type="button" className="b show-s" aria-label="More demo options" aria-haspopup="menu" aria-expanded={menu === "more"} data-demo="more" onClick={(e) => open("more", e)}>⋯</button>
       </div>
       {menu === "role" && (
@@ -199,7 +205,7 @@ export function DemoBar({ role, onRole, onTour, onReset, changedAt }) {
           <button type="button" role="menuitem" onClick={() => { setMenu(null); onTour(); }}>Guided tour</button>
           <button type="button" role="menuitem" onClick={() => { setMenu(null); setConfirm(true); }}>Reset demo<small>Put every figure, update and file back as it was.</small></button>
           <hr />
-          <a role="menuitem" href={OWNER_URL} target="_blank" rel="noopener noreferrer">Hire {OWNER} on Upwork ↗<small>© {YEAR} {OWNER}. Fictional data.</small></a>
+          <a role="menuitem" href={OWNER_URL} target="_blank" rel="noopener noreferrer" data-demo="cta" onClick={() => track("cta_click", { where: "bar_menu" })}>Want this for your organisation? Contact me on Upwork ↗<small>© {YEAR} {OWNER}. All data is fictional.</small></a>
         </div>
       )}
       {confirm && (
