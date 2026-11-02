@@ -1,0 +1,8 @@
+dist-raw/
+data/seed.json
+data/summary.json
+data/assets/
+data/assets-*.json
+data/asset-sizes.json
+scan/.approved-images.json
+dist/
