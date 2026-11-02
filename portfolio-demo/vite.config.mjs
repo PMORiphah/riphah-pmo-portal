@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 // Portfolio demo build settings. Run through build.mjs (which also inlines everything and runs the scan).
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -19,12 +20,18 @@ const whiteLabel = {
   },
 };
 
+const keyFile = new URL("./.posthog-key", import.meta.url);
+const POSTHOG_KEY = (process.env.DEMO_POSTHOG_KEY || (existsSync(keyFile) ? readFileSync(keyFile, "utf8") : "")).trim();
+if (POSTHOG_KEY && !/^phc_[A-Za-z0-9]{20,64}$/.test(POSTHOG_KEY)) throw new Error("DEMO_POSTHOG_KEY must be a PostHog project key (phc_…); personal keys are refused");
+
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   base: "./",
   publicDir: false,
   plugins: [whiteLabel, react()],
-  define: { "import.meta.env.BASE_URL": JSON.stringify("./") },
+  // The analytics project key (PostHog, public by design) comes from the build, never from the repository:
+  // DEMO_POSTHOG_KEY, or the git-ignored file .posthog-key. Without one the demo counts nothing.
+  define: { "import.meta.env.BASE_URL": JSON.stringify("./"), __POSTHOG_KEY__: JSON.stringify(POSTHOG_KEY) },
   build: {
     outDir: "dist-raw",
     emptyOutDir: true,

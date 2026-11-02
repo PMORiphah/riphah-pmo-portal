@@ -400,6 +400,7 @@ let nativeFetch = null;            // the browser's own fetch, captured once (a 
  * policy:  { read(table, rows, tables, me), write(table, op, row, old, me, tables), canViewProject, canViewPast, isPastViewer }.
  * today(): the date the views are worked out for (YYYY-MM-DD).
  * onWrite(tables, table): after every change (the page saves it).
+ * allowOrigins: outside addresses passed through untouched (only the analytics endpoint).
  * money: { out(table, row), in(table, row) }: currency conversion (page ↔ stored).
  * onSignOut(): the visitor pressed Sign out (the page goes back to the start screen).
  * onUpload(key, blob | null): a file the visitor uploaded or removed; ownFiles: the keys of those already saved.
@@ -407,7 +408,7 @@ let nativeFetch = null;            // the browser's own fetch, captured once (a 
  * assistant(body, me, tables) → the assistant's answer.  notify(text): a short message on screen.
  * onUnhandled(info): every request the backend does not recognise, with { kind, method, path, detail }.
  */
-export function installBackend({ store, media: mediaFiles = {}, policy, today = () => new Date().toISOString().slice(0, 10), onWrite, onUpload, ownFiles = [], onSignOut, money, serverFeature, assistant, notify, onUnhandled } = {}) {
+export function installBackend({ store, media: mediaFiles = {}, policy, today = () => new Date().toISOString().slice(0, 10), onWrite, onUpload, ownFiles = [], onSignOut, money, allowOrigins = [], serverFeature, assistant, notify, onUnhandled } = {}) {
   const responses = [];
   if (!store || typeof store !== "object" || !store.tables || typeof store.tables !== "object") {
     throw new Error("Demo backend: store.tables missing");
@@ -1019,6 +1020,8 @@ export function installBackend({ store, media: mediaFiles = {}, policy, today = 
     const headers = new Headers(isReq ? input.headers : undefined);
     if (init && init.headers) new Headers(init.headers).forEach((v, k) => headers.set(k, v));
     const where = url.pathname + url.search;
+    // The one outside address the demo may use: its anonymous usage counts (analytics), when configured.
+    if (allowOrigins.includes(url.origin)) return realFetch.call(window, input, init);
     if (url.origin !== SUPA_ORIGIN) {
       cap(st.outside, { method, url: url.origin + url.pathname.slice(0, 120) });
       report({ kind: "outside", method, path: url.origin + url.pathname.slice(0, 120), detail: "another site" });

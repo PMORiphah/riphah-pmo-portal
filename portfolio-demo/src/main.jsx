@@ -16,7 +16,7 @@ import { recomputeViews } from "../data/views.mjs";
 import { loadFiles, saveFile, clearFiles } from "./demoFiles.js";
 import { EntryScreen, DemoBar, BAR_H } from "./demoShell.jsx";
 import { guardLinks } from "./demoLinks.js";
-import { track } from "./demoAnalytics.js";
+import { track, startAnalytics, setContext, flushNow, flushThen, ANALYTICS_HOST, analyticsOn } from "./demoAnalytics.js";
 import { Tour, readTour, writeTour } from "./demoTour.jsx";
 import { totalMinutes } from "./tourChapters.js";
 import { loadBrand, saveBrand, installText, compact, CURRENCIES, KEY as BRAND_KEY } from "./demoBrand.js";
@@ -93,10 +93,12 @@ const shellRoot = document.createElement("div");
 shellRoot.id = "demo-shell";
 document.body.appendChild(shellRoot);
 const shell = createRoot(shellRoot);
-const reloadClean = () => location.replace(location.pathname);
+const reloadClean = () => flushThen(() => location.replace(location.pathname));
 
 let entered = safe(() => sessionStorage.getItem(ENTERED_KEY));
 let role = ALIAS[safe(() => localStorage.getItem(ROLE_KEY))] || "pmo";
+setContext({ role: entered ? role : null });
+startAnalytics();
 let mode = "explore";
 if (!entered) {
   const capex = tables.projects.filter((p) => p.portfolio === "capex");
@@ -113,11 +115,16 @@ const me = tables.user_profiles.find((u) => u.username === PERSONAS[role]?.usern
 const store = { tables, meta: { me: { id: me.id, username: me.username, full_name: me.full_name, role: me.role } } };
 
 const reset = async () => {
-  track("demo_reset", { role });
+  track("feature_used", { feature: "reset" });
+  await new Promise((r) => flushThen(r));
   await clearFiles();
   const keep = safe(() => localStorage.getItem(ROLE_KEY)), was = safe(() => sessionStorage.getItem(ENTERED_KEY));
   const look = safe(() => localStorage.getItem(BRAND_KEY));   // the visitor's "Make it yours" choices stay
+  const ids = ["cpp-demo-vid", "cpp-demo-vid-seen"].map((k) => [k, safe(() => localStorage.getItem(k))]);       // one visitor stays one visitor
+  const visit = ["cpp-demo-sid", "cpp-demo-src", "cpp-demo-events", "cpp-demo-sent"].map((k) => [k, safe(() => sessionStorage.getItem(k))]);
   safe(() => localStorage.clear()); safe(() => sessionStorage.clear());
+  for (const [k, v] of ids) if (v != null) safe(() => localStorage.setItem(k, v));
+  for (const [k, v] of visit) if (v != null) safe(() => sessionStorage.setItem(k, v));
   if (keep) safe(() => localStorage.setItem(ROLE_KEY, keep));
   if (look) safe(() => localStorage.setItem(BRAND_KEY, look));
   if (was) safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));
@@ -125,7 +132,7 @@ const reset = async () => {
 };
 const switchRole = (r) => {
   const x = ALIAS[r] || "pmo";
-  track("demo_role", { from: role, to: x });
+  track("role_switch", { from: role, to: x });
   safe(() => localStorage.setItem(ROLE_KEY, x)); safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));
   reloadClean();
 };
@@ -150,8 +157,36 @@ const startTour = () => {
   track("tour_open", { role, resume: resume + 1 });
   openTour({ idx: resume, voice: !!saved?.voice, playing: true, returnRole: saved?.returnRole || role });
 };
+setContext({ role });
+// Pages and projects the visitor opens (the portal reports each render; only changes count).
+let lastPage = null, lastProject = null;
+const onView = (page, projectId) => {
+  if (page !== lastPage) { lastPage = page; track("tab_view", { tab: page }); }
+  if (projectId && projectId !== lastProject) {
+    const p = tables.projects.find((x) => x.id === projectId);
+    track("project_opened", { project_code: p?.code || null });   // fictional codes only
+  }
+  lastProject = projectId || null;
+};
+// Features used: filters and searches (which control, never what was typed), printing, downloads.
+const label = (el) => (el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.name || el.closest("label")?.textContent || el.tagName).trim().slice(0, 40);
+document.addEventListener("change", (e) => {
+  const el = e.target;
+  if (!el?.closest?.("#root") || !/^(SELECT|INPUT)$/.test(el.tagName)) return;
+  if (el.type === "file") return track("feature_used", { feature: "upload", tab: lastPage });
+  track("feature_used", { feature: el.tagName === "SELECT" ? "filter" : el.type === "date" ? "date_filter" : el.type === "checkbox" ? "toggle" : "search", control: label(el), tab: lastPage });
+}, true);
+document.addEventListener("click", (e) => {
+  // The portal's own drop-downs (role="option"): a filter or sort choice; which list, never the value.
+  if (e.target.closest?.('[role="option"]') && !e.target.closest('.dm,.mc,.dt-card')) track("feature_used", { feature: "filter", control: "drop-down", tab: lastPage });
+  const a = e.target.closest?.("a[download]");
+  if (a) track("feature_used", { feature: "export", file_type: (a.getAttribute("download") || "").split(".").pop().slice(0, 8), tab: lastPage });
+}, true);
+const realPrint = window.print.bind(window);
+window.print = () => { track("feature_used", { feature: "report_print", tab: lastPage }); realPrint(); };
+
 window.__DEMO__ = {
-  unhandled: [], role, mode, personas: PERSONAS, switchRole, reset, startTour, tour: null,
+  unhandled: [], role, mode, personas: PERSONAS, switchRole, reset, startTour, tour: null, onView,
   changedAt: saved && saved.v === SEED_V ? saved.at : null,
 };
 // ── "Make it yours": currency conversion, the assistant's amounts, words on screen ──
@@ -180,7 +215,7 @@ const openCustomise = () => {
 window.__DEMO__.customise = openCustomise;
 
 installBackend({
-  store, media, money, policy, today: () => DAY, onWrite: save, onUpload: saveFile, ownFiles: Object.keys(own), serverFeature, assistant, notify,
+  store, media, money, allowOrigins: analyticsOn() ? [ANALYTICS_HOST] : [], policy, today: () => DAY, onWrite: save, onUpload: saveFile, ownFiles: Object.keys(own), serverFeature, assistant, notify,
   onUnhandled: (info) => { window.__DEMO__.unhandled.push(info); },
   onSignOut: () => { safe(() => sessionStorage.removeItem(ENTERED_KEY)); reloadClean(); },
 });

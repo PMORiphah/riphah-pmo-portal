@@ -36,11 +36,11 @@ One self-contained file, `dist/index.html`, uploaded by the builder to Vercel as
 ## Stages (one release, ~2 weeks)
 1. Foundation — DONE 2 Nov 2026: generator, white-label build rules, one-file build, privacy scan
    (fingerprints + approved-images check), offline render with 0 errors and 0 outside requests.
-2. Demo backend (writable, role rules, persistence, reset, demo notes, assistant, missing tables).
-3. Entry screen, role switcher, free exploration.
-4. Guided tour.
-5. "Make it yours" and currency.
-6. Analytics (builder creates the PostHog account).
+2. Demo backend — DONE: writable, role rules, persistence, reset, demo notes, assistant, missing tables.
+3. Entry screen, role switcher, free exploration — DONE.
+4. Guided tour — DONE: 9 chapters, 29 steps.
+5. "Make it yours" and currency — DONE (USD default; GBP / AED / PKR at fixed demo rates).
+6. Analytics — DONE in code (ANALYTICS.md); waiting for the builder's PostHog project key.
 7. Tests, screenshots, Vercel / PostHog / `?src=` guides, CLAUDE.md note (builder uploads to Vercel).
 
 ## Build

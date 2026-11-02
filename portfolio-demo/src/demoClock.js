@@ -3,6 +3,7 @@
 // The time of day is the visitor's own and keeps running.
 export function setDemoDay(isoDay) {
   const Real = Date;
+  window.__REAL_NOW__ = () => Real.now();   // analytics timestamps use the real time
   const now = new Real();
   const [y, m, d] = isoDay.split("-").map(Number);
   const offset = new Real(y, m - 1, d).getTime() - new Real(now.getFullYear(), now.getMonth(), now.getDate()).getTime();

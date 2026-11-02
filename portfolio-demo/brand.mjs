@@ -89,7 +89,7 @@ export const RULES = [
     "export const fmtM = (n, d = 1) => __dmM(num(n), d);"],
   ["BoardReport: axis", "{(t / 1e6).toFixed(0)}M</text>", "{__dmM(t, 0)}</text>"],
   ["App: tour navigation for the demo", "    onAbandon: markTourAbandon,\n  };\n",
-    "    onAbandon: markTourAbandon,\n  };\n  if (window.__DEMO__) { window.__DEMO__.nav = tourNav; window.__DEMO__.view = { page, projectId: selectedProjectId }; window.__DEMO__.openProject = openProject; }\n"],
+    "    onAbandon: markTourAbandon,\n  };\n  if (window.__DEMO__) { window.__DEMO__.nav = tourNav; window.__DEMO__.view = { page, projectId: selectedProjectId }; window.__DEMO__.openProject = openProject; window.__DEMO__.onView?.(page, selectedProjectId); }\n"],
   ["TourGuide: demo tour", "  const startDefault = useCallback(() => {\n    const list = nav?.buildSteps?.();",
     "  const startDefault = useCallback(() => {\n    if (window.__DEMO__?.startTour) { window.__DEMO__.startTour(); return; }\n    const list = nav?.buildSteps?.();"],
   // The demo bar sits above the portal: the portal's outer frame is shortened by its height.

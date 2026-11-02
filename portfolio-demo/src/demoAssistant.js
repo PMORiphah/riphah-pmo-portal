@@ -3,6 +3,7 @@
 // every figure, count and list is still worked out by code from the demo's current data, as the
 // visitor's role sees it (a project manager only counts their own projects).
 import { read } from "./demoPolicy.js";
+import { track } from "./demoAnalytics.js";
 
 let money = (n) => `${(Number(n || 0) / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
 /** Stage 5 ("Make it yours"): the currency format the answers use. */
@@ -26,7 +27,7 @@ export function assistant(body, me, t) {
   const scope = pm ? "your assigned projects" : "the whole capital portfolio";
   const all = read("projects", t.projects || [], t, me);
   const capex = all.filter((p) => p.portfolio === "capex");
-  const out = (headline, answer, figure) => ({ answer: `*Read as: ${headline}, ${scope}.*\n\n${answer}`, headline: figure ?? null,
+  const out = (headline, answer, figure) => (track("feature_used", { feature: "assistant", type: headline.replace(/ on .*| at .*| for .*/, "") }), { answer: `*Read as: ${headline}, ${scope}.*\n\n${answer}`, headline: figure ?? null,
     used: { demo: true } });
   const plist = (rows, cols = ["Project", "Site", "Stage", "Finance recommended"]) => rows.length
     ? table(cols, rows.map((p) => [p.name, p.campus || "—", STAGE[p.workflow_stage] || p.workflow_stage, money(p.df_recommended_amount)]))
@@ -119,6 +120,7 @@ export function assistant(body, me, t) {
     const df = sum(capex, (p) => p.df_recommended_amount);
     return out("portfolio totals", `**${capex.length} projects**, ${money(df)} finance-recommended, ${money(sum(capex.filter(isApproved), (p) => p.bac))} approved, ${money(sum(capex, (p) => p.amount_released))} released.`, money(df));
   }
+  track("feature_used", { feature: "assistant", type: "not understood" });
   return { answer: "In this demo I answer questions like these (every figure is worked out from the demo's data, for your role):\n\n" +
     "- Where do we stand overall?\n- How much has been released?\n- Which projects are overdue?\n- Which projects are at management review?\n" +
     (pm ? "- What stage are my projects at?\n" : "- What is planned for November?\n- Which projects have no project manager?\n- What are the risks on the Clinical Skills Lab?\n- Top 5 projects\n") +

@@ -7,3 +7,4 @@ data/asset-sizes.json
 scan/.approved-images.json
 dist/
 data/media.json
+.posthog-key
