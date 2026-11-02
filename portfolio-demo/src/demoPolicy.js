@@ -2,7 +2,7 @@
 // Mirrors the portal's real access rules (row-level security) in plain JavaScript:
 //   PMO admin            everything;
 //   project manager      only the projects assigned to them (and their own past projects): reads the
-//                        project, its updates, WBS, documents, deliverables; writes WBS tasks, posts
+//                        project, its updates, WBS, documents, deliverables, payments; writes WBS tasks, posts
 //                        updates, ticks deliverables (status / date / note only); never the cash flows,
 //                        risk register, PMO-only pages or other projects;
 //   senior management    reads the whole portfolio; posts updates; changes nothing else.
@@ -14,10 +14,11 @@ const PMO_ONLY_TABLES = new Set(["activity_log", "notifications_log", "epdd_pdds
 const PMO_ONLY_SETTINGS = new Set(["past_viewers", "welcome_email", "simulation_share", "inventory_profit_centres"]);
 // Tables whose rows belong to one project (project_id): readable by whoever may see the project.
 const BY_PROJECT = new Set(["project_assignments", "project_raci", "project_tasks", "project_attachments", "project_deliverables",
-  "comments", "lessons_learned", "benefits_realized", "lessons_learned_full", "benefits_realized_full", "project_payments",
+  "comments", "project_payments",
   "project_pcrs", "project_task_rollup", "project_update_status"]);
 // Never shown to a project manager (the real rules return no rows to them).
 const NOT_FOR_PM = new Set(["project_cashflows", "cashflow_monthly", "project_risks", "project_risks_scored", "carry_forward_projects",
+  "lessons_learned", "benefits_realized", "lessons_learned_full", "benefits_realized_full",
   "at_risk_projects", "pdd_pending_projects"]);
 
 const isPmo = (me) => me.role === "pmo";

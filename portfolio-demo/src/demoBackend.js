@@ -400,11 +400,12 @@ let nativeFetch = null;            // the browser's own fetch, captured once (a 
  * policy:  { read(table, rows, tables, me), write(table, op, row, old, me, tables), canViewProject, canViewPast, isPastViewer }.
  * today(): the date the views are worked out for (YYYY-MM-DD).
  * onWrite(tables, table): after every change (the page saves it).
+ * onUpload(key, blob | null): a file the visitor uploaded or removed; ownFiles: the keys of those already saved.
  * serverFeature(name, body, me, tables) → { status, body } | null: what an edge function would do.
  * assistant(body, me, tables) → the assistant's answer.  notify(text): a short message on screen.
  * onUnhandled(info): every request the backend does not recognise, with { kind, method, path, detail }.
  */
-export function installBackend({ store, media: mediaFiles = {}, policy, today = () => new Date().toISOString().slice(0, 10), onWrite, serverFeature, assistant, notify, onUnhandled } = {}) {
+export function installBackend({ store, media: mediaFiles = {}, policy, today = () => new Date().toISOString().slice(0, 10), onWrite, onUpload, ownFiles = [], serverFeature, assistant, notify, onUnhandled } = {}) {
   const responses = [];
   if (!store || typeof store !== "object" || !store.tables || typeof store.tables !== "object") {
     throw new Error("Demo backend: store.tables missing");
@@ -413,6 +414,7 @@ export function installBackend({ store, media: mediaFiles = {}, policy, today = 
   const tables = store.tables;            // changes are made in place; onWrite() saves them
   const me = sessionUser(store);
   const media = { ...mediaFiles };        // "<bucket>/<path>" -> blob: link
+  const uploaded = new Set(ownFiles);     // the visitor's own uploads (saved by onUpload); the rest are generated
   // The replay map: exact pathname + search → { status, contentRange, body }.
   const replay = new Map();
   for (const r of Array.isArray(responses) ? responses : []) {
@@ -711,7 +713,7 @@ export function installBackend({ store, media: mediaFiles = {}, policy, today = 
     else if (t === "past_projects") summary = `Past project "${r.name}" (${r.fiscal_year || "—"}) ${verb}`;
     else if (t === "past_project_updates") { action = op === "INSERT" ? "commented" : "comment_edited"; summary = `Follow-up ${op === "INSERT" ? "posted" : verb} on past project "${(tables.past_projects || []).find((p) => p.id === r.past_project_id)?.name || "—"}": ${String(r.body || "").slice(0, 80)}`; }
     else if (t === "past_pm_messages") { action = op === "INSERT" ? "commented" : "comment_edited"; summary = `${r.author_name || "Someone"} wrote to ${userName(r.pm_user_id)}: ${String(r.body || "").slice(0, 80)}`; }
-    else if (t === "project_todos") summary = `To-do ${op === "INSERT" ? "added" : row?.removed && !old?.removed ? "removed" : row?.done && !old?.done ? "done" : verb} on ${projName(r.project_id)}: ${r.text || ""}`;
+    else if (t === "project_todos") summary = `To-do ${op === "INSERT" ? "added" : row?.removed && !old?.removed ? "removed" : row?.done && !old?.done ? "done" : verb} on ${projName(r.project_id)}: ${r.title || ""}`;
     else if (t === "project_deliverables") summary = `Deliverable "${r.title}" ${verb} on ${projName(r.project_id)}`;
     else if (t === "carry_forward_projects") summary = `Carry-forward "${r.name}" ${verb}`;
     else if (["campuses", "cost_centers", "sectors", "segments", "regions"].includes(t)) summary = `${{ campuses: "Campus", cost_centers: "Cost centre", sectors: "Sector", segments: "Organisation", regions: "Region" }[t]} "${r.name}" ${verb}`;
@@ -872,13 +874,20 @@ export function installBackend({ store, media: mediaFiles = {}, policy, today = 
       if (blob.size > 25 * 1048576) throw new SimError(413, "The demo keeps files up to 25 MB in your browser.", { code: "413", error: "Payload too large" });
       if (media[key]) { try { URL.revokeObjectURL(media[key]); } catch { /* ignore */ } }
       media[key] = URL.createObjectURL(blob);
+      uploaded.add(key);
+      try { await onUpload?.(key, blob); } catch { /* saving must never break the upload */ }
       seen("POST storage upload (kept in this page)");
       return { status: 200, body: { Key: key, Id: uuid() } };
     }
     if (/^\/storage\/v1\/object\/[^/]+$/.test(path) && method === "DELETE") {
       const bucket = decodeURIComponent(path.split("/").pop());
-      for (const p of Array.isArray(body?.prefixes) ? body.prefixes : []) delete media[`${bucket}/${p}`];
+      for (const p of Array.isArray(body?.prefixes) ? body.prefixes : []) { delete media[`${bucket}/${p}`]; try { onUpload?.(`${bucket}/${p}`, null); } catch { /* ignore */ } }
       return { status: 200, body: [] };
+    }
+    if (up && method === "DELETE") {
+      const key = `${decodeURIComponent(up[1])}/${decPath(up[2])}`;
+      if (uploaded.has(key)) { delete media[key]; uploaded.delete(key); try { onUpload?.(key, null); } catch { /* ignore */ } }
+      return { status: 200, body: [{ name: key }] };
     }
     const obj = /^\/storage\/v1\/object\/(?:sign\/|public\/|authenticated\/)?([^/]+)\/(.+)$/.exec(path);
     if (obj && (method === "GET" || method === "HEAD")) {

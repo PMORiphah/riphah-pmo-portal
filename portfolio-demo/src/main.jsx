@@ -12,6 +12,7 @@ import { assistant } from "./demoAssistant.js";
 import { notify } from "./demoNotify.js";
 import { setDemoDay } from "./demoClock.js";
 import { recomputeViews } from "../data/views.mjs";
+import { loadFiles, saveFile, clearFiles } from "./demoFiles.js";
 
 const DAY = seed.NOW.slice(0, 10);
 setDemoDay(DAY);
@@ -69,6 +70,10 @@ for (const [key, uri] of Object.entries(mediaFiles)) {
   media[key] = URL.createObjectURL(new Blob([bytes], { type: head.slice(5, -7) }));
 }
 
+// … and the visitor's own uploads, kept in this browser.
+const own = saved && saved.v === SEED_V ? await loadFiles() : {};
+for (const [key, blob] of Object.entries(own)) media[key] = URL.createObjectURL(blob);
+
 const me = tables.user_profiles.find((u) => u.username === PERSONAS[role].username) || tables.user_profiles.find((u) => u.role === "pmo");
 const store = { tables, meta: { me: { id: me.id, username: me.username, full_name: me.full_name, role: me.role } } };
 
@@ -77,7 +82,8 @@ window.__DEMO__ = {
   /** Signs in as another role (the page reloads; changes are kept). */
   switchRole(r) { const x = ALIAS[r] || "pmo"; safe(() => localStorage.setItem(ROLE_KEY, x)); location.replace(location.pathname); },
   /** Puts every figure, update and file back as it was (the role is kept). */
-  reset() {
+  async reset() {
+    await clearFiles();
     const keep = safe(() => localStorage.getItem(ROLE_KEY));
     safe(() => localStorage.clear()); safe(() => sessionStorage.clear());
     if (keep) safe(() => localStorage.setItem(ROLE_KEY, keep));
@@ -86,7 +92,7 @@ window.__DEMO__ = {
   changedAt: saved && saved.v === SEED_V ? saved.at : null,
 };
 installBackend({
-  store, media, policy, today: () => DAY, onWrite: save, serverFeature, assistant, notify,
+  store, media, policy, today: () => DAY, onWrite: save, onUpload: saveFile, ownFiles: Object.keys(own), serverFeature, assistant, notify,
   onUnhandled: (info) => { window.__DEMO__.unhandled.push(info); },
 });
 prepareSession(store);

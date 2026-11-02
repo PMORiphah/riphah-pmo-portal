@@ -8,6 +8,7 @@ import { computeFigures, periodOf } from "./reportCalc.mjs";
 import { reviewPdd } from "./review.mjs";
 import { scanText } from "../scan/scan.mjs";
 import * as V from "./views.mjs";
+import { extraTables } from "./extra.mjs";
 
 const NOW = "2026-10-15T05:30:00Z";          // frozen clock: Thu 15 Oct 2026 10:30 PKT
 const TODAY = "2026-10-15";                   // CURRENT_DATE (UTC) == PKT date at 10:30
@@ -618,6 +619,8 @@ const tables = {
   pdd_pending_projects: pddPending, project_risks_scored: scored(project_risks), project_task_rollup, past_project_summary: pastSummary,
   past_project_task_rollup: [],
 };
+Object.assign(tables, extraTables(tables, { NOW, uid }));
+V.recomputeViews(tables, TODAY);   // lessons / benefits views; the others are unchanged
 
 /* ══ Quotable figures, formatted as the screens format them ═════════════ */
 const fmtM = (n) => n == null ? "—" : `${(n / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
