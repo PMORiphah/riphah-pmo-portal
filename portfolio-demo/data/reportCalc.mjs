@@ -9,7 +9,7 @@
    Rules it keeps (CLAUDE.md):
    - Approved = workflow_stage approved or closed; never portfolio_dashboard's
      approved_count (it leaves closed out).
-   - DF Recommended is the base; investment is never CAPEX; PMDC is inside
+   - DF Recommended is the base; investment is never CAPEX; Accreditation is inside
      CAPEX and shown on its own line (projects with `pmdc` cash-flow rows).
    - "Released" is money disbursed to a project, never "spent".
    - Past projects: never "still to release".
@@ -32,7 +32,7 @@ const num = (v) => { const n = Number(v); return isFinite(n) ? n : 0; };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-// "2026-09" → { start, end (exclusive), label } in Pakistan time.
+// "2026-09" → { start, end (exclusive), label } in local time.
 export function periodOf(ym) {
   const [y, m] = ym.split("-").map(Number);
   const start = new Date(Date.UTC(y, m - 1, 1) - PKT);
@@ -100,7 +100,7 @@ export const STAGE_NAME = { pdd_not_submitted: "PDD not submitted", identified: 
   ed_review: "ED review", mt_review: "MT review", approved: "Approved (in execution)", closed: "Closed" };
 const SEVERITY = ["critical", "high", "medium", "low"];
 
-// "23 Sep 2026 01:55 PM" (E-PDD history, Pakistan time) → ISO
+// "23 Sep 2026 01:55 PM" (e-Proposal history, local time) → ISO
 function epddWhen(s) {
   const m = String(s || "").match(/^(\d{1,2}) (\w{3}) (\d{4}) (\d{1,2}):(\d{2}) (AM|PM)$/);
   if (!m) return null;
@@ -153,7 +153,7 @@ export function computeFigures(rows, { ym, asAt, builtAt, compare = null }) {
   };
   headline.released_pct_of_df = headline.df_total ? headline.released_total / headline.df_total : 0;
 
-  // PMDC: CAPEX projects that carry pmdc cash-flow rows
+  // Accreditation: CAPEX projects that carry pmdc cash-flow rows
   const pmdcIds = new Set(rows.cashflows.filter(c => c.bucket === "pmdc" && c.project_id).map(c => c.project_id));
   const pmdc = capex.filter(p => pmdcIds.has(p.id));
   headline.pmdc_count = pmdc.length;
@@ -202,7 +202,7 @@ export function computeFigures(rows, { ym, asAt, builtAt, compare = null }) {
   }
   const releasedUndated = capex.filter(p => num(p.amount_released) > 0 && !p.budget_release_date).length;
 
-  // Cash-flow plan (FY Jul–Jun), CAPEX incl. PMDC, by month; and released cumulative
+  // Cash-flow plan (FY Jul–Jun), CAPEX incl. Accreditation, by month; and released cumulative
   const planByMonth = {};
   let planOnDeleted = 0;
   const liveIds = new Set(capex.map(p => p.id));
@@ -255,7 +255,7 @@ export function computeFigures(rows, { ym, asAt, builtAt, compare = null }) {
   const lastReviewed = openRisks.map(r => r.date_last_reviewed).filter(Boolean).sort().pop() || null;
   const risks = { open: openRisks.length, by_severity: sevCount, projects: new Set(openRisks.map(r => r.project_id)).size, top: topRisks, last_reviewed: lastReviewed };
 
-  // PDD intake (E-PDD; document stage, not sanction)
+  // PDD intake (e-Proposal; document stage, not sanction)
   const inMonth = (iso) => iso && iso >= per.start && iso < per.end;
   // Received = the date the PMO received it (as on PMO Review); removed PDDs left out.
   const pddIn = rows.pdds.filter(p => p.queue !== "removed" && inMonth(p.received_at || p.source_created_at));
@@ -307,7 +307,7 @@ export function deltas(cur, prev = cur?.compare) {
   return Object.fromEntries(DELTA_KEYS.map(k => [k, num(cur.headline[k]) - num(prev.headline[k])]));
 }
 
-// "PKR 691.5M" / "691,453,848"
+// "PKR 512.3M" / "512,345,678"
 export const fmtM = (n, d = 1) => `${(num(n) / 1e6).toLocaleString("en", { minimumFractionDigits: d, maximumFractionDigits: d })}M`;
 export const fmtPKR = (n) => Math.round(num(n)).toLocaleString("en");
 export const fmtPct = (x, d = 1) => `${(num(x) * 100).toLocaleString("en", { minimumFractionDigits: d, maximumFractionDigits: d })}%`;

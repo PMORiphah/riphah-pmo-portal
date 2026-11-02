@@ -6,6 +6,7 @@
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { computeFigures, periodOf } from "./reportCalc.mjs";
 import { reviewPdd } from "./review.mjs";
+import { scanText } from "../scan/scan.mjs";
 
 const NOW = "2026-10-15T05:30:00Z";          // frozen clock: Thu 15 Oct 2026 10:30 PKT
 const TODAY = "2026-10-15";                   // CURRENT_DATE (UTC) == PKT date at 10:30
@@ -272,7 +273,7 @@ const project_risks = RISKS.map(([k, title, category, probability, impact, owner
 const scored = (risks) => risks.map(x => { const p = projects.find(q => q.id === x.project_id);
   const { _story, ...y } = x; return { ...y, project_name: p.name, project_code: p.code, project_campus: p.campus, severity: sevOf(x.probability, x.impact) }; });
 
-/* ── E-PDD PDDs ─────────────────────────────────────────────────────────── */
+/* ── e-Proposal PDDs ─────────────────────────────────────────────────────────── */
 const pddItems = {
   A1: [["High-fidelity adult patient simulator", 2, "No", 9850000], ["Paediatric patient simulator", 1, "No", 7400000], ["IV and injection task trainers", 12, "No", 185000],
        ["Airway management trainers", 6, "No", 310000], ["AV debriefing and recording system", 1, "Set", 6950000], ["Hospital beds with mattresses", 10, "No", 420000],
@@ -367,12 +368,12 @@ const project_deliverables = DELIV_KEYS.flatMap(k => items(k).map((it, i) => ({
 
 /* ── Cash-flow plan: hump-shaped phasing, exactly DF per project ─────────── */
 const FYM = []; { let y = 2026, m = 7; for (let i = 0; i < 12; i++) { FYM.push(`${y}-${String(m).padStart(2, "0")}-01`); if (++m > 12) { m = 1; y++; } } }
-const PMDC_MONTHS = { A4: ["2026-08-01", "2026-09-01", "2026-10-01", "2026-11-01"], A8: ["2026-09-01", "2026-10-01", "2026-11-01"] };
+const ACCRED_MONTHS = { A4: ["2026-08-01", "2026-09-01", "2026-10-01", "2026-11-01"], A8: ["2026-09-01", "2026-10-01", "2026-11-01"] };
 const PRIO_LABEL = { top_priority: "1st Priority", second_priority: "2nd Priority", third_priority: "3rd Priority" };
 const project_cashflows = [];
 for (const p of projects) {
   const s = p.start_date.slice(0, 7) + "-01", e = p.end_date.slice(0, 7) + "-01";
-  const ms = PMDC_MONTHS[p._key] || FYM.filter(m => m >= s && m <= e);
+  const ms = ACCRED_MONTHS[p._key] || FYM.filter(m => m >= s && m <= e);
   const w = ms.map((_, i) => Math.sin(Math.PI * (i + 0.5) / ms.length) * (1.35 - 0.7 * i / ms.length) + 0.3);
   const W = w.reduce((a, b) => a + b, 0);
   const amt = ms.map((_, i) => Math.floor(p.df_recommended_amount * w[i] / W / 1000) * 1000);
@@ -562,14 +563,14 @@ const att = (k, kind, file_name, mime_type, uploaded_at, by, so, asset) => { con
   ATT.push({ id, project_id: p.id, kind, file_name, file_path, file_size: SIZES[file_path] ?? asset.nominal, mime_type, sort_order: so, uploaded_at,
     uploaded_by: by.id, uploaded_by_name: by === PMO ? "Project Management Office" : by.full_name, _asset: { ...asset, project: p.name, campus: p.campus, code: p.code, key: k } }); };
 const PDF = "application/pdf", XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", JPG = "image/jpeg";
-att("A1", "document", "EPDD_Clinical Skills Lab Upgrade.pdf", PDF, "2026-07-16T07:10:00Z", PMO, 1, { type: "pdd", pdd: 104, nominal: 182000 });
+att("A1", "document", "PDD_Clinical Skills Lab Upgrade.pdf", PDF, "2026-07-16T07:10:00Z", PMO, 1, { type: "pdd", pdd: 104, nominal: 182000 });
 att("A1", "document", "Quotation_MedSim Partners_Patient Simulators.pdf", PDF, "2026-08-27T06:30:00Z", PMO, 2, { type: "quotation", vendor: "MedSim Partners (sample)", lines: [1, 2, 3, 4], nominal: 96000 });
 att("A1", "document", "Quotation_Brightline AV_Debriefing System.pdf", PDF, "2026-08-27T06:32:00Z", PMO, 3, { type: "quotation", vendor: "Brightline AV (sample)", lines: [5], nominal: 74000 });
 att("A1", "document", "BOQ_Medical Gas and Electrical Works.xlsx", XLSX, "2026-09-02T09:15:00Z", PMO, 4, { type: "boq", nominal: 21000 });
 att("A1", "document", "Layout_Clinical Skills Lab Floor Plan.jpg", JPG, "2026-09-02T09:20:00Z", PMO, 5, { type: "layout", nominal: 240000 });
 att("A1", "document", "Award Letter_Patient Simulators.pdf", PDF, "2026-09-11T05:45:00Z", PMO, 6, { type: "award", vendor: "MedSim Partners (sample)", nominal: 61000 });
 for (const [k, n] of [["A2", 107], ["A3", 109], ["A4", 110], ["A5", 115], ["A8", 112], ["A9", 118]])
-  att(k, "document", `EPDD_${byKey(k).name.replace(/:/g, " -")}.pdf`, PDF, epdd_pdds.find(e => e.id === n).received_at.slice(0, 10) + "T10:00:00Z", PMO, 1, { type: "pdd", pdd: n, nominal: 150000 });
+  att(k, "document", `PDD_${byKey(k).name.replace(/:/g, " -")}.pdf`, PDF, epdd_pdds.find(e => e.id === n).received_at.slice(0, 10) + "T10:00:00Z", PMO, 1, { type: "pdd", pdd: n, nominal: 150000 });
 // Site visits (Gallery): newest first is the walkthrough project.
 const SV = [
   ["A1", "2026-10-13T09:40:00Z", PM.nadia, "skills-lab-beds", "Clinical Skills Lab: beds and furniture in place"],
@@ -753,7 +754,7 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 const peak = monthly.reduce((a, b) => (b.capex + b.pmdc > (a ? a.capex + a.pmdc : -1) ? b : a), null);
 const pmdcTot = sum(project_cashflows.filter(c => c.bucket === "pmdc"), c => c.amount), capTot = sum(capPlan, c => c.amount), drawn = sum(capex.filter(p => p.amount_released > 0), p => p.amount_released);
 const invPlan = sum(project_cashflows.filter(c => c.bucket === "investment"), c => c.amount);
-out.s09_cashflows = { tiles: { "CAPEX total": [`PKR ${fmtM(dash.total_capex)}`, `${capex.length} projects · incl. PMDC`], "of which PMDC": [`PKR ${fmtM(pmdcTot)}`, `${(pmdcTot / capTot * 100).toFixed(1)}% of CAPEX`],
+out.s09_cashflows = { tiles: { "CAPEX total": [`PKR ${fmtM(dash.total_capex)}`, `${capex.length} projects · incl. Accreditation`], "of which Accreditation": [`PKR ${fmtM(pmdcTot)}`, `${(pmdcTot / capTot * 100).toFixed(1)}% of CAPEX`],
     "Released to date": [`PKR ${fmtM(drawn)}`, `${(drawn / dash.total_capex * 100).toFixed(1)}% drawn`], "Peak month": [mLabel(peak.m), `PKR ${fmtM(peak.capex + peak.pmdc)}`], "Investment": [`PKR ${fmtM(invPlan)}`, `${inv.length} projects · outside CAPEX`] },
   pmdcMonths: monthly.filter(x => x.pmdc > 0).map(x => mLabel(x.m)), pmdcText: `Concentrated in ${monthly.filter(x => x.pmdc > 0).length} months and then complete — the inspection work does not run across the year.`,
   ofPlan: `${(drawn / capTot * 100).toFixed(1)}%`, monthly: monthly.map(x => [mLabel(x.m), fmtM(x.capex), fmtM(x.pmdc), x.n]),
@@ -789,7 +790,7 @@ out.s14_users = { header: `${USERS.length} users · only the PMO can create acco
 const dl2 = (k) => sep.headline[k] - aug.headline[k];
 out.s15_board = { list: [`Monthly Board Report: September 2026 — Published · figures as at 1 Oct 2026 · published 2 Oct 2026 · shared with 3, opened by 2`, `Baseline: August 2026 — Baseline · reconstructed · figures as at 1 Sep 2026`],
   sepTiles: { "Total CAPEX portfolio": fmtM(sep.headline.df_total), Approved: `${fmtM(sep.headline.approved_bac)} (${sep.headline.approved_count} projects)`, Released: fmtM(sep.headline.released_total),
-    "Approved not yet released": fmtM(sep.headline.approved_not_released), "Of which PMDC": fmtM(sep.headline.pmdc_df), "Investment (outside CAPEX)": fmtM(sep.headline.investment_df) },
+    "Approved not yet released": fmtM(sep.headline.approved_not_released), "Of which Accreditation": fmtM(sep.headline.pmdc_df), "Investment (outside CAPEX)": fmtM(sep.headline.investment_df) },
   sinceAugust: { approved_bac: fmtM(dl2("approved_bac")), released_total: fmtM(dl2("released_total")), approved_count: dl2("approved_count") },
   month: { released: fmtM(sep.month.released), n: sep.month.released_count, list: sep.month.released_list.map(x => `${x.name} ${fmtM(x.change)}`) }, moved: sep.moved_to_approved.map(x => x.name),
   attention: { nothingReleased: sep.attention.approved_nothing_released.map(x => x.name), early: sep.attention.released_before_approval.map(x => x.name), noPm: sep.attention.without_pm.length }, note: sepNote,
@@ -834,10 +835,10 @@ chk("scatter: >= 10 CAPEX projects plot with both CPI and SPI, in at least 3 qua
 // Pipeline and cash plan
 chk("cash plan capex+pmdc == Total CAPEX DF; investment plan == investment DF", sum(capPlan, c => c.amount) === dash.total_capex && invPlan === sum(inv, p => p.df_recommended_amount));
 chk("cash rows per project sum to its DF", projects.every(p => sum(project_cashflows.filter(c => c.project_id === p.id), c => c.amount) === p.df_recommended_amount));
-chk("PMDC rows only on CAPEX; investment rows only on investment; a PMDC project has only PMDC rows", project_cashflows.every(c => (c.bucket === "investment") === (projects.find(p => p.id === c.project_id).portfolio === "investment"))
+chk("Accreditation rows only on CAPEX; investment rows only on investment; a Accreditation project has only Accreditation rows", project_cashflows.every(c => (c.bucket === "investment") === (projects.find(p => p.id === c.project_id).portfolio === "investment"))
   && projects.filter(p => p._pmdc).every(p => project_cashflows.filter(c => c.project_id === p.id).every(c => c.bucket === "pmdc")));
-chk("PMDC concentrated in 3-4 months (Cashflows fixed text)", out.s09_cashflows.pmdcMonths.length >= 3 && out.s09_cashflows.pmdcMonths.length <= 4);
-chk("Cashflows PMDC tile == board report 'Of which PMDC' (same projects, all rows pmdc)", pmdcTot === oct.headline.pmdc_df);
+chk("Accreditation concentrated in 3-4 months (Cashflows fixed text)", out.s09_cashflows.pmdcMonths.length >= 3 && out.s09_cashflows.pmdcMonths.length <= 4);
+chk("Cashflows Accreditation tile == board report 'Of which Accreditation' (same projects, all rows pmdc)", pmdcTot === oct.headline.pmdc_df);
 chk("cash-flow labels use production spellings (1st/2nd/3rd Priority; Civil Works / Equipment Procurement / Software / Licensing)", out.s09_cashflows.priorities.join() === "1st Priority,2nd Priority,3rd Priority" && out.s09_cashflows.types.every(t => [CW, EQ, SW].includes(t)));
 chk("every plan month inside FY 26-27", project_cashflows.every(c => FYM.includes(c.month)));
 chk("monthly plan has a visible shape (peak month >= 1.5x the FY average)", (peak.capex + peak.pmdc) >= 1.5 * capTot / 12);
@@ -914,7 +915,9 @@ chk("file_size == generated bytes (run assets.mjs, then gen.mjs again)", project
 // Clock-dependent views
 chk("no PDD-not-submitted pop-up rows (pdd_pending_projects empty)", pddPending.length === 0);
 chk("at_risk_projects (deadline pop-up source) is non-empty, so the sim must answer it with [] or dismiss the pop-up", atRisk(projects).length > 0);
-chk("names: no project, person or place uses 'Riphah' or a real domain", !/riphah|\.edu\.pk|gmail/i.test(JSON.stringify({ projects, USERS, settings, comments, past_projects })));
+// The whole dataset through the demo's privacy scan (real names, places, codes, figures, domains).
+chk("privacy: the generated data has nothing from the real deployment (scan/scan.mjs)",
+  scanText(JSON.stringify(tables), JSON.parse(readFileSync(new URL("../scan/denylist.json", import.meta.url)))).length === 0);
 
 for (const [s2, n] of ok) console.log(s2, n);
 console.log(`${ok.filter(x => x[0] === "PASS").length} pass, ${ok.filter(x => x[0] === "FAIL").length} fail`);

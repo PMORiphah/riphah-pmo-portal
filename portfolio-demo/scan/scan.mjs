@@ -22,7 +22,7 @@ export const PATTERNS = [
   ["cloud storage", /r2\.cloudflarestorage|r2\.dev\b/i],
   ["AI key", /AIza[0-9A-Za-z_-]{30,}|gsk_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{24,}/],
   ["real site code", /\bG-7\b|\bI-14\b/],
-  ["real proposal-system name", /\bE-?PDD\b/],
+  ["real proposal-system name", /\bE-?PDD(?![a-z])/],          // also EPDD_ file names; not the lower-case table names
 ];
 const EMAIL = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/g;
 // Reserved example domains, plus two open-source licence/maintainer addresses inside a bundled library's

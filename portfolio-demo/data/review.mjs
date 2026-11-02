@@ -386,20 +386,15 @@ function documents(p, files) {
     group: "Documents",
     label: "Files open",
     status: "fail",
-    detail: `${failed.length} attachment${failed.length === 1 ? "" : "s"} could not be downloaded from the E-PDD portal.`,
+    detail: `${failed.length} attachment${failed.length === 1 ? "" : "s"} could not be downloaded from the e-Proposal portal.`,
     items: failed.map((f) => `${f.title}: ${f.file_name} (${f.error})`),
     comment: `Attachments: ${failed.map((f) => f.title).join(", ")} could not be opened. Please upload ${failed.length === 1 ? "it" : "them"} again.`
   });
   return out;
 }
 const CAMPUS_MAP = {
-  "rih sihala": "RIH",
-  "g7 campus": "G-7",
-  "university i-14": "I-14",
-  "al-mizan campus": "Al-Mizan",
-  "gg campus": "GGC",
-  "ferozepur road": "Lahore",
-  "gg head office": "Central Secretariat"
+  "north campus": "Northbridge",
+  "lake campus": "Lakeside"
 };
 const campusKey = (s) => lc(s).replace(/[^a-z0-9]/g, "");
 const ABBR = {
@@ -451,7 +446,7 @@ const STOP = /* @__PURE__ */ new Set([
   "campus",
   "project",
   "projects",
-  "riphah",
+  "group",
   "university",
   "pmdc",
   "x",

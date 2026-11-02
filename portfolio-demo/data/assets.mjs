@@ -67,7 +67,7 @@ function table(d, cols, rows, opt = {}) {  // cols: [label, x, align('l'|'r'), w
 }
 function pddPdf(p, num) {
   const d = new Doc();
-  letterhead(d, "Project Definition Document (PDD)", `${num}  |  E-PDD portal copy  |  Status: All Approved`);
+  letterhead(d, "Project Definition Document (PDD)", `${num}  |  e-Proposal portal copy  |  Status: All Approved`);
   const kv = [["Project", p.name], ["Project ID", p.code], ["Campus / site", p.campus], ["Project manager", p.pm || "-"], ["Planned start", dmy(p.start)], ["Planned finish", dmy(p.end)],
     ["Strategic priority", p.strat], ["DF Recommended (plan)", `PKR ${pk(p.df)}`]];
   kv.forEach(([k, v], i) => { const x = i % 2 ? 310 : 40, y = d.y - Math.floor(i / 2) * 30; d.text(x, y + 9, k.toUpperCase(), 7, true, "0.45 0.50 0.58").text(x, y - 3, v, 10.5, true); });
@@ -81,8 +81,8 @@ function pddPdf(p, num) {
     p.items.map((it, i) => [String(i + 1), it.description, String(it.qty), it.unit, pk(it.unit_cost), pk(it.total)]), { total: ["Grand total", pk(total)] });
   d.page(); letterhead(d, "Approval history", `${num}  |  ${p.name}`);
   table(d, [["Stage", 44, "l"], ["Role", 190, "l"], ["Decision", 360, "l"], ["Date", 555, "r"]], [
-    ["Initiated", "Project Manager", "Submitted", "E-PDD record"], ["Campus review", "Campus Director (sample)", "Approved", "E-PDD record"],
-    ["PMO review", "PMO Reviewer (sample)", "Recommended", "E-PDD record"], ["PMO decision", "Manager PMO (sample)", "Recommended", "E-PDD record"]]);
+    ["Initiated", "Project Manager", "Submitted", "e-Proposal record"], ["Campus review", "Campus Director (sample)", "Approved", "e-Proposal record"],
+    ["PMO review", "PMO Reviewer (sample)", "Recommended", "e-Proposal record"], ["PMO decision", "Manager PMO (sample)", "Recommended", "e-Proposal record"]]);
   d.y -= 10; d.wrap(40, d.y, "Approving the PDD approves the document only. The project is sanctioned after Director Finance, Executive Director and Managing Trustee review in the portal.", 515, 9.5);
   return d.build();
 }
