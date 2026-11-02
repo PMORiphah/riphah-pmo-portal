@@ -7,10 +7,11 @@ import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { computeFigures, periodOf } from "./reportCalc.mjs";
 import { reviewPdd } from "./review.mjs";
 import { scanText } from "../scan/scan.mjs";
+import * as V from "./views.mjs";
 
 const NOW = "2026-10-15T05:30:00Z";          // frozen clock: Thu 15 Oct 2026 10:30 PKT
 const TODAY = "2026-10-15";                   // CURRENT_DATE (UTC) == PKT date at 10:30
-const SPI_T = 1, CPI_T = 1;                   // settings.spi_threshold / cpi_threshold (as production)
+const { SPI_T, CPI_T } = V;                    // settings.spi_threshold / cpi_threshold (as production)
 const FY = "FY 26-27";
 let seq = 0; const uid = (p) => `${p}-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
 const day = (s) => Math.round(new Date(String(s).slice(0, 10) + "T00:00:00Z").getTime() / 864e5);
@@ -173,61 +174,15 @@ const projects = P.map((p) => {
 const byKey = (k) => projects.find(p => p._key === k);
 const strip = ({ _key, _pm, _pmdc, _plan, ...q }) => q;
 
-/* ── Views (replicas of the SQL definitions read 13–14 Oct 2026) ───────── */
+/* ── Views: data/views.mjs (shared with the demo backend in the page) ── */
 const r = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
-function metrics(p, today = TODAY) {           // project_metrics
-  const eff = p.actual_start_date || p.start_date;
-  let el = null;
-  if (eff && p.end_date && day(p.end_date) > day(eff)) {
-    el = day(today) <= day(eff) ? 0 : day(today) >= day(p.end_date) ? 1 : (day(today) - day(eff)) / (day(p.end_date) - day(eff));
-  }
-  const ev = p.bac * p.pct_complete / 100;
-  const appr = ["approved", "closed"].includes(p.workflow_stage);
-  const schedule_flag = p.manual_schedule_flag ?? (!appr || p.amount_released == 0 || el == null ? "not_started" : ev >= p.bac * el * SPI_T ? "on_time" : "delayed");
-  const budget_flag = p.manual_budget_flag ?? (!appr || p.actual_cost == 0 || p.pct_complete == 0 ? "not_started" : ev >= p.actual_cost * CPI_T ? "within" : "over");
-  return { ...p, effective_start: eff, earned_value: r(ev, 2), time_elapsed_fraction: r(el ?? 0, 4), planned_value: r(p.bac * (el ?? 0), 2),
-    cpi: p.actual_cost > 0 ? r(ev / p.actual_cost, 3) : null, spi: p.bac * (el ?? 0) > 0 ? r(ev / (p.bac * el), 3) : null,
-    eac: p.actual_cost > 0 && ev > 0 ? r(p.bac / (ev / p.actual_cost), 2) : null,
-    cost_variance: p.actual_cost > 0 ? r(ev - p.actual_cost, 2) : null, schedule_variance: r(ev - p.bac * (el ?? 0), 2),
-    schedule_flag, budget_flag };
-}
-function dashboard(rows, today = TODAY) {      // portfolio_metrics + portfolio_dashboard
-  const m = rows.filter(p => p.portfolio === "capex").map(p => metrics(p, today));
-  const S = (f, w = () => true) => m.filter(w).reduce((s, p) => s + Number(f(p) || 0), 0);
-  const C = (w) => m.filter(w).length;
-  const rep = (p) => p.pct_complete > 0, ncf = (p) => !p.is_carry_forward;
-  const ev = S(p => p.earned_value), pv = S(p => p.planned_value, rep), ac = S(p => p.actual_cost, rep);
-  const cpi = ac > 0 ? r(ev / ac, 3) : null, spi = pv > 0 ? r(ev / pv, 3) : null;
-  return {
-    total_projects: m.length, pdd_not_submitted_count: C(p => p.workflow_stage === "pdd_not_submitted" && ncf(p)),
-    identified_count: C(p => p.workflow_stage === "identified" && ncf(p)), pdds_submitted: C(p => p.workflow_stage === "identified" && ncf(p)),
-    in_df: C(p => p.workflow_stage === "df_review" && ncf(p)), in_ed: C(p => p.workflow_stage === "ed_review" && ncf(p)), in_mt: C(p => p.workflow_stage === "mt_review" && ncf(p)),
-    approved_count: C(p => p.workflow_stage === "approved" && ncf(p)), closed_count: C(p => p.workflow_stage === "closed"),
-    on_time_count: C(p => p.schedule_flag === "on_time" && p.workflow_stage === "approved"), delayed_count: C(p => p.schedule_flag === "delayed" && p.workflow_stage === "approved"),
-    over_budget_count: C(p => p.budget_flag === "over" && p.workflow_stage === "approved"), scope_change_count: C(p => p.scope_change),
-    carry_forward_count: C(p => p.is_carry_forward), carry_forward_amount: S(p => p.bac, p => p.is_carry_forward),
-    payments_pending_count: C(p => p.payments_pending), payments_pending_amount: S(p => p.bac, p => p.payments_pending),
-    su_requested_total: S(p => p.su_requested_amount, ncf), df_recommended_total: S(p => p.df_recommended_amount, ncf), approved_total: S(p => p.bac, ncf),
-    budget_reduction: S(p => p.su_requested_amount, ncf) - S(p => p.df_recommended_amount, ncf),
-    total_capex: S(p => p.df_recommended_amount), budget_consumed: S(p => p.amount_released), budget_remaining: S(p => p.df_recommended_amount) - S(p => p.amount_released),
-    payments_made_total: S(p => p.payments_made),
-    total_ev: r(ev, 2), total_pv: r(pv, 2), total_ac: ac, portfolio_cpi: cpi, portfolio_spi: spi,
-    portfolio_health: cpi == null || spi == null ? "Insufficient Data" : cpi >= CPI_T && spi >= SPI_T ? "Good" : cpi < CPI_T - 0.05 && spi < SPI_T - 0.05 ? "Critical" : "At Risk",
-    reporting_progress_count: C(rep),
-  };
-}
-function investmentMetrics(rows) {
-  const m = rows.filter(p => p.portfolio === "investment");
-  const S = (f) => m.reduce((s, p) => s + Number(p[f] || 0), 0);
-  return { total_projects: m.length, su_requested_total: S("su_requested_amount"), df_recommended_total: S("df_recommended_amount"), approved_total: S("bac"),
-    released_total: S("amount_released"), payments_made_total: S("payments_made"), approved_count: m.filter(p => p.workflow_stage === "approved").length };
-}
+const metrics = (p, today = TODAY) => V.metrics(p, today);
+const dashboard = (rows, today = TODAY) => V.dashboard(rows, today);
+const investmentMetrics = V.investmentMetrics;
+const atRisk = (rows, today = TODAY) => V.atRisk(rows, today);
 const healthOf = (cpi, spi) => { const has = v => v != null && isFinite(v) && v > 0; if (!has(cpi) && !has(spi)) return "Insufficient Data";
   const w = Math.min(has(cpi) ? cpi : 9, has(spi) ? spi : 9); return w >= 0.95 ? "Healthy" : w >= 0.90 ? "Attention Required" : w >= 0.80 ? "At Risk" : "Critical"; };
 const perfStatus = (v) => v == null || !isFinite(v) || v <= 0 ? "No data" : v >= 0.95 ? "Healthy" : v >= 0.90 ? "Watch" : "At Risk";
-const atRisk = (rows, today = TODAY) => rows.filter(p => p.end_date && p.workflow_stage !== "closed" && day(p.end_date) - day(today) <= 20)
-  .sort((a, b) => day(a.end_date) - day(b.end_date))
-  .map(p => ({ id: p.id, code: p.code, name: p.name, campus: p.campus, workflow_stage: p.workflow_stage, df_recommended_amount: p.df_recommended_amount, end_date: p.end_date, days_remaining: day(p.end_date) - day(today) }));
 
 /* ── Assignments (site-wise managers), RACI ─────────────────────────────── */
 const project_assignments = projects.filter(p => p._pm).map(p => ({ id: uid("a5510001"), user_id: PM[p._pm].id, project_id: p.id, assigned_by: PMO.id, assigned_at: "2026-07-03T06:30:00Z" }));
@@ -262,7 +217,7 @@ const RISKS = [
   ["M2", "Specimen storage must move during renovation", "resource", "low", "low", "Maryam Holloway", "Temporary store arranged in the old lab.", "2026-09-26", "open"],
   ["E3", "Locker sizes may not suit lab coats and bags", "resource", "low", "low", "Nadia Fairweather", "Sample locker trial with students.", "2026-10-05", "monitoring"],
 ];
-const sevOf = (pr, im) => pr === "high" && im === "high" ? "critical" : (pr === "high" && im === "medium") || (pr === "medium" && im === "high") ? "high" : pr === "low" && im === "low" ? "low" : "medium";
+const sevOf = V.sevOf;
 const addDays = (d, n) => new Date(day(d) * 864e5 + n * 864e5).toISOString().slice(0, 10);
 const project_risks = RISKS.map(([k, title, category, probability, impact, owner, mitigation_plan, identified, status, tag]) => {
   const rev = [addDays(identified, 14), "2026-10-13"].sort()[0] < identified ? identified : [addDays(identified, 14), "2026-10-13"].sort()[0];
@@ -270,8 +225,7 @@ const project_risks = RISKS.map(([k, title, category, probability, impact, owner
     date_identified: identified, date_last_reviewed: tag === "story" ? "2026-10-08" : rev, created_by: PMO.id, created_by_name: PMO.username,
     created_at: `${identified}T07:00:00Z`, updated_at: `${tag === "story" ? "2026-10-08" : rev}T07:00:00Z`, _story: tag === "story" };
 });
-const scored = (risks) => risks.map(x => { const p = projects.find(q => q.id === x.project_id);
-  const { _story, ...y } = x; return { ...y, project_name: p.name, project_code: p.code, project_campus: p.campus, severity: sevOf(x.probability, x.impact) }; });
+const scored = (risks) => V.scored(risks, projects);
 
 /* ── e-Proposal PDDs ─────────────────────────────────────────────────────────── */
 const pddItems = {
@@ -542,16 +496,7 @@ const TASKS = [
 const project_tasks = [...PH, ...TASKS.map(([ph, name, start_date, end_date, pct, bEnd, upd, owner], i) => ({ id: uid("7a5c0001"), project_id: A1.id, parent_id: PH[ph].id, name, owner,
   start_date, end_date, baseline_start: start_date, baseline_end: bEnd || end_date, pct_complete: pct, is_milestone: start_date === end_date,
   status: pct === 100 ? "done" : pct > 0 ? "in_progress" : "not_started", sort_order: i + 1, notes: null, created_at: "2026-08-02T06:00:00Z", updated_at: `${upd}T09:00:00Z` }))];
-function taskRollup(rows, fk) {
-  const ids = [...new Set(rows.map(t => t[fk]))];
-  return ids.map(id => { const lv = rows.filter(t => t[fk] === id && !rows.some(c => c.parent_id === t.id));
-    const w = (t) => Math.max(t.end_date && t.start_date ? day(t.end_date) - day(t.start_date) : 0, 1);
-    const W = lv.reduce((s, t) => s + w(t), 0);
-    return { [fk]: id, task_count: lv.length, milestone_count: lv.filter(t => t.is_milestone).length, tasks_start: lv.map(t => t.start_date).filter(Boolean).sort()[0] || null,
-      tasks_end: lv.map(t => t.end_date).filter(Boolean).sort().at(-1) || null, baseline_start: lv.map(t => t.baseline_start).filter(Boolean).sort()[0] || null,
-      baseline_end: lv.map(t => t.baseline_end).filter(Boolean).sort().at(-1) || null, last_updated: lv.map(t => t.updated_at).sort().at(-1) || null,
-      weighted_pct: W > 0 ? r(lv.reduce((s, t) => s + Number(t.pct_complete) * w(t), 0) / W, 1) : null }; });
-}
+const taskRollup = V.taskRollup;
 const project_task_rollup = taskRollup(project_tasks, "project_id");
 const wbsPct = project_task_rollup.find(x => x.project_id === A1.id).weighted_pct;
 
@@ -660,9 +605,7 @@ const settings = [
 /* ── Views as tables (what the synthetic backend serves) ───────────────── */
 const dash = dashboard(projects);
 const project_metrics = projects.map(p => strip(metrics(p)));
-const pastSummary = past_projects.map(p => { const u = USERS.find(x => x.id === p.pm_user_id); const ups = past_project_updates.filter(m => m.past_project_id === p.id).sort((a, b) => a.created_at.localeCompare(b.created_at));
-  return { ...p, pm_name: u?.full_name || u?.username || null, pm_email: u?.email || null, update_count: ups.length, last_update_at: ups.at(-1)?.created_at || null,
-    last_update_role: ups.at(-1)?.author_role || null, days_since_followup: p.last_followed_up ? day(TODAY) - day(p.last_followed_up) : null }; });
+const pastSummary = V.pastSummary(past_projects, past_project_updates, USERS, TODAY);
 const pddPending = capexRows.filter(p => p.workflow_stage === "pdd_not_submitted" && day(p.start_date) - day(TODAY) >= 0 && day(p.start_date) - day(TODAY) <= 19);
 const tables = {
   user_profiles: USERS, campuses: CAMPUSES, segments: SEGMENTS, sectors: SECTORS, regions: REGIONS, cost_centers: CC,

@@ -6,3 +6,4 @@ data/assets-*.json
 data/asset-sizes.json
 scan/.approved-images.json
 dist/
+data/media.json
