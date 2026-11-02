@@ -400,12 +400,13 @@ let nativeFetch = null;            // the browser's own fetch, captured once (a 
  * policy:  { read(table, rows, tables, me), write(table, op, row, old, me, tables), canViewProject, canViewPast, isPastViewer }.
  * today(): the date the views are worked out for (YYYY-MM-DD).
  * onWrite(tables, table): after every change (the page saves it).
+ * onSignOut(): the visitor pressed Sign out (the page goes back to the start screen).
  * onUpload(key, blob | null): a file the visitor uploaded or removed; ownFiles: the keys of those already saved.
  * serverFeature(name, body, me, tables) → { status, body } | null: what an edge function would do.
  * assistant(body, me, tables) → the assistant's answer.  notify(text): a short message on screen.
  * onUnhandled(info): every request the backend does not recognise, with { kind, method, path, detail }.
  */
-export function installBackend({ store, media: mediaFiles = {}, policy, today = () => new Date().toISOString().slice(0, 10), onWrite, onUpload, ownFiles = [], serverFeature, assistant, notify, onUnhandled } = {}) {
+export function installBackend({ store, media: mediaFiles = {}, policy, today = () => new Date().toISOString().slice(0, 10), onWrite, onUpload, ownFiles = [], onSignOut, serverFeature, assistant, notify, onUnhandled } = {}) {
   const responses = [];
   if (!store || typeof store !== "object" || !store.tables || typeof store.tables !== "object") {
     throw new Error("Demo backend: store.tables missing");
@@ -932,7 +933,7 @@ export function installBackend({ store, media: mediaFiles = {}, policy, today = 
     }
     if (sub === "user" && method === "GET") { seen("GET auth/user"); return { status: 200, body: authUser(store) }; }
     if (sub === "user" && (method === "PUT" || method === "PATCH")) { notify?.(MSG.NO_PASSWORD); seen("PUT auth/user (demo)"); return { status: 200, body: authUser(store) }; }
-    if (sub === "logout" && method === "POST") { seen("POST auth/logout"); return { status: 204, body: null }; }
+    if (sub === "logout" && method === "POST") { seen("POST auth/logout"); setTimeout(() => { try { onSignOut?.(); } catch { /* ignore */ } }, 0); return { status: 204, body: null }; }
     if (["recover", "verify", "otp", "signup", "magiclink", "resend", "invite", "authorize", "callback"].includes(sub.split("/")[0])) deny(400, MSG.NO_SIGNIN, "simulation");
     throw unsupported(`auth ${method} ${sub.slice(0, 40)}`);
   }

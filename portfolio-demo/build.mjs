@@ -9,7 +9,7 @@ import { build } from "vite";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { unusedRules, DEMO_LOGO, DEMO_CREST } from "./brand.mjs";
+import { unusedRules, DEMO_LOGO, DEMO_CREST, OWNER, OWNER_URL } from "./brand.mjs";
 import { createHash } from "node:crypto";
 import { scanText } from "./scan/scan.mjs";
 
@@ -60,6 +60,13 @@ if (/src="\.\/assets|href="\.\/assets/.test(html)) throw new Error("a file was l
 const fontCss = readFileSync(HERE + "src/fonts.css", "utf8").replace(/url\(\.\/fonts\/\.?\/?([a-z0-9-]+\.woff2)\)/g,
   (_, f) => `url(data:font/woff2;base64,${readFileSync(HERE + "src/fonts/" + f).toString("base64")})`);
 html = html.replace("<head>", () => `<head><style>${fontCss}</style>`);
+// Copyright notice and terms in the file itself (agreed protection layer 6).
+const NOTICE = `© 2026 ${OWNER}. All rights reserved. Interactive demo shown to prospective clients for evaluation only. ` +
+  "Copying, redistributing, decompiling, reverse-engineering, scraping, reselling or reusing its code, design or content, in whole or in part, " +
+  `needs the author's written permission (${OWNER_URL}). All organisations, people, projects and figures are fictional.`;
+html = html.replace(/^<!doctype html>/i, (d) => `${d}\n<!-- ${NOTICE} -->`)
+  .replace("<head>", () => `<head><meta name="author" content="${OWNER}"><meta name="copyright" content="© 2026 ${OWNER}. All rights reserved.">`);
+if (!html.includes(NOTICE)) throw new Error("copyright notice missing");
 
 mkdirSync(OUT, { recursive: true });
 writeFileSync(OUT + "index.html", html);

@@ -13,6 +13,9 @@ import { notify } from "./demoNotify.js";
 import { setDemoDay } from "./demoClock.js";
 import { recomputeViews } from "../data/views.mjs";
 import { loadFiles, saveFile, clearFiles } from "./demoFiles.js";
+import { EntryScreen, DemoBar, BAR_H } from "./demoShell.jsx";
+import { guardLinks } from "./demoLinks.js";
+import { track } from "./demoAnalytics.js";
 
 const DAY = seed.NOW.slice(0, 10);
 setDemoDay(DAY);
@@ -27,9 +30,13 @@ export const PERSONAS = {
 const ROLE_KEY = "cpp-demo-role";
 const ALIAS = { pmo: "pmo", admin: "pmo", pm: "project_manager", project_manager: "project_manager", guest: "guest", management: "guest", senior: "guest" };
 const safe = (f, d = null) => { try { return f(); } catch { return d; } };
-const fromUrl = ALIAS[String(new URLSearchParams(location.search).get("role") || "").toLowerCase()];
+const params = new URLSearchParams(location.search);
+const fromUrl = ALIAS[String(params.get("role") || "").toLowerCase()];
 if (fromUrl) safe(() => localStorage.setItem(ROLE_KEY, fromUrl));
-const role = fromUrl || ALIAS[safe(() => localStorage.getItem(ROLE_KEY))] || "pmo";
+const ENTERED_KEY = "cpp-demo-entered";      // this tab has been past the start screen
+// A link with ?role=… opens that role directly (for sharing); ?start shows the start screen again.
+if (fromUrl) safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));
+if (params.has("start")) safe(() => sessionStorage.removeItem(ENTERED_KEY));
 
 // ── the data: the seed, or this browser's saved copy of it ──
 const VIEWS = new Set(["portfolio_metrics", "portfolio_dashboard", "project_metrics", "investment_metrics", "cashflow_monthly", "at_risk_projects",
@@ -74,28 +81,69 @@ for (const [key, uri] of Object.entries(mediaFiles)) {
 const own = saved && saved.v === SEED_V ? await loadFiles() : {};
 for (const [key, blob] of Object.entries(own)) media[key] = URL.createObjectURL(blob);
 
-const me = tables.user_profiles.find((u) => u.username === PERSONAS[role].username) || tables.user_profiles.find((u) => u.role === "pmo");
+// ── the start screen, then the portal for the chosen role ──
+const shellRoot = document.createElement("div");
+shellRoot.id = "demo-shell";
+document.body.appendChild(shellRoot);
+const shell = createRoot(shellRoot);
+const reloadClean = () => location.replace(location.pathname);
+
+let entered = safe(() => sessionStorage.getItem(ENTERED_KEY));
+let role = ALIAS[safe(() => localStorage.getItem(ROLE_KEY))] || "pmo";
+let mode = "explore";
+if (!entered) {
+  const capex = tables.projects.filter((p) => p.portfolio === "capex");
+  const facts = [["capital projects", capex.length], ["sites", new Set(capex.map((p) => p.campus)).size],
+    ["project managers", tables.user_profiles.filter((u) => u.role === "project_manager" && u.is_active).length],
+    ["purchase-order lines", (tables.inventory_items || []).length], ["roles to try", 3]];
+  ({ role, mode } = await new Promise((resolve) => shell.render(<EntryScreen initialRole={role} facts={facts} onStart={resolve} />)));
+  safe(() => localStorage.setItem(ROLE_KEY, role));
+  safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));   // a reload explores; the tour starts once
+  track("demo_start", { role, mode });
+}
+
+const me = tables.user_profiles.find((u) => u.username === PERSONAS[role]?.username) || tables.user_profiles.find((u) => u.role === "pmo");
 const store = { tables, meta: { me: { id: me.id, username: me.username, full_name: me.full_name, role: me.role } } };
 
+const reset = async () => {
+  track("demo_reset", { role });
+  await clearFiles();
+  const keep = safe(() => localStorage.getItem(ROLE_KEY)), was = safe(() => sessionStorage.getItem(ENTERED_KEY));
+  safe(() => localStorage.clear()); safe(() => sessionStorage.clear());
+  if (keep) safe(() => localStorage.setItem(ROLE_KEY, keep));
+  if (was) safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));
+  reloadClean();
+};
+const switchRole = (r) => {
+  const x = ALIAS[r] || "pmo";
+  track("demo_role", { from: role, to: x });
+  safe(() => localStorage.setItem(ROLE_KEY, x)); safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));
+  reloadClean();
+};
+const startTour = () => {
+  track("tour_open", { role });
+  if (window.__DEMO__.tour?.start) window.__DEMO__.tour.start();
+  else notify("The guided tour opens here.");
+};
 window.__DEMO__ = {
-  unhandled: [], role, personas: PERSONAS,
-  /** Signs in as another role (the page reloads; changes are kept). */
-  switchRole(r) { const x = ALIAS[r] || "pmo"; safe(() => localStorage.setItem(ROLE_KEY, x)); location.replace(location.pathname); },
-  /** Puts every figure, update and file back as it was (the role is kept). */
-  async reset() {
-    await clearFiles();
-    const keep = safe(() => localStorage.getItem(ROLE_KEY));
-    safe(() => localStorage.clear()); safe(() => sessionStorage.clear());
-    if (keep) safe(() => localStorage.setItem(ROLE_KEY, keep));
-    location.replace(location.pathname);
-  },
+  unhandled: [], role, mode, personas: PERSONAS, switchRole, reset, startTour, tour: null,
   changedAt: saved && saved.v === SEED_V ? saved.at : null,
 };
 installBackend({
   store, media, policy, today: () => DAY, onWrite: save, onUpload: saveFile, ownFiles: Object.keys(own), serverFeature, assistant, notify,
   onUnhandled: (info) => { window.__DEMO__.unhandled.push(info); },
+  onSignOut: () => { safe(() => sessionStorage.removeItem(ENTERED_KEY)); reloadClean(); },
 });
+guardLinks(notify);
 prepareSession(store);
 
+document.documentElement.style.setProperty("--demo-bar", BAR_H + "px");
+const appRoot = document.getElementById("root");
+appRoot.style.marginTop = BAR_H + "px";
+shell.render(<DemoBar role={role} onRole={switchRole} onTour={startTour} onReset={reset} changedAt={window.__DEMO__.changedAt} />);
+// Drop ?role= / ?start from the address so a reload keeps the visitor's own choices.
+if (location.search) history.replaceState(null, "", location.pathname + location.hash);
+
 const { default: App } = await import("../../src/App.jsx");
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(appRoot).render(<App />);
+if (mode === "tour") setTimeout(startTour, 1200);

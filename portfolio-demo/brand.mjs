@@ -63,6 +63,9 @@ export const RULES = [
   // Offline and demo-only behaviour.
   ["ui: web fonts", /f\.href = "https:\/\/fonts\.googleapis\.com\/[^"]*";/, 'f.href = "data:text/css,";'],
   ["App: PMO simulation button", "const SIM_ENABLED = true;", "const SIM_ENABLED = false;"],
+  // The demo bar sits above the portal: the portal's outer frame is shortened by its height.
+  ["App: shell height", '<div style={{ display:"flex", height:"100vh", fontFamily:TYPE.body.fontFamily,',
+    '<div style={{ display:"flex", height:"calc(100vh - var(--demo-bar, 0px))", fontFamily:TYPE.body.fontFamily,'],
   // Real system and council names shown on screen (identifiers in lower case stay: they are table names).
   ["proposal system", /\bE-PDD\b/g, "e-Proposal"],
   ["council", /\bPMDC\b/g, "Accreditation"],
