@@ -32,8 +32,9 @@ export const DEMO_CREST = svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBo
 // [name, pattern (string = literal, all occurrences), replacement]
 export const RULES = [
   // The organisation's logo and crest (embedded images) → the neutral marks above.
-  ["App: logo", /const LOGO = "data:image\/png;base64,[A-Za-z0-9+\/=]+"/, `const LOGO = "${DEMO_LOGO}"`],
-  ["App: crest", /const CREST_LOGO = "data:image\/png;base64,[A-Za-z0-9+\/=]+"/, `const CREST_LOGO = "${DEMO_CREST}"`],
+  // ("Make it yours" can replace both at run time.)
+  ["App: logo", /const LOGO = "data:image\/png;base64,[A-Za-z0-9+\/=]+"/, `const LOGO = (window.__DEMO_BRAND__ && window.__DEMO_BRAND__.logo) || "${DEMO_LOGO}"`],
+  ["App: crest", /const CREST_LOGO = "data:image\/png;base64,[A-Za-z0-9+\/=]+"/, `const CREST_LOGO = (window.__DEMO_BRAND__ && window.__DEMO_BRAND__.crest) || "${DEMO_CREST}"`],
   // Backend address and the public key: the demo talks only to its in-page backend.
   ["supabase origin", /https:\/\/[a-z]{20}\.supabase\.co/g, DEMO_ORIGIN],
   ["public jwt", /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "demo-public-key"],
@@ -65,8 +66,30 @@ export const RULES = [
   ["App: PMO simulation button", "const SIM_ENABLED = true;", "const SIM_ENABLED = false;"],
   // The demo's guided tour drives the portal through the same navigation object as the portal's own tour,
   // and the portal's "Take the tour" buttons (sidebar, invite, assistant) open the demo's tour.
+  // "Make it yours": the visitor's colours replace the brand palette when the page starts.
+  ["theme: demo colours", '  goldDeep:  "#B8842E",\n};\n',
+    '  goldDeep:  "#B8842E",\n};\nif (typeof window !== "undefined" && window.__DEMO_BRAND__?.colors) Object.assign(BRAND, window.__DEMO_BRAND__.colors);\n'],
+  // Amounts in K / M / B (window.__dmM), so a currency worth more than the base one still reads well.
+  ["App: fmtM", 'const fmtM = (n) => n == null ? "—" : (n / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";',
+    'const fmtM = (n) => n == null ? "—" : __dmM(n);'],
+  ["App: page fmtM", 'const fmtM  = n => n == null ? "—" : (parseFloat(n) / 1e6).toFixed(1) + "M";', 'const fmtM  = n => n == null ? "—" : __dmM(parseFloat(n));'],
+  ["App: page fmtMv", 'const m = (Math.abs(parseFloat(n)) / 1e6).toFixed(1);\n    return (parseFloat(n) >= 0 ? "+" : "−") + m + "M";',
+    'const m = __dmM(Math.abs(parseFloat(n)));\n    return (parseFloat(n) >= 0 ? "+" : "−") + m;'],
+  ["App: detail fmtM", 'const fmtM  = n => n == null ? "—" : (parseFloat(n)/1e6).toFixed(1)+"M";', 'const fmtM  = n => n == null ? "—" : __dmM(parseFloat(n));'],
+  ["App: detail fmtMv", 'const m=(Math.abs(parseFloat(n))/1e6).toFixed(1); return(parseFloat(n)>=0?"+":"−")+m+"M";',
+    'const m=__dmM(Math.abs(parseFloat(n))); return(parseFloat(n)>=0?"+":"−")+m;'],
+  ["App: SU total", '(suTotal / 1e6).toFixed(2) + "M"', '__dmM(suTotal, 2)'],
+  ["nav stats", /PKR \$\{\(\(\+v \|\| 0\) \/ 1e6\)\.toFixed\(1\)\}M/g, "PKR ${__dmM(+v || 0)}"],
+  ["theme: capex stat", "PKR ${((+d.total_capex||0)/1e6).toFixed(1)}M", "PKR ${__dmM(+d.total_capex||0)}"],
+  ["theme: released stat", "PKR ${((+d.budget_consumed||0)/1e6).toFixed(1)}M", "PKR ${__dmM(+d.budget_consumed||0)}"],
+  ["CampusCompare: fmtM", 'const fmtM = (n) => `${(num(n) / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;', "const fmtM = (n) => __dmM(num(n));"],
+  ["Cashflows: fmtM", ': (Number(n) / 1e6).toLocaleString("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "M";', ": __dmM(Number(n));"],
+  ["Timeline: fmtM", ': (parseFloat(n)/1e6).toLocaleString("en", { minimumFractionDigits:1, maximumFractionDigits:1 }) + "M";', ": __dmM(parseFloat(n));"],
+  ["reportCalc: fmtM", 'export const fmtM = (n, d = 1) => `${(num(n) / 1e6).toLocaleString("en", { minimumFractionDigits: d, maximumFractionDigits: d })}M`;',
+    "export const fmtM = (n, d = 1) => __dmM(num(n), d);"],
+  ["BoardReport: axis", "{(t / 1e6).toFixed(0)}M</text>", "{__dmM(t, 0)}</text>"],
   ["App: tour navigation for the demo", "    onAbandon: markTourAbandon,\n  };\n",
-    "    onAbandon: markTourAbandon,\n  };\n  if (window.__DEMO__) window.__DEMO__.nav = tourNav;\n"],
+    "    onAbandon: markTourAbandon,\n  };\n  if (window.__DEMO__) { window.__DEMO__.nav = tourNav; window.__DEMO__.view = { page, projectId: selectedProjectId }; window.__DEMO__.openProject = openProject; }\n"],
   ["TourGuide: demo tour", "  const startDefault = useCallback(() => {\n    const list = nav?.buildSteps?.();",
     "  const startDefault = useCallback(() => {\n    if (window.__DEMO__?.startTour) { window.__DEMO__.startTour(); return; }\n    const list = nav?.buildSteps?.();"],
   // The demo bar sits above the portal: the portal's outer frame is shortened by its height.

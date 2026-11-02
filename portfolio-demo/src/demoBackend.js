@@ -400,13 +400,14 @@ let nativeFetch = null;            // the browser's own fetch, captured once (a 
  * policy:  { read(table, rows, tables, me), write(table, op, row, old, me, tables), canViewProject, canViewPast, isPastViewer }.
  * today(): the date the views are worked out for (YYYY-MM-DD).
  * onWrite(tables, table): after every change (the page saves it).
+ * money: { out(table, row), in(table, row) }: currency conversion (page ↔ stored).
  * onSignOut(): the visitor pressed Sign out (the page goes back to the start screen).
  * onUpload(key, blob | null): a file the visitor uploaded or removed; ownFiles: the keys of those already saved.
  * serverFeature(name, body, me, tables) → { status, body } | null: what an edge function would do.
  * assistant(body, me, tables) → the assistant's answer.  notify(text): a short message on screen.
  * onUnhandled(info): every request the backend does not recognise, with { kind, method, path, detail }.
  */
-export function installBackend({ store, media: mediaFiles = {}, policy, today = () => new Date().toISOString().slice(0, 10), onWrite, onUpload, ownFiles = [], onSignOut, serverFeature, assistant, notify, onUnhandled } = {}) {
+export function installBackend({ store, media: mediaFiles = {}, policy, today = () => new Date().toISOString().slice(0, 10), onWrite, onUpload, ownFiles = [], onSignOut, money, serverFeature, assistant, notify, onUnhandled } = {}) {
   const responses = [];
   if (!store || typeof store !== "object" || !store.tables || typeof store.tables !== "object") {
     throw new Error("Demo backend: store.tables missing");
@@ -551,6 +552,7 @@ export function installBackend({ store, media: mediaFiles = {}, policy, today = 
 
   // Builds the output object for one row; returns null when an !inner embed is empty.
   function project(row, table, items, params) {
+    if (money) row = money.out(table, row);
     const out = {};
     for (const it of items) {
       if (it.kind === "star") { for (const k of Object.keys(row)) out[k] = row[k]; continue; }
@@ -747,7 +749,8 @@ export function installBackend({ store, media: mediaFiles = {}, policy, today = 
       if (!list.every(isObj)) throw badRequest("Empty or invalid json", "PGRST102");
       const keys = params.get("on_conflict") ? params.get("on_conflict").split(",").map((s) => s.trim()) : (PKEY[table] || ["id"]);
       const merge = /resolution=merge-duplicates/.test(prefer) || method === "PUT", ignore = /resolution=ignore-duplicates/.test(prefer);
-      for (const raw of list) {
+      for (const sent of list) {
+        const raw = money ? money.in(table, sent) : sent;
         const found = rows.find((x) => sameKey(keys, raw, x));
         if (found && (merge || ignore)) {
           if (ignore) continue;
@@ -783,7 +786,9 @@ export function installBackend({ store, media: mediaFiles = {}, policy, today = 
     if (method === "PATCH") {
       if (!isObj(body)) throw badRequest("Empty or invalid json", "PGRST102");
       for (const r of targets) {
-        const next = { ...r, ...body };
+        // The row's own key goes along so a setting's value is converted by its name (same value, no change).
+        const ctx = {}; for (const k of ["key", "entity_type"]) if (k in r) ctx[k] = r[k];
+        const next = { ...r, ...(money ? money.in(table, { ...body, ...ctx }) : body) };
         if ("updated_at" in r && !("updated_at" in body)) next.updated_at = nowIso();
         beforeWrite(table, next, r);
         if (!policy.write(table, "UPDATE", next, r, me, tables)) continue;   // like row security: silently not changed

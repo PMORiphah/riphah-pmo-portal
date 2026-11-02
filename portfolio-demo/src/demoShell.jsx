@@ -73,6 +73,7 @@ const CSS = `
 .dm-bar .b{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:1px solid rgba(148,178,214,.22);background:rgba(255,255,255,.04);font-size:12.5px;font-weight:600;white-space:nowrap}
 .dm-bar .b:hover{border-color:#7fd1c7}
 .dm-bar .b.accent{background:#2a9d8f;border-color:#2a9d8f;color:#fff}
+.dm-bar .b.mine{background:rgba(224,169,74,.14);border-color:rgba(224,169,74,.5)}
 .dm-bar .b.cta{text-decoration:none;color:#f3d39b;border-color:rgba(224,169,74,.45)}
 .dm-bar .b.cta:hover{border-color:#e0a94a}
 @media (max-width:1180px){.dm-bar .hide-m{display:none}}
@@ -164,7 +165,7 @@ export function EntryScreen({ initialRole = "pmo", facts, tourMinutes = 6, onSta
 }
 
 /** The bar above the portal. */
-export function DemoBar({ role, onRole, onTour, onReset, changedAt }) {
+export function DemoBar({ role, onRole, onTour, onReset, onCustomise, changedAt }) {
   useCss();
   const [menu, setMenu] = useState(null);           // "role" | "more" | null
   const [confirm, setConfirm] = useState(false);
@@ -185,6 +186,7 @@ export function DemoBar({ role, onRole, onTour, onReset, changedAt }) {
         <button type="button" className="b" aria-haspopup="menu" aria-expanded={menu === "role"} data-demo="role" onClick={(e) => open("role", e)}>
           <span className="hide-s">Viewing as</span> {roleTitle(role)} ▾</button>
         <button type="button" className="b accent hide-s" data-demo="tour" onClick={onTour}>Guided tour</button>
+        <button type="button" className="b mine" data-demo="customise" onClick={onCustomise} aria-label="Make it yours" title="Your name, logo, colours, currency and words"><span aria-hidden="true">🎨</span><span className="hide-s" aria-hidden="true"> Make it yours</span></button>
         <button type="button" className="b hide-s" data-demo="reset" onClick={() => setConfirm(true)}>Reset demo</button>
         <a className="b cta hide-s" href={OWNER_URL} target="_blank" rel="noopener noreferrer" data-demo="cta" onClick={() => track("cta_click", { where: "bar" })}>Want this for your organisation? ↗</a>
         <a className="copy hide-m" href={OWNER_URL} target="_blank" rel="noopener noreferrer" title="Hire the author on Upwork">© {YEAR} {OWNER}</a>
@@ -203,6 +205,7 @@ export function DemoBar({ role, onRole, onTour, onReset, changedAt }) {
       {menu === "more" && (
         <div className="dm-menu" role="menu" style={{ left }}>
           <button type="button" role="menuitem" onClick={() => { setMenu(null); onTour(); }}>Guided tour</button>
+          <button type="button" role="menuitem" onClick={() => { setMenu(null); onCustomise(); }}>Make it yours<small>Your name, logo, colours, currency and words.</small></button>
           <button type="button" role="menuitem" onClick={() => { setMenu(null); setConfirm(true); }}>Reset demo<small>Put every figure, update and file back as it was.</small></button>
           <hr />
           <a role="menuitem" href={OWNER_URL} target="_blank" rel="noopener noreferrer" data-demo="cta" onClick={() => track("cta_click", { where: "bar_menu" })}>Want this for your organisation? Contact me on Upwork ↗<small>© {YEAR} {OWNER}. All data is fictional.</small></a>
@@ -212,7 +215,7 @@ export function DemoBar({ role, onRole, onTour, onReset, changedAt }) {
         <div className="dm-modal" role="dialog" aria-modal="true" aria-labelledby="dm-reset-t" onKeyDown={(e) => e.key === "Escape" && setConfirm(false)}>
           <div className="card">
             <h2 id="dm-reset-t">Reset the demo?</h2>
-            <p>Every figure, update, task and uploaded file goes back to how the demo started. Your role stays the same.</p>
+            <p>Every figure, update, task and uploaded file goes back to how the demo started. Your role and your “Make it yours” look stay the same.</p>
             <div className="row">
               <button type="button" className="dm-btn" autoFocus onClick={() => setConfirm(false)}>Cancel</button>
               <button type="button" className="dm-btn primary" data-demo="reset-confirm" onClick={onReset}>Reset demo</button>

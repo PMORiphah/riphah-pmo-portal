@@ -137,8 +137,8 @@ export const STEPS = [
     what: "Thresholds, dashboard cards, team page and contacts are set here, without a developer.",
     who: "PMO.", problem: "Day-to-day changes don't need a programmer.",
     custom: "Anything your PMO wants to change itself." }),
-  S(8, { page: "cmd", tab: "budgeting", sel: ".dm-bar", title: "Yours, with your name on it",
-    what: "Name, logo, colours, currency, terms, stages, roles, reports and imports: fitted to how your organisation works.",
+  S(8, { page: "cmd", tab: "budgeting", sel: '[data-demo="customise"]', title: "Yours, with your name on it",
+    what: "Press 🎨 Make it yours to see your name, logo, colours, currency and words in this demo now. A real setup also fits stages, roles, reports and imports.",
     who: "Your PMO, finance and leadership.", problem: "A portal that matches your process, not the other way round.",
     custom: "Set up for you, then run on your own accounts and hosting." }),
 ];

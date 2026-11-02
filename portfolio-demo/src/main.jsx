@@ -1,6 +1,7 @@
 // Portfolio demo entry: fictional data in the in-page backend, the visitor's chosen role, the real
 // portal's App. Nothing leaves the page: the backend answers every request to the demo address and
 // refuses everything else. Changes are saved in this browser only; "Reset demo" puts the data back.
+import "./brandBoot.js";   // first: colours and logo before the portal's theme loads
 import React from "react";
 import { createRoot } from "react-dom/client";
 import seed from "../data/seed.json";
@@ -18,6 +19,10 @@ import { guardLinks } from "./demoLinks.js";
 import { track } from "./demoAnalytics.js";
 import { Tour, readTour, writeTour } from "./demoTour.jsx";
 import { totalMinutes } from "./tourChapters.js";
+import { loadBrand, saveBrand, installText, compact, CURRENCIES, KEY as BRAND_KEY } from "./demoBrand.js";
+import { convertRow } from "./demoMoney.js";
+import { Customise } from "./demoCustomise.jsx";
+import { setMoneyFormat } from "./demoAssistant.js";
 
 const DAY = seed.NOW.slice(0, 10);
 setDemoDay(DAY);
@@ -111,8 +116,10 @@ const reset = async () => {
   track("demo_reset", { role });
   await clearFiles();
   const keep = safe(() => localStorage.getItem(ROLE_KEY)), was = safe(() => sessionStorage.getItem(ENTERED_KEY));
+  const look = safe(() => localStorage.getItem(BRAND_KEY));   // the visitor's "Make it yours" choices stay
   safe(() => localStorage.clear()); safe(() => sessionStorage.clear());
   if (keep) safe(() => localStorage.setItem(ROLE_KEY, keep));
+  if (look) safe(() => localStorage.setItem(BRAND_KEY, look));
   if (was) safe(() => sessionStorage.setItem(ENTERED_KEY, "explore"));
   reloadClean();
 };
@@ -147,8 +154,33 @@ window.__DEMO__ = {
   unhandled: [], role, mode, personas: PERSONAS, switchRole, reset, startTour, tour: null,
   changedAt: saved && saved.v === SEED_V ? saved.at : null,
 };
+// ── "Make it yours": currency conversion, the assistant's amounts, words on screen ──
+const brand = loadBrand();
+const rate = CURRENCIES[brand.currency]?.rate || 280;
+const money = rate === 1 ? null : { out: (t, r) => convertRow(t, r, 1 / rate), in: (t, r) => convertRow(t, r, rate) };
+setMoneyFormat((v) => `${brand.currency} ${compact((Number(v) || 0) / rate)}`);
+installText(brand);
+const VIEW_KEY = "cpp-demo-view";
+let customiseOpen = false;
+const customiseRoot = createRoot(Object.assign(document.body.appendChild(document.createElement("div")), { id: "demo-customise" }));
+const closeCustomise = () => { customiseOpen = false; customiseRoot.render(null); };
+const applyLook = (b) => {
+  saveBrand(b);
+  const v = window.__DEMO__.view;
+  if (v) safe(() => sessionStorage.setItem(VIEW_KEY, JSON.stringify(v)));
+  document.body.style.transition = "opacity .18s"; document.body.style.opacity = "0.35";
+  setTimeout(reloadClean, 140);
+};
+const openCustomise = () => {
+  if (customiseOpen) return;
+  customiseOpen = true;
+  track("feature_used", { feature: "customise_open" });
+  customiseRoot.render(<Customise brand={brand} onApply={applyLook} onClose={closeCustomise} />);
+};
+window.__DEMO__.customise = openCustomise;
+
 installBackend({
-  store, media, policy, today: () => DAY, onWrite: save, onUpload: saveFile, ownFiles: Object.keys(own), serverFeature, assistant, notify,
+  store, media, money, policy, today: () => DAY, onWrite: save, onUpload: saveFile, ownFiles: Object.keys(own), serverFeature, assistant, notify,
   onUnhandled: (info) => { window.__DEMO__.unhandled.push(info); },
   onSignOut: () => { safe(() => sessionStorage.removeItem(ENTERED_KEY)); reloadClean(); },
 });
@@ -160,7 +192,7 @@ const appRoot = document.getElementById("root");
 appRoot.style.marginTop = BAR_H + "px";
 // Choosing a role by hand ends a running tour (it would otherwise take the visitor back to its step).
 const chooseRole = (r) => { const t = readTour(); if (t?.active) writeTour({ ...t, active: false, returnRole: null }); switchRole(r); };
-shell.render(<DemoBar role={role} onRole={chooseRole} onTour={startTour} onReset={reset} changedAt={window.__DEMO__.changedAt} />);
+shell.render(<DemoBar role={role} onRole={chooseRole} onCustomise={openCustomise} onTour={startTour} onReset={reset} changedAt={window.__DEMO__.changedAt} />);
 // Drop ?role= / ?start from the address so a reload keeps the visitor's own choices.
 if (location.search) history.replaceState(null, "", location.pathname + location.hash);
 
@@ -169,5 +201,12 @@ createRoot(appRoot).render(<App />);
 // Wait for the portal to finish its first render (its navigation object), then start or resume the tour.
 const whenNav = (f, n = 0) => (window.__DEMO__.nav || n > 60 ? f() : setTimeout(() => whenNav(f, n + 1), 100));
 const resuming = readTour();
+// After "Apply": back to the page and project the visitor was on.
+const lastView = safe(() => JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null"));
+safe(() => sessionStorage.removeItem(VIEW_KEY));
+if (lastView && !resuming?.active) whenNav(() => {
+  if (lastView.page) window.__DEMO__.nav.setPage(lastView.page);
+  if (lastView.projectId) setTimeout(() => window.__DEMO__.openProject?.(lastView.projectId), 150);
+});
 if (resuming?.active) whenNav(() => openTour({ ...resuming, playing: resuming.playing !== false }));
 else if (mode === "tour") whenNav(() => setTimeout(startTour, 600));
