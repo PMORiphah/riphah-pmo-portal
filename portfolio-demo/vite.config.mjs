@@ -21,7 +21,8 @@ const whiteLabel = {
 };
 
 const keyFile = new URL("./.posthog-key", import.meta.url);
-const POSTHOG_KEY = (process.env.DEMO_POSTHOG_KEY || (existsSync(keyFile) ? readFileSync(keyFile, "utf8") : "")).trim();
+// DEMO_NO_ANALYTICS=1 builds without a key (the offline test copy) even when .posthog-key exists.
+const POSTHOG_KEY = process.env.DEMO_NO_ANALYTICS ? "" : (process.env.DEMO_POSTHOG_KEY || (existsSync(keyFile) ? readFileSync(keyFile, "utf8") : "")).trim();
 if (POSTHOG_KEY && !/^phc_[A-Za-z0-9]{20,64}$/.test(POSTHOG_KEY)) throw new Error("DEMO_POSTHOG_KEY must be a PostHog project key (phc_…); personal keys are refused");
 
 export default defineConfig({

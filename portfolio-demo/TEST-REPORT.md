@@ -82,3 +82,15 @@ What is in that log:
 - The `*.example` and `vercel.app` addresses: answered by the lock test itself; nothing was fetched from them.
 
 The full log is written to `tests/out/requests.log` on every run.
+
+## Live analytics check (3 Nov 2026)
+
+`node portfolio-demo/tests/live-analytics.mjs portfolio-demo/dist/index.html` on the final page, built with the
+real project token:
+- One tagged visit (`?src=claude-test`): guest role, three pages, one project, an assistant question,
+  the tour started and left, and one heartbeat.
+- Every batch the page sent was passed on unchanged to `https://eu.i.posthog.com/batch/`: 7 batches,
+  18 events, all answered HTTP 200, no page errors.
+- PostHog answers 200 even to a wrong token (it checks tokens later), so the proof is the events
+  appearing in the PostHog project (**Activity**, source `claude-test`), checked by the owner.
+- An earlier `setup_check` event (`distinct_id` `claude-setup-check`) was the connection test.

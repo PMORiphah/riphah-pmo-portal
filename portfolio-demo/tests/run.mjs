@@ -1,6 +1,6 @@
 // Portfolio demo: every test, in order.  node portfolio-demo/tests/run.mjs
-//   1. builds dist/index.html (the privacy scan runs inside the build and fails it on any match),
-//      and a second copy with a dummy analytics key for the analytics test (tests/out/keyed/);
+//   1. builds a copy without analytics (tests/out/plain/) and one with a dummy analytics key for the
+//      analytics test (tests/out/keyed/); the privacy scan runs inside each build and fails it on any match;
 //   2. runs each suite (the tour from each of the three roles);
 //   3. summarises tests/out/requests.log: every address any page asked for.
 // Exit code 1 if anything fails. Screenshots and logs go to tests/out/ (not committed).
@@ -9,12 +9,13 @@ import { readFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const HERE = fileURLToPath(new URL("./", import.meta.url)), ROOT = fileURLToPath(new URL("../", import.meta.url));
-const OUT = HERE + "out/", DIST = ROOT + "dist/index.html", KEYED = OUT + "keyed/index.html";
+// The suites test a copy without analytics (tests/out/plain/); dist/ (the file that goes online) is not touched.
+const OUT = HERE + "out/", DIST = OUT + "plain/index.html", KEYED = OUT + "keyed/index.html";
 rmSync(OUT + "requests.log", { force: true }); mkdirSync(OUT + "shots", { recursive: true });
 const sh = (args, env = {}) => execFileSync("node", args, { stdio: "inherit", env: { ...process.env, ...env } });
 
 console.log("── build (with the privacy scan) ──");
-sh([ROOT + "build.mjs"]);
+sh([ROOT + "build.mjs"], { DEMO_OUT: OUT + "plain", DEMO_NO_ANALYTICS: "1" });
 sh([ROOT + "build.mjs"], { DEMO_OUT: OUT + "keyed", DEMO_POSTHOG_KEY: "phc_TESTKEYdemo000000000000000000000" });
 if (!existsSync(DIST) || !existsSync(KEYED)) { console.error("build failed"); process.exit(1); }
 
