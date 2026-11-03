@@ -71,8 +71,10 @@ To update later, run `npx vercel@latest deploy --prod` again in the same folder.
 
 1. Sign up at **https://eu.posthog.com/signup** (EU region, free).
 2. Create a project called `Capital Projects Portal demo`.
-3. **Settings → Project → IP data capture:** switch on **Discard client IP data**.
-4. **Settings → Project → General:** copy the **Project API key**. It starts with `phc_`.
+3. **Settings** (the project name at the bottom of the left sidebar, or https://eu.posthog.com/settings/project)
+   → **Project → General → IP data capture configuration:** choose **discard**. EU accounts usually
+   have it off already; just check.
+4. On the same page, copy the **Project token**. It starts with `phc_`.
 5. Send me the key. I build the final `index.html` with it and test that sample events arrive in
    your PostHog. Then upload that file as in A.4.
 

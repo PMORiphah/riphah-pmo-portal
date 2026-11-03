@@ -10,9 +10,11 @@ GeoIP lookup is switched off on every event.
 
 1. Sign up at **https://eu.posthog.com/signup**. Choose the **EU** region. The free tier covers 1 million events a month.
 2. Create a project, for example "Capital Projects Portal demo".
-3. **Settings → Project → IP data capture:** switch on **Discard client IP data**. Do this before the
-   demo goes live; the privacy line on the start screen relies on it.
-4. **Settings → Project → General:** copy the **Project API key**. It starts with `phc_` and is public by
+3. **Settings → Project → General → IP data capture configuration:** choose **discard** client IP data.
+   EU accounts usually start with it off already; check it before the demo goes live, because the
+   privacy line on the start screen relies on it. (Settings opens from the project name at the bottom
+   of the left sidebar, or at https://eu.posthog.com/settings/project.)
+4. **Settings → Project → General:** copy the **Project token**. It starts with `phc_` and is public by
    design, because it can only send events. Never use a personal API key (`phx_…`): the build refuses one.
 5. Give the `phc_` key to the person building the demo. It is not stored in the repository.
 
@@ -79,9 +81,9 @@ To open it: **eu.posthog.com → SQL editor** (left menu, "SQL"). Paste a query 
 **Save as insight** and **Add to dashboard** (create one called "Demo visits"). After that, the dashboard
 is one click away under **Dashboards**.
 
-**Visits per day**
+**Visits per day** (days in Pakistan time)
 ```sql
-SELECT toDate(timestamp) AS day, count() AS visits, count(DISTINCT distinct_id) AS visitors
+SELECT toDate(toTimeZone(timestamp, 'Asia/Karachi')) AS day, count() AS visits, count(DISTINCT distinct_id) AS visitors
 FROM events WHERE event = 'visit_start' AND timestamp > now() - INTERVAL 90 DAY
 GROUP BY day ORDER BY day DESC
 ```
