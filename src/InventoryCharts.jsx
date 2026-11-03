@@ -157,7 +157,7 @@ export function InventoryCharts({ T, rows, compact, onPick }) {
 
   return (
     <div data-inv-charts style={{ display: "grid", gap: SP.md, gridTemplateColumns: compact ? "1fr" : "minmax(0,1.35fr) minmax(0,1fr)" }}>
-      {card(BRAND.blueBright, MapPin, "Where the money went", "Value ordered by campus / site · click a bar to show that site",
+      {card(BRAND.blueBright, MapPin, "Where the budget went", "Value ordered by campus / site · click a bar to show that site",
         <div style={{ height: siteH }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={sites} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 0 }} barCategoryGap={6}>
