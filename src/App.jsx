@@ -305,6 +305,9 @@ const NAV = [
   { id:"review",   Icon:ClipboardCheck, label:"PMO Review",   pmoOnly:true },
   // Items procured on FY 25-26 and FY 26-27 projects, from SAP ME2J (PMO, 26 Oct 2026).
   { id:"inventory", Icon:Boxes,       label:"Inventory",    pmoOnly:true },
+  // Benefits of completed FY 25-26 / FY 26-27 projects, Revenue and Student Experience (PMO, 5 Nov 2026):
+  // PMO and guests (senior management); never project managers.
+  { id:"benefits", Icon:Award,        label:"Benefits Realization" },
   // PMO, and anyone a board report has been shared with (8 Oct 2026).
   { id:"reports",  Icon:FileBarChart,  label:"Monthly Report", reportsOnly:true },
   { id:"upd",  Icon:MessageSquare,   label:"Updates" },
@@ -595,7 +598,7 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (n.pastOnly && !(session?.role === "pmo" || pastAllowed)) return false;
     if (n.reportsOnly && !(session?.role === "pmo" || reportsAllowed)) return false;
-    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule")) return false;
+    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule" || n.id === "benefits")) return false;
     return true;
   });
   // On mobile, the bottom tab bar already surfaces this user's top 4 — a
@@ -891,7 +894,7 @@ function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, revi
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (n.pastOnly && !(session?.role === "pmo" || pastAllowed)) return false;
     if (n.reportsOnly && !(session?.role === "pmo" || reportsAllowed)) return false;
-    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule")) return false;
+    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule" || n.id === "benefits")) return false;
     return true;
   });
   const ordered = [...filtered].sort((a, b) => {
@@ -8676,6 +8679,11 @@ const CampusCompare = lazy(() => import("./CampusCompare.jsx").catch(() => {
   return { CampusCompare: () => null };
 }).then(m => ({ default: m.CampusCompare })));
 
+// Benefits Realization (PMO and guests, 5 Nov 2026): loaded only when the page is opened, reload once on a missing chunk.
+const BenefitsRealizationPage = lazy(() => import("./BenefitsRealization.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
+  return { BenefitsRealizationPage: () => null };
+}).then(m => ({ default: m.BenefitsRealizationPage })));
 // Inventory (PMO, 26 Oct 2026): loaded only when the page is opened. Reload once on a missing chunk, as above.
 const InventoryPage = lazy(() => import("./Inventory.jsx").catch(() => {
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
@@ -11859,6 +11867,7 @@ const PAGE_TITLES = {
   camp: { title:"Campus / Sites",  subtitle:"Projects and approvals by campus" },
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
   review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
+  benefits: { title:"Benefits Realization", subtitle:"Revenue and student experience from completed FY 25-26 and FY 26-27 projects" },
   inventory: { title:"Inventory", subtitle:"Items procured from FY 25-26 till present \u00b7 SAP ME2J" },
   cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
@@ -13123,7 +13132,7 @@ export default function App() {
 
   // Pages hidden from PMs in the nav redirect to Projects as well, so a stale
   // page value or an old link can't open them (same list as the nav filter).
-  const PM_HIDDEN = ["cmd", "camp", "perf", "risks", "lessons", "schedule"];
+  const PM_HIDDEN = ["cmd", "camp", "perf", "risks", "lessons", "schedule", "benefits"];
   const effectivePage =
     (session?.role === "project_manager" && PM_HIDDEN.includes(page)) ? "proj" :
     // Both PMO-only pages redirect rather than rendering empty. Hiding the nav
@@ -13346,6 +13355,11 @@ export default function App() {
                 const u = new URL(window.location.href); u.searchParams.delete("report");
                 window.history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
               }} />
+          </Suspense>
+        )}
+        {effectivePage === "benefits" && (
+          <Suspense fallback={<div style={{ flex:1 }} />}>
+            <BenefitsRealizationPage T={T} session={session} supa={supa} />
           </Suspense>
         )}
         {effectivePage === "inventory" && (
