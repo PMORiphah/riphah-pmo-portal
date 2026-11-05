@@ -302,7 +302,6 @@ const NAV = [
   { id:"schedule", Icon:CalendarRange, label:"Timeline & Schedule" },
   // PMO, and anyone who manages a past project (they see only their own).
   { id:"past",     Icon:History,       label:"Past Projects", pastOnly:true },
-  { id:"review",   Icon:ClipboardCheck, label:"PMO Review",   pmoOnly:true },
   // Items procured on FY 25-26 and FY 26-27 projects, from SAP ME2J (PMO, 26 Oct 2026).
   { id:"inventory", Icon:Boxes,       label:"Inventory",    pmoOnly:true },
   // Benefits of completed FY 25-26 / FY 26-27 projects, Revenue and Student Experience (PMO, 5 Nov 2026):
@@ -315,6 +314,8 @@ const NAV = [
   { id:"team", Icon:Users,           label:"Team & About" },
 ];
 const PMO_NAV = [
+  // New PDDs from the E-PDD portal (PMO). Under Administration since 5 Nov 2026 (PMO), above User Management.
+  { id:"review", Icon:ClipboardCheck, label:"PMO Review" },
   { id:"users", Icon:Users,    label:"User Management" },
   { id:"log",   Icon:Activity, label:"Activity Log" },
   { id:"set",   Icon:Settings, label:"Settings" },
@@ -905,7 +906,8 @@ function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, revi
   const overflowCount = ordered.length - primary.length;
   // PMO Review lives in the More drawer on phones, so its unread count rides on
   // the More tab; otherwise a new PDD would only show once the drawer is opened.
-  const reviewInMore = reviewCount > 0 && !primary.some(n => n.id === "review") && filtered.some(n => n.id === "review");
+  // (Under Administration since 5 Nov 2026, so always in the drawer for the PMO.)
+  const reviewInMore = reviewCount > 0 && session?.role === "pmo";
   const pastInMore = pastCount > 0 && !primary.some(n => n.id === "past") && filtered.some(n => n.id === "past");
   const moreCount = (reviewInMore ? reviewCount : 0) + (pastInMore ? pastCount : 0);
 
