@@ -369,27 +369,38 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({ key, value, updated_at: new Date().toISOString() }) });
 
   // ── Code review of PDDs (phase 3) ────────────────────────────────────────
+  // Egress (6 Nov 2026): every read here counts against the Supabase plan's data-out quota, so a pass first
+  // reads only fingerprints and fetches a PDD's full form, or its previous checks, only when it needs reviewing.
+  // reviewsClean: the last pass covered every PDD (no time-out, no files still copying) and wrote nothing.
+  let reviewsClean = false;
+  const PDD_FULL = "id,project_name,project_type,campus,cost_center,grand_total,estimated_total,received_at,source_created_at,submitted_on,start_date,finish_date,pdd,content_hash,linked_project_id,link_source";
   const runReviews = async (onlyId: number | null, deadline: number) => {
+    reviewsClean = true;
     const projects = await (await rest("projects?select=id,code,name,campus,df_recommended_amount,workflow_stage,portfolio,fiscal_year,cost_centers(name)")).json() as Row[];
     const projSig = await sha256(JSON.stringify(projects.map(p => [p.id, p.name, p.df_recommended_amount, p.workflow_stage, p.campus, (p.cost_centers as Row | null)?.name]).sort()));
-    const pdds = await (await rest(`epdd_pdds?select=id,project_name,project_type,campus,cost_center,grand_total,estimated_total,received_at,source_created_at,submitted_on,start_date,finish_date,pdd,content_hash,linked_project_id,link_source&queue=neq.removed${onlyId ? `&id=eq.${onlyId}` : ""}`)).json() as Row[];
+    const pdds = await (await rest(`epdd_pdds?select=id,content_hash,linked_project_id,link_source&queue=neq.removed${onlyId ? `&id=eq.${onlyId}` : ""}`)).json() as Row[];
     // Charters are the PDD itself, not a submitted attachment: the checks ignore them.
     const files = (await (await rest(`epdd_files?select=pdd_id,category,title,file_name,status,attempts,sha256,error${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[])
       .filter(f => !CHARTER.has(String(f.category)));
     const latest = new Map<number, Row>();
-    for (const r of await (await rest(`epdd_reviews?select=id,pdd_id,content_hash,verdict,summary,model,checks&model=like.rules-*&order=created_at.desc${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[])
+    for (const r of await (await rest(`epdd_reviews?select=id,pdd_id,content_hash&model=like.rules-*&order=created_at.desc${onlyId ? `&pdd_id=eq.${onlyId}` : ""}`)).json() as Row[])
       if (!latest.has(Number(r.pdd_id))) latest.set(Number(r.pdd_id), r);
     let done = 0;
-    for (const row of pdds) {
-      if (Date.now() > deadline) break;
-      const fs = files.filter(f => f.pdd_id === row.id);
+    for (const light of pdds) {
+      if (Date.now() > deadline) { reviewsClean = false; break; }
+      const fs = files.filter(f => f.pdd_id === light.id);
       // Wait for the attachments: a file still being copied would read as missing.
-      if (fs.some(f => f.status === "pending" || (f.status === "failed" && Number(f.attempts) < MAX_FILE_ATTEMPTS))) continue;
+      if (fs.some(f => f.status === "pending" || (f.status === "failed" && Number(f.attempts) < MAX_FILE_ATTEMPTS))) { reviewsClean = false; continue; }
+      let row: Row = light;
       const fileSig = fs.map(f => [f.category, f.title, f.file_name, f.status, f.sha256]).sort();
       const keyFor = (lid: unknown, ls: unknown) =>
         sha256(JSON.stringify([RULES_VERSION, row.content_hash, lid ?? null, ls ?? null, fileSig, projSig]));
-      const prev = latest.get(Number(row.id));
+      let prev = latest.get(Number(row.id));
       if (prev?.content_hash === await keyFor(row.linked_project_id, row.link_source)) continue;
+      // This PDD needs (re)reviewing: now read its full form and its previous checks.
+      reviewsClean = false;
+      row = ((await (await rest(`epdd_pdds?select=${PDD_FULL}&id=eq.${light.id}`)).json()) as Row[])[0] ?? light;
+      if (prev) prev = { ...prev, ...(((await (await rest(`epdd_reviews?select=verdict,summary,model,checks&id=eq.${prev.id}`)).json()) as Row[])[0] ?? {}) };
       const rv = reviewPdd(row, fs, projects);
       // Keep the automatic link on the row (never over the PMO's own choice),
       // and key the review on the link as it now stands.
@@ -422,12 +433,14 @@ Deno.serve(async (req: Request) => {
 
   // ── AI reading of PDDs (phase 4) ─────────────────────────────────────────
   const QUOTE_RE = /quot|offer|proforma|estimate/i;
+  let aiClean = false;   // the last AI pass looked at every PDD and found nothing left to read
   const runAi = async (opts: { onlyId?: number | null; max: number; deadline: number; dry?: boolean; force?: boolean }) => {
     const out: Row[] = [];
     const kr = await rest("rpc/get_gemini_keys", { method: "POST", body: "{}" });
     const keys = ((await kr.json().catch(() => null)) as string[] | null ?? []).filter(Boolean);
     if (!keys.length) return [{ error: "Gemini key missing (get_gemini_keys)" }];
-    const pdds = await (await rest(`epdd_pdds?select=id,pdd_number,project_name,project_type,campus,cost_center,grand_total,currency,pdd,content_hash,queue,is_history,first_seen_at&queue=neq.removed${opts.onlyId ? `&id=eq.${opts.onlyId}` : ""}&order=queue.asc,is_history.asc,first_seen_at.desc`)).json() as Row[];
+    aiClean = true;
+    const pdds = await (await rest(`epdd_pdds?select=id,content_hash,queue,is_history,first_seen_at&queue=neq.removed${opts.onlyId ? `&id=eq.${opts.onlyId}` : ""}&order=queue.asc,is_history.asc,first_seen_at.desc`)).json() as Row[];
     const files = (await (await rest(`epdd_files?select=pdd_id,category,title,file_name,status,storage_path,mime,sha256,size_bytes${opts.onlyId ? `&pdd_id=eq.${opts.onlyId}` : ""}`)).json() as Row[])
       .filter(f => !CHARTER.has(String(f.category)));
     const latest = new Map<number, Row>();
@@ -435,10 +448,11 @@ Deno.serve(async (req: Request) => {
       if (!latest.has(Number(r.pdd_id))) latest.set(Number(r.pdd_id), r);
     let calls = 0;
     // Files named in the PDD's own slots are read, quotations first, up to three.
-    for (const row of pdds) {
-      if (calls >= opts.max || Date.now() > opts.deadline) break;
+    for (const light of pdds) {
+      if (calls >= opts.max || Date.now() > opts.deadline) { aiClean = false; break; }
+      let row: Row = light;
       const fs = files.filter(f => f.pdd_id === row.id);
-      if (fs.some(f => f.status === "pending")) continue;
+      if (fs.some(f => f.status === "pending")) { aiClean = false; continue; }
       // ai-4: Word quotations too (sent as their text).
       const readable = fs.filter(f => f.status === "stored" && (/^(application\/pdf|image\/(png|jpe?g|webp))/.test(String(f.mime)) || DOCX_RE.test(String(f.mime)) || /\.docx$/i.test(String(f.file_name))));
       const quoteFiles = readable.filter(f => QUOTE_RE.test(String(f.title)) || QUOTE_RE.test(String(f.file_name)))
@@ -452,7 +466,12 @@ Deno.serve(async (req: Request) => {
       const aiKey = await sha256(JSON.stringify([AI_VERSION, row.content_hash, picked.map(f => f.sha256)]));
       const prev = latest.get(Number(row.id));
       if (!opts.force && prev?.content_hash === aiKey &&
-          (prev.status === "done" || Date.now() - Date.parse(String(prev.created_at)) < AI_RETRY_MS)) continue;
+          (prev.status === "done" || Date.now() - Date.parse(String(prev.created_at)) < AI_RETRY_MS)) {
+        if (prev.status !== "done") aiClean = false;               // a failed reading waits for its retry time
+        continue;
+      }
+      // This PDD will be read: now fetch its full form.
+      row = ((await (await rest(`epdd_pdds?select=id,pdd_number,project_name,project_type,campus,cost_center,grand_total,currency,pdd,content_hash,queue,is_history,first_seen_at&id=eq.${light.id}`)).json()) as Row[])[0] ?? light;
       const aiFiles: AiFile[] = [];
       for (const f of picked) {
         // Supabase for files copied before 27 Oct 2026, Cloudflare R2 since then.
@@ -615,6 +634,7 @@ Deno.serve(async (req: Request) => {
   const runId = (await runRes.json().catch(() => [{}]))?.[0]?.id;
   const stats = { listed: 0, new_count: 0, updated_count: 0, details_read: 0, files_stored: 0, files_failed: 0 };
   let reviewed = 0;
+  const gate = { review_skipped: false, ai_skipped: false };   // reported in the reply only (not run-table columns)
   const finish = async (ok: boolean, error: string | null) => {
     if (runId) await rest(`epdd_sync_runs?id=eq.${runId}`, { method: "PATCH",
       body: JSON.stringify({ ...stats, ok, error, finished_at: new Date().toISOString() }) });
@@ -795,20 +815,44 @@ Deno.serve(async (req: Request) => {
       await rest(`epdd_files?id=eq.${f.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
     }
 
+    // Egress gate (6 Nov 2026): epdd_inputs_sig() is a 32-character fingerprint of everything the reviews depend
+    // on (projects, PDD content and links, files, stored reviews). When it equals the fingerprint saved after the
+    // last clean pass, nothing can have changed and the full pass (about 2 MB of reads) is skipped.
+    const inputsSig = async () => {
+      const r = await rest("rpc/epdd_inputs_sig", { method: "POST", body: "{}" });
+      return r.ok ? String(await r.json().catch(() => "")) : "";
+    };
+    const sig = await inputsSig();
     // Reviews last: they need the details and files copied above.
-    reviewed = await runReviews(null, t0 + TIME_BUDGET_MS + 20_000);
+    const reviewKey = `${RULES_VERSION}:${sig}`;
+    if (sig && (await getState("review_sig"))?.value === reviewKey) { reviewed = 0; gate.review_skipped = true; }
+    else {
+      reviewed = await runReviews(null, t0 + TIME_BUDGET_MS + 20_000);
+      // Saved only when the pass covered everything and changed nothing, so the next identical state skips it.
+      if (sig && reviewsClean && reviewed === 0) await setState("review_sig", reviewKey);
+    }
     // Then the AI reading, a few PDDs a run, waiting PDDs first.
     // A run is cut off at 150 s, so no new AI request starts after 70 s (each is capped at 55 s).
     // Switched on and off by epdd_state 'ai_enabled' ('on'), so it can be paused without a deploy.
+    // Same gate, plus a full look at least every AI_RETRY_MS so failed readings are retried on time.
     const aiOn = (await getState("ai_enabled"))?.value === "on";
-    const ai = aiOn ? await runAi({ max: MAX_AI_PER_RUN, deadline: t0 + 70_000 }).catch(e => [{ error: String(e) }]) : [];
+    let ai: Row[] = [];
+    if (aiOn) {
+      const aiKey = `${AI_VERSION}:${sig}`;
+      const last = JSON.parse((await getState("ai_scan"))?.value || "{}") as { key?: string; at?: number };
+      if (sig && last.key === aiKey && Date.now() - Number(last.at || 0) < AI_RETRY_MS) gate.ai_skipped = true;
+      else {
+        ai = await runAi({ max: MAX_AI_PER_RUN, deadline: t0 + 70_000 }).catch(e => { aiClean = false; return [{ error: String(e) }]; });
+        if (sig && aiClean && ai.length === 0) await setState("ai_scan", JSON.stringify({ key: aiKey, at: Date.now() }));
+      }
+    }
 
     // Then tell the PMO about anything new. A failure here never fails the run.
     const note = await runNotify().catch(e => ({ error: String((e as Error)?.message ?? e).slice(0, 200) }));
 
     await finish(true, null);
     await runHealth(true, null).catch(() => null);
-    return json({ ok: true, trigger, ...stats, reviewed, ai: ai.length, notify: note, ms: Date.now() - t0 });
+    return json({ ok: true, trigger, ...stats, ...gate, reviewed, ai: ai.length, notify: note, ms: Date.now() - t0 });
   } catch (e) {
     const msg = String((e as Error)?.message ?? e).slice(0, 500);
     await finish(false, msg);
