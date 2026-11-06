@@ -95,7 +95,7 @@ const SCOPES = {
     sub: "CAPEX projects", noun: "project",
     empty: "Payments made on CAPEX projects will be listed here, in full, once they are recorded.",
     failed: "The rest of the dashboard is unaffected. Try again in a moment.",
-    // Largest itemised gross first; the card reads payments_made, so a project
+    // Largest itemised net first (payments_made is the net total since 6 Nov 2026, PMO); the card reads payments_made, so a project
     // with only that figure is listed too.
     byGross: true, recorded: true,
   },
@@ -124,7 +124,7 @@ export function PaymentsWindow({ T, scope = "investment", projects = [], payment
       })
       .filter((g) => g.items.length || (cfg.recorded && paisa(g.p.payments_made) > 0));
     if (cfg.byGross) list.sort((a, b) =>
-      (paisa(b.gross) - paisa(a.gross)) || (paisa(b.p.payments_made) - paisa(a.p.payments_made))
+      (paisa(b.net) - paisa(a.net)) || (paisa(b.p.payments_made) - paisa(a.p.payments_made))
       || String(a.p.name || "").localeCompare(String(b.p.name || "")));
     return list;
   }, [projects, pay, cfg]);
@@ -259,7 +259,7 @@ export function PaymentsWindow({ T, scope = "investment", projects = [], payment
         // match the itemised payments, so the two can be reconciled. Information,
         // not an error, so it is muted and says why it is there. A project with
         // no itemised payments says so to everyone instead (below).
-        const differs = canManage && g.items.length > 0 && paisa(g.p.payments_made) !== Math.round(g.gross * 100);
+        const differs = canManage && g.items.length > 0 && paisa(g.p.payments_made) !== Math.round(g.net * 100);
         return (
           <section key={g.p.id} data-pay-project={code || g.p.id} style={{ marginTop: gi ? SP.xl : 0 }}>
             <div style={{ display:"flex", alignItems:"baseline", flexWrap:"wrap", gap:`2px ${SP.sm}px`, marginBottom:SP.sm }}>
@@ -276,7 +276,7 @@ export function PaymentsWindow({ T, scope = "investment", projects = [], payment
               <div data-pay-note title="Shown to the PMO only, to reconcile the project's Payments Made figure with the payments listed here."
                 style={{ ...TYPE.caption, color:T.muted, marginBottom:SP.sm, lineHeight:1.5 }}>
                 Payments Made on the project record: PKR {fmtPKR(g.p.payments_made ?? 0)}
-                {" · "}differs from the PKR {fmtPKR(g.gross)} listed here
+                {" · "}differs from the PKR {fmtPKR(g.net)} net listed here
               </div>
             )}
 

@@ -16,7 +16,7 @@ import { PaymentsWindow, PAY_PATH, focusVisible, paymentsOn } from "./PaymentsWi
    history, attachments and audit trail rather than being copied.
 
    Payments Made (PMO, 21 Oct 2026): investment projects only. The sixth card
-   totals the itemised payments in project_payments (gross) and opens every
+   totals the itemised payments in project_payments (net since 6 Nov 2026, PMO; gross before) and opens every
    payment in full. CAPEX projects keep their single projects.payments_made
    figure; nothing here touches it. The read is separate from the other two,
    so a failure shows "—" on the card instead of breaking the tab. The window
@@ -165,9 +165,9 @@ export function InvestmentsTab({
       sub: `${totals.approved_count || 0} sanctioned`, c: T.positive },
     { label: "Released", value: fmtFull(totals.released_total),
       sub: "Budget released to date", c: T.positive },
-    { label: "Payments Made", value: payFailed ? "—" : fmtFull(pay.gross),
+    { label: "Payments Made", value: payFailed ? "—" : fmtFull(pay.net),
       sub: payFailed ? "Payments could not be loaded just now"
-         : pay.n ? `${pay.n} payment${pay.n === 1 ? "" : "s"} · gross` : "No payments listed yet",
+         : pay.n ? `${pay.n} payment${pay.n === 1 ? "" : "s"} · net` : "No payments listed yet",
       c: T.cyan, opens: true },
   ] : [];
   const gap = SP.md;
