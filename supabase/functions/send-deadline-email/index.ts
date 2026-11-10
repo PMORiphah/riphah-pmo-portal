@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { mailSafe } from "../_shared/mailText.ts";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    SEND DEADLINE EMAIL — PMO to one project manager, covering all of that
@@ -182,8 +183,8 @@ Deno.serve(async (req: Request) => {
       ...(bcc.length ? { bcc } : {}),
       ...(me.email ? { replyTo: me.email } : {}),
       subject,
-      content: text,
-      html: buildHtml({ body: message, list: found, senderName }),
+      content: mailSafe(text),
+      html: mailSafe(buildHtml({ body: message, list: found, senderName })),
     });
   } catch (e) {
     const msg = String((e as Error)?.message || e);

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { mailSafe } from "../_shared/mailText.ts";
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -99,7 +100,7 @@ Capital Projects Portal
 
 Hello ${o.recipientName},
 
-${o.authorName} (${roleLabel}) posted an update on ${o.projectCode} - ${o.projectName}.
+${o.authorName} (${roleLabel}) posted an update on ${o.projectCode ? `${o.projectCode} - ` : ''}${o.projectName}.
 
 "${preview}"
 
@@ -118,7 +119,7 @@ const buildEmail = (o: {
 }) => {
   const roleLabel = ROLE_LABEL[o.authorRole] || 'User';
   const preview = o.body.length > 600 ? o.body.slice(0,600) + '\u2026' : o.body;
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>New comment</title></head><body style="margin:0;padding:0;background:#E8F0F8;font-family:Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);"><tr><td style="background:#185078;padding:28px 40px;"><div style="font-size:10px;color:rgba(255,255,255,0.45);letter-spacing:3px;text-transform:uppercase;margin-bottom:8px;">Riphah International University</div><div style="font-size:20px;font-weight:700;color:#ffffff;">Project Management Office</div><div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:5px;letter-spacing:2px;text-transform:uppercase;">Capital Projects Portal &middot; FY 2026-27</div></td></tr><tr><td style="height:4px;background:#D89840;"></td></tr><tr><td style="padding:36px 40px;"><h1 style="font-size:22px;color:#0D1929;margin:0 0 16px;font-weight:700;">New comment on ${esc(o.projectCode)}</h1><p style="font-size:15px;color:#3A5068;line-height:1.75;margin:0 0 20px;">Hello <strong>${esc(o.recipientName)}</strong>,</p><p style="font-size:15px;color:#3A5068;line-height:1.75;margin:0 0 22px;"><strong>${esc(o.authorName)}</strong> (${esc(roleLabel)}) posted an update on <strong>${esc(o.projectName)}</strong>.</p><table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 26px;"><tr><td style="background:#F2F8FC;border-left:4px solid #185078;border-radius:6px;padding:16px 18px;"><div style="font-size:10px;color:#7A98AE;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">${esc(o.projectCode)}</div><div style="font-size:14.5px;color:#2A3F55;line-height:1.7;white-space:pre-wrap;">${esc(preview)}</div></td></tr></table><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:0 0 28px;"><a href="${PORTAL_URL}" style="display:inline-block;background:#185078;color:#ffffff;text-decoration:none;padding:14px 38px;border-radius:8px;font-weight:700;font-size:15px;">Open in PMO Portal</a></td></tr></table><div style="border-top:1px solid #E0ECF5;padding-top:20px;"><p style="font-size:13px;color:#8AA0B5;margin:0;line-height:1.65;">Reply from inside the portal so the whole team can see it: <a href="${PORTAL_URL}" style="color:#185078;">${PORTAL_URL}</a></p></div></td></tr><tr><td style="background:#F2F8FC;padding:18px 40px;border-top:1px solid #DDE8F4;"><p style="font-size:12px;color:#7A98AE;margin:0;line-height:1.6;"><strong style="color:#506070;">Project Management Office</strong> &middot; Riphah International University<br>This is an automated notification. Please do not reply to this email.</p></td></tr></table></td></tr></table></body></html>`;
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>New comment</title></head><body style="margin:0;padding:0;background:#E8F0F8;font-family:Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);"><tr><td style="background:#185078;padding:28px 40px;"><div style="font-size:10px;color:rgba(255,255,255,0.45);letter-spacing:3px;text-transform:uppercase;margin-bottom:8px;">Riphah International University</div><div style="font-size:20px;font-weight:700;color:#ffffff;">Project Management Office</div><div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:5px;letter-spacing:2px;text-transform:uppercase;">Capital Projects Portal &middot; FY 2026-27</div></td></tr><tr><td style="height:4px;background:#D89840;"></td></tr><tr><td style="padding:36px 40px;"><h1 style="font-size:22px;color:#0D1929;margin:0 0 16px;font-weight:700;">New comment on ${esc(o.projectCode || o.projectName)}</h1><p style="font-size:15px;color:#3A5068;line-height:1.75;margin:0 0 20px;">Hello <strong>${esc(o.recipientName)}</strong>,</p><p style="font-size:15px;color:#3A5068;line-height:1.75;margin:0 0 22px;"><strong>${esc(o.authorName)}</strong> (${esc(roleLabel)}) posted an update on <strong>${esc(o.projectName)}</strong>.</p><table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 26px;"><tr><td style="background:#F2F8FC;border-left:4px solid #185078;border-radius:6px;padding:16px 18px;">${o.projectCode ? `<div style="font-size:10px;color:#7A98AE;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">${esc(o.projectCode)}</div>` : ''}<div style="font-size:14.5px;color:#2A3F55;line-height:1.7;white-space:pre-wrap;">${esc(preview)}</div></td></tr></table><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:0 0 28px;"><a href="${PORTAL_URL}" style="display:inline-block;background:#185078;color:#ffffff;text-decoration:none;padding:14px 38px;border-radius:8px;font-weight:700;font-size:15px;">Open in PMO Portal</a></td></tr></table><div style="border-top:1px solid #E0ECF5;padding-top:20px;"><p style="font-size:13px;color:#8AA0B5;margin:0;line-height:1.65;">Reply from inside the portal so the whole team can see it: <a href="${PORTAL_URL}" style="color:#185078;">${PORTAL_URL}</a></p></div></td></tr><tr><td style="background:#F2F8FC;padding:18px 40px;border-top:1px solid #DDE8F4;"><p style="font-size:12px;color:#7A98AE;margin:0;line-height:1.6;"><strong style="color:#506070;">Project Management Office</strong> &middot; Riphah International University<br>This is an automated notification. Please do not reply to this email.</p></td></tr></table></td></tr></table></body></html>`;
 };
 
 Deno.serve(async (req: Request) => {
@@ -164,7 +165,8 @@ Deno.serve(async (req: Request) => {
     { headers: svc });
   const pRows = await pRes.json();
   const project = Array.isArray(pRows) ? pRows[0] : null;
-  const projectCode = project?.code || '-';
+  // No SAP code yet (PDD not submitted): name the project instead of a lone "-" (PMO, 10 Nov 2026).
+  const projectCode = String(project?.code ?? '').trim();
   const projectName = project?.name || 'Project';
 
   let recipients: Array<{ id: string; email: string; full_name?: string; username?: string }> = [];
@@ -209,7 +211,7 @@ Deno.serve(async (req: Request) => {
 
   if (recipients.length === 0) {
     logRows.push(logRow({
-      comment_id: comment.id, project_id: comment.project_id, project_code: projectCode,
+      comment_id: comment.id, project_id: comment.project_id, project_code: projectCode || null,
       channel: 'email', status: 'skipped',
       detail: skipReason || 'No eligible recipients with email enabled',
     }));
@@ -223,14 +225,14 @@ Deno.serve(async (req: Request) => {
     SUPA_URL, SVC_KEY,
     recipients.map(r => r.id),
     {
-      title: `New comment on ${projectCode}`,
+      title: `New comment on ${projectCode || clip(projectName, 45)}`,
       body: `${comment.author_name || 'A team member'}: ${clip(String(comment.body || ''), 120)}`,
       tag: `comment-${comment.project_id}`,
       url: './',
     },
   );
   logRows.push(logRow({
-    comment_id: comment.id, project_id: comment.project_id, project_code: projectCode,
+    comment_id: comment.id, project_id: comment.project_id, project_code: projectCode || null,
     channel: 'push',
     status: (pushResult as { sent?: number })?.sent ? 'sent' : 'skipped',
     detail: JSON.stringify(pushResult).slice(0, 300),
@@ -239,7 +241,7 @@ Deno.serve(async (req: Request) => {
   if (!GMAIL_USER || !GMAIL_PASS) {
     for (const r of recipients) {
       logRows.push(logRow({
-        comment_id: comment.id, project_id: comment.project_id, project_code: projectCode,
+        comment_id: comment.id, project_id: comment.project_id, project_code: projectCode || null,
         recipient_id: r.id, recipient_address: r.email, channel: 'email', status: 'failed',
         detail: 'GMAIL_USER / GMAIL_APP_PASSWORD secrets are not configured',
       }));
@@ -248,7 +250,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Email is not configured yet (missing GMAIL_USER / GMAIL_APP_PASSWORD)', logError }, 503);
   }
 
-  const subject = toAscii(`New comment on ${projectCode} - ${clip(projectName, 45)}`);
+  const subject = toAscii(projectCode ? `New comment on ${projectCode} - ${clip(projectName, 45)}` : `New comment on ${clip(projectName, 60)}`);
 
   let sent = 0;
   const client = new SMTPClient({
@@ -278,18 +280,18 @@ Deno.serve(async (req: Request) => {
           ...(cc.length ? { cc } : {}),
           ...(REPLY_TO ? { replyTo: REPLY_TO } : {}),
           subject,
-          content: buildText(payload),
-          html: buildEmail(payload),
+          content: mailSafe(buildText(payload)),
+          html: mailSafe(buildEmail(payload)),
         });
         sent++;
         logRows.push(logRow({
-          comment_id: comment.id, project_id: comment.project_id, project_code: projectCode,
+          comment_id: comment.id, project_id: comment.project_id, project_code: projectCode || null,
           recipient_id: r.id, recipient_address: r.email, channel: 'email', status: 'sent',
           detail: `cc=${cc.length}`,
         }));
       } catch (e) {
         logRows.push(logRow({
-          comment_id: comment.id, project_id: comment.project_id, project_code: projectCode,
+          comment_id: comment.id, project_id: comment.project_id, project_code: projectCode || null,
           recipient_id: r.id, recipient_address: r.email, channel: 'email', status: 'failed',
           detail: String((e as Error)?.message || e).slice(0, 500),
         }));

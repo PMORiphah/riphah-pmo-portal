@@ -14,6 +14,7 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { mailSafe } from "../_shared/mailText.ts";
 
 type Row = Record<string, unknown>;
 export const PORTAL_URL = "https://pmoriphah.github.io/riphah-pmo-portal/";
@@ -69,7 +70,7 @@ export async function mail(to: Recipient[], subject: string, text: string, html:
       const c = (Array.isArray(cc) ? cc.map(x => x.trim().toLowerCase()) : cc ? ccList : []).filter(a => a && a !== r.email.toLowerCase());
       try {
         await client.send({ from: `"${fromName}" <${user}>`, to: r.email, ...(c.length ? { cc: c } : {}),
-          ...(replyTo ? { replyTo } : {}), subject: toAscii(subject), content: text, html });
+          ...(replyTo ? { replyTo } : {}), subject: toAscii(subject), content: mailSafe(text), html: mailSafe(html) });
         out.push({ r, ok: true, cc: c.length });
       } catch (e) { out.push({ r, ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }); }
     }

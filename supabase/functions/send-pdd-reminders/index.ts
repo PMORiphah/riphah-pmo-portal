@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { mailSafe } from "../_shared/mailText.ts";
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -239,8 +240,8 @@ Deno.serve(async (req: Request) => {
           ...(cc.length ? { cc } : {}),
           ...(REPLY_TO ? { replyTo: REPLY_TO } : {}),
           subject,
-          content: buildText(name, pmProjects),
-          html: buildEmail(name, pmProjects),
+          content: mailSafe(buildText(name, pmProjects)),
+          html: mailSafe(buildEmail(name, pmProjects)),
         });
         sent++;
         if (!testRecipient) {

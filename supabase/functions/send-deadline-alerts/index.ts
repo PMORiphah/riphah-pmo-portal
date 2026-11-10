@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { mailSafe } from "../_shared/mailText.ts";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    DEADLINE ALERTS — one digest, not one email per project.
@@ -270,8 +271,8 @@ Deno.serve(async (req: Request) => {
           ...(cc.length ? { cc } : {}),
           ...(REPLY_TO ? { replyTo: REPLY_TO } : {}),
           subject,
-          content: buildText(name, projects),
-          html: buildEmail(name, projects),
+          content: mailSafe(buildText(name, projects)),
+          html: mailSafe(buildEmail(name, projects)),
         });
         sent++;
         logRows.push(logRow({ recipient_id:r.id, recipient_address:r.email, channel:'email-digest',

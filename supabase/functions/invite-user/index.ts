@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { mailSafe } from "../_shared/mailText.ts";
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -170,8 +171,8 @@ Deno.serve(async (req: Request) => {
         to: email,
         ...(REPLY_TO ? { replyTo: REPLY_TO } : {}),
         subject: toAscii('You have been invited to the Riphah PMO Portal'),
-        content: buildText(displayName, roleLabel, roleDesc, inviteLink),
-        html: buildEmail(displayName, role, inviteLink),
+        content: mailSafe(buildText(displayName, roleLabel, roleDesc, inviteLink)),
+        html: mailSafe(buildEmail(displayName, role, inviteLink)),
       });
       emailSent = true;
       await writeLog('sent');
