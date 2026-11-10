@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
-  ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Sector, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Sector, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
 } from "recharts";
 import {
   Sparkles, TrendingUp, GraduationCap, Wallet, Coins, Percent, Pencil, Plus, Hourglass, ChevronDown, ChevronRight,
@@ -102,15 +102,25 @@ function Seg({ T, value, set, items }) {
     </div>
   );
 }
-function Kpi({ T, compact, icon: Icon, label, value, sub, color, i }) {
+// meter = [{ v: 0..1, c: colour }] drawn as one thin bar under the figure (10 Nov 2026: the cards looked empty on wide screens).
+function Kpi({ T, compact, icon: Icon, label, value, sub, color, i, meter }) {
   return (
-    <div className="pmo-lift br-rise" style={{ animationDelay: `${i * 90}ms`, flex: "1 1 180px", minWidth: 0, padding: compact ? "12px 14px" : "16px 18px", borderRadius: R.lg,
-      background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.14)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, ...TYPE.label, fontSize: 9.5, color: "rgba(255,255,255,0.72)" }}>
-        <span style={{ width: 22, height: 22, borderRadius: 7, display: "grid", placeItems: "center", background: `${color}33` }}><Icon size={12} color={color} /></span>{label}
+    <div className="pmo-lift br-rise" style={{ animationDelay: `${i * 90}ms`, minWidth: 0, padding: compact ? "12px 14px" : "18px 20px", borderRadius: R.lg,
+      display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
+      background: `linear-gradient(160deg, ${color}26, rgba(255,255,255,0.05) 55%)`, border: "1px solid rgba(255,255,255,0.14)",
+      boxShadow: `inset 3px 0 0 ${color}`, backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, ...TYPE.label, fontSize: 10, color: "rgba(255,255,255,0.78)" }}>
+        <span style={{ width: 26, height: 26, borderRadius: 8, display: "grid", placeItems: "center", background: `${color}38` }}><Icon size={14} color={color} /></span>{label}
       </div>
-      <div style={{ ...TYPE.display, fontSize: compact ? 21 : 27, color: "#fff", marginTop: 6, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>{value}</div>
-      {sub && <div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.66)", marginTop: 2 }}>{sub}</div>}
+      <div style={{ ...TYPE.display, fontSize: compact ? 22 : 34, color: "#fff", marginTop: compact ? 6 : 10, fontVariantNumeric: "tabular-nums", letterSpacing: -0.6, lineHeight: 1.05 }}>{value}</div>
+      {sub && <div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.7)", marginTop: 4 }}>{sub}</div>}
+      {meter && (
+        <div style={{ marginTop: "auto", paddingTop: compact ? 10 : 14 }}>
+          <div style={{ display: "flex", height: 5, borderRadius: 99, overflow: "hidden", background: "rgba(255,255,255,0.12)" }}>
+            {meter.map((m, j) => <div key={j} style={{ width: `${Math.max(0, Math.min(1, m.v)) * 100}%`, background: m.c, transition: "width 900ms cubic-bezier(.2,.7,.2,1)" }} />)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -190,10 +200,13 @@ export function BenefitsRealizationPage({ T, session, supa }) {
     return [...m.values()].sort((a, b) => (b.revenue + b.student_experience) - (a.revenue + a.student_experience));
   }, [view]);
   const money = useMemo(() => rev.filter(r => num(r.budget) !== null || num(r.revenue) !== null)
-    .map(r => ({ name: short(r.project_name, compact ? 20 : 34), full: r.project_name, budget: num(r.budget), revenue: num(r.revenue),
+    .map(r => ({ name: short(r.project_name, compact ? 17 : 54), full: r.project_name, budget: num(r.budget), revenue: num(r.revenue),
       roi: num(r.revenue) !== null && num(r.budget) > 0 ? num(r.revenue) / num(r.budget) : null }))
     .sort((a, b) => (b.revenue || 0) - (a.revenue || 0) || (b.budget || 0) - (a.budget || 0)), [rev, compact]);
   const [hoverSlice, setHoverSlice] = useState(null);
+  const CH = 270;   // one height for the three small charts, so their cards line up
+  // Stack total for a bar label (recharts hands the row either flat or under payload).
+  const totalOf = (e) => { const d = e?.payload || e || {}; return (d.revenue || 0) + (d.student_experience || 0) || ""; };
 
   if (rows === null) return <div style={{ flex: 1, padding: SP.xl, color: T.muted, fontSize: 13 }}>Loading Benefits Realization…</div>;
 
@@ -265,14 +278,18 @@ export function BenefitsRealizationPage({ T, session, supa }) {
             <Seg T={T} value={cat} set={setCat} items={[["", "All"], ["revenue", "Revenue", BRAND.gold], ["student_experience", "Student Experience", DATA.violet]]} />
           </div>
         </div>
-        <div style={{ position: "relative", display: compact ? "grid" : "flex", gridTemplateColumns: "1fr 1fr", gap: SP.sm, marginTop: SP.lg }}>
-          <Kpi T={T} compact={compact} i={0} icon={Sparkles} color={BRAND.gold} label="Projects delivered" value={<CountUp value={view.length} ms={900} format={(v) => Math.round(v)} />} sub={`${rev.length} revenue · ${se.length} student exp.`} />
+        <div style={{ position: "relative", display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "repeat(4, minmax(0,1fr))", gap: compact ? SP.sm : SP.md, marginTop: SP.lg }}>
+          <Kpi T={T} compact={compact} i={0} icon={Sparkles} color={BRAND.gold} label="Projects delivered" value={<CountUp value={view.length} ms={900} format={(v) => Math.round(v)} />} sub={`${rev.length} revenue · ${se.length} student exp.`}
+            meter={view.length ? [{ v: rev.length / view.length, c: BRAND.gold }, { v: se.length / view.length, c: DATA.violet }] : null} />
           <Kpi T={T} compact={compact} i={1} icon={Wallet} color={BRAND.blueBright} label="Budget invested" value={k.withBudget ? <CountUp value={k.budget} format={pkrM} /> : "—"}
-            sub={k.withBudget === view.length ? "all budgets entered" : `${k.withBudget} of ${view.length} budgets entered`} />
+            sub={k.withBudget === view.length ? "all budgets entered" : `${k.withBudget} of ${view.length} budgets entered`}
+            meter={view.length ? [{ v: k.withBudget / view.length, c: BRAND.blueBright }] : null} />
           <Kpi T={T} compact={compact} i={2} icon={Coins} color={DATA.positive} label="Revenue generated" value={k.withRev ? <CountUp value={k.revenue} format={pkrM} /> : "—"}
-            sub={rev.length ? `${k.withRev} of ${rev.length} revenue projects reported` : "no revenue projects in view"} />
+            sub={rev.length ? `${k.withRev} of ${rev.length} revenue projects reported` : "no revenue projects in view"}
+            meter={rev.length ? [{ v: k.withRev / rev.length, c: DATA.positive }] : null} />
           <Kpi T={T} compact={compact} i={3} icon={Percent} color={DATA.cyan} label="Return on budget" value={k.roi !== null ? `${k.roi.toFixed(2)}×` : "—"}
-            sub={k.roiN ? `revenue ÷ budget · ${k.roiN} project${k.roiN === 1 ? "" : "s"} with both` : "needs budget and revenue"} />
+            sub={k.roiN ? `revenue ÷ budget · ${k.roiN} project${k.roiN === 1 ? "" : "s"} with both · full bar = paid back` : "needs budget and revenue"}
+            meter={k.roi !== null ? [{ v: k.roi, c: DATA.cyan }] : null} />
         </div>
       </div>
 
@@ -282,74 +299,67 @@ export function BenefitsRealizationPage({ T, session, supa }) {
         <Section T={T}><EmptyState T={T} icon={Sparkles} title="Nothing to show yet"
           message={shown.length ? "No completed project matches these choices." : "None of the listed projects has closed yet. They appear here as they close."} /></Section>
       ) : (<>
-        {/* Charts */}
-        <div style={{ display: "grid", gap: SP.md, gridTemplateColumns: compact ? "1fr" : "minmax(0,1fr) minmax(0,1.4fr)" }}>
-          {card(BRAND.gold, PieIcon, "Benefit mix", "Completed projects by benefit · hover for the budget",
-            <div style={{ position: "relative", height: 250 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <defs>{split.map((s, i) => (
-                    <linearGradient key={i} id={`brSl${i}`} x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor={s.color} stopOpacity={1} /><stop offset="100%" stopColor={s.color} stopOpacity={0.6} />
-                    </linearGradient>))}</defs>
-                  <Pie data={split} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="86%" paddingAngle={split.length > 1 ? 3 : 0}
-                    cornerRadius={6} stroke="none" startAngle={90} endAngle={-270} {...A(150, 1300)} activeIndex={hoverSlice ?? undefined}
-                    activeShape={(p) => <g><Sector {...p} outerRadius={p.outerRadius + 7} /><Sector {...p} innerRadius={p.outerRadius + 11} outerRadius={p.outerRadius + 14} opacity={0.45} /></g>}
-                    onMouseEnter={(_, i) => setHoverSlice(i)} onMouseLeave={() => setHoverSlice(null)} onClick={(d) => setCat(c => c === d?.payload?.key ? "" : d?.payload?.key)}>
-                    {split.map((s, i) => <Cell key={i} fill={`url(#brSl${i})`} style={{ cursor: "pointer", outline: "none", opacity: hoverSlice != null && hoverSlice !== i ? 0.35 : 1, transition: "opacity 220ms" }} />)}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none", textAlign: "center", padding: "0 24%" }}>
-                <div style={{ ...TYPE.metric, fontSize: 26, color: hs ? T.textOf(hs.color) : T.text }}>{hs ? hs.value : view.length}</div>
-                <div style={{ ...TYPE.label, color: T.muted, marginTop: 3 }}>{hs ? hs.name : "projects"}</div>
-                <div style={{ ...TYPE.caption, color: T.dim, marginTop: 2 }}>{hs ? (hs.budget ? `budget ${pkrM(hs.budget)}` : "budget not entered") : `${Math.round(100 * rev.length / (view.length || 1))}% revenue`}</div>
+        {/* Charts (10 Nov 2026: the three small charts share one row at one height; Revenue against budget has its own full-width row,
+            because with nine budgets entered it grew to ~440 px and stretched the donut's card into an empty box) */}
+        <div style={{ display: "grid", gap: SP.md, gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit, minmax(340px, 1fr))", alignItems: "stretch" }}>
+          {card(BRAND.gold, PieIcon, "Benefit mix", "Completed projects by benefit · click a slice to filter",
+            <div>
+              <div style={{ position: "relative", height: CH - 64 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <defs>{split.map((s, i) => (
+                      <linearGradient key={i} id={`brSl${i}`} x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor={s.color} stopOpacity={1} /><stop offset="100%" stopColor={s.color} stopOpacity={0.6} />
+                      </linearGradient>))}</defs>
+                    <Pie data={split} dataKey="value" nameKey="name" innerRadius="64%" outerRadius="88%" paddingAngle={split.length > 1 ? 3 : 0}
+                      cornerRadius={6} stroke="none" startAngle={90} endAngle={-270} {...A(150, 1300)} activeIndex={hoverSlice ?? undefined}
+                      activeShape={(p) => <g><Sector {...p} outerRadius={p.outerRadius + 6} /><Sector {...p} innerRadius={p.outerRadius + 9} outerRadius={p.outerRadius + 12} opacity={0.45} /></g>}
+                      onMouseEnter={(_, i) => setHoverSlice(i)} onMouseLeave={() => setHoverSlice(null)} onClick={(d) => setCat(c => c === d?.payload?.key ? "" : d?.payload?.key)}>
+                      {split.map((s, i) => <Cell key={i} fill={`url(#brSl${i})`} style={{ cursor: "pointer", outline: "none", opacity: hoverSlice != null && hoverSlice !== i ? 0.35 : 1, transition: "opacity 220ms" }} />)}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none", textAlign: "center" }}>
+                  <div style={{ ...TYPE.metric, fontSize: 28, lineHeight: 1, color: hs ? T.textOf(hs.color) : T.text }}>{hs ? hs.value : view.length}</div>
+                  <div style={{ ...TYPE.label, color: T.muted, marginTop: 4 }}>{hs ? hs.name : "projects"}</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, split.length)}, minmax(0,1fr))`, gap: SP.sm, marginTop: SP.sm }}>
+                {split.map((s, i) => (
+                  <button key={s.key} type="button" onClick={() => setCat(c => c === s.key ? "" : s.key)} onMouseEnter={() => setHoverSlice(i)} onMouseLeave={() => setHoverSlice(null)}
+                    className="pmo-focusable" style={{ textAlign: "left", cursor: "pointer", minWidth: 0, padding: "7px 10px", borderRadius: R.md,
+                      background: `${s.color}14`, border: `1px solid ${cat === s.key ? s.color : `${s.color}40`}`, color: T.text, fontFamily: "inherit" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, ...TYPE.caption, fontWeight: 700, color: T.textOf(s.color), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 99, background: s.color, flexShrink: 0 }} />{s.name}
+                    </div>
+                    <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <b style={{ color: T.text }}>{s.value}</b> · {Math.round(100 * s.value / (view.length || 1))}%{s.budget ? ` · ${pkrM(s.budget)}` : ""}
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>, { "data-chart": "mix" })}
 
-          {card(BRAND.blueBright, BarChart3, "Revenue against budget", "Each revenue project: budget invested and revenue generated",
-            money.length ? (
-              <div style={{ height: Math.max(220, money.length * 44 + 40) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={money} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 0 }} barCategoryGap={8} barGap={2} maxBarSize={18}>
-                    <defs>
-                      <linearGradient id="brBud" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor={BRAND.blueBright} stopOpacity={0.55} /><stop offset="100%" stopColor={BRAND.blueBright} /></linearGradient>
-                      <linearGradient id="brRev" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor={DATA.positive} stopOpacity={0.55} /><stop offset="100%" stopColor={DATA.positive} /></linearGradient>
-                    </defs>
-                    <CartesianGrid stroke={T.border} horizontal={false} />
-                    <XAxis type="number" tick={axis(T)} tickLine={false} axisLine={{ stroke: T.border }} tickFormatter={fmtM} />
-                    <YAxis type="category" dataKey="name" tick={{ ...axis(T), fontSize: 11, fill: T.textSoft }} tickLine={false} axisLine={false} width={compact ? 110 : 200} />
-                    <Tooltip cursor={{ fill: T.rowHover }} content={(p) => {
-                      const d = p.payload?.[0]?.payload;
-                      return <Tip {...p} T={T} label={d?.full || p.label} foot={d ? (d.roi !== null ? `Return ${d.roi.toFixed(2)}× the budget` : "Add budget and revenue for the return") : null} />;
-                    }} />
-                    <Legend wrapperStyle={{ fontSize: 11, fontFamily: TYPE.body.fontFamily }} formatter={(v) => <span style={{ color: T.textSoft }}>{v}</span>} />
-                    <Bar dataKey="budget" name="Budget" fill="url(#brBud)" radius={[0, 5, 5, 0]} {...A(200, 900)} />
-                    <Bar dataKey="revenue" name="Revenue" fill="url(#brRev)" radius={[0, 5, 5, 0]} {...A(600, 900)} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : noData(rev.length ? (isPMO ? "Add the budget and revenue of the revenue projects (pencil on each card below) and this chart fills in." : "Budget and revenue figures are being added by the PMO.")
-                                  : "No revenue project in this view."), { "data-chart": "money" })}
-
           {card(DATA.violet, Building2, "Where the benefits are", "Completed projects by campus / site and benefit",
-            <div style={{ height: Math.max(200, byCampus.length * 34 + 50) }}>
+            <div style={{ height: Math.max(CH, byCampus.length * 30 + 40) }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byCampus} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 0 }} barCategoryGap={7} maxBarSize={22}>
+                <BarChart data={byCampus} layout="vertical" margin={{ top: 4, right: 28, left: 0, bottom: 0 }} barCategoryGap={7} maxBarSize={20}>
                   <CartesianGrid stroke={T.border} horizontal={false} />
                   <XAxis type="number" allowDecimals={false} tick={axis(T)} tickLine={false} axisLine={{ stroke: T.border }} />
                   <YAxis type="category" dataKey="name" tick={{ ...axis(T), fontSize: 11, fill: T.textSoft }} tickLine={false} axisLine={false} width={compact ? 70 : 96} />
                   <Tooltip cursor={{ fill: T.rowHover }} content={(p) => <Tip {...p} T={T} fmtV={(v) => `${v} project${v === 1 ? "" : "s"}`} />} />
                   <Bar dataKey="revenue" name="Revenue" stackId="c" fill={BRAND.gold} {...A(200, 900)} />
-                  <Bar dataKey="student_experience" name="Student Experience" stackId="c" fill={DATA.violet} radius={[0, 5, 5, 0]} {...A(600, 900)} />
+                  <Bar dataKey="student_experience" name="Student Experience" stackId="c" fill={DATA.violet} radius={[0, 5, 5, 0]} {...A(600, 900)}>
+                    <LabelList position="right" valueAccessor={totalOf} style={{ ...axis(T), fontWeight: 700, fill: T.textSoft }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>, { "data-chart": "campus" })}
 
-          {card(DATA.cyan, CalendarRange, "FY 25-26 and FY 26-27", "Completed projects per year by benefit · FY 26-27 grows as projects close",
-            <div style={{ height: 240 }}>
+          {card(DATA.cyan, CalendarRange, "FY 25-26 and FY 26-27", "Completed projects per year · FY 26-27 grows as projects close",
+            <div style={{ height: CH }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byFy} margin={{ top: 8, right: 8, left: -14, bottom: 0 }} barCategoryGap="32%" maxBarSize={90}>
+                <BarChart data={byFy} margin={{ top: 20, right: 8, left: -14, bottom: 0 }} barCategoryGap="30%" maxBarSize={110}>
                   <CartesianGrid stroke={T.border} vertical={false} />
                   <XAxis dataKey="name" tick={{ ...axis(T), fontSize: 11.5, fill: T.textSoft }} tickLine={false} axisLine={{ stroke: T.border }} />
                   <YAxis allowDecimals={false} tick={axis(T)} tickLine={false} axisLine={false} />
@@ -358,12 +368,49 @@ export function BenefitsRealizationPage({ T, session, supa }) {
                     return <Tip {...p} T={T} fmtV={(v) => `${v} project${v === 1 ? "" : "s"}`} foot={d ? (d.budget ? `Budget ${pkrM(d.budget)}` : "Budgets not entered") : null} />;
                   }} />
                   <Legend wrapperStyle={{ fontSize: 11, fontFamily: TYPE.body.fontFamily }} formatter={(v) => <span style={{ color: T.textSoft }}>{v}</span>} />
-                  {(!cat || cat === "revenue") && <Bar dataKey="revenue" name="Revenue" stackId="f" fill={BRAND.gold} {...A(200, 900)} radius={cat === "revenue" ? [6, 6, 0, 0] : 0} />}
-                  {(!cat || cat === "student_experience") && <Bar dataKey="student_experience" name="Student Experience" stackId="f" fill={DATA.violet} radius={[6, 6, 0, 0]} {...A(600, 900)} />}
+                  {(!cat || cat === "revenue") && <Bar dataKey="revenue" name="Revenue" stackId="f" fill={BRAND.gold} {...A(200, 900)} radius={cat === "revenue" ? [6, 6, 0, 0] : 0}>
+                    {cat === "revenue" && <LabelList position="top" valueAccessor={totalOf} style={{ ...axis(T), fontSize: 12, fontWeight: 800, fill: T.text }} />}
+                  </Bar>}
+                  {(!cat || cat === "student_experience") && <Bar dataKey="student_experience" name="Student Experience" stackId="f" fill={DATA.violet} radius={[6, 6, 0, 0]} {...A(600, 900)}>
+                    <LabelList position="top" valueAccessor={totalOf} style={{ ...axis(T), fontSize: 12, fontWeight: 800, fill: T.text }} />
+                  </Bar>}
                 </BarChart>
               </ResponsiveContainer>
             </div>, { "data-chart": "years" })}
         </div>
+
+        {card(BRAND.blueBright, BarChart3, "Revenue against budget",
+          `Each revenue project: budget invested and revenue generated${rev.length ? ` · revenue reported for ${k.withRev} of ${rev.length}` : ""}`,
+          money.length ? (
+            <div style={{ height: Math.max(200, money.length * 40 + 50) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={money} layout="vertical" margin={{ top: 4, right: 56, left: 0, bottom: 0 }} barCategoryGap={9} barGap={3} maxBarSize={14}>
+                  <defs>
+                    <linearGradient id="brBud" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor={BRAND.blueBright} stopOpacity={0.55} /><stop offset="100%" stopColor={BRAND.blueBright} /></linearGradient>
+                    <linearGradient id="brRev" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor={DATA.positive} stopOpacity={0.55} /><stop offset="100%" stopColor={DATA.positive} /></linearGradient>
+                  </defs>
+                  <CartesianGrid stroke={T.border} horizontal={false} />
+                  <XAxis type="number" tick={axis(T)} tickLine={false} axisLine={{ stroke: T.border }} tickFormatter={fmtM} />
+                  <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={compact ? 110 : 330}
+                    tick={({ x, y, payload }) => (   // one line, never wrapped; the full name is in the tooltip
+                      <text x={x} y={y} dy={4} textAnchor="end" style={{ ...axis(T), fontSize: compact ? 10.5 : 11.5, fill: T.textSoft }}>{payload.value}</text>
+                    )} />
+                  <Tooltip cursor={{ fill: T.rowHover }} content={(p) => {
+                    const d = p.payload?.[0]?.payload;
+                    return <Tip {...p} T={T} label={d?.full || p.label} foot={d ? (d.roi !== null ? `Return ${d.roi.toFixed(2)}× the budget` : "Revenue not reported yet") : null} />;
+                  }} />
+                  <Legend wrapperStyle={{ fontSize: 11, fontFamily: TYPE.body.fontFamily }} formatter={(v) => <span style={{ color: T.textSoft }}>{v}</span>} />
+                  <Bar dataKey="budget" name="Budget" fill="url(#brBud)" radius={[0, 5, 5, 0]} {...A(200, 900)}>
+                    <LabelList dataKey="budget" position="right" formatter={(v) => v == null ? "" : fmtM(v)} style={{ ...axis(T), fontWeight: 700, fill: T.textOf(BRAND.blueBright) }} />
+                  </Bar>
+                  <Bar dataKey="revenue" name="Revenue" fill="url(#brRev)" radius={[0, 5, 5, 0]} {...A(600, 900)}>
+                    <LabelList dataKey="revenue" position="right" formatter={(v) => v == null ? "" : fmtM(v)} style={{ ...axis(T), fontWeight: 700, fill: T.textOf(DATA.positive) }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : noData(rev.length ? (isPMO ? "Add the budget and revenue of the revenue projects (pencil on each card below) and this chart fills in." : "Budget and revenue figures are being added by the PMO.")
+                                : "No revenue project in this view."), { "data-chart": "money" })}
 
         {/* Revenue projects */}
         {rev.length > 0 && (
