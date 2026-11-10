@@ -3,6 +3,7 @@ import { Boxes, Search, Download, Upload, ChevronDown, ChevronRight, X, External
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Select, Modal, CAN_HOVER, useViewport } from "./ui.jsx";
 import { InventoryCharts } from "./InventoryCharts.jsx";
+import { makeClassifier, CLASS_SETTING, CLASS_LABEL, CLASS_ORDER, lineKey } from "./inventoryClass.js";
 const InventoryImport = lazy(() => import("./InventoryImport.jsx").then(m => ({ default: m.InventoryImport })));
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -67,10 +68,14 @@ const todayPKT = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 
 export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const vp = useViewport();
   const compact = vp.isCompact;
-  const [rows, setRows] = useState(null);
+  const [baseRows, setRows] = useState(null);
+  // Equipment & assets first (PMO, 10 Nov 2026): every line gets a class from the PMO-only rules setting.
+  const [classRules, setClassRules] = useState(null);
+  const classify = useMemo(() => makeClassifier(classRules), [classRules]);
+  const rows = useMemo(() => baseRows && baseRows.map(r => ({ ...r, ...classify(r) })), [baseRows, classify]);
   const [err, setErr] = useState(null);
   const [q, setQ] = useState("");
-  const [f, setF] = useState({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "goods", status: "", sap: "", from: "", to: "" });
+  const [f, setF] = useState({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "equipment", status: "", sap: "", from: "", to: "" });
   // Not grouped by default (PMO, 26 Oct 2026). A grouping the PMO picks stays, also after leaving the page or
   // reloading, until it is changed or cleared (its chip's ×). Kept in this browser only.
   const [groupBy, setGroupByState] = useState(() => {
@@ -103,6 +108,8 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
       }
       // Names and sites; without the setting the codes still show and every line reads "Not assigned".
       const st = await supa(`/rest/v1/settings?key=eq.${SETTING}&select=value`, {}, session.access_token).catch(() => []);
+      const cs = await supa(`/rest/v1/settings?key=eq.${CLASS_SETTING}&select=value`, {}, session.access_token).catch(() => []);
+      setClassRules((Array.isArray(cs) && cs[0]?.value) || null);
       const m = (Array.isArray(st) && st[0]?.value) || {};
       setMap(m);
       const pcs = m.profit_centres || {}, stores = m.stores || {};
@@ -116,6 +123,17 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
   useEffect(() => { load(); }, [load]);
 
   const set = (k, v) => { setF(s => ({ ...s, [k]: v })); setLimit({}); };
+  // PMO: put one line in another class (kept in the rules setting under lines["PO/item"]); null = back to the rules.
+  const reclassify = async (r, cls) => {
+    const base = classRules || {};
+    const lines = { ...(base.lines || {}) };
+    if (cls) lines[lineKey(r)] = cls; else delete lines[lineKey(r)];
+    const next = { ...base, lines };
+    const res = await supa(`/rest/v1/settings?key=eq.${CLASS_SETTING}`, { method: "PATCH", headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ value: next }) }, session.access_token);
+    if (!Array.isArray(res) || !res.length) throw new Error("not saved");
+    setClassRules(next);
+  };
   const opts = useMemo(() => {
     const m = { fy: new Set(), project: new Map(), supplier: new Set(), plant: new Set(), pc: new Map(), site: new Set(), mg: new Set() };
     (rows || []).forEach(r => {
@@ -142,8 +160,8 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
       if (f.pc && r.pc !== f.pc) return false;
       if (f.site && r.site !== f.site) return false;
       if (f.mg && r.material_group !== f.mg) return false;
-      if (f.type === "goods" && r.is_service) return false;
-      if (f.type === "services" && !r.is_service) return false;
+      // Class (PMO, 10 Nov 2026): Equipment & assets by default; "goods" = every goods line, "all" = everything.
+      if (f.type === "goods" ? r.is_service : (f.type !== "all" && r.cls !== f.type)) return false;
       if (f.status && r.delivery_status !== f.status) return false;
       if (f.from && (!r.po_date || r.po_date < f.from)) return false;
       if (f.to && (!r.po_date || r.po_date > f.to)) return false;
@@ -213,18 +231,18 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
 
   const searching = q.trim().length > 0;
   const isOpen = (k) => groupBy === "none" || searching || groups.length === 1 || !!open[k];
-  const activeFilters = Object.entries(f).filter(([k, v]) => v && !(k === "type" && v === "goods"));
-  const clearAll = () => { setF({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "goods", status: "", sap: "", from: "", to: "" }); setQ(""); setLimit({}); };
+  const activeFilters = Object.entries(f).filter(([k, v]) => v && !(k === "type" && v === "equipment"));
+  const clearAll = () => { setF({ fy: "", site: "", pc: "", project: "", supplier: "", plant: "", mg: "", type: "equipment", status: "", sap: "", from: "", to: "" }); setQ(""); setLimit({}); };
 
   const download = async () => {
     const XLSX = await import("xlsx");
     const head = ["Fiscal year", "SAP project code", "Project name", "PO number", "PO item", "PO date", "PO type", "Supplier code", "Supplier",
-      "Material", "Description", "Material group", "Goods / service", "Plant", "Plant name", "Profit centre", "Profit centre name", "Campus / site",
+      "Material", "Description", "Material group", "Class", "Goods / service", "Plant", "Plant name", "Profit centre", "Profit centre name", "Campus / site",
       "Storage location", "Quantity", "Unit", "Net price",
       "Total", "Currency", "Still to be delivered (qty)", "Still to be delivered (value)", "Still to be invoiced (value)", "Delivery status"];
     const body = [...view].sort((a, b) => a.sap_project_code.localeCompare(b.sap_project_code) || String(a.po_number).localeCompare(String(b.po_number)) || Number(a.po_item) - Number(b.po_item))
       .map(r => [r.fiscal_year, r.sap_project_code, r.sap_project_name, r.po_number, r.po_item, r.po_date, r.po_type, r.supplier_code, r.supplier_name,
-        r.material, r.description, r.material_group, r.is_service ? "Service" : "Goods", r.plant, plantName(r.plant), r.pc, r.pc_name, r.site, r.profit_center,
+        r.material, r.description, r.material_group, CLASS_LABEL[r.cls] || r.cls, r.is_service ? "Service" : "Goods", r.plant, plantName(r.plant), r.pc, r.pc_name, r.site, r.profit_center,
         Number(r.qty), r.unit, Number(r.net_price), Number(r.total), r.currency, Number(r.open_qty), Number(r.open_value), Number(r.to_invoice_value),
         STATUS[r.delivery_status]?.label || r.delivery_status]);
     const ws = XLSX.utils.aoa_to_sheet([head, ...body]);
@@ -270,7 +288,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
     );
   };
   const Row = ({ r, i }) => {
-    const meta = [SAP_STATE[r.sapState]?.label, r.supplier_name, `PO ${r.po_number}/${r.po_item}`, groupBy !== "project" ? (r.sap_project_name ? `${r.sap_project_name} (${r.sap_project_code})` : r.sap_project_code) : null, groupBy !== "site" ? r.site : null, r.is_service ? "Service" : null]
+    const meta = [SAP_STATE[r.sapState]?.label, r.supplier_name, `PO ${r.po_number}/${r.po_item}`, groupBy !== "project" ? (r.sap_project_name ? `${r.sap_project_name} (${r.sap_project_code})` : r.sap_project_code) : null, groupBy !== "site" ? r.site : null, (f.type === "goods" || f.type === "all") ? CLASS_LABEL[r.cls] : (r.is_service ? "Service" : null)]
       .filter(Boolean).join(" · ");
     if (compact) return (
       <button key={r.id} onClick={() => setDetail(r)} className="pmo-focusable" data-inv-row
@@ -322,11 +340,11 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
           {list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </Select>
       ))}
-      <Select T={T} size="sm" value={f.type} active={f.type !== "goods"} onChange={e => set("type", e.target.value)} aria-label="Goods or services"
+      <Select T={T} size="sm" value={f.type} active={f.type !== "equipment"} onChange={e => set("type", e.target.value)} aria-label="Class"
         style={{ flex: compact ? "1 1 100%" : "0 1 auto" }}>
-        <option value="goods">Goods only</option>
-        <option value="services">Services only</option>
-        <option value="all">Goods and services</option>
+        {CLASS_ORDER.map(c => <option key={c} value={c}>{CLASS_LABEL[c]}{c === "equipment" ? "" : " only"}</option>)}
+        <option value="goods">All goods (no services)</option>
+        <option value="all">Everything</option>
       </Select>
       {(sapCount.missing > 0 || sapCount.deleted > 0) && (
         <Select T={T} size="sm" value={f.sap} active={!!f.sap} onChange={e => set("sap", e.target.value)} aria-label="SAP status"
@@ -380,10 +398,10 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
             </button>
           )}
           {activeFilters.map(([k, v]) => (
-            <button key={k} onClick={() => set(k, k === "type" ? "goods" : "")} className="pmo-focusable pmo-btn"
+            <button key={k} onClick={() => set(k, k === "type" ? "equipment" : "")} className="pmo-focusable pmo-btn"
               style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 9px", borderRadius: R.pill, cursor: "pointer",
                 background: `${BRAND.blueBright}1a`, border: `1px solid ${BRAND.blueBright}55`, color: T.textOf(BRAND.blueBright), ...TYPE.caption, fontWeight: 700 }}>
-              {k === "plant" ? plantName(v) : k === "status" ? STATUS[v]?.label : k === "sap" ? SAP_STATE[v]?.label : k === "type" ? (v === "all" ? "Goods and services" : "Services only")
+              {k === "plant" ? plantName(v) : k === "status" ? STATUS[v]?.label : k === "sap" ? SAP_STATE[v]?.label : k === "type" ? (v === "all" ? "Everything" : v === "goods" ? "All goods" : CLASS_LABEL[v])
                 : k === "pc" ? (opts.pc.find(p => p[0] === v)?.[1] || `Profit centre ${v}`) : k === "mg" ? `Material group ${v}` : k === "from" ? `From ${fmtDay(v)}` : k === "to" ? `To ${fmtDay(v)}`
                 : k === "project" ? (opts.project.find(p => p[0] === v)?.[1] || v) : v} <X size={11} />
             </button>
@@ -398,7 +416,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
 
       {/* Figures for what is shown */}
       <div style={compact ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: SP.sm } : { display: "flex", gap: SP.sm, flexWrap: "wrap" }}>
-        <Kpi icon={Boxes} label="Items" value={fmt(kpi.lines)} sub={f.type === "goods" ? "goods lines" : f.type === "services" ? "service lines" : "PO lines"} color={BRAND.blueBright} />
+        <Kpi icon={Boxes} label="Items" value={fmt(kpi.lines)} sub={f.type === "equipment" ? "equipment & asset lines" : f.type === "goods" ? "goods lines" : f.type === "all" ? "PO lines" : `${(CLASS_LABEL[f.type] || "").toLowerCase()} lines`} color={BRAND.blueBright} />
         <Kpi icon={PackageCheck} label="Total value" value={`PKR ${fmtM(kpi.value)}`}
           sub={kpi.other.length ? `+ ${kpi.other.map(r => `${r.currency} ${fmtQ(r.total)}`).join(", ")}` : "ordered"} color={DATA.positive} />
         <Kpi icon={Truck} label="Still to be delivered" value={`PKR ${fmtM(kpi.openValue)}`} sub={`${fmt(kpi.openLines)} lines not fully delivered`} color={DATA.warning} />
@@ -483,15 +501,23 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
           <InventoryImport T={T} session={session} supa={supa} map={map} isMobile={compact} onClose={() => setImporting(false)} onDone={load} />
         </Suspense>
       )}
-      {detail && <InventoryDetail T={T} session={session} supa={supa} row={detail} isMobile={compact} onClose={() => setDetail(null)}
+      {detail && <InventoryDetail T={T} session={session} supa={supa} row={rows.find(x => x.id === detail.id) || detail} isMobile={compact} onClose={() => setDetail(null)}
+        onReclassify={reclassify}
         onOpenProject={(id) => { setDetail(null); onOpenProject?.(id); }} onOpenPast={(id) => { setDetail(null); onOpenPast?.(id); }} />}
     </div>
     </div>
   );
 }
 
-function InventoryDetail({ T, session, supa, row: r, isMobile, onClose, onOpenProject, onOpenPast }) {
+function InventoryDetail({ T, session, supa, row: r, isMobile, onClose, onOpenProject, onOpenPast, onReclassify }) {
   const [raw, setRaw] = useState(null);
+  const [saving, setSaving] = useState(false), [saveErr, setSaveErr] = useState(null);
+  const WHY = { pmo: "set by the PMO", name: "by item name", group: `by material group ${r.material_group}`, default: "material group not in the rules", service: "service line" };
+  const changeClass = async (v) => {
+    setSaving(true); setSaveErr(null);
+    try { await onReclassify(r, v === "rules" ? null : v); } catch { setSaveErr("Could not save. Check the connection and try again."); }
+    setSaving(false);
+  };
   useEffect(() => {
     let live = true;
     supa(`/rest/v1/inventory_items?id=eq.${r.id}&select=raw,source,imported_at`, {}, session.access_token)
@@ -522,6 +548,16 @@ function InventoryDetail({ T, session, supa, row: r, isMobile, onClose, onOpenPr
         {line("Material", r.material)}
         {line("Material group", r.material_group)}
         {line("Goods / service", r.is_service ? "Service" : "Goods")}
+        {line("Class", r.is_service ? CLASS_LABEL.service : (
+          <span data-inv-class style={{ display: "inline-flex", alignItems: "center", gap: SP.sm, flexWrap: "wrap" }}>
+            <b>{CLASS_LABEL[r.cls]}</b><span style={{ ...TYPE.caption, color: T.muted }}>({WHY[r.why] || r.why})</span>
+            <Select T={T} size="sm" value={r.why === "pmo" ? r.cls : "rules"} disabled={saving} aria-label="Reclassify this line"
+              onChange={e => changeClass(e.target.value)}>
+              <option value="rules">{r.why === "pmo" ? "Use the rules again" : "Reclassify…"}</option>
+              {["equipment", "building", "consumable"].map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}
+            </Select>
+            {saveErr && <span style={{ ...TYPE.caption, color: T.textOf(DATA.danger) }}>{saveErr}</span>}
+          </span>))}
         {line("Plant", r.plant ? `${plantName(r.plant)} (${r.plant})` : null)}
         {line("Profit centre", r.pc ? `${r.pc}${r.pc_name ? ` · ${r.pc_name}` : ""}` : null)}
         {line("Campus / site", r.site)}
