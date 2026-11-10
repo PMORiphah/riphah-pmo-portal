@@ -4,7 +4,7 @@ import {
 } from "recharts";
 import {
   Sparkles, TrendingUp, GraduationCap, Wallet, Coins, Percent, Pencil, Plus, Hourglass, ChevronDown, ChevronRight,
-  Building2, PieChart as PieIcon, BarChart3, CalendarRange, RotateCcw, Trash2, Quote,
+  Building2, PieChart as PieIcon, BarChart3, CalendarRange, RotateCcw, Trash2, FileText,
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Select, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
@@ -139,6 +139,7 @@ export function BenefitsRealizationPage({ T, session, supa }) {
   const [fy, setFy] = useState("");          // "" = both years
   const [cat, setCat] = useState("");        // "" = both categories
   const [edit, setEdit] = useState(null);    // row being edited, or {} for a new entry
+  const [read, setRead] = useState(null);    // card opened to read its description (PMO, 10 Nov 2026: shown on click, not on the card)
   const [showWaiting, setShowWaiting] = useState(false);
   const [showRemoved, setShowRemoved] = useState(false);
   const [anim, setAnim] = useState(() => !reduced());
@@ -205,11 +206,20 @@ export function BenefitsRealizationPage({ T, session, supa }) {
   );
   const blank = (txt) => <span style={{ color: T.dim, fontStyle: "italic", fontWeight: 400 }}>{txt}</span>;
   const editBtn = (r) => isPMO ? (
-    <button onClick={() => setEdit(r)} title="Edit" aria-label={`Edit ${r.project_name}`} className="pmo-focusable pmo-btn"
+    <button onClick={(e) => { e.stopPropagation(); setEdit(r); }} title="Edit" aria-label={`Edit ${r.project_name}`} className="pmo-focusable pmo-btn"
       style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: R.sm, padding: 5, cursor: "pointer", color: T.muted, display: "grid", placeItems: "center" }}>
       <Pencil size={13} />
     </button>
   ) : null;
+
+  // A card opens its description in a window; the card itself stays short.
+  const cardProps = (r) => ({ role: "button", tabIndex: 0, onClick: () => setRead(r), "aria-label": `${r.project_name}: open description`,
+    onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setRead(r); } } });
+  const readLink = (r, c) => r.description ? (
+    <div data-br-read style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: SP.sm, ...TYPE.caption, fontWeight: 700, color: T.textOf(c), position: "relative" }}>
+      <FileText size={12} /> Read description <ChevronRight size={12} />
+    </div>
+  ) : isPMO ? <div style={{ marginTop: SP.sm, ...TYPE.caption, color: T.dim, fontStyle: "italic", position: "relative" }}>No description yet</div> : null;
 
   const noData = (msg) => (
     <div style={{ height: 200, display: "grid", placeItems: "center", textAlign: "center", padding: SP.lg, ...TYPE.bodySm, color: T.muted,
@@ -365,7 +375,7 @@ export function BenefitsRealizationPage({ T, session, supa }) {
               {rev.map((r, i) => {
                 const b = num(r.budget), v = num(r.revenue), roi = v !== null && b > 0 ? v / b : null;
                 return (
-                  <div key={r.id} data-br-card={r.project_code} className="br-card br-rise" style={{ animationDelay: `${Math.min(i, 10) * 50}ms`,
+                  <div key={r.id} data-br-card={r.project_code} className="br-card br-rise pmo-focusable" {...cardProps(r)} style={{ animationDelay: `${Math.min(i, 10) * 50}ms`, cursor: "pointer",
                     padding: SP.md, borderRadius: R.lg, background: T.surface, border: `1px solid ${T.border}`, borderTop: `3px solid ${BRAND.gold}`, minWidth: 0 }}>
                     <div style={{ display: "flex", gap: SP.sm, alignItems: "flex-start" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -394,9 +404,7 @@ export function BenefitsRealizationPage({ T, session, supa }) {
                       </div>
                     )}
                     {v !== null && r.revenue_as_of && <div style={{ ...TYPE.caption, color: T.dim, marginTop: 6 }}>Revenue as of {fmtDay(r.revenue_as_of)}</div>}
-                    <div style={{ ...TYPE.bodySm, color: r.description ? T.textSoft : T.dim, marginTop: SP.sm, fontStyle: r.description ? "normal" : "italic", whiteSpace: "pre-wrap" }}>
-                      {r.description || (isPMO ? "No description yet: use the pencil to add how this project generates revenue." : "Description to be added.")}
-                    </div>
+                    {readLink(r, BRAND.gold)}
                   </div>
                 );
               })}
@@ -414,7 +422,7 @@ export function BenefitsRealizationPage({ T, session, supa }) {
               {se.map((r, i) => {
                 const b = num(r.budget);
                 return (
-                  <div key={r.id} data-br-card={r.project_code} className="br-card br-rise" style={{ animationDelay: `${Math.min(i, 10) * 50}ms`, position: "relative", overflow: "hidden",
+                  <div key={r.id} data-br-card={r.project_code} className="br-card br-rise pmo-focusable" {...cardProps(r)} style={{ animationDelay: `${Math.min(i, 10) * 50}ms`, position: "relative", overflow: "hidden", cursor: "pointer",
                     padding: SP.md, borderRadius: R.lg, minWidth: 0, border: `1px solid ${DATA.violet}40`,
                     background: `linear-gradient(160deg, ${DATA.violet}1c, ${T.surface} 55%)` }}>
                     <GraduationCap aria-hidden="true" size={84} color={DATA.violet} style={{ position: "absolute", right: -14, bottom: -18, opacity: 0.09 }} />
@@ -428,15 +436,10 @@ export function BenefitsRealizationPage({ T, session, supa }) {
                       </div>
                       {editBtn(r)}
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: SP.md, position: "relative" }}>
-                      <Quote size={15} color={T.textOf(DATA.violet)} style={{ flexShrink: 0, marginTop: 2 }} />
-                      <div style={{ ...TYPE.bodySm, color: r.description ? T.textSoft : T.dim, fontStyle: r.description ? "normal" : "italic", whiteSpace: "pre-wrap" }}>
-                        {r.description || (isPMO ? "No description yet: use the pencil to add how students benefit." : "Description to be added.")}
-                      </div>
-                    </div>
                     <div style={{ marginTop: SP.md, ...TYPE.caption, color: T.muted, position: "relative" }}>
                       Budget <b style={{ color: T.text, fontVariantNumeric: "tabular-nums" }}>{b !== null ? `PKR ${fmt(b)}` : blank("not entered")}</b>
                     </div>
+                    {readLink(r, DATA.violet)}
                   </div>
                 );
               })}
@@ -492,10 +495,45 @@ export function BenefitsRealizationPage({ T, session, supa }) {
         </Section>
       )}
 
+      {read && <ReadBenefit T={T} compact={compact} row={read} isPMO={isPMO} onClose={() => setRead(null)}
+        onEdit={() => { setEdit(read); setRead(null); }} />}
       {edit && <EditBenefit T={T} compact={compact} row={edit} supa={supa} session={session}
         onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} />}
     </div>
     </div>
+  );
+}
+
+// ─── Read one entry (everyone who sees the page) ─────────────────────────────
+function ReadBenefit({ T, compact, row: r, isPMO, onClose, onEdit }) {
+  const isRev = r.category === "revenue";
+  const c = isRev ? BRAND.gold : DATA.violet;
+  const b = num(r.budget), v = num(r.revenue), roi = v !== null && b > 0 ? v / b : null;
+  const tiles = isRev
+    ? [["Budget", b !== null ? `PKR ${fmt(b)}` : "Not entered"], ["Revenue", v !== null ? `PKR ${fmt(v)}` : "Not reported"], ["Return", roi !== null ? `${roi.toFixed(2)}×` : "—"]]
+    : [["Budget", b !== null ? `PKR ${fmt(b)}` : "Not entered"]];
+  return (
+    <Modal T={T} isMobile={compact} onClose={onClose} icon={isRev ? Coins : GraduationCap} width={640}
+      title={r.project_name} sub={[r.project_code, r.fiscal_year, r.campus, CAT[r.category].label].filter(Boolean).join(" · ")}
+      footer={<div style={{ display: "flex", gap: SP.sm, justifyContent: "flex-end", width: "100%" }}>
+        {isPMO && <Button T={T} icon={Pencil} onClick={onEdit}>Edit</Button>}
+        <Button T={T} variant="primary" onClick={onClose}>Close</Button>
+      </div>}>
+      <div data-br-reading>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${tiles.length}, minmax(0,1fr))`, gap: SP.sm }}>
+          {tiles.map(([l, val]) => (
+            <div key={l} style={{ padding: "8px 12px", borderRadius: R.md, background: `${c}12`, border: `1px solid ${c}33`, minWidth: 0 }}>
+              <div style={{ ...TYPE.label, fontSize: 9, color: T.dim }}>{l}</div>
+              <div style={{ ...TYPE.h3, fontSize: 15, color: T.text, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{val}</div>
+            </div>
+          ))}
+        </div>
+        {isRev && v !== null && r.revenue_as_of && <div style={{ ...TYPE.caption, color: T.dim, marginTop: 6 }}>Revenue as of {fmtDay(r.revenue_as_of)}</div>}
+        <div style={{ ...TYPE.label, fontSize: 9.5, color: T.dim, marginTop: SP.lg }}>{isRev ? "How it generates revenue" : "How students benefit"}</div>
+        <div style={{ ...TYPE.body, fontSize: 14, lineHeight: 1.6, color: r.description ? T.text : T.dim, fontStyle: r.description ? "normal" : "italic",
+          whiteSpace: "pre-wrap", marginTop: 6 }}>{r.description || "No description yet."}</div>
+      </div>
+    </Modal>
   );
 }
 
