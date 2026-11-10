@@ -267,10 +267,10 @@ export function BenefitsRealizationPage({ T, session, supa }) {
               <Sparkles size={13} /> Benefits realization · {yearWord}
             </div>
             <div style={{ ...TYPE.display, fontSize: compact ? 24 : 32, marginTop: 6, lineHeight: 1.15 }}>
-              <CountUp value={view.length} ms={900} format={(v) => Math.round(v)} /> completed project{view.length === 1 ? "" : "s"} delivering benefits
+              <CountUp value={view.length} ms={900} format={(v) => Math.round(v)} /> completed project{view.length === 1 ? "" : "s"} expected to deliver benefits
             </div>
             <div style={{ ...TYPE.bodySm, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>
-              {rev.length} for revenue · {se.length} for the student experience{isPMO && waiting.length ? ` · ${waiting.length} more on the list once they close` : ""}
+              {rev.length ? `Revenue reported for ${k.withRev} of ${rev.length} revenue project${rev.length === 1 ? "" : "s"}` : "No revenue projects"} · {se.length} aimed at the student experience{isPMO && waiting.length ? ` · ${waiting.length} more on the list once they close` : ""}
             </div>
           </div>
           <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap" }}>
@@ -279,7 +279,7 @@ export function BenefitsRealizationPage({ T, session, supa }) {
           </div>
         </div>
         <div style={{ position: "relative", display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "repeat(4, minmax(0,1fr))", gap: compact ? SP.sm : SP.md, marginTop: SP.lg }}>
-          <Kpi T={T} compact={compact} i={0} icon={Sparkles} color={BRAND.gold} label="Projects delivered" value={<CountUp value={view.length} ms={900} format={(v) => Math.round(v)} />} sub={`${rev.length} revenue · ${se.length} student exp.`}
+          <Kpi T={T} compact={compact} i={0} icon={Sparkles} color={BRAND.gold} label="Projects completed" value={<CountUp value={view.length} ms={900} format={(v) => Math.round(v)} />} sub={`expected benefit: ${rev.length} revenue · ${se.length} student exp.`}
             meter={view.length ? [{ v: rev.length / view.length, c: BRAND.gold }, { v: se.length / view.length, c: DATA.violet }] : null} />
           <Kpi T={T} compact={compact} i={1} icon={Wallet} color={BRAND.blueBright} label="Budget invested" value={k.withBudget ? <CountUp value={k.budget} format={pkrM} /> : "—"}
             sub={k.withBudget === view.length ? "all budgets entered" : `${k.withBudget} of ${view.length} budgets entered`}
