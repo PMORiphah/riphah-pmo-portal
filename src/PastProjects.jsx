@@ -7,6 +7,7 @@ import { History, Search, X, Send, Mail, Pencil, ChevronDown, ChevronRight,
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
+import { StatusReportButton } from "./StatusReportButton.jsx";
 import { notifyPast, kindOf, statusThread, waitedFor, AskedChip, PctChip, StatusTile, StatusBeside,
          StatusRequestCard, StatusAnswerCard, StatusSentNote } from "./PastStatus.jsx";
 
@@ -1967,6 +1968,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               <span style={{ ...TYPE.caption, color:T.muted }}>{list.length} shown</span>
               {isPMO && (
                 <>
+                  <StatusReportButton T={T} session={session} supa={supa} compact={isCompact} />
                   <Button T={T} variant="ghost" icon={Download} onClick={downloadTemplate}>
                     Download sheet
                   </Button>

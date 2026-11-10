@@ -12,6 +12,7 @@ import { PortfolioTimeline } from "./Timeline.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
 import { ProjectDeliverables, hasDeliverables } from "./Deliverables.jsx";
 import { PastProjectsPage, loadPastUnread, isPastViewer } from "./PastProjects.jsx";
+import { StatusReportButton } from "./StatusReportButton.jsx";
 import { kindOf, threadState, OVERALL, isItem, agoText, agoShort, dayText } from "./updateKinds.js";
 import { PmoReviewPage } from "./PmoReview.jsx";
 import { ActivityDetails, BurstList, groupBursts, burstSummary, notificationEntries } from "./ActivityDetail.jsx";
@@ -5432,6 +5433,7 @@ function ProjectsPage({ T, session, onSelectProject,
               )}
             </div>
           )}
+          <StatusReportButton T={T} session={session} supa={supa} compact={vpP.isCompact} />
           <Button T={T} variant="accent" tone={T.positive} icon={Download} onClick={downloadExport}
             title={activeFilterCount ? "Download the projects currently in view" : "Download all projects"}>
             {activeFilterCount || search.trim() ? `Export ${sorted.length}` : "Export all"}
