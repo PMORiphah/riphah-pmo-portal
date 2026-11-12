@@ -151,7 +151,7 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
       const [t, s, p, pp, u] = await Promise.all([
         supa("/rest/v1/pmo_tasks?removed=eq.false&select=*&order=created_at.asc", {}, tok),
         supa("/rest/v1/settings?key=eq.team_config&select=value", {}, tok).catch(() => []),
-        supa("/rest/v1/projects?select=id,code,name,fiscal_year,campus,portfolio&order=name.asc", {}, tok).catch(() => []),
+        supa("/rest/v1/projects?select=id,code,name,fiscal_year,campus,portfolio,amount_released&order=name.asc", {}, tok).catch(() => []),
         supa("/rest/v1/past_projects?status=neq.closed&select=id,code,name,campus,fiscal_year&order=name.asc", {}, tok).catch(() => []),
         supa("/rest/v1/user_profiles?select=id,full_name,username", {}, tok).catch(() => []),
       ]);
@@ -446,7 +446,8 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
         {LISTS.map((l, i) => renderList(l, i))}
       </div>
 
-      {edit && <TaskEditor T={T} compact={compact} task={edit} listMeta={listMeta} projects={projects} past={past} supa={supa} tok={tok}
+      {edit && <TaskEditor T={T} compact={compact} task={edit} listMeta={listMeta} past={past} supa={supa} tok={tok}
+        projects={projects.filter(p => Number(p.amount_released) > 0 || p.id === edit.project_id)}
         onClose={() => setEdit(null)} onSaved={(row, isNew) => { setEdit(null); setRows(rs => isNew ? [...rs, row] : rs.map(x => x.id === row.id ? row : x)); }} />}
       {confirmDel && (
         <Modal T={T} isMobile={compact} onClose={() => setConfirmDel(null)} icon={Trash2} width={460} title="Delete this task?" sub={listMeta[confirmDel.list]?.label}
@@ -519,11 +520,11 @@ function TaskEditor({ T, compact, task, listMeta, projects, past, supa, tok, onC
           </select>
         </L>
         {isPr ? (<>
-          <L T={T} label="Project the PR is from" wide hint={f.proj ? null : `${projects.length} FY 26-27 projects and ${past.length} open past projects`}>
+          <L T={T} label="Project the PR is from" wide hint={f.proj ? null : `${projects.length} FY 26-27 projects with budget released and ${past.length} open past projects`}>
             <input value={pq} onChange={e => setPq(e.target.value)} placeholder="Search by name, ID or campus…" style={box} aria-label="Search projects" data-field="project-search" />
             <select value={f.proj} onChange={e => set("proj", e.target.value)} style={{ ...box, marginTop: 6 }} size={compact ? 1 : 7} aria-label="Project" data-field="project">
               {compact && <option value="">Choose a project…</option>}
-              <optgroup label={`Current FY 26-27 projects (${curP.length})`}>
+              <optgroup label={`Current FY 26-27 projects with budget released (${curP.length})`}>
                 {curP.map(p => <option key={p.id} value={`p:${p.id}`}>{p.code ? `${p.code} · ` : ""}{p.name}{p.campus ? ` (${p.campus})` : ""}</option>)}
               </optgroup>
               <optgroup label={`Past projects still open (${pastP.length})`}>
