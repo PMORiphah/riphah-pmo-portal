@@ -13,6 +13,7 @@ import { ProjectTasks } from "./Tasks.jsx";
 import { ProjectDeliverables, hasDeliverables } from "./Deliverables.jsx";
 import { PastProjectsPage, loadPastUnread, isPastViewer } from "./PastProjects.jsx";
 import { StatusReportButton } from "./StatusReportButton.jsx";
+import { loadPendingPrs, PendingPrBadge, EMPTY_PRS } from "./pendingPr.jsx";
 import { kindOf, threadState, OVERALL, isItem, agoText, agoShort, dayText } from "./updateKinds.js";
 import { PmoReviewPage } from "./PmoReview.jsx";
 import { ActivityDetails, BurstList, groupBursts, burstSummary, notificationEntries } from "./ActivityDetail.jsx";
@@ -315,6 +316,8 @@ const NAV = [
   { id:"team", Icon:Users,           label:"Team & About" },
 ];
 const PMO_NAV = [
+  // PMO team task lists (PMO, 12 Nov 2026): PMO To-Do, Pending PRs and one list per PMO member.
+  { id:"goals", Icon:Target, label:"Tasks/Goals" },
   // New PDDs from the E-PDD portal (PMO). Under Administration since 5 Nov 2026 (PMO), above User Management.
   { id:"review", Icon:ClipboardCheck, label:"PMO Review" },
   { id:"users", Icon:Users,    label:"User Management" },
@@ -4854,6 +4857,9 @@ function ProjectsPage({ T, session, onSelectProject,
   search, setSearch, fFY, setFFY, fOrg, setFOrg, fCode, setFCode, fName, setFName,
   fSeg, setFSeg, fPri, setFPri, fStrat, setFStrat, fStage, setFStage, fCC, setFCC, fMark = "", setFMark = () => {} }) {
   const isPMO = session?.role === "pmo";
+  // Open "Pending PR" tasks from Tasks/Goals → red badge after the name (PMO only, 12 Nov 2026).
+  const [prs, setPrs] = useState(EMPTY_PRS);
+  useEffect(() => { if (isPMO) loadPendingPrs(supa, session.access_token).then(setPrs); }, [isPMO, session.access_token]);
   const [rows,         setRows]         = useState([]);
   const [lookups,      setLookups]      = useState({sectors:[],regions:[],segments:[],cost_centers:[],campuses:[]});
   const [loading,      setLoading]      = useState(true);
@@ -5233,6 +5239,7 @@ function ProjectsPage({ T, session, onSelectProject,
               textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight: hovered ? 600 : 450,
               color: closed ? T.textSoft : T.text, transition:`font-weight ${MOTION.fast}` }}>{p.name}</span>
             {p.pcr && pcrPill()}
+            {isPMO && <PendingPrBadge T={T} n={prs.projects[p.id]} />}
           </span>
         );
       }
@@ -7695,6 +7702,12 @@ function ProjectTimeline({ T, p, evm, isCompact }) {
 
 function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToDiscussion }) {
   const [evm,          setEvm]          = useState(null);
+  // Open "Pending PR" tasks on this project (Tasks/Goals, PMO only, 12 Nov 2026).
+  const [prCount,      setPrCount]      = useState(0);
+  useEffect(() => {
+    if (session?.role !== "pmo" || !projectId) { setPrCount(0); return; }
+    loadPendingPrs(supa, session.access_token).then(r => setPrCount(r.projects[projectId] || 0));
+  }, [projectId, session?.role, session?.access_token]);
   const [details,      setDetails]      = useState(null);
   const [pm,           setPm]           = useState(null);   // assigned PM
   const [allPMs,       setAllPMs]       = useState([]);     // all PMs (for assign dropdown)
@@ -7971,6 +7984,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                   </Badge>
                 </button>
               )}
+              <PendingPrBadge T={T} n={prCount} style={{ fontSize:11, padding:"2px 8px", borderRadius:R.pill }} />
               {details.fiscal_year && (
                 <span style={{ ...TYPE.caption, color:T.heroFgMuted }}>{details.fiscal_year}</span>
               )}
@@ -8689,6 +8703,11 @@ const BenefitsRealizationPage = lazy(() => import("./BenefitsRealization.jsx").c
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
   return { BenefitsRealizationPage: () => null };
 }).then(m => ({ default: m.BenefitsRealizationPage })));
+// Tasks/Goals (PMO, 12 Nov 2026): loaded only when the page is opened. Reload once on a missing chunk.
+const PmoTasksPage = lazy(() => import("./PmoTasks.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
+  return { PmoTasksPage: () => null };
+}).then(m => ({ default: m.PmoTasksPage })));
 // Inventory (PMO, 26 Oct 2026): loaded only when the page is opened. Reload once on a missing chunk, as above.
 const InventoryPage = lazy(() => import("./Inventory.jsx").catch(() => {
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
@@ -10525,7 +10544,7 @@ const MEMBER_TITLES = {
   manager_pmo: "Manager PMO",
   deputy_pmo:  "Deputy Manager PMO",
   exec_pmo:    "Executive PMO",
-  po1:         "Projects Officer",
+  po1:         "Executive PMO",      // Mr. Abdullah Azhar, Executive PMO since 12 Nov 2026 (PMO); was Projects Officer
   po2:         "Projects Officer",
 };
 
@@ -11873,6 +11892,7 @@ const PAGE_TITLES = {
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
   review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
   benefits: { title:"Benefits Realization", subtitle:"Revenue and student experience from completed FY 25-26 and FY 26-27 projects" },
+  goals: { title:"Tasks/Goals", subtitle:"PMO To-Do, pending PRs and each PMO member's tasks" },
   inventory: { title:"Inventory", subtitle:"Items procured from FY 25-26 till present \u00b7 SAP ME2J" },
   cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
@@ -13144,7 +13164,7 @@ export default function App() {
     // entry is not enough on its own: a restored session, a bookmark or a stale
     // page value can still land here, and Past Projects would have shown an
     // empty list rather than saying anything.
-    ((page === "cashflow" || page === "review" || page === "inventory") && session?.role !== "pmo") ? "proj" :
+    ((page === "cashflow" || page === "review" || page === "inventory" || page === "goals") && session?.role !== "pmo") ? "proj" :
     (page === "past" && session?.role !== "pmo" && !pastAllowed) ? "proj" :
     (page === "reports" && session?.role !== "pmo" && !reportsAllowed && !reportsPinned) ? "proj" :
     page;
@@ -13365,6 +13385,12 @@ export default function App() {
         {effectivePage === "benefits" && (
           <Suspense fallback={<div style={{ flex:1 }} />}>
             <BenefitsRealizationPage T={T} session={session} supa={supa} />
+          </Suspense>
+        )}
+        {effectivePage === "goals" && (
+          <Suspense fallback={<div style={{ flex:1 }} />}>
+            <PmoTasksPage T={T} session={session} supa={supa} onOpenProject={openProject}
+              onOpenPast={(id) => { setPastLink({ kind:"project", id }); navigateToPage("past"); }} />
           </Suspense>
         )}
         {effectivePage === "inventory" && (

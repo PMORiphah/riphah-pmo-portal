@@ -8,6 +8,7 @@ import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
 import { StatusReportButton } from "./StatusReportButton.jsx";
+import { loadPendingPrs, PendingPrBadge, EMPTY_PRS } from "./pendingPr.jsx";
 import { notifyPast, kindOf, statusThread, waitedFor, AskedChip, PctChip, StatusTile, StatusBeside,
          StatusRequestCard, StatusAnswerCard, StatusSentNote } from "./PastStatus.jsx";
 
@@ -968,7 +969,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, isCompact
 
 
 /* ── One past project, full page ─────────────────────────────────────────── */
-function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm, onAskStatus }) {
+function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm, onAskStatus, prCount = 0 }) {
   const [tab, setTab] = useState("followup");
   const [editing, setEditing] = useState(false);
   const st = STATUS[row.status] || STATUS.open;
@@ -994,7 +995,8 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
         <div style={{ display:"flex", gap:SP.sm, alignItems:"flex-start", flexWrap:"wrap" }}>
           <div style={{ flex:"1 1 260px", minWidth:0 }}>
             {row.code && <div style={{ ...TYPE.mono, fontSize:10, color:T.dim }}>{row.code}</div>}
-            <div style={{ ...TYPE.display, fontSize: isCompact ? 17 : 20, color:T.text, lineHeight:1.3 }}>{row.name}</div>
+            <div style={{ ...TYPE.display, fontSize: isCompact ? 17 : 20, color:T.text, lineHeight:1.3 }}>{row.name}
+              {prCount > 0 && <PendingPrBadge T={T} n={prCount} style={{ marginLeft:8, fontSize:11, padding:"1px 8px", verticalAlign:"middle" }} />}</div>
           </div>
           <div style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", alignItems:"center" }}>
             {canAsk && (row.status_pending_since ? (<>
@@ -1515,6 +1517,9 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   const [lastByPm, setLastByPm] = useState({});         // latest chat message per manager (PMO)
 
   const isPMO = session?.role === "pmo";
+  // Open "Pending PR" tasks from Tasks/Goals → red badge on the project (PMO only, 12 Nov 2026).
+  const [prs, setPrs] = useState(EMPTY_PRS);
+  useEffect(() => { if (isPMO) loadPendingPrs(supa, session.access_token).then(setPrs); }, [isPMO, supa, session.access_token]);
   // Two guest accounts see everything the PMO sees here and can ask, but not edit.
   const [viewer, setViewer] = useState(false);
   useEffect(() => { let on = true; isPastViewer(supa, session).then(v => { if (on) setViewer(v); }); return () => { on = false; }; }, [supa, session]);
@@ -1791,7 +1796,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
 
         <div style={{ position:"relative", zIndex:1 }}>
           {openRow ? (
-            <PastProjectDetail T={T} session={session} supa={supa} row={openRow}
+            <PastProjectDetail T={T} session={session} supa={supa} row={openRow} prCount={isPMO ? (prs.past[openRow.id] || 0) : 0}
               roll={rollup[openRow.id]} isPMO={isPMO} viewer={viewer} isCompact={isCompact}
               pms={pmChoices} onRead={refreshUnread}
               onAskStatus={askStatus ? (r, remind) => askStatus([r], remind) : null}
@@ -2049,6 +2054,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                             <div style={{ display:"flex", alignItems:"baseline", gap:8, flexWrap:"wrap" }}>
                               {r.code && <span style={{ ...TYPE.mono, fontSize:9.5, color:T.dim }}>{r.code}</span>}
                               <span style={{ fontSize:13.5, color:T.text, fontWeight:600 }}>{r.name}</span>
+                              {isPMO && <PendingPrBadge T={T} n={prs.past[r.id]} style={{ alignSelf:"center" }} />}
                             </div>
                             <div style={{ ...TYPE.caption, color:T.muted, marginTop:3 }}>
                               {meta.join(" · ")}{meta.length ? " · " : ""}
