@@ -152,7 +152,7 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
         supa("/rest/v1/pmo_tasks?removed=eq.false&select=*&order=created_at.asc", {}, tok),
         supa("/rest/v1/settings?key=eq.team_config&select=value", {}, tok).catch(() => []),
         supa("/rest/v1/projects?select=id,code,name,fiscal_year,campus,portfolio,amount_released&order=name.asc", {}, tok).catch(() => []),
-        supa("/rest/v1/past_projects?status=neq.closed&select=id,code,name,campus,fiscal_year&order=name.asc", {}, tok).catch(() => []),
+        supa("/rest/v1/past_projects?status=neq.closed&select=id,code,name,campus,fiscal_year,released_amount&order=name.asc", {}, tok).catch(() => []),
         supa("/rest/v1/user_profiles?select=id,full_name,username", {}, tok).catch(() => []),
       ]);
       setRows(Array.isArray(t) ? t : []);
@@ -464,13 +464,99 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
   );
 }
 
-function L({ T, label, children, hint, wide }) {
+// `group`: a set of buttons, so a plain <div> (a <label> would press its first button on a stray click).
+function L({ T, label, children, hint, wide, group }) {
+  const Tag = group ? "div" : "label";
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: wide ? "1 / -1" : "auto", minWidth: 0 }}>
+    <Tag style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: wide ? "1 / -1" : "auto", minWidth: 0 }}>
       <span style={{ ...TYPE.label, fontSize: 9.5, color: T.dim }}>{label}</span>
       {children}
       {hint && <span style={{ ...TYPE.caption, color: T.dim }}>{hint}</span>}
-    </label>
+    </Tag>
+  );
+}
+
+// PR project picker and task editor (redesigned 12 Nov 2026, PMO: the browser's list box looked out of place).
+const fmtMoneyM = (n) => { const v = Number(n || 0); return v >= 1e6 ? `PKR ${(v / 1e6).toFixed(v >= 1e8 ? 0 : 1)}M` : v >= 1e3 ? `PKR ${Math.round(v / 1e3)}K` : v ? `PKR ${v}` : ""; };
+const addDays = (n) => new Date(Date.now() + 5 * 3600000 + n * DAY).toISOString().slice(0, 10);
+
+function ProjectPicker({ T, compact, value, onChange, projects, past }) {
+  const [tab, setTab] = useState(value.startsWith("x:") ? "past" : "cur");
+  const [q, setQ] = useState("");
+  const [changing, setChanging] = useState(!value);
+  const PR = DATA.danger;
+  const cur = projects.map(p => ({ ...p, key: `p:${p.id}`, meta: [p.campus, p.amount_released ? `${fmtMoneyM(p.amount_released)} released` : null].filter(Boolean).join(" · "), where: "FY 26-27" }));
+  const old = past.map(p => ({ ...p, key: `x:${p.id}`, meta: [p.campus, p.fiscal_year].filter(Boolean).join(" · "), where: "Past project" }));
+  const chosen = [...cur, ...old].find(p => p.key === value);
+  const s = q.trim().toLowerCase();
+  const rows = (tab === "cur" ? cur : old).filter(p => !s || `${p.code || ""} ${p.name} ${p.campus || ""}`.toLowerCase().includes(s));
+
+  if (chosen && !changing) return (
+    <div data-pr-chosen="" style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: R.lg,
+      background: `linear-gradient(120deg, ${PR}24, ${T.surface} 70%)`, border: `1px solid ${PR}77`, boxShadow: `0 8px 24px -14px ${PR}` }}>
+      <span style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, display: "grid", placeItems: "center", background: `linear-gradient(140deg, ${PR}, ${PR}aa)` }}>
+        <FileWarning size={19} color="#fff" /></span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {chosen.code && chosen.code !== "-" && <span style={{ fontFamily: "ui-monospace,Consolas,monospace", fontSize: 11, color: T.muted }}>{chosen.code}</span>}
+          <span style={{ ...TYPE.caption, fontSize: 10, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.textOf(PR) }}>{chosen.where}</span>
+        </div>
+        <div style={{ ...TYPE.bodySm, fontWeight: 700, color: T.text, overflowWrap: "anywhere", marginTop: 1 }}>{chosen.name}</div>
+        {chosen.meta && <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>{chosen.meta}</div>}
+      </div>
+      <Button T={T} size="sm" onClick={() => setChanging(true)} data-pr-change>Change</Button>
+    </div>
+  );
+
+  const tabBtn = (k, label, n) => {
+    const on = tab === k;
+    return (
+      <button key={k} role="tab" aria-selected={on} onClick={() => setTab(k)} data-pr-tab={k} className="pmo-focusable pmo-btn"
+        style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", padding: "8px 10px", borderRadius: R.pill,
+          ...TYPE.caption, fontWeight: 700, background: on ? T.card : "transparent", color: on ? T.text : T.muted, boxShadow: on ? T.shadow : "none", transition: `all ${MOTION.fast}` }}>
+        {label}<span style={{ padding: "0 7px", borderRadius: R.pill, fontSize: 10.5, background: on ? `${PR}22` : T.border, color: on ? T.textOf(PR) : T.muted }}>{n}</span>
+      </button>
+    );
+  };
+  return (
+    <div data-pr-picker="" style={{ borderRadius: R.lg, border: `1px solid ${T.border}`, background: T.surface, overflow: "hidden" }}>
+      <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8, borderBottom: `1px solid ${T.border}` }}>
+        <div role="tablist" style={{ display: "flex", gap: 4, padding: 3, borderRadius: R.pill, background: T.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(15,40,70,0.05)" }}>
+          {tabBtn("cur", compact ? "FY 26-27 · released" : "FY 26-27 · budget released", cur.length)}
+          {tabBtn("past", compact ? "Past · open" : "Past projects · still open", old.length)}
+        </div>
+        <div style={{ position: "relative" }}>
+          <Search size={14} color={T.dim} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name, ID or campus…" className="pt-in" data-field="project-search" aria-label="Search projects"
+            style={{ width: "100%", boxSizing: "border-box", padding: "9px 32px 9px 32px", borderRadius: R.md, border: `1px solid ${T.border}`, background: T.card, color: T.text, fontSize: 13,
+              fontFamily: TYPE.body.fontFamily, outline: "none" }} />
+          {q && <button onClick={() => setQ("")} aria-label="Clear search" className="pmo-focusable" style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+            border: "none", background: "none", cursor: "pointer", color: T.muted, padding: 4, display: "grid", placeItems: "center" }}><X size={13} /></button>}
+        </div>
+      </div>
+      <div role="listbox" aria-label="Projects" data-field="project" style={{ maxHeight: compact ? 300 : 264, overflowY: "auto", padding: 6 }}>
+        {rows.length === 0 && <div style={{ ...TYPE.caption, color: T.dim, padding: "18px 10px", textAlign: "center" }}>No project matches “{q}”.</div>}
+        {rows.map(p => {
+          const on = p.key === value;
+          return (
+            <button key={p.key} role="option" aria-selected={on} data-pr-option={p.key} onClick={() => { onChange(p.key); setChanging(false); setQ(""); }} className="pmo-focusable pt-opt"
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", marginBottom: 2, borderRadius: R.md, cursor: "pointer", textAlign: "left",
+                border: `1px solid ${on ? `${PR}88` : "transparent"}`, background: on ? `${PR}1a` : "transparent", color: T.text, fontFamily: TYPE.body.fontFamily }}>
+              <span aria-hidden="true" style={{ width: 3, alignSelf: "stretch", borderRadius: 3, background: on ? PR : tab === "cur" ? BRAND.blueBright : DATA.violet, opacity: on ? 1 : 0.55 }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                  {p.code && p.code !== "-" && <span style={{ fontFamily: "ui-monospace,Consolas,monospace", fontSize: 10.5, color: T.muted, whiteSpace: "nowrap" }}>{p.code}</span>}
+                  <span style={{ fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>{p.name}</span>
+                </span>
+                {p.meta && <span style={{ display: "block", ...TYPE.caption, fontSize: 11, color: T.dim, marginTop: 1 }}>{p.meta}</span>}
+              </span>
+              <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center",
+                border: `2px solid ${on ? PR : T.border}`, background: on ? PR : "transparent" }}>{on && <Check size={12} color="#fff" strokeWidth={3} />}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -480,15 +566,15 @@ function TaskEditor({ T, compact, task, listMeta, projects, past, supa, tok, onC
     list: task.list || "pmo_todo", title: task.title || (task.list === "pending_pr" ? "Pending PR" : ""), note: task.note || "", priority: task.priority || "normal", due_date: task.due_date || "",
     proj: task.project_id ? `p:${task.project_id}` : task.past_project_id ? `x:${task.past_project_id}` : "",
   });
-  const [pq, setPq] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
   const isPr = f.list === "pending_pr";
-  const box = { width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: R.sm, border: `1px solid ${T.border}`, background: T.surface,
-    color: T.text, fontSize: 13, fontFamily: TYPE.body.fontFamily, outline: "none" };
-  const pm = (p) => !pq.trim() || `${p.code || ""} ${p.name} ${p.campus || ""}`.toLowerCase().includes(pq.trim().toLowerCase());
-  const curP = projects.filter(pm), pastP = past.filter(pm);
+  const m = listMeta[f.list] || {};
+  const box = { width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: R.md, border: `1px solid ${T.border}`, background: T.surface,
+    color: T.text, fontSize: 13.5, fontFamily: TYPE.body.fontFamily, outline: "none", transition: `border-color ${MOTION.fast}, box-shadow ${MOTION.fast}` };
+  const pickList = (v) => setF(s => ({ ...s, list: v, proj: v === "pending_pr" ? s.proj : "",
+    title: v === "pending_pr" && !s.title.trim() ? "Pending PR" : (s.list === "pending_pr" && v !== "pending_pr" && s.title === "Pending PR" ? "" : s.title) }));
 
   const save = async () => {
     const title = isPr ? (f.title.trim() || "Pending PR") : f.title.trim();
@@ -505,56 +591,66 @@ function TaskEditor({ T, compact, task, listMeta, projects, past, supa, tok, onC
     } catch { setBusy(false); setMsg("Could not save. Check the connection and try again."); }
   };
 
+  const chip = (on, c, children, onClick, attrs = {}, key) => (
+    <button key={key} type="button" onClick={onClick} aria-pressed={on} className="pmo-focusable pmo-btn" {...attrs}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: R.pill, cursor: "pointer", whiteSpace: "nowrap",
+        ...TYPE.caption, fontSize: 12, fontWeight: 700, border: `1px solid ${on ? c : T.border}`, background: on ? `${c}26` : T.surface,
+        color: on ? T.textOf(c) : T.textSoft, boxShadow: on ? `0 4px 14px -8px ${c}` : "none", transition: `all ${MOTION.fast}` }}>{children}</button>
+  );
+  const quick = [["Today", 0], ["In 3 days", 3], ["Next week", 7]];
+
   return (
-    <Modal T={T} isMobile={compact} onClose={busy ? undefined : onClose} icon={isPr ? FileWarning : ListTodo} width={600}
-      title={isNew ? (isPr ? "Add a pending PR" : "Add a task") : "Edit task"} sub={listMeta[f.list]?.label}
+    <Modal T={T} isMobile={compact} onClose={busy ? undefined : onClose} icon={isPr ? FileWarning : ListTodo} width={640}
+      title={isNew ? (isPr ? "Add a pending PR" : "Add a task") : "Edit task"} sub={m.kind === "member" ? `${m.label} · ${m.title}` : m.label}
       footer={<div style={{ display: "flex", gap: SP.sm, alignItems: "center", width: "100%", flexWrap: "wrap" }}>
         <span style={{ flex: 1, ...TYPE.caption, color: T.textOf(DATA.danger) }}>{msg}</span>
         <Button T={T} onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button T={T} variant="primary" onClick={save} loading={busy} data-save>{isNew ? "Add" : "Save"}</Button>
+        <Button T={T} variant="primary" onClick={save} loading={busy} data-save>{isNew ? (isPr ? "Add PR" : "Add task") : "Save"}</Button>
       </div>}>
-      <div data-pt-edit style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr 1fr", gap: SP.md }}>
-        <L T={T} label="List" wide>
-          <select value={f.list} onChange={e => { const v = e.target.value; setF(s => ({ ...s, list: v, proj: v === "pending_pr" ? s.proj : "", title: v === "pending_pr" && !s.title.trim() ? "Pending PR" : (s.list === "pending_pr" && v !== "pending_pr" && s.title === "Pending PR" ? "" : s.title) })); }} style={box} aria-label="List" data-field="list">
-            {LISTS.map(l => <option key={l.key} value={l.key}>{listMeta[l.key].label}{l.kind === "member" ? ` · ${listMeta[l.key].title}` : ""}</option>)}
-          </select>
-        </L>
-        {isPr ? (<>
-          <L T={T} label="Project the PR is from" wide hint={f.proj ? null : `${projects.length} FY 26-27 projects with budget released and ${past.length} open past projects`}>
-            <input value={pq} onChange={e => setPq(e.target.value)} placeholder="Search by name, ID or campus…" style={box} aria-label="Search projects" data-field="project-search" />
-            <select value={f.proj} onChange={e => set("proj", e.target.value)} style={{ ...box, marginTop: 6 }} size={compact ? 1 : 7} aria-label="Project" data-field="project">
-              {compact && <option value="">Choose a project…</option>}
-              <optgroup label={`Current FY 26-27 projects with budget released (${curP.length})`}>
-                {curP.map(p => <option key={p.id} value={`p:${p.id}`}>{p.code ? `${p.code} · ` : ""}{p.name}{p.campus ? ` (${p.campus})` : ""}</option>)}
-              </optgroup>
-              <optgroup label={`Past projects still open (${pastP.length})`}>
-                {pastP.map(p => <option key={p.id} value={`x:${p.id}`}>{p.code ? `${p.code} · ` : ""}{p.name}{p.fiscal_year ? ` · ${p.fiscal_year}` : ""}</option>)}
-              </optgroup>
-            </select>
-          </L>
-          <L T={T} label="Title" wide hint='Leave as "Pending PR", or add a word or two'>
-            <input value={f.title} onChange={e => set("title", e.target.value)} style={box} data-field="title" />
-          </L>
-        </>) : (
-          <L T={T} label="Task" wide><input value={f.title} onChange={e => set("title", e.target.value)} style={box} placeholder="What needs doing" autoFocus data-field="title" /></L>
-        )}
-        <L T={T} label="Priority">
-          <select value={f.priority} onChange={e => set("priority", e.target.value)} style={box} aria-label="Priority" data-field="priority">
-            <option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
-          </select>
-        </L>
-        <L T={T} label="Due date (optional)">
-          <div style={{ display: "flex", gap: 6 }}>
-            <input type="date" value={f.due_date} onChange={e => set("due_date", e.target.value)} style={box} data-field="due" />
-            {f.due_date && <button onClick={() => set("due_date", "")} aria-label="Clear due date" className="pmo-focusable"
-              style={{ border: `1px solid ${T.border}`, background: "none", borderRadius: R.sm, cursor: "pointer", color: T.muted, padding: "0 8px" }}><X size={13} /></button>}
+      <style>{`.pt-in:focus { border-color: ${BRAND.blueBright} !important; box-shadow: 0 0 0 3px ${BRAND.blueBright}33; } .pt-opt:hover { background: ${T.rowHover} !important; }`}</style>
+      <div data-pt-edit style={{ display: "flex", flexDirection: "column", gap: SP.lg }}>
+        <L T={T} label="List" group>
+          <div role="radiogroup" aria-label="List" data-field="list" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {LISTS.map(l => {
+              const lm = listMeta[l.key], on = f.list === l.key, Icon = lm.icon;
+              return chip(on, l.color, <>
+                {lm.kind === "member"
+                  ? <span style={{ width: 18, height: 18, borderRadius: 6, display: "grid", placeItems: "center", fontSize: 9, fontWeight: 800, color: "#fff", background: l.color }}>{initials(lm.label)}</span>
+                  : <Icon size={13} />}
+                {lm.kind === "member" ? lm.label.replace(/^(Mr|Engr)\.?\s+/i, "") : lm.label}
+              </>, () => pickList(l.key), { "data-list-option": l.key, role: "radio", "aria-checked": on }, l.key);
+            })}
           </div>
         </L>
-        <L T={T} label="Note (optional)" wide>
-          <textarea value={f.note} onChange={e => set("note", e.target.value)} rows={3} style={{ ...box, resize: "vertical" }} data-field="note" />
+        {isPr && (
+          <L T={T} label="Project the PR is from" group>
+            <ProjectPicker T={T} compact={compact} value={f.proj} onChange={(v) => set("proj", v)} projects={projects} past={past} />
+          </L>
+        )}
+        <L T={T} label={isPr ? "Title" : "Task"} hint={isPr ? 'Leave as "Pending PR", or add a word or two' : null}>
+          <input value={f.title} onChange={e => set("title", e.target.value)} style={box} className="pt-in" placeholder={isPr ? "Pending PR" : "What needs doing"} autoFocus={!isPr} data-field="title" />
+        </L>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: SP.lg }}>
+          <L T={T} label="Priority" group>
+            <div role="radiogroup" aria-label="Priority" data-field="priority" style={{ display: "flex", gap: 6 }}>
+              {Object.entries(PRIORITY).map(([k, p]) => chip(f.priority === k, p.color, <><Flag size={12} />{p.label}</>, () => set("priority", k), { "data-priority": k, role: "radio", "aria-checked": f.priority === k }, k))}
+            </div>
+          </L>
+          <L T={T} label="Due date (optional)" group>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <input type="date" value={f.due_date} onChange={e => set("due_date", e.target.value)} style={{ ...box, width: 160, padding: "8px 10px" }} className="pt-in" data-field="due" />
+              {quick.map(([label, n]) => chip(f.due_date === addDays(n), DATA.info, label, () => set("due_date", addDays(n)), { "data-due-quick": n }, label))}
+              {f.due_date && <button onClick={() => set("due_date", "")} aria-label="Clear due date" className="pmo-focusable"
+                style={{ border: "none", background: "none", cursor: "pointer", color: T.muted, padding: 4, display: "grid", placeItems: "center" }}><X size={14} /></button>}
+            </div>
+          </L>
+        </div>
+        <L T={T} label="Note (optional)">
+          <textarea value={f.note} onChange={e => set("note", e.target.value)} rows={3} style={{ ...box, resize: "vertical", lineHeight: 1.5 }} className="pt-in"
+            placeholder={isPr ? "e.g. PR with Procurement since 5 Nov, waiting on quotations" : "Anything worth remembering"} data-field="note" />
         </L>
         {!isNew && (
-          <div style={{ gridColumn: "1 / -1", ...TYPE.caption, color: T.dim }}>
+          <div style={{ ...TYPE.caption, color: T.dim }}>
             Added {fmtStamp(task.created_at)}{task.done ? ` · completed ${fmtStamp(task.done_at)}` : ""}. These times are set by the portal and cannot be changed.
           </div>
         )}
