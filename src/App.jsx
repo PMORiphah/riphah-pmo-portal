@@ -43,7 +43,7 @@ import {
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
-  Award, Target, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
+  Award, Target, Trophy, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
   PackageCheck, FileBarChart, MonitorPlay, ListTodo, FileDiff, BellRing, Boxes,
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
@@ -316,8 +316,8 @@ const NAV = [
   { id:"team", Icon:Users,           label:"Team & About" },
 ];
 const PMO_NAV = [
-  // PMO team task lists (PMO, 12 Nov 2026): PMO To-Do, Pending PRs and one list per PMO member.
-  { id:"goals", Icon:Target, label:"Tasks/Goals" },
+  // PMO Achievements and PMO Goals (PMO, 12 Nov 2026): achievements the PMO records, and the team task lists.
+  { id:"goals", Icon:Trophy, label:"Achievements/Goals" },
   // New PDDs from the E-PDD portal (PMO). Under Administration since 5 Nov 2026 (PMO), above User Management.
   { id:"review", Icon:ClipboardCheck, label:"PMO Review" },
   { id:"users", Icon:Users,    label:"User Management" },
@@ -8703,11 +8703,11 @@ const BenefitsRealizationPage = lazy(() => import("./BenefitsRealization.jsx").c
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
   return { BenefitsRealizationPage: () => null };
 }).then(m => ({ default: m.BenefitsRealizationPage })));
-// Tasks/Goals (PMO, 12 Nov 2026): loaded only when the page is opened. Reload once on a missing chunk.
-const PmoTasksPage = lazy(() => import("./PmoTasks.jsx").catch(() => {
+// Achievements/Goals (PMO, 12 Nov 2026): loaded only when the page is opened. Reload once on a missing chunk.
+const AchievementsGoalsPage = lazy(() => import("./AchievementsGoals.jsx").catch(() => {
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
-  return { PmoTasksPage: () => null };
-}).then(m => ({ default: m.PmoTasksPage })));
+  return { AchievementsGoalsPage: () => null };
+}).then(m => ({ default: m.AchievementsGoalsPage })));
 // Inventory (PMO, 26 Oct 2026): loaded only when the page is opened. Reload once on a missing chunk, as above.
 const InventoryPage = lazy(() => import("./Inventory.jsx").catch(() => {
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
@@ -11892,7 +11892,7 @@ const PAGE_TITLES = {
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
   review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
   benefits: { title:"Benefits Realization", subtitle:"Revenue and student experience from completed FY 25-26 and FY 26-27 projects" },
-  goals: { title:"Tasks/Goals", subtitle:"PMO To-Do, pending PRs and each PMO member's tasks" },
+  goals: { title:"Achievements/Goals", subtitle:"What the PMO has achieved, and the team's goals and tasks" },
   inventory: { title:"Inventory", subtitle:"Items procured from FY 25-26 till present \u00b7 SAP ME2J" },
   cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
@@ -13389,7 +13389,7 @@ export default function App() {
         )}
         {effectivePage === "goals" && (
           <Suspense fallback={<div style={{ flex:1 }} />}>
-            <PmoTasksPage T={T} session={session} supa={supa} onOpenProject={openProject}
+            <AchievementsGoalsPage T={T} session={session} supa={supa} onOpenProject={openProject}
               onOpenPast={(id) => { setPastLink({ kind:"project", id }); navigateToPage("past"); }} />
           </Suspense>
         )}

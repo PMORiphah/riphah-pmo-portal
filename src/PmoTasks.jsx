@@ -229,7 +229,7 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
   };
   const toggle = (t) => patch(t, { done: !t.done });
 
-  if (rows === null) return <div style={{ flex: 1, padding: SP.xl, color: T.muted, fontSize: 13 }}>Loading Tasks/Goals…</div>;
+  if (rows === null) return <div style={{ flex: 1, padding: SP.xl, color: T.muted, fontSize: 13 }}>Loading goals…</div>;
 
   const card = (tone, icon, title, sub, body, attr) => (
     <Section T={T} tone={tone} pad={compact ? SP.md : SP.lg} {...attr} style={{ minWidth: 0 }}>
@@ -337,7 +337,7 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
 
   return (
     <div className="pmo-scroll" style={{ flex: 1, minHeight: 0, overflow: "auto", background: T.page }}>
-    <div data-page="pmo-tasks" style={{ padding: compact ? SP.md : SP.xl, display: "flex", flexDirection: "column", gap: SP.md }}>
+    <div data-page="pmo-tasks" style={{ padding: compact ? SP.md : SP.xl, paddingTop: compact ? SP.sm : SP.md, display: "flex", flexDirection: "column", gap: SP.md }}>
       <style>{`
         @keyframes ptRise { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
         @keyframes ptGlow { 0%,100% { opacity: .5 } 50% { opacity: 1 } }
@@ -357,7 +357,7 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
         </svg>
         <div style={{ position: "relative", display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: SP.md }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, ...TYPE.label, color: BRAND.gold, letterSpacing: 1.4 }}><Target size={13} /> Tasks / Goals · PMO</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, ...TYPE.label, color: BRAND.gold, letterSpacing: 1.4 }}><Target size={13} /> PMO Goals</div>
             <div style={{ ...TYPE.display, fontSize: compact ? 24 : 32, marginTop: 6, lineHeight: 1.15 }}>
               <CountUp value={k.open} /> open task{k.open === 1 ? "" : "s"} across the team
             </div>
