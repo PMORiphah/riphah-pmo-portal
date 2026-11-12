@@ -1120,7 +1120,8 @@ function DeadlineEmailModal({ T, session, pm, projects, onClose }) {
     `You can review ${list.length === 1 ? "the project" : "these projects"} in the PMO Portal using the link below.\n\n` +
     `Many thanks,`);
   const [cc, setCc]   = useState(["owais.javed@riphah.edu.pk","abdullah.azhar@riphah.edu.pk",
-                                  "usman.ahmad@riphah.edu.pk","atisham.haq@riphah.edu.pk"]);
+                                  "usman.ahmad@riphah.edu.pk","atisham.haq@riphah.edu.pk",
+                                  "minhaj.hussain@riphah.edu.pk"]);
   const [bcc, setBcc] = useState([]);
   const [ccDraft, setCcDraft]   = useState("");
   const [bccDraft, setBccDraft] = useState("");

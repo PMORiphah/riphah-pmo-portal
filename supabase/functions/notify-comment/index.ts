@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
-import { mailSafe } from "../_shared/mailText.ts";
+import { mailSafe, withFixedCc } from "../_shared/mailText.ts";
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,8 +18,7 @@ const DEFAULT_CC = [
   'usman.ahmad@riphah.edu.pk',
   'atisham.haq@riphah.edu.pk',
 ];
-const CC_LIST = (Deno.env.get('MAIL_CC') ?? DEFAULT_CC.join(','))
-  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const CC_LIST = withFixedCc((Deno.env.get('MAIL_CC') ?? DEFAULT_CC.join(',')).split(','));
 
 const ccFor = (toAddress: string) =>
   CC_LIST.filter(a => a !== String(toAddress || '').trim().toLowerCase());

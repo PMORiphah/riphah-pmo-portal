@@ -14,7 +14,7 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
-import { mailSafe } from "../_shared/mailText.ts";
+import { mailSafe, withFixedCc } from "../_shared/mailText.ts";
 
 type Row = Record<string, unknown>;
 export const PORTAL_URL = "https://pmoriphah.github.io/riphah-pmo-portal/";
@@ -62,7 +62,7 @@ export async function mail(to: Recipient[], subject: string, text: string, html:
   if (!user || !pass) return to.map(r => ({ r, ok: false, error: "GMAIL_USER / GMAIL_APP_PASSWORD not configured" }));
   const fromName = (toAscii(Deno.env.get("MAIL_FROM_NAME") || DEFAULT_FROM_NAME).replace(/["\\]/g, "")) || DEFAULT_FROM_NAME;
   const replyTo = toAscii(Deno.env.get("MAIL_REPLY_TO") || "");
-  const ccList = (Deno.env.get("MAIL_CC") ?? DEFAULT_CC.join(",")).split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+  const ccList = withFixedCc((Deno.env.get("MAIL_CC") ?? DEFAULT_CC.join(",")).split(","));
   const client = new SMTPClient({ connection: { hostname: "smtp.gmail.com", port: 465, tls: true, auth: { username: user, password: pass } } });
   const out: Sent[] = [];
   try {

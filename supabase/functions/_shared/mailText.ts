@@ -8,3 +8,10 @@ export const mailSafe = (s: unknown): string => String(s ?? "")
   .replace(/\r\n?/g, "\n")
   .replace(/[ \t]+\n/g, "\n")
   .replace(/[ \t]+$/, "");
+
+/* Always copied on the emails that copy the PMO team (MAIL_CC or its default
+   list of four), on top of that list (PMO, 12 Nov 2026). Fixed in code so it
+   applies whatever the MAIL_CC secret holds; never added twice. */
+export const FIXED_CC = ["minhaj.hussain@riphah.edu.pk"];
+export const withFixedCc = (list: string[]): string[] =>
+  [...new Set([...list.map((a) => a.trim().toLowerCase()).filter(Boolean), ...FIXED_CC])];
