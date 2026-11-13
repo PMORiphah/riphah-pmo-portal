@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
+import { EnhanceAI } from "./EnhanceAI.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PMO ACHIEVEMENTS (PMO, 12 Nov 2026): the first view of the Achievements/Goals
@@ -518,7 +519,7 @@ function EditAchievement({ T, compact, a, creditName, projects, past, supa, tok,
         <Button T={T} variant="primary" onClick={save} loading={busy} data-save>{isNew ? "Add" : "Save"}</Button>
       </div>}>
       <div data-pa-edit style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr 1fr", gap: SP.md }}>
-        <L T={T} label="Achievement" wide><input value={f.title} onChange={e => set("title", e.target.value)} style={box} placeholder="e.g. QIE Campus renovation handed over" autoFocus data-field="title" /></L>
+        <L T={T} label="Achievement" wide><EnhanceAI T={T} supa={supa} token={tok} compact={compact} field="title" context="achievement" value={f.title} onApply={(t) => set("title", t)}><input value={f.title} onChange={e => set("title", e.target.value)} style={box} placeholder="e.g. QIE Campus renovation handed over" autoFocus data-field="title" /></EnhanceAI></L>
         <L T={T} label="Achieved on"><input type="date" value={f.achieved_on} onChange={e => set("achieved_on", e.target.value)} style={box} data-field="achieved_on" /></L>
         <L T={T} label="Category">
           <select value={f.category} onChange={e => set("category", e.target.value)} style={box} data-field="category">
@@ -541,8 +542,10 @@ function EditAchievement({ T, compact, a, creditName, projects, past, supa, tok,
           </select>
         </L>
         <L T={T} label="Details" wide hint={`${f.details.length} / 5000`}>
-          <textarea value={f.details} onChange={e => set("details", e.target.value.slice(0, 5000))} rows={7} style={{ ...box, resize: "vertical", lineHeight: 1.55 }}
-            placeholder="What was achieved, why it matters, who was involved…" data-field="details" />
+          <EnhanceAI T={T} supa={supa} token={tok} compact={compact} field="details" context="achievement" value={f.details} onApply={(t) => set("details", t.slice(0, 5000))}>
+            <textarea value={f.details} onChange={e => set("details", e.target.value.slice(0, 5000))} rows={7} style={{ ...box, resize: "vertical", lineHeight: 1.55 }}
+              placeholder="What was achieved, why it matters, who was involved…" data-field="details" />
+          </EnhanceAI>
         </L>
       </div>
     </Modal>

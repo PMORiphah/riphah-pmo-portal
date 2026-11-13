@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
+import { EnhanceAI } from "./EnhanceAI.jsx";
 import { loadPrDocs, PrDocsModal } from "./ProjectPrs.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1151,7 +1152,9 @@ function TaskEditor({ T, compact, task, listMeta, projects, past, supa, tok, onC
           </L>
         )}
         <L T={T} label={isPr ? "Title" : "Task"} hint={isPr ? 'Leave as "Pending PR", or add a word or two' : null}>
-          <input value={f.title} onChange={e => set("title", e.target.value)} style={box} className="pt-in" placeholder={isPr ? "Pending PR" : "What needs doing"} autoFocus={!isPr} data-field="title" />
+          <EnhanceAI T={T} supa={supa} token={tok} compact={compact} field="title" context={isPr ? "pending_pr" : "task"} value={/^pending pr$/i.test(f.title.trim()) ? "" : f.title} onApply={(t) => set("title", t)}>
+            <input value={f.title} onChange={e => set("title", e.target.value)} style={box} className="pt-in" placeholder={isPr ? "Pending PR" : "What needs doing"} autoFocus={!isPr} data-field="title" />
+          </EnhanceAI>
         </L>
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: SP.lg }}>
           <L T={T} label="Priority" group>
@@ -1169,8 +1172,10 @@ function TaskEditor({ T, compact, task, listMeta, projects, past, supa, tok, onC
           </L>
         </div>
         <L T={T} label="Note (optional)">
-          <textarea value={f.note} onChange={e => set("note", e.target.value)} rows={3} style={{ ...box, resize: "vertical", lineHeight: 1.5 }} className="pt-in"
-            placeholder={isPr ? "e.g. PR with Procurement since 5 Nov, waiting on quotations" : "Anything worth remembering"} data-field="note" />
+          <EnhanceAI T={T} supa={supa} token={tok} compact={compact} field="note" context={isPr ? "pending_pr" : "task"} value={f.note} onApply={(t) => set("note", t)}>
+            <textarea value={f.note} onChange={e => set("note", e.target.value)} rows={3} style={{ ...box, resize: "vertical", lineHeight: 1.5 }} className="pt-in"
+              placeholder={isPr ? "e.g. PR with Procurement since 5 Nov, waiting on quotations" : "Anything worth remembering"} data-field="note" />
+          </EnhanceAI>
         </L>
         {!isNew && (
           <div style={{ ...TYPE.caption, color: T.dim }}>
