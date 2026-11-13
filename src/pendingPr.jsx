@@ -1,16 +1,17 @@
 // Open "Pending PR" tasks from Tasks/Goals (PMO, 12 Nov 2026) → red badge next to the project, PMO only
 // (pmo_tasks RLS returns nothing to anyone else, and callers only ask for the PMO).
-// Shape: { projects: { [project id]: n }, past: { [past project id]: n } }.
+// Shape: { projects: { [project id]: n }, past: { [past project id]: n }, done: { projects, past } } (open counts at the top).
 export async function loadPendingPrs(supa, token) {
-  const r = await supa("/rest/v1/pmo_tasks?list=eq.pending_pr&done=eq.false&removed=eq.false&select=project_id,past_project_id", {}, token).catch(() => []);
-  const out = { projects: {}, past: {} };
+  const r = await supa("/rest/v1/pmo_tasks?list=eq.pending_pr&removed=eq.false&select=project_id,past_project_id,done", {}, token).catch(() => []);
+  const out = { projects: {}, past: {}, done: { projects: {}, past: {} } };
   (Array.isArray(r) ? r : []).forEach((t) => {
-    if (t.project_id) out.projects[t.project_id] = (out.projects[t.project_id] || 0) + 1;
-    if (t.past_project_id) out.past[t.past_project_id] = (out.past[t.past_project_id] || 0) + 1;
+    const o = t.done ? out.done : out;   // ticked PRs (13 Nov 2026): the project's PRs tab shows once there is one
+    if (t.project_id) o.projects[t.project_id] = (o.projects[t.project_id] || 0) + 1;
+    if (t.past_project_id) o.past[t.past_project_id] = (o.past[t.past_project_id] || 0) + 1;
   });
   return out;
 }
-export const EMPTY_PRS = { projects: {}, past: {} };
+export const EMPTY_PRS = { projects: {}, past: {}, done: { projects: {}, past: {} } };
 
 // The red badge itself. n > 1 shows "×n". Renders nothing when n is 0.
 export function PendingPrBadge({ T, n, style }) {

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { History, Search, X, Send, Mail, Pencil, ChevronDown, ChevronRight,
          Clock, AlertTriangle, CheckCircle2, MessageSquare, Plus,
          Upload, Download, ArrowLeft, CalendarRange, ListTree, List,
-         ClipboardList, BellRing, Hourglass } from "lucide-react";
+         ClipboardList, BellRing, Hourglass, FileCheck2 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
@@ -19,6 +19,8 @@ const statusForms = () => import("./PastStatusForms.jsx").catch(() => {
   const Nothing = () => null;
   return { AskStatusModal: Nothing, StatusAnswerForm: Nothing };
 });
+// PRs tab (PMO, 13 Nov 2026), loaded only when opened.
+const PrsTab = lazy(() => import("./ProjectPrs.jsx").then(m => ({ default: m.PrsTab })));
 const AskStatusModal   = lazy(() => statusForms().then(m => ({ default: m.AskStatusModal })));
 const StatusAnswerForm = lazy(() => statusForms().then(m => ({ default: m.StatusAnswerForm })));
 
@@ -969,7 +971,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, isCompact
 
 
 /* ── One past project, full page ─────────────────────────────────────────── */
-function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm, onAskStatus, prCount = 0 }) {
+function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false, isCompact, onBack, onChanged, pms = [], onRead, onOpenPm, onAskStatus, prCount = 0, prDone = 0 }) {
   const [tab, setTab] = useState("followup");
   const [editing, setEditing] = useState(false);
   const st = STATUS[row.status] || STATUS.open;
@@ -1047,6 +1049,8 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
             { id:"followup", label:"Follow-up", Icon:MessageSquare },
             { id:"timeline", label:"Dates & money", Icon:CalendarRange },
             { id:"wbs",      label:"WBS",       Icon:ListTree },
+            // PMO only, once a Pending PR of this project has been ticked (13 Nov 2026).
+            ...(isPMO && prDone > 0 ? [{ id:"prs", label:"PRs", Icon:FileCheck2 }] : []),
           ]} />
       </div>
 
@@ -1063,6 +1067,11 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
       {tab === "wbs" && (
         <ProjectTasks kind="past" T={T} session={session} supa={supa} projectId={row.id}
           canWrite={canWriteTasks} isPMO={isPMO} isCompact={isCompact} onChanged={onChanged} />
+      )}
+      {tab === "prs" && isPMO && prDone > 0 && (
+        <Suspense fallback={<div style={{ color:T.muted, fontSize:13 }}>Loading the PRs…</div>}>
+          <PrsTab T={T} session={session} supa={supa} pastProjectId={row.id} isCompact={isCompact} />
+        </Suspense>
       )}
       {editing && (
         <EditPastModal T={T} session={session} supa={supa} row={row} pms={pms} isCompact={isCompact}
@@ -1796,7 +1805,7 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
 
         <div style={{ position:"relative", zIndex:1 }}>
           {openRow ? (
-            <PastProjectDetail T={T} session={session} supa={supa} row={openRow} prCount={isPMO ? (prs.past[openRow.id] || 0) : 0}
+            <PastProjectDetail T={T} session={session} supa={supa} row={openRow} prCount={isPMO ? (prs.past[openRow.id] || 0) : 0} prDone={isPMO ? (prs.done?.past[openRow.id] || 0) : 0}
               roll={rollup[openRow.id]} isPMO={isPMO} viewer={viewer} isCompact={isCompact}
               pms={pmChoices} onRead={refreshUnread}
               onAskStatus={askStatus ? (r, remind) => askStatus([r], remind) : null}

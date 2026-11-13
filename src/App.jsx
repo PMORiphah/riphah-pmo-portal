@@ -44,7 +44,7 @@ import {
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
   Award, Target, Trophy, CalendarCheck, Mail, Phone, MessageCircle, ListTree, Info, CalendarRange, History, ClipboardCheck,
-  PackageCheck, FileBarChart, MonitorPlay, ListTodo, FileDiff, BellRing, Boxes,
+  PackageCheck, FileBarChart, MonitorPlay, ListTodo, FileDiff, FileCheck2, BellRing, Boxes,
 } from "lucide-react";
 // SheetJS is ~150KB gzipped and is only needed when someone actually imports
 // or exports a spreadsheet — a rare, PMO-only action. Loading it eagerly made
@@ -7704,9 +7704,10 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
   const [evm,          setEvm]          = useState(null);
   // Open "Pending PR" tasks on this project (Tasks/Goals, PMO only, 12 Nov 2026).
   const [prCount,      setPrCount]      = useState(0);
+  const [prDone,       setPrDone]       = useState(0);   // ticked PRs: the PRs tab (PMO, 13 Nov 2026)
   useEffect(() => {
-    if (session?.role !== "pmo" || !projectId) { setPrCount(0); return; }
-    loadPendingPrs(supa, session.access_token).then(r => setPrCount(r.projects[projectId] || 0));
+    if (session?.role !== "pmo" || !projectId) { setPrCount(0); setPrDone(0); return; }
+    loadPendingPrs(supa, session.access_token).then(r => { setPrCount(r.projects[projectId] || 0); setPrDone(r.done?.projects[projectId] || 0); });
   }, [projectId, session?.role, session?.access_token]);
   const [details,      setDetails]      = useState(null);
   const [pm,           setPm]           = useState(null);   // assigned PM
@@ -7922,6 +7923,8 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
     { id:"wbs",        label:"WBS",        Icon:ListTree },
     ...(hasDeliv ? [{ id:"deliverables", label:"Deliverables", Icon:PackageCheck }] : []),
     ...(details?.pcr || hasPcrDoc ? [{ id:"pcr", label:"PCR", Icon:FileDiff }] : []),
+    // PMO only, once a Pending PR of this project has been ticked (Achievements/Goals, 13 Nov 2026).
+    ...(session?.role === "pmo" && prDone > 0 ? [{ id:"prs", label:"PRs", Icon:FileCheck2 }] : []),
     { id:"documents",  label:"Documents",  Icon:ClipboardList, "data-tour":"detail-tabs" },
     { id:"sitevisit",  label:"Site Visit", Icon:Camera },
     { id:"risks",      label:"Risks",      Icon:ShieldAlert },
@@ -8081,6 +8084,15 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
           <Suspense fallback={<div style={{ color:T.muted, fontSize:13 }}>Loading the PCR…</div>}>
             <PcrTab T={T} session={session} supa={supa} projectId={projectId} isCompact={vpD.isCompact}
               ticked={!!details.pcr} approved={evm.bac} />
+          </Suspense>
+        </div>
+      )}
+
+      {/* PRs: CS documents read by AI and the PR released emails (PMO only). */}
+      {tab === "prs" && session?.role === "pmo" && prDone > 0 && (
+        <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
+          <Suspense fallback={<div style={{ color:T.muted, fontSize:13 }}>Loading the PRs…</div>}>
+            <PrsTab T={T} session={session} supa={supa} projectId={projectId} isCompact={vpD.isCompact} />
           </Suspense>
         </div>
       )}
@@ -8720,6 +8732,12 @@ const ProjectTodos = lazy(() => import("./ProjectTodos.jsx").catch(() => {
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
   return { ProjectTodos: () => null };
 }).then(m => ({ default: m.ProjectTodos })));
+
+// PRs tab (PMO, 13 Nov 2026): loaded only when opened. Reload once on a missing chunk.
+const PrsTab = lazy(() => import("./ProjectPrs.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
+  return { PrsTab: () => null };
+}).then(m => ({ default: m.PrsTab })));
 
 // PCR card and tab (PMO, 20 Oct 2026): loaded only on a project with a change request. Reload once on a missing chunk.
 const pcrModule = () => import("./ProjectPcr.jsx").catch(() => {

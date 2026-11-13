@@ -4,10 +4,11 @@ import {
 } from "recharts";
 import {
   ListTodo, FileWarning, Plus, Pencil, Trash2, Check, Search, ChevronDown, ChevronRight, CalendarClock, Flag, Target,
-  CircleCheckBig, AlarmClock, Percent, Sparkles, Users, BarChart3, PieChart as PieIcon, TrendingUp, X, History, Hourglass, Trophy, Activity,
+  CircleCheckBig, AlarmClock, Percent, Sparkles, Users, BarChart3, PieChart as PieIcon, TrendingUp, X, History, Hourglass, Trophy, Activity, FileSpreadsheet, MailCheck,
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
+import { loadPrDocs, PrDocsModal } from "./ProjectPrs.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    TASKS / GOALS (PMO, 12 Nov 2026). PMO only (nav + RLS on pmo_tasks).
@@ -762,7 +763,7 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
           const ok = await patch(t, { done: true, pr_made_by: key });
           if (ok) { const p = projOf(t); flash(`PR cleared${p ? ` for ${p.name}` : ""} · made by ${listMeta[key].label}`); }
         }} />}
-      {history && <PrHistoryModal T={T} compact={compact} tasks={prCleared} listMeta={listMeta} projOf={projOf} people={people} initialMaker={history.maker}
+      {history && <PrHistoryModal T={T} session={session} supa={supa} compact={compact} tasks={prCleared} listMeta={listMeta} projOf={projOf} people={people} initialMaker={history.maker}
         onClose={() => setHistory(null)}
         onOpen={(t) => { setHistory(null); t.project_id ? onOpenProject?.(t.project_id) : t.past_project_id ? onOpenPast?.(t.past_project_id) : null; }}
         onReopen={(t) => patch(t, { done: false })} />}
@@ -805,7 +806,12 @@ function HeroRing({ rate, done, total }) {
 }
 
 // PR history (PMO, 12 Nov 2026): every cleared PR, who made it and how long it waited.
-function PrHistoryModal({ T, compact, tasks, listMeta, projOf, people, initialMaker, onClose, onOpen, onReopen }) {
+function PrHistoryModal({ T, session, supa, compact, tasks, listMeta, projOf, people, initialMaker, onClose, onOpen, onReopen }) {
+  // PR documents (13 Nov 2026): CS and PR released email per cleared PR; the window opens on top of this one.
+  const [docs, setDocs] = useState(new Map());
+  const [docsFor, setDocsFor] = useState(null);
+  const loadDocs = useCallback(() => { if (session && supa) loadPrDocs(supa, session.access_token, tasks.map(t => t.id)).then(setDocs).catch(() => {}); }, [supa, session, tasks]);
+  useEffect(() => { loadDocs(); }, [loadDocs]);
   const [maker, setMaker] = useState(initialMaker || null);
   const [q, setQ] = useState("");
   const [confirmReopen, setConfirmReopen] = useState(null);
@@ -899,6 +905,19 @@ function PrHistoryModal({ T, compact, tasks, listMeta, projOf, people, initialMa
                       <div style={{ ...TYPE.caption, fontSize: 10.5, color: T.dim, marginTop: 4 }}>
                         Cleared {fmtStamp(t.done_at)}{doneBy ? ` · ticked by ${doneBy}` : ""} · added {fmtDay(t.created_at)}
                       </div>
+                      {session && (() => {
+                        const ds = docs.get(t.id) || [], cs = ds.find(d => d.kind === "cs"), mail = ds.find(d => d.kind === "release_email");
+                        const b = (key, c, Icon, label, has) => (
+                          <button key={key} onClick={() => setDocsFor(t)} data-hist-doc={key} className="pmo-focusable pt-chip"
+                            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: R.pill, cursor: "pointer", fontFamily: TYPE.body.fontFamily,
+                              ...TYPE.caption, fontSize: 10.5, fontWeight: 700, border: has ? `1px solid ${c}66` : `1px dashed ${c}88`, background: has ? `${c}1c` : "transparent", color: T.textOf(c) }}>
+                            {has ? <Check size={11} /> : <Plus size={11} />}<Icon size={11} /> {label}</button>);
+                        return (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+                            {b("cs", DATA.violet, FileSpreadsheet, cs ? (cs.total_amount != null ? `CS · PKR ${Number(cs.total_amount).toLocaleString("en-US")}` : "CS added") : "Add CS", !!cs)}
+                            {b("release_email", DATA.positive, MailCheck, mail ? (mail.released_on ? `Released ${fmtDay(mail.released_on)}` : "Release email added") : "Add release email", !!mail)}
+                          </div>);
+                      })()}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
                       <Chip T={T} c={waited(t) >= 14 ? DATA.danger : waited(t) >= 7 ? DATA.warning : DATA.positive}><Hourglass size={10} /> {took(t.created_at, t.done_at)}</Chip>
@@ -911,6 +930,8 @@ function PrHistoryModal({ T, compact, tasks, listMeta, projOf, people, initialMa
             </div>
           </div>
         ))}
+        {docsFor && <PrDocsModal T={T} session={session} supa={supa} task={docsFor} proj={projOf(docsFor)} compact={compact}
+          onClose={() => { setDocsFor(null); loadDocs(); }} />}
         {confirmReopen && (
           <div role="alertdialog" aria-label="Reopen this PR?" style={{ position: "sticky", bottom: 0, marginTop: SP.md, padding: "12px 14px", borderRadius: R.lg, display: "flex", flexWrap: "wrap",
             alignItems: "center", gap: SP.sm, background: T.card, border: `1px solid ${DATA.warning}88`, boxShadow: T.shadowLg }}>
