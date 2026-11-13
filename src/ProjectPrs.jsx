@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   FileCheck2, FileSpreadsheet, MailCheck, Upload, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ExternalLink,
-  Trash2, X, ChevronDown, Hourglass, Users, Package, Wallet, Award, Pencil, Check, Image as ImageIcon,
+  Trash2, X, ChevronDown, Hourglass, Users, Package, Wallet, Award, Pencil, Check, Image as ImageIcon, ZoomIn,
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Modal, Skeleton } from "./ui.jsx";
@@ -240,6 +240,7 @@ function Stat({ T, c, label, value, big, wide, data }) {
 function MailBlock({ T, compact, doc, busy, act, token }) {
   const [src, setSrc] = useState(null);
   const [big, setBig] = useState(false);
+  const [dim, setDim] = useState(null);           // the screenshot's natural size, for the preview's shape
   const [editing, setEditing] = useState(false);
   const [date, setDate] = useState(doc.released_on || "");
   useEffect(() => { setDate(doc.released_on || ""); }, [doc.released_on]);
@@ -248,12 +249,21 @@ function MailBlock({ T, compact, doc, busy, act, token }) {
   const r = doc.reading || {};
   const checks = Array.isArray(r.checks) ? r.checks : [];
   return (
-    <div data-pr-mail={doc.id} style={{ display: "flex", gap: 14, flexDirection: compact ? "column" : "row" }}>
+    <div data-pr-mail={doc.id} style={{ display: "flex", gap: 14, flexDirection: "column" }}>
+      {/* Full-width preview in the screenshot's own shape, from its top-left corner (sender, date and time first);
+          wide email screenshots were cropped to empty white in a small square box. Tall ones are capped and fade out. */}
       <button onClick={() => (src ? setBig(true) : act.open(doc))} className="pmo-focusable pr-thumb" aria-label="Open the email screenshot" data-pr-thumb=""
-        style={{ width: compact ? "100%" : 168, height: compact ? 150 : 118, flexShrink: 0, padding: 0, borderRadius: R.md, overflow: "hidden", cursor: "zoom-in",
-          border: `1px solid ${T.border}`, background: T.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(10,30,60,0.04)", display: "grid", placeItems: "center", position: "relative" }}>
-        {src ? <img src={src} alt="PR released email" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }} />
-             : <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, ...TYPE.caption, color: T.muted }}>{isImg ? <ImageIcon size={22} /> : <FileCheck2 size={22} />}{isImg ? "Loading…" : "Open file"}</span>}
+        style={{ width: "100%", padding: 0, borderRadius: R.md, overflow: "hidden", cursor: "zoom-in", position: "relative", display: "block",
+          aspectRatio: src && dim ? `${dim.w} / ${dim.h}` : undefined, height: src && dim ? undefined : 110, maxHeight: compact ? 190 : 230, minHeight: 72,
+          border: `1px solid ${T.border}`, background: src ? "#fff" : T.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(10,30,60,0.04)",
+          boxShadow: src ? "0 10px 26px -14px rgba(0,0,0,0.55)" : "none" }}>
+        {src ? (<>
+          <img src={src} alt="PR released email" onLoad={(e) => setDim({ w: e.currentTarget.naturalWidth || 4, h: e.currentTarget.naturalHeight || 1 })}
+            style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "left top", display: "block" }} />
+          {dim && dim.h / dim.w > (compact ? 190 : 230) / 600 && <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 36, background: "linear-gradient(180deg, rgba(255,255,255,0), #fff)" }} />}
+          <span className="pr-thumb-hint" style={{ position: "absolute", right: 8, bottom: 8, display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 99,
+            background: "rgba(10,22,40,0.78)", color: "#fff", ...TYPE.caption, fontSize: 10.5, fontWeight: 700 }}><ZoomIn size={12} /> View full size</span>
+        </>) : <span style={{ display: "flex", height: "100%", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, ...TYPE.caption, color: T.muted }}>{isImg ? <ImageIcon size={22} /> : <FileCheck2 size={22} />}{isImg ? "Loading…" : "Open file"}</span>}
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ ...TYPE.label, fontSize: 9.5, color: T.muted }}>PR released on</div>
@@ -441,7 +451,10 @@ const CSS = (T) => `
   .pr-card:hover { box-shadow: ${T.shadowLg} }
   .pr-row:hover { background: ${T.rowHover} }
   .pr-thumb { transition: transform ${MOTION.fast}, box-shadow ${MOTION.fast} }
-  .pr-thumb:hover { transform: scale(1.02); box-shadow: ${T.shadowLg} }
+  .pr-thumb:hover { transform: translateY(-2px); box-shadow: ${T.shadowLg} !important }
+  .pr-thumb .pr-thumb-hint { opacity: 0; transition: opacity ${MOTION.fast} }
+  .pr-thumb:hover .pr-thumb-hint, .pr-thumb:focus-visible .pr-thumb-hint { opacity: 1 }
+  @media (hover: none) { .pr-thumb .pr-thumb-hint { opacity: 1 } }
   .pr-link:hover span { text-decoration: underline }
   .pr-tile { transition: transform ${MOTION.fast} }
   .pr-tile:hover { transform: translateY(-2px) }
