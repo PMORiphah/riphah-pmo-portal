@@ -7,6 +7,7 @@ import {
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Modal, Skeleton } from "./ui.jsx";
 import { fileLink, uploadToR2, removeFromR2 } from "./fileLinks.js";
+import { nameInitials } from "./nameInitials.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PRs tab (PMO, 13 Nov 2026; migration 20261113_pmo_pr_documents.sql). PMO only.
@@ -40,7 +41,7 @@ const fmtM = (n) => { const v = +n || 0; return v >= 1e6 ? `${(v / 1e6).toFixed(
 const fmtDay = (d) => { if (!d) return null; const x = new Date(String(d).slice(0, 10) + "T00:00:00Z"); return isNaN(x) ? null : x.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }); };
 const fmtStamp = (ts) => { if (!ts) return null; const x = new Date(ts); return isNaN(x) ? null : x.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Karachi" }); };
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / DAY));
-const initials = (n) => String(n || "").replace(/^(Mr|Mrs|Ms|Engr|Dr)\.?\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+const initials = (n) => nameInitials(n, "");
 const firstName = (n) => String(n || "").replace(/^(Mr|Mrs|Ms|Engr|Dr)\.?\s+/i, "").split(" ")[0];
 
 // Same cleaning as the Documents upload (App.jsx storageSafeName), kept here so this module stays lazy.

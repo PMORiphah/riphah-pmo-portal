@@ -110,6 +110,7 @@ import {
   LineElement, Tooltip, Legend,
 } from "chart.js";
 import { Bar, Scatter } from "react-chartjs-2";
+import { nameInitials } from "./nameInitials.js";
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
 // Settings rows written before the save path was fixed contain a JSON string
@@ -9914,7 +9915,7 @@ function CommentBubble({ T, comment, replies, onReply, onDelete, depth, renderKi
   const rc   = ROLE[role] || { c:T.textOf(DATA.neutral), label:"?" };
   const name = comment.author_name || comment.user_profiles?.full_name || comment.user_profiles?.username;
   const deleted = !name;
-  const init = deleted ? "✕" : name[0].toUpperCase();
+  const init = deleted ? "✕" : nameInitials(name)[0];
   const kind = kindOf(comment);
   const card = kind !== "comment" && !depth && renderKind ? renderKind(comment) : null;
   const tone = !card ? null : kind === "update" ? (OVERALL[comment.data?.overall]?.color || EMERALD) : AMBER;
@@ -10585,7 +10586,7 @@ function OrgCard({ T, roleId, data, isPMO, onEdit }) {
   const name  = data?.name  || "";
   const desc  = data?.desc  || "";
   const photo = data?.photo || "";
-  const init  = name ? name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase() : title.slice(0,2).toUpperCase();
+  const init  = name ? nameInitials(name) : title.slice(0,2).toUpperCase();
   const isLg  = roleId === "head_pmo";
   const avatarSz = isLg ? 60 : 44;
   return (
@@ -10640,7 +10641,7 @@ function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) 
   const desc  = data?.desc  || "";
   const photo = data?.photo || "";
   const init  = name
-    ? name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()
+    ? nameInitials(name)
     : (initials || title.slice(0, 2).toUpperCase());
   const avatarSz = big ? 58 : 46;
   const c = ORG_ACCENT[roleId] || BRAND.blue;
@@ -10904,17 +10905,17 @@ function TeamPage({ T, session }) {
             <div style={{ display:"flex", flexDirection:"column", gap:SP.md }}>
               <div style={{ ...TYPE.label, color:T.dim, textAlign:"center" }}>Leadership</div>
               <OrgCardInner T={T} roleId="head_pmo" data={team?.head_pmo}
-                title={MEMBER_TITLES.head_pmo} initials="MS" isPMO={isPMO}
+                title={MEMBER_TITLES.head_pmo} initials="YK" isPMO={isPMO}
                 onEdit={()=>setEditMember("head_pmo")} big />
               <OrgCardInner T={T} roleId="manager_pmo" data={team?.manager_pmo}
-                title={MEMBER_TITLES.manager_pmo} initials="MO" isPMO={isPMO}
+                title={MEMBER_TITLES.manager_pmo} initials="OJ" isPMO={isPMO}
                 onEdit={()=>setEditMember("manager_pmo")} big />
               <div style={{ ...TYPE.label, color:T.dim, textAlign:"center", marginTop:SP.sm }}>Team</div>
               {[
-                ["deputy_pmo", "MW"],
-                ["exec_pmo",   "EU"],
-                ["po1",        "MA"],
-                ["po2",        "MA"],
+                ["deputy_pmo", "WJ"],
+                ["exec_pmo",   "UU"],
+                ["po1",        "AA"],
+                ["po2",        "AH"],
               ].map(([roleId, initials]) => (
                 <OrgCardInner key={roleId} T={T} roleId={roleId} data={team?.[roleId]}
                   title={MEMBER_TITLES[roleId]} initials={initials}
@@ -10932,7 +10933,7 @@ function TeamPage({ T, session }) {
               {/* Tier 1 */}
               <div style={{ width:210 }}>
                 <OrgCardInner T={T} roleId="head_pmo" data={team?.head_pmo}
-                  title={MEMBER_TITLES.head_pmo} initials="MS" isPMO={isPMO}
+                  title={MEMBER_TITLES.head_pmo} initials="YK" isPMO={isPMO}
                   onEdit={()=>setEditMember("head_pmo")} big />
               </div>
 
@@ -10943,7 +10944,7 @@ function TeamPage({ T, session }) {
               {/* Tier 2 */}
               <div style={{ width:210 }}>
                 <OrgCardInner T={T} roleId="manager_pmo" data={team?.manager_pmo}
-                  title={MEMBER_TITLES.manager_pmo} initials="MO" isPMO={isPMO}
+                  title={MEMBER_TITLES.manager_pmo} initials="OJ" isPMO={isPMO}
                   onEdit={()=>setEditMember("manager_pmo")} big />
               </div>
 
@@ -10959,10 +10960,10 @@ function TeamPage({ T, session }) {
                 gap:SP.lg, width:"100%", alignItems:"stretch",
               }}>
                 {[
-                  ["deputy_pmo", "MW"],
-                  ["exec_pmo",   "EU"],
-                  ["po1",        "MA"],
-                  ["po2",        "MA"],
+                  ["deputy_pmo", "WJ"],
+                  ["exec_pmo",   "UU"],
+                  ["po1",        "AA"],
+                  ["po2",        "AH"],
                 ].map(([roleId, initials], i, arr) => (
                   <div key={roleId} style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
                     {/* horizontal bar segment + vertical drop */}

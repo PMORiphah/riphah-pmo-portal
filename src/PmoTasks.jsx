@@ -10,6 +10,7 @@ import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
 import { EnhanceAI } from "./EnhanceAI.jsx";
 import { loadPrDocs, PrDocsModal } from "./ProjectPrs.jsx";
+import { nameInitials } from "./nameInitials.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    TASKS / GOALS (PMO, 12 Nov 2026). PMO only (nav + RLS on pmo_tasks).
@@ -56,7 +57,7 @@ const took = (a, b) => {
   const d = Math.floor(ms / DAY), h = Math.round(ms / 3600000);
   return d >= 2 ? `${d} days` : d === 1 ? "1 day" : h >= 1 ? `${h} h` : "under an hour";
 };
-const initials = (n) => String(n || "").replace(/^(Mr|Mrs|Ms|Engr|Dr|Brig|Col|Maj)\.?\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+const initials = (n) => nameInitials(n, "");
 const axis = (T) => ({ fontSize: 10.5, fontFamily: TYPE.body.fontFamily, fill: T.dim });
 const dueState = (t, today) => {
   if (t.done || !t.due_date) return null;

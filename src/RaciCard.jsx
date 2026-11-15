@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Plus, X, Pencil, ArrowRight, Trash2, GripVertical } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, CAN_HOVER } from "./ui.jsx";
+import { nameInitials } from "./nameInitials.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    RACI — Project Responsibility
@@ -31,16 +32,7 @@ const ROLES = [
 // Two initials for a person, but a short acronym is better shown whole:
 // "PMO" reduced to a bare "P" reads as a name nobody recognises, and PMO now
 // appears on every project.
-const initialsOf = (name) => {
-  const words = (name || "?").split(/[\s.]+/).filter(Boolean);
-  if (!words.length) return "?";
-  if (words.length === 1) {
-    const w = words[0];
-    if (w.length <= 3 && w === w.toUpperCase()) return w;   // PMO, IT, HR
-    return w[0].toUpperCase();
-  }
-  return words.slice(0, 2).map(w => w[0]).join("").toUpperCase();
-};
+const initialsOf = (name) => nameInitials(name, "?");
 
 /* One-off keyframes. Scoped names so they can't collide with the portal's
    own pmo* animations. Injected once, not per instance. */
