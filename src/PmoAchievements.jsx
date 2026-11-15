@@ -3,12 +3,13 @@ import {
   ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import {
-  Trophy, PiggyBank, Workflow, Medal, Cpu, Sparkles, Plus, Pencil, Trash2, Search, CalendarCheck, Coins, Users,
+  Trophy, PiggyBank, Workflow, Medal, Cpu, Sparkles, Plus, Pencil, Trash2, Search, CalendarCheck, Coins, Users, Check,
   BarChart3, PieChart as PieIcon, Milestone, Star, FolderOpen, X,
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
 import { EnhanceAI } from "./EnhanceAI.jsx";
+import { nameInitials } from "./nameInitials.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PMO ACHIEVEMENTS (PMO, 12 Nov 2026): the first view of the Achievements/Goals
@@ -35,6 +36,11 @@ const CREDITS = [
   { key: "po1", fallback: "Mr. Abdullah Azhar" },
   { key: "po2", fallback: "Mr. Atisham ul Haq" },
 ];
+// Several members may share an achievement (PMO, 15 Nov 2026): `credits` = member keys, empty = the whole team.
+const MEMBER_KEYS = ["head_pmo", "manager_pmo", "exec_pmo", "po1", "po2"];
+const CREDIT_COLOR = { team: BRAND.gold, head_pmo: "#EF7F4F", manager_pmo: BRAND.gold, exec_pmo: DATA.positive, po1: DATA.violet, po2: "#A8D13A" };
+const creditsOf = (a) => (Array.isArray(a?.credits) && a.credits.length ? a.credits : (a?.credit && a.credit !== "team" ? [a.credit] : []));
+const shortName = (n) => String(n || "").replace(/^(Mr|Mrs|Ms|Engr|Dr)\.?\s+/i, "");
 const MONTHS = "Jul Aug Sep Oct Nov Dec Jan Feb Mar Apr May Jun".split(" ");
 
 const reduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -161,6 +167,13 @@ export function PmoAchievementsView({ T, session, supa, onOpenProject, onOpenPas
   useEffect(() => { load(); }, [load]);
 
   const creditName = useCallback((k) => k === "team" ? "Whole PMO team" : (cfg[k]?.name || CREDITS.find(c => c.key === k)?.fallback || k).trim(), [cfg]);
+  // "Whole PMO team", "Owais Javed", "Owais Javed & Usman Ahmed Umar", "Owais Javed, Usman Ahmed Umar +1"
+  const creditLabel = useCallback((a, full) => {
+    const ks = creditsOf(a); if (!ks.length) return "Whole PMO team";
+    const ns = ks.map(k => shortName(creditName(k)));
+    if (full || ns.length === 1) return ns.join(", ");
+    return ns.length === 2 ? `${ns[0]} & ${ns[1]}` : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
+  }, [creditName]);
   const projById = useMemo(() => Object.fromEntries(projects.map(p => [p.id, p])), [projects]);
   const pastById = useMemo(() => Object.fromEntries(past.map(p => [p.id, p])), [past]);
   const projOf = (a) => a.project_id ? projById[a.project_id] : a.past_project_id ? pastById[a.past_project_id] : null;
@@ -171,7 +184,7 @@ export function PmoAchievementsView({ T, session, supa, onOpenProject, onOpenPas
   const view = all.filter(a => (!fy || fyOf(a.achieved_on) === fy) && (!cat || a.category === cat) && (() => {
     const s = q.trim().toLowerCase(); if (!s) return true;
     const p = projOf(a);
-    return [a.title, a.details, p?.name, p?.code, creditName(a.credit), CATS[a.category]?.label].some(x => String(x || "").toLowerCase().includes(s));
+    return [a.title, a.details, p?.name, p?.code, creditLabel(a, true), CATS[a.category]?.label].some(x => String(x || "").toLowerCase().includes(s));
   })());
 
   const k = useMemo(() => ({
@@ -194,8 +207,10 @@ export function PmoAchievementsView({ T, session, supa, onOpenProject, onOpenPas
     });
   }, [view, chartFy]);
   const byCat = useMemo(() => Object.entries(CATS).map(([key, c]) => ({ key, name: c.label, value: view.filter(a => a.category === key).length, color: c.color })).filter(x => x.value), [view]);
-  const byCredit = useMemo(() => CREDITS.map(c => ({ name: creditName(c.key).replace(/^(Mr|Engr)\.?\s+/i, ""), value: view.filter(a => a.credit === c.key).length,
-    color: c.key === "team" ? BRAND.gold : c.key === "head_pmo" ? BRAND.goldDeep : c.key === "manager_pmo" ? "#F08A5D" : c.key === "exec_pmo" ? DATA.positive : c.key === "po1" ? DATA.violet : DATA.cyan })), [view, creditName]);
+  // An achievement counts for every member it credits; "Whole PMO team" counts the ones with no member named.
+  const byCredit = useMemo(() => CREDITS.map(c => ({ name: shortName(creditName(c.key)),
+    value: view.filter(a => c.key === "team" ? creditsOf(a).length === 0 : creditsOf(a).includes(c.key)).length,
+    color: CREDIT_COLOR[c.key] || DATA.info })), [view, creditName]);
   // Timeline: dots across the chosen FY (Jul 1 to Jun 30).
   const tl = useMemo(() => {
     const a0 = 2000 + Number(chartFy.slice(3, 5));
@@ -400,7 +415,7 @@ export function PmoAchievementsView({ T, session, supa, onOpenProject, onOpenPas
                   <div style={{ ...TYPE.h3, fontSize: 15, color: T.text, lineHeight: 1.35, overflowWrap: "anywhere" }}>{a.title}</div>
                   {a.details && <div style={{ ...TYPE.bodySm, color: T.textSoft, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{a.details}</div>}
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: "auto" }}>
-                    <Chip T={T} c={a.credit === "team" ? BRAND.gold : DATA.info} icon={Users}>{creditName(a.credit).replace(/^(Mr|Engr)\.?\s+/i, "")}</Chip>
+                    <CreditStack T={T} keys={creditsOf(a)} creditName={creditName} label={creditLabel(a)} />
                     {num(a.value_pkr) ? <Chip T={T} c={DATA.positive} icon={Coins}>PKR {fmtM(a.value_pkr)}</Chip> : null}
                     {p && <Chip T={T} c={DATA.violet} icon={FolderOpen}>{p.code || p.name.slice(0, 24)}</Chip>}
                   </div>
@@ -412,7 +427,7 @@ export function PmoAchievementsView({ T, session, supa, onOpenProject, onOpenPas
       </>)}
 
       {open && (
-        <ReadAchievement T={T} compact={compact} a={open} creditName={creditName} proj={projOf(open)} people={people}
+        <ReadAchievement T={T} compact={compact} a={open} creditName={creditName} creditLabel={creditLabel} proj={projOf(open)} people={people}
           onClose={() => setOpen(null)} onEdit={() => { setEdit(open); setOpen(null); }} onDelete={() => setConfirmDel(open)}
           onOpenProject={(a) => { setOpen(null); a.project_id ? onOpenProject?.(a.project_id) : onOpenPast?.(a.past_project_id); }} />
       )}
@@ -434,7 +449,7 @@ export function PmoAchievementsView({ T, session, supa, onOpenProject, onOpenPas
   );
 }
 
-function ReadAchievement({ T, compact, a, creditName, proj, people, onClose, onEdit, onDelete, onOpenProject }) {
+function ReadAchievement({ T, compact, a, creditName, creditLabel, proj, people, onClose, onEdit, onDelete, onOpenProject }) {
   const c = CATS[a.category] || CATS.other, Icon = c.icon;
   return (
     <Modal T={T} isMobile={compact} onClose={onClose} icon={Icon} width={640} title={a.title} sub={c.label}
@@ -454,7 +469,7 @@ function ReadAchievement({ T, compact, a, creditName, proj, people, onClose, onE
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: SP.md }}>
-          <Chip T={T} c={a.credit === "team" ? BRAND.gold : DATA.info} icon={Users}>{creditName(a.credit)}</Chip>
+          <CreditStack T={T} keys={creditsOf(a)} creditName={creditName} label={creditLabel(a, true)} big />
           {num(a.value_pkr) ? <Chip T={T} c={DATA.positive} icon={Coins}>PKR {fmt(a.value_pkr)}</Chip> : null}
           {proj && (
             <button onClick={() => onOpenProject(a)} className="pmo-focusable" style={{ border: "none", background: "none", padding: 0, cursor: "pointer" }}>
@@ -485,7 +500,7 @@ function L({ T, label, children, hint, wide }) {
 function EditAchievement({ T, compact, a, creditName, projects, past, supa, tok, onClose, onSaved }) {
   const isNew = !a.id;
   const [f, setF] = useState({
-    title: a.title || "", achieved_on: a.achieved_on || todayPkt(), details: a.details || "", category: a.category || "delivery", credit: a.credit || "team",
+    title: a.title || "", achieved_on: a.achieved_on || todayPkt(), details: a.details || "", category: a.category || "delivery", credits: creditsOf(a),
     proj: a.project_id ? `p:${a.project_id}` : a.past_project_id ? `x:${a.past_project_id}` : "", value: a.value_pkr != null ? fmt(a.value_pkr) : "",
   });
   const [busy, setBusy] = useState(false);
@@ -500,7 +515,7 @@ function EditAchievement({ T, compact, a, creditName, projects, past, supa, tok,
     if (!f.achieved_on) return setMsg("Pick the date it was achieved.");
     const v = money(f.value);
     if (v !== null && !(v >= 0)) return setMsg("Value must be an amount in rupees (numbers only).");
-    const body = { title: f.title.trim(), achieved_on: f.achieved_on, details: f.details.trim() || null, category: f.category, credit: f.credit, value_pkr: v,
+    const body = { title: f.title.trim(), achieved_on: f.achieved_on, details: f.details.trim() || null, category: f.category, credits: f.credits, value_pkr: v,
       project_id: f.proj.startsWith("p:") ? f.proj.slice(2) : null, past_project_id: f.proj.startsWith("x:") ? f.proj.slice(2) : null };
     setBusy(true); setMsg(null);
     try {
@@ -527,11 +542,28 @@ function EditAchievement({ T, compact, a, creditName, projects, past, supa, tok,
             {Object.entries(CATS).map(([key, c]) => <option key={key} value={key}>{c.label}</option>)}
           </select>
         </L>
-        <L T={T} label="Credited to">
-          <select value={f.credit} onChange={e => set("credit", e.target.value)} style={box} data-field="credit">
-            {CREDITS.map(c => <option key={c.key} value={c.key}>{creditName(c.key)}</option>)}
-          </select>
-        </L>
+        {/* a set of buttons, so a plain <div> (a <label> would press the first one on a stray click) */}
+        <div data-field="credits" role="group" aria-label="Credited to" style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          <span style={{ ...TYPE.label, fontSize: 9.5, color: T.dim }}>Credited to <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>· pick one or more, or the whole team</span></span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {CREDITS.map(c => {
+              const team = c.key === "team", on = team ? f.credits.length === 0 : f.credits.includes(c.key), col = CREDIT_COLOR[c.key] || DATA.info;
+              return (
+                <button key={c.key} type="button" role="checkbox" aria-checked={on} data-credit={c.key} className="pmo-focusable pa-credit"
+                  onClick={() => set("credits", team ? [] : on ? f.credits.filter(k => k !== c.key) : MEMBER_KEYS.filter(k => k === c.key || f.credits.includes(k)))}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 12px 5px 5px", borderRadius: R.pill, cursor: "pointer", fontFamily: TYPE.body.fontFamily,
+                    ...TYPE.caption, fontWeight: 700, color: on ? T.text : T.textSoft, transition: `all ${MOTION.fast}`,
+                    border: `1.5px solid ${on ? col : T.border}`, background: on ? `${col}24` : T.surface, boxShadow: on ? `0 6px 16px -10px ${col}` : "none" }}>
+                  <span style={{ width: 24, height: 24, borderRadius: 99, display: "grid", placeItems: "center", flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: "#fff",
+                    background: team ? `linear-gradient(140deg, ${BRAND.gold}, ${BRAND.goldDeep})` : `linear-gradient(140deg, ${col}, ${col}aa)`, opacity: on ? 1 : 0.75 }}>
+                    {team ? <Users size={12} /> : nameInitials(creditName(c.key))}</span>
+                  {team ? "Whole PMO team" : shortName(creditName(c.key))}
+                  {on && <Check size={13} color={T.textOf(col)} strokeWidth={3} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <L T={T} label="Value in PKR (optional)" hint={money(f.value) ? `PKR ${fmt(money(f.value))}` : "Savings or value delivered"}>
           <input inputMode="numeric" value={f.value} onChange={e => set("value", e.target.value)} style={box} placeholder="e.g. 2,500,000" data-field="value" />
         </L>
@@ -550,5 +582,25 @@ function EditAchievement({ T, compact, a, creditName, projects, past, supa, tok,
         </L>
       </div>
     </Modal>
+  );
+}
+
+// Credited members as overlapping avatars and a label ("Whole PMO team" when none is named).
+function CreditStack({ T, keys, creditName, label, big }) {
+  const sz = big ? 26 : 22;
+  return (
+    <span data-credit-stack="" title={keys.length ? keys.map(k => creditName(k)).join(", ") : "Whole PMO team"}
+      style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "2px 10px 2px 3px", borderRadius: R.pill, maxWidth: "100%",
+        background: `${keys.length ? DATA.info : BRAND.gold}14`, border: `1px solid ${keys.length ? DATA.info : BRAND.gold}44` }}>
+      <span style={{ display: "inline-flex", flexShrink: 0 }}>
+        {(keys.length ? keys : ["team"]).slice(0, 5).map((k, i) => (
+          <span key={k} style={{ width: sz, height: sz, borderRadius: 99, marginLeft: i ? -7 : 0, display: "grid", placeItems: "center", fontSize: big ? 10 : 9, fontWeight: 800, color: "#fff",
+            border: `2px solid ${T.card}`, zIndex: 5 - i, position: "relative",
+            background: k === "team" ? `linear-gradient(140deg, ${BRAND.gold}, ${BRAND.goldDeep})` : `linear-gradient(140deg, ${CREDIT_COLOR[k]}, ${CREDIT_COLOR[k]}aa)` }}>
+            {k === "team" ? <Users size={big ? 12 : 11} /> : nameInitials(creditName(k))}</span>
+        ))}
+      </span>
+      <span style={{ ...TYPE.caption, fontSize: big ? 12 : 10.5, fontWeight: 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+    </span>
   );
 }
