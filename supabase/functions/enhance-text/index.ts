@@ -105,7 +105,11 @@ Deno.serve(async (req: Request) => {
   const u = await fetch(`${SUPA}/auth/v1/user`, { headers: { apikey: ANON, Authorization: auth } }).then(r => r.ok ? r.json() : null).catch(() => null);
   if (!u?.id) return json({ error: "Unauthorized" }, 401);
   const me = ((await (await rest(`user_profiles?id=eq.${u.id}&select=role,is_active`)).json()) as Row[])?.[0];
-  if (me?.role !== "pmo" || !me?.is_active) return json({ error: "PMO only" }, 403);
+  // The PMO, or a Head PMO listed in settings.head_pmo (PMO Goals and Achievements, 15 Nov 2026).
+  const head = me?.role !== "pmo" && me?.is_active
+    ? ((((await (await rest("settings?key=eq.head_pmo&select=value")).json()) as Row[])?.[0]?.value as Row)?.user_ids as string[] ?? []).includes(u.id)
+    : false;
+  if (!me?.is_active || (me?.role !== "pmo" && !head)) return json({ error: "PMO only" }, 403);
 
   const b = await req.json().catch(() => ({})) as Row;
   const field = ["title", "note", "details"].includes(String(b.field)) ? String(b.field) : "note";

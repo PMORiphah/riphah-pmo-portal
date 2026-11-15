@@ -4,7 +4,7 @@ import {
 } from "recharts";
 import {
   ListTodo, FileWarning, Plus, Pencil, Trash2, Check, Search, ChevronDown, ChevronRight, CalendarClock, Flag, Target,
-  CircleCheckBig, AlarmClock, Percent, Sparkles, Users, BarChart3, PieChart as PieIcon, TrendingUp, X, History, Hourglass, Trophy, Activity, FileSpreadsheet, MailCheck,
+  CircleCheckBig, AlarmClock, Percent, Sparkles, Users, BarChart3, PieChart as PieIcon, TrendingUp, X, History, Hourglass, Trophy, Activity, Crown, FileSpreadsheet, MailCheck,
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
@@ -27,6 +27,7 @@ import { nameInitials } from "./nameInitials.js";
 export const LISTS = [
   { key: "pmo_todo",    kind: "list",   label: "PMO To-Do",   icon: ListTodo,    color: BRAND.blueBright },
   { key: "pending_pr",  kind: "list",   label: "Pending PRs", icon: FileWarning, color: DATA.danger },
+  { key: "head_pmo",    kind: "member", fallback: "Mr. Yahya Khan",         title: "Head PMO",         color: BRAND.goldDeep, head: true },
   { key: "manager_pmo", kind: "member", fallback: "Mr. Owais Javed",        title: "Manager PMO",      color: BRAND.gold },
   { key: "exec_pmo",    kind: "member", fallback: "Engr. Usman Ahmed Umar", title: "Executive PMO",    color: DATA.positive },
   { key: "po1",         kind: "member", fallback: "Mr. Abdullah Azhar",     title: "Executive PMO",    color: DATA.violet },
@@ -382,9 +383,10 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
   };
 
   // ── team board: PMO To-Do + one column per member, plus a team pulse tile ──
-  const boardLists = LISTS.filter(l => l.key !== "pending_pr");
+  const boardLists = LISTS.filter(l => l.key !== "pending_pr" && !l.head);   // the Head PMO has his own card above
+  const headList = LISTS.find(l => l.head);
   const boardCols = compact ? 1 : vp.width < 1180 ? 2 : 3;
-  const COLH = 430;
+  const COLH = 450;
   const renderCol = (l, i) => {
     const m = listMeta[l.key];
     const allIn = all.filter(t => t.list === l.key), totalDone = allIn.filter(t => t.done).length;
@@ -457,12 +459,103 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
     );
   };
 
-  const pulse = boardLists.map(l => {
+  const pulse = [headList, ...boardLists].map(l => {
     const ts = all.filter(t => t.list === l.key);
     return { key: l.key, m: listMeta[l.key], open: ts.filter(t => !t.done).length,
       week: ts.filter(t => t.done && new Date(t.done_at) >= Date.now() - 7 * DAY).length, overdue: ts.filter(t => dueState(t, today) === "overdue").length };
   });
   const pulseMax = Math.max(1, ...pulse.map(x => Math.max(x.week, x.open)));
+
+  // ── the Head PMO's featured card (PMO, 15 Nov 2026): full width above the board, navy and gold ──
+  const renderHead = () => {
+    const l = headList, m = listMeta[l.key], G = BRAND.gold;
+    const allIn = all.filter(t => t.list === l.key), totalDone = allIn.filter(t => t.done).length;
+    const open = allIn.filter(t => !t.done && shown(t)).sort(byDue);
+    const done = filter === "all" ? allIn.filter(t => t.done && match(t)).sort((a, b) => new Date(b.done_at) - new Date(a.done_at)) : [];
+    const overdue = allIn.filter(t => dueState(t, today) === "overdue").length;
+    const week = allIn.filter(t => t.done && new Date(t.done_at) >= Date.now() - 7 * DAY).length;
+    const rate = allIn.length ? totalDone / allIn.length : 0;
+    const stat = (label, v, c) => (
+      <div style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: R.md, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
+        <div style={{ ...TYPE.metric, fontSize: 20, color: v && c ? c : "#fff", lineHeight: 1.1 }}>{v}</div>
+        <div style={{ ...TYPE.label, fontSize: 8.5, color: "rgba(255,255,255,0.6)", marginTop: 3 }}>{label}</div>
+      </div>
+    );
+    const r = 30, c = 2 * Math.PI * r;
+    return (
+      <section data-list={l.key} data-head-card="" className="pt-rise pt-head" style={{ animationDelay: "100ms", position: "relative", overflow: "hidden", borderRadius: R.xl, marginBottom: compact ? SP.sm : SP.md,
+        color: "#fff", boxShadow: `0 22px 50px -26px ${BRAND.navyDeep}, ${T.shadow}`, border: `1px solid ${G}55`,
+        background: `radial-gradient(700px 300px at 0% 0%, ${G}2e, transparent 60%), radial-gradient(600px 320px at 100% 100%, ${DATA.violet}26, transparent 60%), linear-gradient(135deg, ${BRAND.navyDeep}, ${BRAND.navy})` }}>
+        <div aria-hidden="true" style={{ position: "absolute", inset: "0 0 auto 0", height: 3, background: `linear-gradient(90deg, transparent, ${G}, ${BRAND.goldDeep}, transparent)` }} />
+        <svg aria-hidden="true" width="360" height="360" viewBox="0 0 360 360" style={{ position: "absolute", left: -120, top: -150, opacity: 0.4, pointerEvents: "none" }}>
+          {[170, 130, 92].map((rr, i) => <circle key={rr} cx="180" cy="180" r={rr} fill="none" stroke={G} strokeOpacity={0.45 - i * 0.1} strokeDasharray={i === 1 ? "4 8" : "none"}
+            style={{ animation: `ptGlow ${3 + i}s ease-in-out infinite` }} />)}
+        </svg>
+        <div style={{ position: "relative", display: "flex", flexDirection: compact ? "column" : "row", gap: compact ? SP.md : SP.xl, padding: compact ? SP.lg : "22px 24px" }}>
+          {/* who */}
+          <div style={{ width: compact ? "100%" : 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <svg width="76" height="76" viewBox="0 0 76 76" aria-label={`${Math.round(rate * 100)}% of the Head PMO's tasks completed`} style={{ position: "absolute", inset: 0 }}>
+                  <circle cx="38" cy="38" r={r + 4} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="3" />
+                  <circle cx="38" cy="38" r={r + 4} fill="none" stroke={G} strokeWidth="3" strokeLinecap="round" strokeDasharray={`${2 * Math.PI * (r + 4) * rate} ${2 * Math.PI * (r + 4)}`}
+                    transform="rotate(-90 38 38)" style={{ transition: "stroke-dasharray 900ms cubic-bezier(.2,.7,.2,1)" }} />
+                </svg>
+                <div className="pt-head-av" style={{ width: 76, height: 76, display: "grid", placeItems: "center" }}>
+                  <div style={{ width: 60, height: 60, borderRadius: 99, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 21, color: BRAND.navyDeep,
+                    background: `linear-gradient(140deg, ${G}, ${BRAND.goldDeep})`, boxShadow: `0 10px 26px -10px ${G}` }}>{initials(m.label)}</div>
+                </div>
+                <span aria-hidden="true" style={{ position: "absolute", top: -6, right: -4, width: 26, height: 26, borderRadius: 99, display: "grid", placeItems: "center",
+                  background: BRAND.navyDeep, border: `1.5px solid ${G}` }}><Crown size={13} color={G} /></span>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ ...TYPE.label, fontSize: 10, color: G, letterSpacing: 1.6 }}>{m.title || "Head PMO"}</div>
+                <div style={{ ...TYPE.display, fontSize: compact ? 21 : 23, lineHeight: 1.15, marginTop: 3, overflowWrap: "anywhere" }}>{m.label}</div>
+                <div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.65)", marginTop: 3 }}>{Math.round(rate * 100)}% of tasks completed</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {stat("Open", allIn.length - totalDone, null)}
+              {stat("Overdue", overdue, "#FF9AAE")}
+              {stat("Done · 7 days", week, "#7FE8D4")}
+            </div>
+            <button onClick={() => setEdit({ list: l.key })} data-add={l.key} aria-label={`Add to ${m.label}`} className="pmo-focusable pt-head-add"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 14px", borderRadius: R.md, cursor: "pointer", border: "none",
+                background: `linear-gradient(120deg, ${G}, ${BRAND.goldDeep})`, color: BRAND.navyDeep, ...TYPE.bodySm, fontWeight: 800, fontFamily: TYPE.body.fontFamily,
+                boxShadow: `0 10px 24px -12px ${G}` }}>
+              <Plus size={15} strokeWidth={2.6} /> Add task for the Head PMO
+            </button>
+          </div>
+          {/* tasks */}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
+              <span style={{ ...TYPE.label, fontSize: 10, color: "rgba(255,255,255,0.7)" }}>Open tasks · {open.length}</span>
+              {done.length > 0 && <button onClick={() => setShowDone(s => ({ ...s, [l.key]: !s[l.key] }))} data-show-done={l.key} className="pmo-focusable"
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "none", background: "none", padding: 0, cursor: "pointer", color: "#7FE8D4", ...TYPE.caption, fontWeight: 700, fontFamily: TYPE.body.fontFamily }}>
+                {showDone[l.key] ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Completed · {done.length}</button>}
+            </div>
+            <div className="pmo-scroll pt-head-tasks" style={{ maxHeight: compact ? "none" : 300, overflow: compact ? "visible" : "auto", paddingRight: 2 }}>
+              {open.length === 0 && !(showDone[l.key] && done.length) ? (
+                <div data-empty style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8, padding: "18px 18px", borderRadius: R.lg, border: `1.5px dashed ${G}55`, background: "rgba(255,255,255,0.03)" }}>
+                  <div className="pt-float" style={{ width: 50, height: 50, borderRadius: 16, flexShrink: 0, display: "grid", placeItems: "center", background: `radial-gradient(circle at 30% 30%, ${G}55, ${G}14)` }}>
+                    {q.trim() || filter !== "all" ? <Search size={20} color={G} /> : <Sparkles size={20} color={G} />}</div>
+                  <div>
+                    <div style={{ ...TYPE.bodySm, fontWeight: 700 }}>{q.trim() || filter !== "all" ? "Nothing matches" : "All clear"}</div>
+                    <div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.65)", marginTop: 2 }}>{q.trim() || filter !== "all" ? "No open task here fits the search or filter." : "No open tasks for the Head PMO. Add one with the gold button."}</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 8, gridTemplateColumns: compact ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))", alignItems: "start" }}>
+                  {open.map(t => renderTask(t, G))}
+                  {showDone[l.key] && done.map(t => renderTask(t, G))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  };
   const prWeek = prCleared.filter(t => new Date(t.done_at) >= Date.now() - 7 * DAY).length;
   const renderPulse = () => (
     <div key="pulse" data-pulse="" className="pt-rise br-card" style={{ animationDelay: "470ms", minWidth: 0, height: compact ? "auto" : COLH, borderRadius: R.lg, overflow: "hidden", position: "relative",
@@ -474,7 +567,7 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "6px 16px" }} className="pmo-scroll">
         {pulse.map((x, i) => (
-          <div key={x.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+          <div key={x.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: i ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
             <span style={{ width: 30, height: 30, borderRadius: 10, flexShrink: 0, display: "grid", placeItems: "center", fontSize: 11, fontWeight: 800,
               background: x.m.kind === "member" ? `linear-gradient(140deg, ${x.m.color}, ${x.m.color}99)` : `${x.m.color}33` }}>
               {x.m.kind === "member" ? initials(x.m.label) : <ListTodo size={14} color="#fff" />}</span>
@@ -524,6 +617,13 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
         .br-card { transition: transform ${MOTION.fast}, box-shadow ${MOTION.fast}, border-color ${MOTION.fast} }
         .br-card:hover { transform: translateY(-3px); box-shadow: ${T.shadowLg}; }
         .br-card:hover .pt-avatar { transform: rotate(-6deg) scale(1.06) }
+        .pt-head { transition: box-shadow ${MOTION.fast}, transform ${MOTION.fast} }
+        .pt-head:hover { transform: translateY(-2px) }
+        .pt-head-av { transition: transform 600ms cubic-bezier(.2,.7,.2,1) }
+        .pt-head:hover .pt-head-av { transform: scale(1.05) rotate(-4deg) }
+        .pt-head-add { transition: transform ${MOTION.fast}, filter ${MOTION.fast} }
+        .pt-head-add:hover { transform: translateY(-1px); filter: brightness(1.08) }
+        .pt-head .pt-row { margin-top: 0 !important }
         .pt-avatar { transition: transform ${MOTION.fast} }
         .pt-pr { transition: transform ${MOTION.fast}, box-shadow ${MOTION.fast}, border-color ${MOTION.fast} }
         .pt-pr:hover { transform: translateY(-3px); box-shadow: ${T.shadowLg}; border-color: ${T.borderStrong} !important }
@@ -667,8 +767,9 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "0 2px 10px" }}>
           <Users size={16} color={T.textOf(BRAND.blueBright)} style={{ alignSelf: "center" }} />
           <span style={{ ...TYPE.h2, fontSize: compact ? 17 : 19, color: T.text }}>Team board</span>
-          <span style={{ ...TYPE.caption, color: T.muted }}>PMO To-Do and each member's tasks</span>
+          <span style={{ ...TYPE.caption, color: T.muted }}>The Head PMO, PMO To-Do and each member's tasks</span>
         </div>
+        {renderHead()}
         <div data-board style={{ display: "grid", gap: compact ? SP.sm : SP.md, gridTemplateColumns: `repeat(${boardCols}, minmax(0,1fr))` }}>
           {boardLists.map((l, i) => renderCol(l, i))}
           {renderPulse()}

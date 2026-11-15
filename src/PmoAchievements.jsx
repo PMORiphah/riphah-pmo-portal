@@ -29,6 +29,7 @@ export const CATS = {
 };
 const CREDITS = [
   { key: "team", fallback: "Whole PMO team" },
+  { key: "head_pmo", fallback: "Mr. Yahya Khan" },
   { key: "manager_pmo", fallback: "Mr. Owais Javed" },
   { key: "exec_pmo", fallback: "Engr. Usman Ahmed Umar" },
   { key: "po1", fallback: "Mr. Abdullah Azhar" },
@@ -194,7 +195,7 @@ export function PmoAchievementsView({ T, session, supa, onOpenProject, onOpenPas
   }, [view, chartFy]);
   const byCat = useMemo(() => Object.entries(CATS).map(([key, c]) => ({ key, name: c.label, value: view.filter(a => a.category === key).length, color: c.color })).filter(x => x.value), [view]);
   const byCredit = useMemo(() => CREDITS.map(c => ({ name: creditName(c.key).replace(/^(Mr|Engr)\.?\s+/i, ""), value: view.filter(a => a.credit === c.key).length,
-    color: c.key === "team" ? BRAND.gold : c.key === "manager_pmo" ? "#F08A5D" : c.key === "exec_pmo" ? DATA.positive : c.key === "po1" ? DATA.violet : DATA.cyan })), [view, creditName]);
+    color: c.key === "team" ? BRAND.gold : c.key === "head_pmo" ? BRAND.goldDeep : c.key === "manager_pmo" ? "#F08A5D" : c.key === "exec_pmo" ? DATA.positive : c.key === "po1" ? DATA.violet : DATA.cyan })), [view, creditName]);
   // Timeline: dots across the chosen FY (Jul 1 to Jun 30).
   const tl = useMemo(() => {
     const a0 = 2000 + Number(chartFy.slice(3, 5));

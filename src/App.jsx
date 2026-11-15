@@ -166,6 +166,16 @@ const CREST_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAAE9CAIAAA
 // financial dashboard is a far worse failure than a duplicate fetch.
 const _inFlight = new Map();
 
+// Head PMO (15 Nov 2026): a Head PMO account (settings.head_pmo, is_head_pmo()) sees every page the PMO sees
+// but may change only PMO Goals and PMO Achievements. The database enforces this (RLS); this guard only stops
+// the write before it is sent and says why, instead of a page showing a bare "permission denied".
+let HEAD_VIEW = false;
+const HEAD_WRITABLE = /^\/rest\/v1\/(pmo_tasks|pmo_achievements|pmo_pr_documents|comment_reads|past_chat_reads|push_subscriptions|user_webauthn_credentials|tour_events)(\?|$)/;
+const HEAD_BLOCKED_FN = /^\/functions\/v1\/(invite-user|reset-user-password|delete-user|send-deadline-email|send-welcome-email|board-report-notify|notify-past|notify-update|notify-comment|epdd-sync|pcr-extract|deliverables-extract|send-pdd-reminders|send-deadline-alerts)\b/;
+export const HEAD_VIEW_MSG = "View only: as Head PMO you can edit PMO Goals and PMO Achievements. Ask the PMO for other changes.";
+const headBlocks = (path, method) => HEAD_VIEW && (HEAD_BLOCKED_FN.test(path)
+  || (method !== "GET" && method !== "HEAD" && path.startsWith("/rest/v1/") && !path.startsWith("/rest/v1/rpc/") && !HEAD_WRITABLE.test(path)));
+
 const supa = async (path, opts = {}, token = null) => {
   const method = (opts.method || "GET").toUpperCase();
   const dedupable = method === "GET" && !opts.body;
@@ -182,6 +192,7 @@ const supa = async (path, opts = {}, token = null) => {
 };
 
 const _supaFetch = async (path, opts = {}, token = null) => {
+  if (headBlocks(path, (opts.method || "GET").toUpperCase())) throw new Error(HEAD_VIEW_MSG);
   // no-store: every load, including a hard refresh, reads live figures.
   const r = await fetch(SUPA_URL + path, {
     cache: "no-store",
@@ -813,7 +824,7 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
                 fontSize:10, fontWeight:600, letterSpacing:"0.06em", textTransform:"uppercase",
                 color:T.goldText || BRAND.gold, background:BRAND.gold+"1E",
                 padding:"1.5px 7px", borderRadius:R.pill,
-              }}>{session?.role?.replace("_", " ") || "—"}</div>
+              }} data-role-label="">{session?.headView ? "Head PMO" : (session?.role?.replace("_", " ") || "—")}</div>
             </div>
           )}
         </div>
@@ -12461,7 +12472,18 @@ async function loadMyAsks(session) {
 
 export default function App() {
   const [dark, setDark] = useState(true);
-  const [session, setSession] = useState(null);
+  const [rawSession, setSession] = useState(null);
+  // Head PMO: treated as the PMO for what is shown (role "pmo", headView true); writes are limited by the
+  // guard above and by the database. The real role (guest) stays in realRole for session tracking.
+  const [headView, setHeadView] = useState(false);
+  useEffect(() => {
+    let on = true; HEAD_VIEW = false; setHeadView(false);
+    if (!rawSession?.access_token || rawSession.role === "pmo") return;
+    supa("/rest/v1/rpc/is_head_pmo", { method: "POST", body: "{}" }, rawSession.access_token)
+      .then((v) => { if (on && v === true) { HEAD_VIEW = true; setHeadView(true); } }).catch(() => {});
+    return () => { on = false; };
+  }, [rawSession?.user_id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const session = useMemo(() => (rawSession && headView ? { ...rawSession, role: "pmo", headView: true, realRole: rawSession.role } : rawSession), [rawSession, headView]);
   // The current session for code that outlives a render (the Simulation launcher reads it at each
   // request). Any end of the session also stops a simulation hand-over (no-op unless one ran).
   const sessionRef = useRef(null);
@@ -13163,7 +13185,7 @@ export default function App() {
   // sign-out. Fire-and-forget throughout: nothing the user does waits on it.
   useEffect(() => {
     if (!session?.user_id) return;
-    startSession(supa, session);
+    startSession(supa, session.realRole ? { ...session, role: session.realRole } : session);
     initTourTracking({
       supa, token: session.access_token, userId: session.user_id,
       device: vp.isCompact ? "mobile" : "desktop",
