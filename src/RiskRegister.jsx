@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertTriangle, ShieldAlert, Shield, Plus, Pencil, Trash2, X, ChevronDown } from "lucide-react";
 import { TYPE, SP, R, MOTION } from "./theme.js";
 import { Select, CountUp, useViewport } from "./ui.jsx";
+import { canEditPmo } from "./headView.js";
 import { useNear } from "./presence.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -431,7 +432,7 @@ export function RiskRegisterPage({ T, session, supa }) {
   const [fStatus, setFStatus] = useState("");
   // PMO only — enforced at the database too (risks_write policy), not just
   // hidden here. Viewing stays open to every role; only add/edit/delete narrows.
-  const canWrite = session?.role === "pmo";
+  const canWrite = canEditPmo(session);
 
   useEffect(() => {
     supa("/rest/v1/projects?portfolio=eq.capex&select=id,name&order=name.asc", {}, session.access_token)

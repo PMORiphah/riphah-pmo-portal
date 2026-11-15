@@ -111,6 +111,7 @@ import {
 } from "chart.js";
 import { Bar, Scatter } from "react-chartjs-2";
 import { nameInitials } from "./nameInitials.js";
+import { canEditPmo, isHeadView } from "./headView.js";
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
 // Settings rows written before the save path was fixed contain a JSON string
@@ -833,7 +834,7 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
             hides itself on devices with no platform authenticator. */}
         {!mini && <BiometricButton T={T} session={session} mini={mini} />}
         {!mini && <NotificationButton T={T} session={session} mini={mini} />}
-        {session?.role !== "pmo" && !mini && (
+        {(session?.role !== "pmo" || session?.headView) && !mini && (
           <button onClick={onChangePassword} className="pmo-focusable" style={{
             width:"100%", marginTop:11, padding:"8px 12px", borderRadius:R.sm, cursor:"pointer",
             background:T.sidebarHover, border:`1px solid ${T.sidebarBorder}`,
@@ -847,7 +848,7 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
         {(session?.role === "guest" || session?.role === "project_manager") && !mini && !isCompact && (
           <SidebarTourButton T={T} />
         )}
-        {SIM_ENABLED && session?.role === "pmo" && !mini && !isCompact && (
+        {SIM_ENABLED && canEditPmo(session) && !mini && !isCompact && (
           <SidebarSimButton T={T} session={session} getSession={getSession} />
         )}
         {/* A simulation the PMO shared with this guest: computers only (decided by the App). */}
@@ -1316,7 +1317,7 @@ function DeadlineAlertPopups({ T, session, blockingAlertActive, setBlockingAlert
   const holdingLock = useRef(false);
 
   useEffect(() => {
-    if (session?.role !== "pmo") return;
+    if (!canEditPmo(session)) return;   // PMO only; not the Head PMO (view only)
     if (firedFor.current === session.access_token) return; // once per session, not per render
     firedFor.current = session.access_token;
     // Hold the alert for 5s after load. It is a full-screen modal that blocks
@@ -2505,7 +2506,7 @@ function BreakdownSection({ T, session, onSelectProject }) {
   const [loading,  setLoading]  = useState(true);
   // Which breakdown card is expanded, e.g. { group:"By segment", key:"Academics" }.
   const [drill,    setDrill]    = useState(null);
-  const isPMO = session?.role === "pmo";
+  const isPMO = canEditPmo(session);   // edits the breakdown cards (not the Head PMO)
 
   useEffect(() => {
     (async () => {
@@ -3482,7 +3483,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
     };
   }, [dashProjects, isApprovedStage]);
 
-  const canEdit = session?.role === "pmo";
+  const canEdit = canEditPmo(session);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -3790,7 +3791,7 @@ function CommandCenter({ T, session, onSelectProject, fyLabel = "FY 2026-27", in
       {activeTab === "investments" && (
         <div data-tour="investments-panel">
         <InvestmentsTab
-          T={T} session={session} supa={supa} canManage={session?.role === "pmo"}
+          T={T} session={session} supa={supa} canManage={canEditPmo(session)}
           onSelectProject={onSelectProject}
           fmtFull={fmtFull} fmtM={fmtM}
           STAGE_META={STAGE_META} PRIORITY_META={PRIORITY_META}
@@ -4868,10 +4869,11 @@ function MobileProjectCard({ T, project: p, onSelect, badges, metrics, rightSlot
 function ProjectsPage({ T, session, onSelectProject,
   search, setSearch, fFY, setFFY, fOrg, setFOrg, fCode, setFCode, fName, setFName,
   fSeg, setFSeg, fPri, setFPri, fStrat, setFStrat, fStage, setFStage, fCC, setFCC, fMark = "", setFMark = () => {} }) {
-  const isPMO = session?.role === "pmo";
+  const seesPmo = session?.role === "pmo";       // PMO or Head PMO: what they may see
+  const isPMO = canEditPmo(session);             // the edit controls (not the Head PMO)
   // Open "Pending PR" tasks from Tasks/Goals → red badge after the name (PMO only, 12 Nov 2026).
   const [prs, setPrs] = useState(EMPTY_PRS);
-  useEffect(() => { if (isPMO) loadPendingPrs(supa, session.access_token).then(setPrs); }, [isPMO, session.access_token]);
+  useEffect(() => { if (seesPmo) loadPendingPrs(supa, session.access_token).then(setPrs); }, [seesPmo, session.access_token]);
   const [rows,         setRows]         = useState([]);
   const [lookups,      setLookups]      = useState({sectors:[],regions:[],segments:[],cost_centers:[],campuses:[]});
   const [loading,      setLoading]      = useState(true);
@@ -5251,7 +5253,7 @@ function ProjectsPage({ T, session, onSelectProject,
               textOverflow:"ellipsis", whiteSpace:"nowrap", fontWeight: hovered ? 600 : 450,
               color: closed ? T.textSoft : T.text, transition:`font-weight ${MOTION.fast}` }}>{p.name}</span>
             {p.pcr && pcrPill()}
-            {isPMO && <PendingPrBadge T={T} n={prs.projects[p.id]} />}
+            {seesPmo && <PendingPrBadge T={T} n={prs.projects[p.id]} />}
           </span>
         );
       }
@@ -6223,7 +6225,7 @@ function CampusPage({ T, session, onSelectProject,
   // dashboard uses, keyed by the same metric keys — so a correction made here
   // fixes the wording on the dashboard too, and vice versa. One definition of
   // what "DF Review" means, editable from wherever you noticed it was wrong.
-  const isPMOUser = session?.role === "pmo";
+  const isPMOUser = canEditPmo(session);   // Assign PM and card insight edits (not the Head PMO)
   const [kpiOv, setKpiOv] = useState({});
   useEffect(() => {
     if (!session?.access_token) return;
@@ -6565,6 +6567,7 @@ function CampusPage({ T, session, onSelectProject,
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 function SettingsPage({ T, session }) {
+  const ro = isHeadView(session);   // Head PMO: sees the configuration, cannot save it
   const vpS = useViewport();
   // ── helpers ──────────────────────────────────────────────────────────────
   const Msg = ({ status }) => {
@@ -6721,7 +6724,7 @@ function SettingsPage({ T, session }) {
       <Surface T={T} pad={SP.md} style={{ gridColumn:"1 / -1" }}>
         <div style={{ ...TYPE.bodySm, color:T.muted }}>
           Signed in as <span style={{ color:T.text, fontWeight:600 }}>{session.username}</span>
-          <span style={{ color:T.dim }}> · {session.role?.replace("_", " ")}</span>
+          <span style={{ color:T.dim }}> · {ro ? "Head PMO (view only)" : session.role?.replace("_", " ")}</span>
         </div>
       </Surface>
 
@@ -6756,7 +6759,7 @@ function SettingsPage({ T, session }) {
         {cfgLoading ? (
           <div style={{ color:T.muted, fontSize:13 }}>Loading configuration…</div>
         ) : cfg && (
-          <>
+          <fieldset disabled={ro} style={{ border:0, padding:0, margin:0, minWidth:0 }}>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
               <Field label="CPI Threshold" hint="Projects below this are flagged Over Budget. Drives the Portfolio Health verdict, the Over Budget card on Project Health, and the budget status column on Performance.">
                 <input type="number" min="0" max="1" step="0.01"
@@ -6785,9 +6788,10 @@ function SettingsPage({ T, session }) {
                 <input value={cfg.fiscal_year ?? "FY 2026-27"} onChange={e=>set("fiscal_year", e.target.value)} style={{ ...inp, width:"100%" }} />
               </Field>
             </div>
-            <Btn onClick={saveConfig} loading={saveLoading}>Save Configuration</Btn>
+            {ro ? <div style={{ ...TYPE.caption, color:T.muted }}>View only. The PMO changes the configuration.</div>
+                : <Btn onClick={saveConfig} loading={saveLoading}>Save Configuration</Btn>}
             <Msg status={cfgStatus} />
-          </>
+          </fieldset>
         )}
       </SectionCard>
 
@@ -7223,7 +7227,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
   const [err, setErr] = useState(null);
   const [globalBytes, setGlobalBytes] = useState(null);
   const fileInputRef = useRef(null);
-  const canManage = session?.role === "pmo";
+  const canManage = canEditPmo(session);
   // Cloudflare R2 free tier: 10 GB stored, portal-wide (files are kept in R2 since 27 Oct 2026; beyond it R2 bills
   // about US$0.015 per GB a month, nothing stops working).
   const STORAGE_CAP_BYTES = 10 * 1024 * 1024 * 1024;
@@ -7748,12 +7752,12 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
 
   // PMO only manages risks now — enforced at the database (risks_write
   // policy), not just here.
-  const canManageRisks = session?.role === "pmo";
+  const canManageRisks = canEditPmo(session);
 
   // PMO only manages lessons too — this feature is PMO and Guest only, PM
   // excluded entirely. Enforced at the database (lessons_write policy), not
   // just here.
-  const canManageLessons = session?.role === "pmo";
+  const canManageLessons = canEditPmo(session);
   // Whether the person reading this page is the project manager assigned to it.
   // Only decides what the interface offers — the database enforces the same
   // rule again on every write, so a wrong answer here cannot grant access.
@@ -8020,7 +8024,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                 {fmtFull(evm.bac)}
               </div>
             </div>
-            {onGoToDiscussion && (
+            {onGoToDiscussion && (commentCount > 0 || !isHeadView(session)) && (
               <Button T={T} variant={commentCount > 0 ? "accent" : "ghost"}
                 tone={commentCount > 0 ? T.warning : undefined}
                 icon={MessageSquare} onClick={() => onGoToDiscussion(projectId)}
@@ -8086,7 +8090,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
       {tab === "deliverables" && hasDeliv && (
         <div style={{ padding: vpD.isCompact ? SP.lg : `${SP.xl}px ${SP.xxl}px` }}>
           <ProjectDeliverables T={T} session={session} supa={supa} projectId={projectId}
-            canUpdate={session?.role === "pmo" || isAssignedPM} isCompact={vpD.isCompact} />
+            canUpdate={canEditPmo(session) || isAssignedPM} isCompact={vpD.isCompact} />
         </div>
       )}
 
@@ -8136,8 +8140,8 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
               </div>
             )}
             <ProjectTasks T={T} session={session} supa={supa} projectId={projectId}
-              canWrite={session?.role === "pmo" || isAssignedPM}
-              isPMO={session?.role === "pmo"} isCompact={vpD.isCompact} />
+              canWrite={canEditPmo(session) || isAssignedPM}
+              isPMO={canEditPmo(session)} isCompact={vpD.isCompact} />
           </div>
         );
       })()}
@@ -8437,7 +8441,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                         textDecoration:"none" }}>
                       <MessageCircle size={12} /> WhatsApp
                     </a>
-                    {session?.role === "pmo" && (
+                    {canEditPmo(session) && (
                       <button className="pmo-focusable pmo-btn"
                         onClick={() => { setPhoneDraft(pm.user_profiles.phone || ""); setEditingPhone(true); }}
                         aria-label="Edit contact number"
@@ -8446,7 +8450,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                       </button>
                     )}
                   </div>
-                ) : session?.role === "pmo" ? (
+                ) : canEditPmo(session) ? (
                   <button className="pmo-focusable pmo-btn"
                     onClick={() => { setPhoneDraft(""); setEditingPhone(true); }}
                     style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"5px 12px",
@@ -8460,7 +8464,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
               </div>
 
               <div style={{ flex:1 }} />
-              {session?.role==="pmo" && !assigningPM && (
+              {canEditPmo(session) && !assigningPM && (
                 <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", marginTop:14, padding:"7px", background:"none", border:"1px solid "+T.border, borderRadius:R.sm, color:T.muted, fontSize:12, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Change PM
                 </button>
@@ -8474,14 +8478,14 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
                   <div style={{ fontSize:12, color:T.muted, marginTop:4 }}>This project has been completed.</div>
                 )}
               </div>
-              {session?.role==="pmo" && !assigningPM && (
+              {canEditPmo(session) && !assigningPM && (
                 <button className="pmo-focusable pmo-btn" onClick={()=>setAssigningPM(true)} style={{width:"100%", padding:"8px", background:NAVY, border:"none", borderRadius:R.sm, color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:TYPE.body.fontFamily}}>
                   Assign Project Manager
                 </button>
               )}
             </>
           )}
-          {session?.role==="pmo" && assigningPM && (
+          {canEditPmo(session) && assigningPM && (
             <div style={{marginTop:10, padding:14, background:T.card2, borderRadius:R.md, border:"1px solid "+T.border}}>
               <label style={{fontSize:11, color:T.muted, fontWeight:700, letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:7}}>Select Project Manager</label>
               <Select T={T} value={selectedPM} onChange={e=>setSelectedPM(e.target.value)} style={{width:"100%", background:T.inputBg, border:"1px solid "+T.inputBorder, borderRadius:R.sm, padding:"8px 10px", fontSize:13, color:T.text, fontFamily:TYPE.body.fontFamily, outline:"none", marginBottom:10, boxSizing:"border-box"}}>
@@ -8510,7 +8514,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             full width lands it in genuinely empty space. */}
         <div style={{ display: tab === "overview" ? "block" : "none", gridColumn:"1 / -1" }}>
           <ProjectRaciCard T={T} session={session} supa={supa} projectId={projectId}
-            canWrite={session?.role === "pmo"} isCompact={vpD.isCompact} />
+            canWrite={canEditPmo(session)} isCompact={vpD.isCompact} />
         </div>
 
         <div data-tour="detail-documents" style={{ display: tab === "documents" ? "block" : "none", gridColumn:"1 / -1" }}>
@@ -8776,6 +8780,7 @@ const BoardReportPopup = lazy(() => loadBoardReport().then(m => ({ default: m.Bo
 const WelcomeEmailModal = lazy(() => import("./WelcomeEmail.jsx").then(m => ({ default: m.WelcomeEmailModal })));
 
 function UserManagementPage({ T, session }) {
+  const ro = isHeadView(session);   // Head PMO: sees the users, changes nothing
   const vpD = useViewport();
   const [users,          setUsers]          = useState([]);
   // Role sorts by seniority, not alphabetically: Administrator before Guest.
@@ -8975,11 +8980,11 @@ function UserManagementPage({ T, session }) {
         <div data-tour="users-header" style={{ ...TYPE.bodySm, color:T.muted }}>
           {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
         </div>
-        <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm }}>
+        {!ro && <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm }}>
           <Button T={T} variant="ghost" icon={Mail} onClick={() => setWelcomeFor("")}
             title="Invite a project manager to the portal: preview the email, then send it">Welcome email</Button>
           <Button T={T} variant="primary" icon={Plus} onClick={() => { setShowCreate(true); setCreateStatus(null); }}>Create user</Button>
-        </div>
+        </div>}
       </div>
 
       {/* Table */}
@@ -8999,7 +9004,7 @@ function UserManagementPage({ T, session }) {
                 <SortHeader T={T} label="Role" sortKey="role" sort={usort} onToggle={utoggle} data-col="role" />
                 <SortHeader T={T} label="Status" sortKey="status" sort={usort} onToggle={utoggle} />
                 <th style={th} data-col="assigned">Assigned Projects</th>
-                <th style={{ ...th, textAlign:"right" }}>Actions</th>
+                {!ro && <th style={{ ...th, textAlign:"right" }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -9033,9 +9038,9 @@ function UserManagementPage({ T, session }) {
                         />
                       ) : (
                         <span
-                          onClick={()=>{ setEditPhoneId(u.id); setPhoneDraft(u.phone||""); }}
-                          title="Click to edit — international format, e.g. +923001234567"
-                          style={{ cursor:"pointer", borderBottom:"1px dashed "+T.border, paddingBottom:1 }}
+                          onClick={ro ? undefined : ()=>{ setEditPhoneId(u.id); setPhoneDraft(u.phone||""); }}
+                          title={ro ? undefined : "Click to edit — international format, e.g. +923001234567"}
+                          style={ro ? undefined : { cursor:"pointer", borderBottom:"1px dashed "+T.border, paddingBottom:1 }}
                         >{u.phone || "—"}</span>
                       )}
                     </td>
@@ -9057,7 +9062,7 @@ function UserManagementPage({ T, session }) {
                        assigns.length === 0 ? <span style={{ color:T.dim, fontSize:11 }}>None assigned</span> :
                        <span style={{ color:T.text, fontSize:12 }}>{assigns.length} project{assigns.length!==1?"s":""}</span>}
                     </td>
-                    <td style={{ ...td, textAlign:"right" }}>
+                    {!ro && <td style={{ ...td, textAlign:"right" }}>
                       {!me && (
                         <div style={{ display:"flex", gap:8, justifyContent:"flex-end", alignItems:"center" }}>
                           {u.is_active && (u.role === "project_manager" || (u.role === "guest" && assigns.length > 0)) && (
@@ -9102,7 +9107,7 @@ function UserManagementPage({ T, session }) {
                           )}
                         </div>
                       )}
-                    </td>
+                    </td>}
                   </tr>
                 );
               })}
@@ -9222,6 +9227,10 @@ function SetUserPasswordModal({ T, user, loading, onClose, onSubmit }) {
 // ─── ACTIVITY LOG ─────────────────────────────────────────────────────────────
 // ─── RESTORE SNAPSHOT BUTTON ──────────────────────────────────────────────────
 function RestoreSnapshotButton({ T, session, entry }) {
+  if (isHeadView(session)) return null;   // restoring changes the portfolio: PMO only
+  return <RestoreSnapshotButtonInner T={T} session={session} entry={entry} />;
+}
+function RestoreSnapshotButtonInner({ T, session, entry }) {
   const [state, setState] = useState("idle"); // idle | confirming | restoring | done | error
   const [msg,   setMsg]   = useState("");
 
@@ -9960,10 +9969,10 @@ function CommentBubble({ T, comment, replies, onReply, onDelete, depth, renderKi
   );
 }
 
-function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelReply, canPost }) {
+function ComposeBox({ T, value, onChange, onPost, posting, replyingTo, onCancelReply, canPost, headView }) {
   if (!canPost) return (
     <div style={{ padding:"14px 20px", borderTop:`1px solid ${T.border}`, color:T.dim, fontSize:12, textAlign:"center", flexShrink:0 }}>
-      You have read-only access. Comments are view-only for Guests.
+      {headView ? "View only: the PMO and the project managers post here." : "You have read-only access. Comments are view-only for Guests."}
     </div>
   );
   return (
@@ -10154,8 +10163,8 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
         onReadChange?.();
       }
 
-      // Legacy PMO inbox flag — keep in sync so the Inbox tab still works
-      if (session.role === "pmo") {
+      // Legacy PMO inbox flag — keep in sync so the Inbox tab still works (not for the view-only Head PMO)
+      if (canEditPmo(session)) {
         const unread = data.filter(c => !c.is_read_by_pmo && (c.author_role || c.user_profiles?.role) !== "pmo");
         if (unread.length > 0) {
           await supa(`/rest/v1/comments?project_id=eq.${id}&is_read_by_pmo=eq.false`,
@@ -10257,14 +10266,15 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
   }, [projects, view, commentsByProject]);
 
   // PMs can post on any project they can see (RLS already restricts to assigned projects)
-  const canPost = session.role === "pmo" || session.role === "project_manager" || session.role === "guest";
+  // The Head PMO reads Updates only: his posts would carry the PMO's role and alert the managers as the PMO.
+  const canPost = !session.headView && (session.role === "pmo" || session.role === "project_manager" || session.role === "guest");
 
   const { roots, replies } = useMemo(() => buildTree(thread), [thread]);
 
   // ── Ask update ──────────────────────────────────────────────────────────────
   // Who manages a project is project_assignments, never the role (one manager is a guest).
   const tstate    = useMemo(() => threadState(thread), [thread]);
-  const canAsk    = session.role === "pmo" || isViewer;
+  const canAsk    = canEditPmo(session) || (!session.headView && isViewer);
   const amManager = threadAssignees.includes(session.user_id);
   const formOpen  = amManager && !!tstate.pending && !loadingThread;
   const lastData  = tstate.lastUpdate?.data || null;
@@ -10296,7 +10306,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
       {kindOf(c) === "update_request"
         ? <RequestCard T={T} comment={c} answeredBy={tstate.answeredBy[c.id] || null} waiting={tstate.waiting.some(w => w.id === c.id)} lines={itemCount} />
         : <UpdateCard T={T} comment={c} titles={lineTitles} latest={c.id === tstate.lastUpdate?.id}
-            isPMO={session.role === "pmo"} projectPct={projPct} onUsePct={applyPct} />}
+            isPMO={canEditPmo(session)} projectPct={projPct} onUsePct={applyPct} />}
     </Suspense>
   );
   // After a request or an update: the thread, and the list's chips, both at once.
@@ -10490,7 +10500,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                   key={c.id} T={T} comment={c}
                   replies={replies[c.id] || []}
                   onReply={canPost ? setReplyingTo : null}
-                  onDelete={session.role === "pmo" ? deleteComment : null}
+                  onDelete={canEditPmo(session) ? deleteComment : null}
                   depth={0} renderKind={renderKind}
                 />
               ))}
@@ -10521,7 +10531,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
               </Suspense>, document.body)}
 
             {/* Compose */}
-            {session.role === "pmo" && (() => {
+            {canEditPmo(session) && (() => {
               const proj = projects.find(p => p.id === selId);
               const pmsWithPhone = threadPMs.filter(pm => pm.phone && pm.phone.trim());
               if (!proj || pmsWithPhone.length === 0) return null;
@@ -10555,7 +10565,7 @@ function UpdatesPage({ T, session, defaultProjectId, onClearDefault, onReadChang
                 T={T} value={body} onChange={setBody}
                 onPost={postComment} posting={posting}
                 replyingTo={replyingTo} onCancelReply={() => setReplyingTo(null)}
-                canPost={canPost}
+                canPost={canPost} headView={!!session.headView}
               />
             )}
           </>
@@ -10829,7 +10839,7 @@ function TeamPage({ T, session }) {
   const [editAbout,   setEditAbout]   = useState(false);
   const [editMember,  setEditMember]  = useState(null); // roleId
   const [editContact, setEditContact] = useState(false);
-  const isPMO = session.role === "pmo";
+  const isPMO = canEditPmo(session);   // edits About Us, the team cards and Contact Us (not the Head PMO)
 
   useEffect(() => {
     (async () => {
@@ -13443,7 +13453,7 @@ export default function App() {
         {effectivePage === "review" && <PmoReviewPage T={T} session={session} supa={supa} isCompact={vp.isCompact}
           initialOpenId={deepReviewId.current} onInitialOpened={() => { deepReviewId.current = null; }}
           onSeenChange={() => setReviewTick(t => t + 1)}
-          renderCreateProject={(props) => <PddProjectCreator T={T} session={session} {...props} />} />}
+          renderCreateProject={canEditPmo(session) ? (props) => <PddProjectCreator T={T} session={session} {...props} /> : null} />}
             {effectivePage === "upd"  && <div data-tour="updates-page" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}><UpdatesPage T={T} session={session} defaultProjectId={discussionProjectId}
               onClearDefault={() => {
                 setDiscussionProjectId(null);

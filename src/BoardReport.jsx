@@ -4,6 +4,7 @@ import { FileBarChart, Plus, ArrowLeft, Printer, Send, Mail, Users, RefreshCw, T
 import { TYPE, SP, R, BRAND } from "./theme.js";
 import { Button, Modal } from "./ui.jsx";
 import { loadReportRows, computeFigures, periodOf, prevYm, deltas, fmtM, fmtPKR, fmtPct, fmtDay, STAGE_NAME, CALC_VERSION } from "./reportCalc.js";
+import { canEditPmo } from "./headView.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    BOARD REPORTS (PMO, 8 Oct 2026)
@@ -460,14 +461,14 @@ function ReportViewer({ T, session, supa, rep, recipients, onClose, onChanged, i
         </div>
         {isMobile && <div style={{ flexBasis:"100%", height:0 }} />}
         {msg && <span style={{ fontSize:12.5, color: msg.ok ? T.textOf(T.positive) : T.textOf(T.danger), display:"flex", alignItems:"center", gap:5 }}>{msg.ok ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}{msg.t}</span>}
-        {isPMO && draft && <Button T={T} variant="ghost" icon={RefreshCw} loading={busy === "refresh"} onClick={refresh} title="Rebuild the figures from today's data">Refresh figures</Button>}
-        {isPMO && draft && <Button T={T} variant="ghost" icon={Trash2} onClick={() => setModal("discard")}>Discard</Button>}
-        {isPMO && rep.status === "published" && rep.kind !== "reconstructed" && <Button T={T} variant="ghost" icon={Users} onClick={() => setModal("share")}>Recipients</Button>}
-        {isPMO && rep.status === "published" && rep.kind !== "reconstructed" && <Button T={T} variant="ghost" icon={Mail} loading={busy === "email"} disabled={!live.length} onClick={() => setModal("email")}>Email report</Button>}
+        {canEditPmo(session) && draft && <Button T={T} variant="ghost" icon={RefreshCw} loading={busy === "refresh"} onClick={refresh} title="Rebuild the figures from today's data">Refresh figures</Button>}
+        {canEditPmo(session) && draft && <Button T={T} variant="ghost" icon={Trash2} onClick={() => setModal("discard")}>Discard</Button>}
+        {canEditPmo(session) && rep.status === "published" && rep.kind !== "reconstructed" && <Button T={T} variant="ghost" icon={Users} onClick={() => setModal("share")}>Recipients</Button>}
+        {canEditPmo(session) && rep.status === "published" && rep.kind !== "reconstructed" && <Button T={T} variant="ghost" icon={Mail} loading={busy === "email"} disabled={!live.length} onClick={() => setModal("email")}>Email report</Button>}
         <Button T={T} variant="ghost" icon={Printer} onClick={printReport} title="Print, or choose Save as PDF">Save as PDF</Button>
-        {isPMO && draft && <Button T={T} variant="primary" icon={Send} onClick={async () => { await saveNote(); setModal("publish"); }}>Publish…</Button>}
+        {canEditPmo(session) && draft && <Button T={T} variant="primary" icon={Send} onClick={async () => { await saveNote(); setModal("publish"); }}>Publish…</Button>}
       </div>
-      {isPMO && draft && (
+      {canEditPmo(session) && draft && (
         <div className="br-toolbar" style={{ padding:`${SP.sm}px ${SP.lg}px`, borderBottom:`1px solid ${T.border}`, background:T.surface, display:"flex", gap:SP.sm, alignItems:"center" }}>
           <span style={{ ...TYPE.label, color:T.muted, whiteSpace:"nowrap" }}>PMO note on page 1</span>
           <input value={note} onChange={e => setNote(e.target.value.slice(0, 800))} onBlur={saveNote} placeholder="Optional: a line for the Board, e.g. what to look at this month"
@@ -609,7 +610,7 @@ export function BoardReportsPage({ T, session, supa, isCompact, initialReport = 
               {isPMO ? "Monthly reports for the Board and senior management. Build, check, then publish to the people you choose." : "Reports the PMO has shared with you."}
             </div>
           </div>
-          {isPMO && <Button T={T} variant="primary" icon={Plus} onClick={() => setBuilding(true)}>New report</Button>}
+          {canEditPmo(session) && <Button T={T} variant="primary" icon={Plus} onClick={() => setBuilding(true)}>New report</Button>}
         </div>
         {err && <div style={{ color:T.textOf(T.danger), fontSize:13, marginBottom:SP.md }}>{err}</div>}
         {reports === null ? <div style={{ color:T.muted, fontSize:13 }}>Loading…</div> : shown.length === 0 ? (

@@ -6,6 +6,7 @@ import { ClipboardCheck, Search, ArrowLeft, ExternalLink, RefreshCw, FileText, P
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 import { storageUrl } from "./storageUrl.js";
+import { canEditPmo } from "./headView.js";
 import { fileLink } from "./fileLinks.js";
 
 // Always run epdd-sync in Singapore, like the 5-minute pg_cron run. Called from the
@@ -159,7 +160,7 @@ function BudgetMatch({ T, session, supa, row, check, onRelink, busy }) {
               {line(linked)} · {src === "pmo" ? "chosen by you" : "matched automatically"}
             </div>
           </div>
-          {src === "pmo" && (
+          {src === "pmo" && onRelink && (
             <Button T={T} size="sm" variant="ghost" icon={Undo2} disabled={busy}
               onClick={() => onRelink(null, null)}>Back to automatic</Button>
           )}
@@ -167,7 +168,7 @@ function BudgetMatch({ T, session, supa, row, check, onRelink, busy }) {
       ) : (
         <div style={{ ...TYPE.caption, color: src === "pmo" ? T.textOf(DATA.danger) : T.muted }}>
           {src === "pmo" ? "You marked this as not in the FY 26-27 plan." : "No project linked."}
-          {src === "pmo" && (
+          {src === "pmo" && onRelink && (
             <Button T={T} size="sm" variant="subtle" icon={Undo2} disabled={busy} style={{ marginLeft:8 }}
               onClick={() => onRelink(null, null)}>Undo</Button>
           )}
@@ -183,13 +184,13 @@ function BudgetMatch({ T, session, supa, row, check, onRelink, busy }) {
                 <div style={{ fontSize:12.5, color:T.text }}>{c.name}</div>
                 <div style={{ ...TYPE.caption, color:T.muted }}>{line(c)} · {(c.why || []).join(", ")}</div>
               </div>
-              <Button T={T} size="sm" variant="ghost" icon={Link2} disabled={busy}
-                onClick={() => onRelink(c.id, "pmo")}>This one</Button>
+              {onRelink && <Button T={T} size="sm" variant="ghost" icon={Link2} disabled={busy}
+                onClick={() => onRelink(c.id, "pmo")}>This one</Button>}
             </div>
           ))}
         </div>
       )}
-      <div style={{ display:"flex", gap:SP.sm, marginTop:SP.sm, flexWrap:"wrap", alignItems:"center" }}>
+      {onRelink && <div style={{ display:"flex", gap:SP.sm, marginTop:SP.sm, flexWrap:"wrap", alignItems:"center" }}>
         <Select T={T} size="sm" value={pick} onChange={e => setPick(e.target.value)} style={{ flex:"1 1 240px", minWidth:0 }}>
           <option value="">{plan ? "Choose another plan project…" : "Loading plan…"}</option>
           {(plan || []).map(pr => <option key={pr.id} value={pr.id}>{pr.name} ({pr.campus || "—"}, PKR {fmtM(pr.df_recommended_amount)})</option>)}
@@ -200,7 +201,7 @@ function BudgetMatch({ T, session, supa, row, check, onRelink, busy }) {
           <Button T={T} size="sm" variant="subtle" icon={Ban} disabled={busy}
             onClick={() => onRelink(null, "pmo")}>Not in the plan</Button>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -307,7 +308,7 @@ function ReviewPanel({ T, session, supa, row, review, ai, isCompact, onChanged }
                       </ul>
                     )}
                     {c.id === "budget" && (
-                      <BudgetMatch T={T} session={session} supa={supa} row={row} check={c} busy={busy} onRelink={relink} />
+                      <BudgetMatch T={T} session={session} supa={supa} row={row} check={c} busy={busy} onRelink={canEditPmo(session) ? relink : null} />
                     )}
                   </div>
                 </div>
@@ -942,7 +943,7 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange, initi
   // Opening a PDD marks it seen for the sidebar badge.
   const open = async (r) => {
     setOpenId(r.id);
-    if (r.seen_at) return;
+    if (r.seen_at || !canEditPmo(session)) return;   // the Head PMO's visits do not mark PDDs seen
     try {
       await supa(`/rest/v1/epdd_pdds?id=eq.${r.id}`, { method:"PATCH", headers:{ Prefer:"return=minimal" },
         body: JSON.stringify({ seen_at: new Date().toISOString(), seen_by: session.user_id }) }, session.access_token);
@@ -1065,9 +1066,9 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange, initi
                   <span className="rev-dot" style={{ width:7, height:7, borderRadius:"50%", background:health.c }} />
                   {health.t}
                 </span>
-                <Button T={T} variant="ghost" icon={RefreshCw} onClick={syncNow} loading={syncing} disabled={syncing}>
+                {canEditPmo(session) && <Button T={T} variant="ghost" icon={RefreshCw} onClick={syncNow} loading={syncing} disabled={syncing}>
                   Check now
-                </Button>
+                </Button>}
               </div>
             </div>
             {syncMsg && <div style={{ ...TYPE.caption, color:T.muted, marginBottom:SP.md }}>{syncMsg}</div>}

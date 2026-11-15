@@ -11,6 +11,7 @@ import { StatusReportButton } from "./StatusReportButton.jsx";
 import { loadPendingPrs, PendingPrBadge, EMPTY_PRS } from "./pendingPr.jsx";
 import { notifyPast, kindOf, statusThread, waitedFor, AskedChip, PctChip, StatusTile, StatusBeside,
          StatusRequestCard, StatusAnswerCard, StatusSentNote } from "./PastStatus.jsx";
+import { canEditPmo, isHeadView } from "./headView.js";
 
 // Ask status (20 Oct 2026): the window that asks and the manager's answer form load only when
 // one of them opens; reload once on a missing chunk (a deploy replaced it).
@@ -444,6 +445,7 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
   // A viewer chats with any manager the way the PMO does; the PMO and the
   // manager are both emailed when they send.
   const isPMO = isPMOrole || viewer;
+  const ro = isHeadView(session);   // Head PMO: reads the chat, cannot send
   const [msgs, setMsgs] = useState(null);
   const [body, setBody] = useState("");
   const [tag, setTag]   = useState("");
@@ -522,7 +524,7 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
           })}
         </div>
         {/* The status requests go to each project's own Follow-up thread, not into this chat. */}
-        {isPMO && onAskStatus && open.length > 0 && (
+        {isPMO && !ro && onAskStatus && open.length > 0 && (
           <div style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", marginTop:SP.md }}>
             <Button T={T} size="sm" variant="accent" icon={ClipboardList} onClick={() => onAskStatus(open)}>
               Ask status on all {open.length} open project{open.length === 1 ? "" : "s"}
@@ -542,7 +544,8 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
         ) : msgs.length === 0 ? (
           <div style={{ padding:SP.lg, textAlign:"center", borderRadius:R.md,
             border:`1px dashed ${T.borderStrong}`, color:T.dim, fontSize:12.5, lineHeight:1.6 }}>
-            {isPMO ? "Nothing asked yet. Ask for an update on all their projects, or tag one below."
+            {ro ? "No messages with this manager yet."
+             : isPMO ? "Nothing asked yet. Ask for an update on all their projects, or tag one below."
                    : "No questions from the PMO yet. You can also write first."}
           </div>
         ) : (
@@ -584,7 +587,7 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
 
         {err && <div style={{ marginTop:SP.sm, fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>}
 
-        <div style={{ marginTop:SP.lg, padding:SP.md, borderRadius:R.md, background:T.surface,
+        {!ro && <div style={{ marginTop:SP.lg, padding:SP.md, borderRadius:R.md, background:T.surface,
           border:`1px solid ${T.border}` }}>
           <div style={{ display:"flex", gap:SP.sm, alignItems:"center", marginBottom:SP.sm, flexWrap:"wrap" }}>
             <span style={{ ...TYPE.caption, color:T.muted }}>About</span>
@@ -606,7 +609,7 @@ function PmChat({ T, session, supa, pm, projects, isPMO: isPMOrole, viewer = fal
             <Mail size={11} /> {viewer ? `${pm.full_name || pm.username} and the PMO are emailed when you send.`
               : isPMO ? `${pm.full_name || pm.username} is emailed when you send.` : "The PMO is emailed when you send."}
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );
@@ -782,7 +785,9 @@ function DatesTab({ T, row, roll, isPMO, isCompact }) {
 
 
 /* ── Follow-up tab: the reason it is still open, and the thread ─────────── */
-function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, isCompact, onChanged, onRead }) {
+function FollowUpPanel({ T, session, supa, row, isPMO: isPMOview, viewer = false, isCompact, onChanged, onRead }) {
+  const ro = isHeadView(session);           // Head PMO: reads the thread, posts nothing, edits nothing
+  const isPMO = isPMOview && !ro;
   const [msgs, setMsgs]   = useState(null);
   const [body, setBody]   = useState("");
   const [busy, setBusy]   = useState(false);
@@ -913,7 +918,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, isCompact
       ) : msgs.length === 0 ? (
         <div style={{ padding:SP.lg, textAlign:"center", borderRadius:R.md,
           border:`1px dashed ${T.borderStrong}`, color:T.dim, fontSize:12.5 }}>
-          Nothing asked yet. Start the conversation below.
+          {isHeadView(session) ? "Nothing asked yet." : "Nothing asked yet. Start the conversation below."}
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:SP.sm }}>
@@ -951,7 +956,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, isCompact
 
       {err && <div style={{ marginTop:SP.sm, fontSize:12.5, color:T.textOf(DATA.danger) }}>{err}</div>}
 
-      <div style={{ display:"flex", gap:SP.sm, marginTop:SP.lg, alignItems:"flex-end" }}>
+      {!ro && <><div style={{ display:"flex", gap:SP.sm, marginTop:SP.lg, alignItems:"flex-end" }}>
         <textarea value={body} onChange={e => setBody(e.target.value)} rows={2}
           placeholder={isPMO || viewer ? "Ask the project manager where this stands…" : "Reply with the current position…"}
           onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) post(); }}
@@ -964,7 +969,7 @@ function FollowUpPanel({ T, session, supa, row, isPMO, viewer = false, isCompact
         {viewer ? (row.pm_name ? `${row.pm_name} and the PMO are emailed when you post.` : "The PMO is emailed when you post.")
          : isPMO ? (row.pm_name ? `${row.pm_name} is emailed when you post.` : "This project has no manager, so nobody is emailed.")
                : "The PMO is emailed when you post."}
-      </div>
+      </div></>}
     </div>
   );
 }
@@ -978,10 +983,11 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
   const ag = ageOf(row), am = AGE[ag.key], pg = progressOf(row), pct = relPct(row);
   // PMO always; the project's own manager once the page is opened to them.
   // The database decides either way.
-  const canWriteTasks = isPMO || (row.pm_user_id && row.pm_user_id === session.user_id);
+  const ro = isHeadView(session);   // Head PMO: view only
+  const canWriteTasks = !ro && (isPMO || (row.pm_user_id && row.pm_user_id === session.user_id));
   // Ask status: the PMO and the viewers, on an open project that has a manager.
   // Its manager (by pm_user_id, whatever their role) answers on the Follow-up tab.
-  const canAsk = !!onAskStatus && (isPMO || viewer) && !!row.pm_user_id && row.status !== "closed";
+  const canAsk = !ro && !!onAskStatus && (isPMO || viewer) && !!row.pm_user_id && row.status !== "closed";
   const iAnswer = !!row.pm_user_id && row.pm_user_id === session.user_id && !!row.status_pending_since;
 
   return (
@@ -1018,7 +1024,7 @@ function PastProjectDetail({ T, session, supa, row, roll, isPMO, viewer = false,
                 {isPMO || viewer ? `Chat with ${String(row.pm_name || "PM").split(" ")[0]}` : "Chat with PMO"}
               </Button>
             )}
-            {isPMO && (
+            {isPMO && !ro && (
               <Button T={T} size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Edit project</Button>
             )}
           </div>
@@ -1986,9 +1992,9 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
                   <Button T={T} variant="ghost" icon={Download} onClick={downloadTemplate}>
                     Download sheet
                   </Button>
-                  <Button T={T} variant="primary" icon={Upload} onClick={() => setImporting(true)}>
+                  {canEditPmo(session) && <Button T={T} variant="primary" icon={Upload} onClick={() => setImporting(true)}>
                     Import
-                  </Button>
+                  </Button>}
                 </>
               )}
             </div>

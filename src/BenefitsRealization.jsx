@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Select, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
+import { canEditPmo } from "./headView.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    BENEFITS REALIZATION (PMO, 5 Nov 2026; asked for by the Chancellor and senior management)
@@ -143,7 +144,7 @@ function L({ T, label, children, hint, wide }) {
 export function BenefitsRealizationPage({ T, session, supa }) {
   const vp = useViewport();
   const compact = vp.isCompact;
-  const isPMO = session?.role === "pmo";
+  const isPMO = canEditPmo(session);   // add / edit (not the Head PMO)
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState(null);
   const [fy, setFy] = useState("");          // "" = both years

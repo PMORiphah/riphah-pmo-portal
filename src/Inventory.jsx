@@ -3,6 +3,7 @@ import { Boxes, Search, Download, Upload, ChevronDown, ChevronRight, X, External
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Select, Modal, CAN_HOVER, useViewport } from "./ui.jsx";
 import { InventoryCharts } from "./InventoryCharts.jsx";
+import { canEditPmo } from "./headView.js";
 import { makeClassifier, CLASS_SETTING, CLASS_LABEL, CLASS_ORDER, lineKey } from "./inventoryClass.js";
 const InventoryImport = lazy(() => import("./InventoryImport.jsx").then(m => ({ default: m.InventoryImport })));
 
@@ -385,7 +386,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         </Select>
         {compact && <Button T={T} size="sm" variant="ghost" onClick={() => setShowFilters(v => !v)}>{showFilters ? "Hide filters" : `Filters${activeFilters.length ? ` (${activeFilters.length})` : ""}`}</Button>}
         <Button T={T} size="sm" variant="ghost" icon={Download} onClick={download} disabled={!view.length}>Download as Excel</Button>
-        <Button T={T} size="sm" variant="accent" icon={Upload} onClick={() => setImporting(true)}>Import SAP sheet</Button>
+        {canEditPmo(session) && <Button T={T} size="sm" variant="accent" icon={Upload} onClick={() => setImporting(true)}>Import SAP sheet</Button>}
       </div>
       {(!compact || showFilters) && filterBar}
       {(activeFilters.length > 0 || searching || groupBy !== "none") && (
@@ -502,7 +503,7 @@ export function InventoryPage({ T, session, supa, onOpenProject, onOpenPast }) {
         </Suspense>
       )}
       {detail && <InventoryDetail T={T} session={session} supa={supa} row={rows.find(x => x.id === detail.id) || detail} isMobile={compact} onClose={() => setDetail(null)}
-        onReclassify={reclassify}
+        onReclassify={canEditPmo(session) ? reclassify : null}
         onOpenProject={(id) => { setDetail(null); onOpenProject?.(id); }} onOpenPast={(id) => { setDetail(null); onOpenPast?.(id); }} />}
     </div>
     </div>
@@ -551,11 +552,12 @@ function InventoryDetail({ T, session, supa, row: r, isMobile, onClose, onOpenPr
         {line("Class", r.is_service ? CLASS_LABEL.service : (
           <span data-inv-class style={{ display: "inline-flex", alignItems: "center", gap: SP.sm, flexWrap: "wrap" }}>
             <b>{CLASS_LABEL[r.cls]}</b><span style={{ ...TYPE.caption, color: T.muted }}>({WHY[r.why] || r.why})</span>
+{onReclassify && (
             <Select T={T} size="sm" value={r.why === "pmo" ? r.cls : "rules"} disabled={saving} aria-label="Reclassify this line"
               onChange={e => changeClass(e.target.value)}>
               <option value="rules">{r.why === "pmo" ? "Use the rules again" : "Reclassify…"}</option>
               {["equipment", "building", "consumable"].map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}
-            </Select>
+            </Select>)}
             {saveErr && <span style={{ ...TYPE.caption, color: T.textOf(DATA.danger) }}>{saveErr}</span>}
           </span>))}
         {line("Plant", r.plant ? `${plantName(r.plant)} (${r.plant})` : null)}

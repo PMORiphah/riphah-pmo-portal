@@ -78,7 +78,7 @@ function ProjectRow({ T, p, index, showPM }) {
 
 /* ── PMO variant: count → expand → send email ── */
 export function PddAlertPMO({ T, session, supa, blockingAlertActive, setBlockingAlertActive }) {
-  const rows = useFiveSecondFetch(session, supa, "pdd_pending_projects", session?.role === "pmo", 7000);
+  const rows = useFiveSecondFetch(session, supa, "pdd_pending_projects", session?.role === "pmo" && !session?.headView, 7000);   // not the view-only Head PMO
   const [dismissed, setDismissed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [sending, setSending] = useState(false);

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { PackageCheck, Sparkles, Plus, Pencil, Undo2, Check, X, TrendingUp, TrendingDown, FileText, ArrowRightLeft } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, CAN_HOVER } from "./ui.jsx";
+import { canEditPmo } from "./headView.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    DELIVERABLES (PMO, 6 Oct 2026)
@@ -57,7 +58,8 @@ export async function hasDeliverables(supa, session, projectId) {
 }
 
 export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, isCompact }) {
-  const isPMO = session?.role === "pmo";
+  const seesPmo = session?.role === "pmo";
+  const isPMO = canEditPmo(session);   // edit controls (not the Head PMO)
   const [rows, setRows]   = useState(null);
   const [pdds, setPdds]   = useState({});
   const [err, setErr]     = useState(null);
@@ -75,13 +77,13 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
       const list = Array.isArray(r) ? r : [];
       setRows(list);
       const ids = [...new Set(list.map(x => x.pdd_id).filter(Boolean))];
-      if (isPMO && ids.length) {
+      if (seesPmo && ids.length) {
         const p = await supa(`/rest/v1/epdd_pdds?id=in.(${ids.join(",")})&select=id,pdd_number,epdd_status`, {}, session.access_token)
           .catch(() => []);
         setPdds(Object.fromEntries((Array.isArray(p) ? p : []).map(x => [x.id, x])));
       }
     } catch (e) { setErr(e.message); setRows([]); }
-  }, [projectId, supa, session, isPMO]);
+  }, [projectId, supa, session, seesPmo]);
   useEffect(() => { load(); }, [load]);
 
   const active = useMemo(() => (rows || []).filter(r => !r.superseded), [rows]);

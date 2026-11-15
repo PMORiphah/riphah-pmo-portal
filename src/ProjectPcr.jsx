@@ -5,6 +5,7 @@ import { TYPE, SP, R, DATA } from "./theme.js";
 import { Button, Skeleton } from "./ui.jsx";
 import { storageUrl } from "./storageUrl.js";
 import { fileLink } from "./fileLinks.js";
+import { canEditPmo } from "./headView.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PCR (PMO, 20 Oct 2026)
@@ -376,7 +377,7 @@ function PcrReading({ T, isCompact, isPMO, item, latest, approved, busy, onConfi
 }
 
 export function PcrTab({ T, session, supa, projectId, isCompact, ticked, approved }) {
-  const isPMO = session?.role === "pmo";
+  const isPMO = canEditPmo(session);   // read / confirm controls and the automatic reading (not the Head PMO)
   const { docs, readings, err, load } = usePcrData(supa, session, projectId);
   const [busy, setBusy] = useState(null);        // attachment id being read, or "save"
   const [msg, setMsg] = useState(null);

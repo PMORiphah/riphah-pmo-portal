@@ -27,11 +27,11 @@ import { nameInitials } from "./nameInitials.js";
 export const LISTS = [
   { key: "pmo_todo",    kind: "list",   label: "PMO To-Do",   icon: ListTodo,    color: BRAND.blueBright },
   { key: "pending_pr",  kind: "list",   label: "Pending PRs", icon: FileWarning, color: DATA.danger },
-  { key: "head_pmo",    kind: "member", fallback: "Mr. Yahya Khan",         title: "Head PMO",         color: BRAND.goldDeep, head: true },
+  { key: "head_pmo",    kind: "member", fallback: "Mr. Yahya Khan",         title: "Head PMO",         color: "#EF7F4F", head: true },
   { key: "manager_pmo", kind: "member", fallback: "Mr. Owais Javed",        title: "Manager PMO",      color: BRAND.gold },
   { key: "exec_pmo",    kind: "member", fallback: "Engr. Usman Ahmed Umar", title: "Executive PMO",    color: DATA.positive },
   { key: "po1",         kind: "member", fallback: "Mr. Abdullah Azhar",     title: "Executive PMO",    color: DATA.violet },
-  { key: "po2",         kind: "member", fallback: "Mr. Atisham ul Haq",     title: "Projects Officer", color: DATA.cyan },
+  { key: "po2",         kind: "member", fallback: "Mr. Atisham ul Haq",     title: "Projects Officer", color: "#A8D13A" },
 ];
 // Who can be recorded as having made a PR (PMO, 12 Nov 2026): the Executive PMOs and the Projects Officer.
 const PR_MAKERS = ["exec_pmo", "po1", "po2"];
@@ -158,6 +158,8 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
   const [history, setHistory] = useState(null);     // PR history window: { maker }
   const [filter, setFilter] = useState("all");
   const [prMore, setPrMore] = useState(false);
+  const [jumped, setJumped] = useState(null);   // the list just jumped to from the Team strip (flashes)
+  const jumpT = useRef(null);
   const [toast, setToast] = useState(null);
   const [justDone, setJustDone] = useState(null);
   const toastT = useRef(null), doneT = useRef(null);
@@ -385,11 +387,34 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
   // ── team board: PMO To-Do + one column per member, plus a team pulse tile ──
   // PMO To-Do, the Head PMO, then each member (PMO, 15 Nov 2026: the Head PMO is a column like the rest).
   const boardLists = LISTS.filter(l => l.key !== "pending_pr");
-  const boardCols = compact ? 1 : vp.width >= 1500 ? 4 : vp.width >= 1180 ? 3 : 2;
-  // Team pulse fills what the last row leaves free, so the board is always an even block.
-  const pulseSpan = compact ? 1 : (boardCols - (boardLists.length % boardCols)) || boardCols;
-  const pulseWide = !compact && pulseSpan === boardCols && boardCols > 1;   // a full-width strip
+  // Six lists: always an even block (3 × 2 on a computer, 2 × 3 on a tablet, one column on a phone).
+  const boardCols = compact ? 1 : vp.width < 1180 ? 2 : 3;
   const COLH = 450;
+  // The person's avatar inside their completion ring (columns and the Team strip).
+  const ringAvatar = (m, done, total, size, glow) => {
+    const sw = size >= 60 ? 4 : 3.5, r = size / 2 - sw, c = 2 * Math.PI * r, p = total ? done / total : 0, inner = size - sw * 2 - 8;
+    const Icon = m.icon;
+    return (
+      <div className="pt-avatar" style={{ position: "relative", width: size, height: size, flexShrink: 0 }} title={`${Math.round(p * 100)}% of ${total} task${total === 1 ? "" : "s"} completed`}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "visible", filter: glow ? `drop-shadow(0 0 6px ${m.color}88)` : "none" }}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={glow ? "rgba(255,255,255,0.14)" : T.border} strokeWidth={sw} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={m.color} strokeWidth={sw} strokeLinecap="round" strokeDasharray={`${c * p} ${c}`}
+            transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ transition: "stroke-dasharray 1100ms cubic-bezier(.2,.7,.2,1)" }} />
+        </svg>
+        <div style={{ position: "absolute", left: sw + 4, top: sw + 4, width: inner, height: inner, borderRadius: 99, display: "grid", placeItems: "center", fontWeight: 800,
+          fontSize: Math.round(inner * 0.36), color: "#fff", letterSpacing: 0.3,
+          background: m.kind === "member" ? `linear-gradient(140deg, ${m.color}, ${m.color}aa)` : `linear-gradient(140deg, ${m.color}, ${BRAND.blue})`,
+          boxShadow: `0 6px 16px -8px ${m.color}` }}>
+          {m.kind === "member" ? initials(m.label) : <Icon size={Math.round(inner * 0.46)} color="#fff" />}
+        </div>
+      </div>
+    );
+  };
+  const jumpTo = (key) => {
+    const el = document.querySelector(`[data-list="${key}"]`);
+    el?.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "center" });
+    setJumped(key); clearTimeout(jumpT.current); jumpT.current = setTimeout(() => setJumped(null), 1800);
+  };
   const renderCol = (l, i) => {
     const m = listMeta[l.key];
     const allIn = all.filter(t => t.list === l.key), totalDone = allIn.filter(t => t.done).length;
@@ -405,23 +430,20 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
       </div>
     );
     return (
-      <div key={l.key} data-list={l.key} className="pt-rise br-card" style={{ animationDelay: `${120 + i * 70}ms`, minWidth: 0, height: compact ? "auto" : COLH, background: T.card,
-        border: `1px solid ${T.border}`, borderRadius: R.lg, boxShadow: T.shadow, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div key={l.key} data-list={l.key} className={`pt-rise br-card${jumped === l.key ? " pt-flash" : ""}`} style={{ animationDelay: `${120 + i * 70}ms`, minWidth: 0, height: compact ? "auto" : COLH, background: T.card,
+        border: `1px solid ${T.border}`, borderRadius: R.lg, boxShadow: T.shadow, overflow: "hidden", display: "flex", flexDirection: "column", "--fc": m.color }}>
         <div style={{ position: "relative", padding: compact ? "14px 14px 10px" : "16px 16px 12px", background: `linear-gradient(160deg, ${m.color}22, transparent 70%)` }}>
           <div style={{ position: "absolute", inset: "0 0 auto 0", height: 3, background: `linear-gradient(90deg, ${m.color}, ${m.color}33)` }} />
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {m.kind === "member" ? (
-              <div className="pt-avatar" style={{ width: 46, height: 46, borderRadius: 15, flexShrink: 0, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 15, color: "#fff",
-                background: `linear-gradient(140deg, ${m.color}, ${m.color}99)`, boxShadow: `0 8px 18px -8px ${m.color}` }}>{initials(m.label)}</div>
-            ) : (
-              <div className="pt-avatar" style={{ width: 46, height: 46, borderRadius: 15, flexShrink: 0, display: "grid", placeItems: "center", background: `${m.color}22`, border: `1px solid ${m.color}55` }}>
-                <Icon size={21} color={m.color} /></div>
-            )}
+            {ringAvatar(m, totalDone, allIn.length, 54)}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ ...TYPE.h3, fontSize: 15, color: T.text, overflowWrap: "anywhere", lineHeight: 1.25 }}>{m.label}</div>
               <div style={{ ...TYPE.caption, color: T.muted, marginTop: 2 }}>{m.kind === "member" ? m.title : "Team-wide tasks"}</div>
             </div>
-            <Ring T={T} done={totalDone} total={allIn.length} color={m.color} />
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ ...TYPE.metric, fontSize: 20, color: T.textOf(m.color), lineHeight: 1 }}>{allIn.length ? Math.round((totalDone / allIn.length) * 100) : 0}%</div>
+              <div style={{ ...TYPE.label, fontSize: 8.5, color: T.muted, marginTop: 3 }}>done</div>
+            </div>
           </div>
           <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
             {stat("Open", allIn.length - totalDone, m.color)}
@@ -462,55 +484,57 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
     );
   };
 
-  const pulse = boardLists.map(l => {
+  // ── Team strip (PMO, 15 Nov 2026; replaces the Team pulse tile so the board is an even block) ──
+  const team = boardLists.map(l => {
     const ts = all.filter(t => t.list === l.key);
-    return { key: l.key, m: listMeta[l.key], open: ts.filter(t => !t.done).length,
+    return { key: l.key, m: listMeta[l.key], total: ts.length, done: ts.filter(t => t.done).length, open: ts.filter(t => !t.done).length,
       week: ts.filter(t => t.done && new Date(t.done_at) >= Date.now() - 7 * DAY).length, overdue: ts.filter(t => dueState(t, today) === "overdue").length };
   });
-  const pulseMax = Math.max(1, ...pulse.map(x => Math.max(x.week, x.open)));
-
-  const prWeek = prCleared.filter(t => new Date(t.done_at) >= Date.now() - 7 * DAY).length;
-  const renderPulse = () => (
-    <div key="pulse" data-pulse="" className="pt-rise br-card" style={{ animationDelay: "470ms", minWidth: 0, gridColumn: `span ${pulseSpan}`, height: compact || pulseWide ? "auto" : COLH, borderRadius: R.lg, overflow: "hidden", position: "relative",
-      display: "flex", flexDirection: "column", color: "#fff", boxShadow: T.shadow, border: "1px solid rgba(255,255,255,0.08)",
-      background: `radial-gradient(420px 260px at 100% 0%, ${BRAND.gold}30, transparent 60%), radial-gradient(380px 260px at 0% 100%, ${DATA.violet}38, transparent 60%), linear-gradient(150deg, ${BRAND.navyDeep}, ${BRAND.navy})` }}>
-      <div style={{ padding: "16px 16px 6px", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ width: 34, height: 34, borderRadius: 11, display: "grid", placeItems: "center", background: `${BRAND.gold}2e`, border: `1px solid ${BRAND.gold}66` }}><Activity size={17} color={BRAND.gold} /></span>
-        <div><div style={{ ...TYPE.h3, fontSize: 15 }}>Team pulse</div><div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.65)" }}>Completed in the last 7 days · open now</div></div>
+  const teamWeek = team.reduce((n, x) => n + x.week, 0), teamOpen = team.reduce((n, x) => n + x.open, 0), teamLate = team.reduce((n, x) => n + x.overdue, 0);
+  const stripCols = compact ? 2 : vp.width < 1180 ? 3 : 6;
+  const renderTeam = () => (
+    <section data-team-strip="" className="pt-rise" style={{ animationDelay: "60ms", position: "relative", overflow: "hidden", borderRadius: R.xl, color: "#fff", marginBottom: compact ? SP.sm : SP.md,
+      padding: compact ? "16px 14px" : "20px 22px", border: "1px solid rgba(255,255,255,0.08)", boxShadow: T.shadowLg,
+      background: `radial-gradient(800px 260px at 0% 0%, ${DATA.violet}30, transparent 60%), radial-gradient(800px 280px at 100% 100%, ${BRAND.gold}26, transparent 60%), linear-gradient(135deg, ${BRAND.navyDeep}, ${BRAND.navy})` }}>
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, opacity: 0.35, pointerEvents: "none",
+        backgroundImage: "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)", backgroundSize: "28px 28px",
+        maskImage: "radial-gradient(ellipse at 50% 0%, #000 20%, transparent 75%)", WebkitMaskImage: "radial-gradient(ellipse at 50% 0%, #000 20%, transparent 75%)" }} />
+      <div style={{ position: "relative", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: compact ? 12 : 16 }}>
+        <span style={{ width: 36, height: 36, borderRadius: 12, display: "grid", placeItems: "center", background: `${BRAND.gold}2e`, border: `1px solid ${BRAND.gold}66` }}><Activity size={18} color={BRAND.gold} /></span>
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <div style={{ ...TYPE.h3, fontSize: 16 }}>Team pulse</div>
+          <div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.65)" }}>Rings show each list's tasks completed · click a person to jump to their tasks</div>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {[[teamWeek, "done this week", "#7FE8D4"], [teamOpen, "open", "#fff"], [teamLate, "late", teamLate ? "#FF9AAE" : "rgba(255,255,255,0.6)"]].map(([v, l, c]) => (
+            <span key={l} style={{ display: "inline-flex", alignItems: "baseline", gap: 5, padding: "4px 11px", borderRadius: R.pill, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <b style={{ ...TYPE.metric, fontSize: 15, color: c }}>{v}</b><span style={{ ...TYPE.caption, fontSize: 10.5, color: "rgba(255,255,255,0.7)" }}>{l}</span></span>))}
+        </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "6px 16px", display: "grid", columnGap: 22, alignContent: pulseSpan > 1 && !pulseWide ? "space-evenly" : "start",
-        gridTemplateColumns: pulseWide ? "repeat(auto-fill, minmax(240px, 1fr))" : pulseSpan > 1 ? "repeat(2, minmax(0, 1fr))" : "1fr" }} className="pmo-scroll">
-        {pulse.map((x, i) => (
-          <div key={x.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: i && pulseSpan === 1 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-            <span style={{ width: 30, height: 30, borderRadius: 10, flexShrink: 0, display: "grid", placeItems: "center", fontSize: 11, fontWeight: 800,
-              background: x.m.kind === "member" ? `linear-gradient(140deg, ${x.m.color}, ${x.m.color}99)` : `${x.m.color}33` }}>
-              {x.m.kind === "member" ? initials(x.m.label) : <ListTodo size={14} color="#fff" />}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, ...TYPE.caption, fontWeight: 700 }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.m.kind === "member" ? short(x.key) : "PMO To-Do"}</span>
-                <span style={{ color: "rgba(255,255,255,0.75)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{x.week} done · {x.open} open{x.overdue ? <b style={{ color: "#ff9b9b" }}> · {x.overdue} late</b> : null}</span>
-              </div>
-              <div style={{ position: "relative", height: 6, borderRadius: 99, background: "rgba(255,255,255,0.1)", marginTop: 6, overflow: "hidden" }}>
-                <div className="pt-grow" style={{ position: "absolute", inset: 0, width: `${(x.open / pulseMax) * 100}%`, background: `${x.m.color}55`, borderRadius: 99 }} />
-                <div className="pt-grow" style={{ position: "absolute", inset: 0, width: `${(x.week / pulseMax) * 100}%`, background: x.m.color, borderRadius: 99, animationDelay: "200ms" }} />
-              </div>
+      <div style={{ position: "relative", display: "grid", gap: compact ? 8 : 12, gridTemplateColumns: `repeat(${stripCols}, minmax(0, 1fr))` }}>
+        {team.map((x, i) => (
+          <button key={x.key} type="button" onClick={() => jumpTo(x.key)} data-team={x.key} className="pmo-focusable pt-person pt-rise"
+            aria-label={`${x.m.label}: ${x.open} open, ${x.overdue} late, ${x.week} done this week. Go to the list`}
+            style={{ animationDelay: `${120 + i * 60}ms`, "--pc": x.m.color, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 8, minWidth: 0,
+              padding: compact ? "12px 8px" : "16px 10px 14px", borderRadius: R.lg, cursor: "pointer", color: "#fff", fontFamily: TYPE.body.fontFamily,
+              background: `linear-gradient(180deg, ${x.m.color}1f, rgba(255,255,255,0.03) 70%)`, border: "1px solid rgba(255,255,255,0.1)" }}>
+            {ringAvatar(x.m, x.done, x.total, compact ? 58 : 68, true)}
+            <div style={{ minWidth: 0, width: "100%" }}>
+              <div style={{ ...TYPE.bodySm, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.m.kind === "member" ? x.m.label.replace(/^(Mr|Mrs|Ms|Engr|Dr)\.?\s+/i, "") : "PMO To-Do"}</div>
+              <div style={{ ...TYPE.caption, fontSize: 10.5, color: x.m.color === BRAND.blueBright ? "#9cc8f2" : x.m.color, fontWeight: 700, marginTop: 1, filter: "brightness(1.25)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {x.m.kind === "member" ? x.m.title : "Team-wide"}</div>
             </div>
-          </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", width: "100%", gap: 4, marginTop: 2 }}>
+              {[[x.open, "open", "#fff"], [x.overdue, "late", x.overdue ? "#FF9AAE" : "rgba(255,255,255,0.5)"], [x.week, "7 days", x.week ? "#7FE8D4" : "rgba(255,255,255,0.5)"]].map(([v, l, c]) => (
+                <div key={l} style={{ padding: "5px 0", borderRadius: 8, background: "rgba(0,0,0,0.18)" }}>
+                  <div style={{ ...TYPE.metric, fontSize: 15, color: c, lineHeight: 1.05 }}>{v}</div>
+                  <div style={{ ...TYPE.label, fontSize: 7.5, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>{l}</div>
+                </div>))}
+            </div>
+          </button>
         ))}
       </div>
-      <div style={{ margin: "6px 16px 16px", padding: "12px 14px", borderRadius: R.md, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-          <span style={{ ...TYPE.label, fontSize: 9.5, color: BRAND.gold }}>PRs cleared</span>
-          <span style={{ ...TYPE.caption, color: "rgba(255,255,255,0.7)" }}>{prCleared.length} in all · {prWeek} this week</span>
-        </div>
-        <div style={{ display: "flex", height: 8, borderRadius: 99, overflow: "hidden", marginTop: 8, background: "rgba(255,255,255,0.1)" }}>
-          {madeBy.filter(x => x.n).map(x => <div key={x.key} className="pt-grow" title={`${listMeta[x.key].label}: ${x.n}`} style={{ width: `${(x.n / Math.max(1, prCleared.length)) * 100}%`, background: listMeta[x.key].color }} />)}
-        </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8, ...TYPE.caption, fontSize: 10.5, color: "rgba(255,255,255,0.8)" }}>
-          {madeBy.map(x => <span key={x.key} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: listMeta[x.key].color }} />{short(x.key)} {x.n}</span>)}
-        </div>
-      </div>
-    </div>
+    </section>
   );
 
   return (
@@ -530,7 +554,13 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
         .pt-grow { transform-origin: left; animation: ptGrow 1100ms cubic-bezier(.2,.7,.2,1) both }
         .br-card { transition: transform ${MOTION.fast}, box-shadow ${MOTION.fast}, border-color ${MOTION.fast} }
         .br-card:hover { transform: translateY(-3px); box-shadow: ${T.shadowLg}; }
-        .br-card:hover .pt-avatar { transform: rotate(-6deg) scale(1.06) }
+        .br-card:hover .pt-avatar { transform: scale(1.06) }
+        .pt-person { transition: transform ${MOTION.fast}, background ${MOTION.fast}, border-color ${MOTION.fast}, box-shadow ${MOTION.fast} }
+        .pt-person:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--pc) 60%, transparent) !important; box-shadow: 0 16px 30px -18px var(--pc) }
+        .pt-person:hover .pt-avatar { transform: scale(1.07) }
+        .pt-person:active { transform: translateY(-1px) scale(.98) }
+        @keyframes ptFlash { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fc) 70%, transparent) } 60% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--fc) 0%, transparent) } 100% { box-shadow: ${T.shadow} } }
+        .pt-flash { animation: ptFlash 900ms ease-out 2; border-color: var(--fc) !important }
         .pt-avatar { transition: transform ${MOTION.fast} }
         .pt-pr { transition: transform ${MOTION.fast}, box-shadow ${MOTION.fast}, border-color ${MOTION.fast} }
         .pt-pr:hover { transform: translateY(-3px); box-shadow: ${T.shadowLg}; border-color: ${T.borderStrong} !important }
@@ -671,14 +701,14 @@ export function PmoTasksPage({ T, session, supa, onOpenProject, onOpenPast }) {
 
       {/* Team board */}
       <div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "0 2px 10px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 10, rowGap: 2, margin: "0 2px 10px" }}>
           <Users size={16} color={T.textOf(BRAND.blueBright)} style={{ alignSelf: "center" }} />
-          <span style={{ ...TYPE.h2, fontSize: compact ? 17 : 19, color: T.text }}>Team board</span>
+          <span style={{ ...TYPE.h2, fontSize: compact ? 17 : 19, color: T.text, whiteSpace: "nowrap" }}>Team board</span>
           <span style={{ ...TYPE.caption, color: T.muted }}>PMO To-Do, the Head PMO and each member's tasks</span>
         </div>
+        {renderTeam()}
         <div data-board style={{ display: "grid", gap: compact ? SP.sm : SP.md, gridTemplateColumns: `repeat(${boardCols}, minmax(0,1fr))` }}>
           {boardLists.map((l, i) => renderCol(l, i))}
-          {renderPulse()}
         </div>
       </div>
 

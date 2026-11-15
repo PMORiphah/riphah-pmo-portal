@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ListTodo, Lock, Plus, Check, X, ChevronDown, CalendarClock } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
+import { isHeadView } from "./headView.js";
 import { Button, Skeleton, CAN_HOVER } from "./ui.jsx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -86,6 +87,7 @@ const isTemp = (id) => String(id).startsWith("tmp-");
 
 export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
   const isPMO = session?.role === "pmo";
+  const ro = isHeadView(session);   // Head PMO: sees the list, changes nothing
   const [items, setItems]       = useState(null);    // null = loading
   const [loadErr, setLoadErr]   = useState(null);
   const [err, setErr]           = useState(null);
@@ -223,7 +225,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
   const box = (it) => {
     const on = !!it.done, temp = isTemp(it.id);
     return (
-      <button type="button" role="checkbox" aria-checked={on} data-todo-toggle disabled={temp}
+      <button type="button" role="checkbox" aria-checked={on} data-todo-toggle disabled={temp || ro}
         aria-label={on ? `Done: ${it.title}. Untick to reopen` : `Mark done: ${it.title}`}
         title={on ? "Untick to reopen" : "Mark done"}
         onClick={() => {
@@ -252,6 +254,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
     const hint = tone === "overdue" ? `${-n} day${n === -1 ? "" : "s"} overdue · click to change`
                : tone === "upcoming" ? `In ${n} day${n === 1 ? "" : "s"} · click to change` : "Click to change";
     if (!tone) {
+      if (ro) return null;
       return (
         <button type="button" data-todo-due data-todo-due-tone="none" disabled={isTemp(it.id)}
           onClick={() => setEditing({ id: it.id, field: "due" })} className="pmo-focusable"
@@ -263,7 +266,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
       );
     }
     return (
-      <button type="button" data-todo-due data-todo-due-tone={tone} title={hint} disabled={isTemp(it.id)}
+      <button type="button" data-todo-due data-todo-due-tone={tone} title={ro ? undefined : hint} disabled={isTemp(it.id) || ro}
         onClick={() => setEditing({ id: it.id, field: "due" })} className="pmo-focusable"
         style={{ ...plainBtn, display:"inline-flex", alignItems:"center", gap:4, whiteSpace:"nowrap",
           ...TYPE.caption, fontWeight: c ? 700 : 500, padding:"2px 8px", borderRadius:R.pill,
@@ -312,7 +315,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
           if (t !== it.title) mutate(it.id, { title: t }, "The change to the text could not be saved.");
         }} />
     ) : (
-      <button type="button" data-todo-title disabled={temp} title={temp ? "Saving…" : "Click to edit"}
+      <button type="button" data-todo-title disabled={temp || ro} title={ro ? undefined : temp ? "Saving…" : "Click to edit"}
         onClick={() => setEditing({ id: it.id, field: "title" })} className="pmo-focusable"
         style={{ ...plainBtn, cursor: temp ? "default" : "text", textAlign:"left", display:"block", maxWidth:"100%",
           fontSize:13.5, lineHeight:1.45, fontWeight:500, color:T.text, overflowWrap:"anywhere", whiteSpace:"pre-wrap",
@@ -320,7 +323,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
         {it.title}
       </button>
     );
-    const removeBtn = confirmId !== it.id && (
+    const removeBtn = confirmId !== it.id && !ro && (
       <button type="button" data-todo-remove disabled={temp} aria-label={`Remove: ${it.title}`} title="Remove"
         onClick={() => setConfirm(it.id)} className="pmo-focusable pmo-btn"
         style={{ ...plainBtn, width:28, height:28, flexShrink:0, borderRadius:R.sm, color:T.dim,
@@ -378,11 +381,11 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
         )}
       </div>
       <div style={{ ...TYPE.caption, color:T.dim, display:"flex", alignItems:"center", gap:5, marginBottom:SP.md }}>
-        <Lock size={11} /> Only the PMO sees this list.
+        <Lock size={11} /> {ro ? "The PMO keeps this list. View only." : "Only the PMO sees this list."}
       </div>
 
       {/* Add */}
-      <form data-todo-add-form onSubmit={e => { e.preventDefault(); add(); }}
+      {!ro && <form data-todo-add-form onSubmit={e => { e.preventDefault(); add(); }}
         style={{ display:"flex", gap:SP.sm, flexWrap:"wrap", alignItems:"center", marginBottom:SP.md }}>
         <input ref={addRef} data-todo-input value={draft} maxLength={TODO_MAX} placeholder="Add a to-do…"
           aria-label="New to-do" disabled={addOff}
@@ -396,7 +399,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
             style={{ ...inp, padding:"7px 8px", colorScheme:dateScheme, flex: isCompact ? 1 : "0 0 auto", width: isCompact ? "auto" : 150 }} />
         </label>
         <Button T={T} type="submit" variant="primary" icon={Plus} disabled={!canAdd || addOff} data-todo-add>Add</Button>
-      </form>
+      </form>}
 
       {err && (
         <div data-todo-error role="alert" style={{ display:"flex", alignItems:"flex-start", gap:SP.sm, marginBottom:SP.sm,
@@ -420,7 +423,7 @@ export function ProjectTodos({ T, session, projectId, isCompact, supa }) {
       ) : open.length === 0 && done.length === 0 ? (
         <div data-todo-empty style={{ padding:SP.xl, textAlign:"center", borderRadius:R.md, border:`1px dashed ${T.borderStrong}`,
           color:T.muted, fontSize:13, lineHeight:1.6 }}>
-          No to-dos yet. Add the first one above.
+          {ro ? "No to-dos on this project." : "No to-dos yet. Add the first one above."}
         </div>
       ) : (
         <>
