@@ -16,15 +16,23 @@ export const nice = (d: string) => { const [y, m, dd] = d.split("-").map(Number)
 
 export type Due = { id: string; list: string; title: string; note: string; due: string; days: number; priority: string; project: string };
 
-/** Open tasks with a due date that are due today or exactly 3/7/15/30 days overdue, grouped by list. */
-export function pick(tasks: Row[], today: string, projectName: (t: Row) => string = () => "") {
+/** Weekday of a YYYY-MM-DD date: 0 Sunday ... 6 Saturday. */
+export const weekday = (d: string) => new Date(d + "T00:00:00Z").getUTCDay();
+/** Emails go out Monday to Friday only (PMO, 16 Nov 2026); Monday also covers what fell on Saturday and Sunday. */
+export const catchUpDays = (today: string) => weekday(today) === 1 ? 2 : 0;
+
+/** Open tasks with a due date that are due today or exactly 3/7/15/30 days overdue (on a Monday also those
+ *  that reached one of these on Saturday or Sunday), grouped by list. */
+export function pick(tasks: Row[], today: string, projectName: (t: Row) => string = () => "", catchUp = 0) {
   const by: Record<string, Due[]> = {};
   for (const t of tasks) {
     if (t.done || t.removed || !t.due_date) continue;
     const list = String(t.list); if (!MEMBER_LISTS.includes(list)) continue;
     const due = String(t.due_date).slice(0, 10);
     const days = dayNo(today) - dayNo(due);
-    if (days !== 0 && !STEPS.includes(days)) continue;
+    let hit = false;
+    for (let k = 0; k <= catchUp; k++) if (days - k === 0 || STEPS.includes(days - k)) hit = true;
+    if (!hit) continue;
     (by[list] ??= []).push({ id: String(t.id), list, title: String(t.title ?? "").trim() || "(untitled task)", note: String(t.note ?? "").trim(),
       due, days, priority: String(t.priority ?? "normal"), project: projectName(t) });
   }
@@ -35,7 +43,7 @@ export function pick(tasks: Row[], today: string, projectName: (t: Row) => strin
 export const nameFor = (list: string, team: Row | null | undefined) =>
   list === "pmo_todo" ? "PMO" : String((team?.[list] as Row | undefined)?.name ?? "").trim() || DEFAULT_NAMES[list] || list;
 
-const status = (d: Due) => d.days === 0 ? "Due today" : `${d.days} days overdue`;
+const status = (d: Due) => d.days === 0 ? "Due today" : `${d.days} day${d.days === 1 ? "" : "s"} overdue`;
 
 export function reminderEmail(name: string, items: Due[], today: string, portalUrl: string, test = false) {
   const dueN = items.filter(i => i.days === 0).length, overN = items.length - dueN;
@@ -43,7 +51,7 @@ export function reminderEmail(name: string, items: Due[], today: string, portalU
   const subject = `${test ? "[Test] " : ""}PMO Goals: ${parts}`;
   const greet = name === "PMO" ? "Dear PMO team," : `Dear ${name},`;
   const lead = items.length === 1
-    ? (items[0].days === 0 ? "The following task on PMO Goals is due today:" : `The following task on PMO Goals is ${items[0].days} days overdue:`)
+    ? (items[0].days === 0 ? "The following task on PMO Goals is due today:" : `The following task on PMO Goals is ${status(items[0]).toLowerCase()}:`)
     : "The following tasks on PMO Goals need your attention:";
   const text = [greet, "", lead, "",
     ...items.map(i => `- ${i.title}${i.project ? ` (${i.project})` : ""}: ${status(i)} (due ${nice(i.due)})${i.note ? `\n  Note: ${i.note}` : ""}`),
@@ -69,7 +77,7 @@ ${i.note ? `<div style="font-size:13px;color:#3B4F60;margin-top:6px;line-height:
 <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E4ECF3;border-radius:10px;border-collapse:separate;overflow:hidden;">${items.map(row).join("")}</table>
 <p style="font-size:13px;color:#3B4F60;margin:18px 0 6px;line-height:1.6;">Please complete ${items.length > 1 ? "them" : "it"}, or update the due date on PMO Goals if it has changed.</p>
 <p style="margin:16px 0 22px;"><a href="${portalUrl}" style="display:inline-block;background:#185078;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:11px 22px;border-radius:8px;">Open PMO Goals</a></p></td></tr>
-<tr><td style="background:#F2F8FC;padding:14px 32px;border-top:1px solid #DDE8F4;"><p style="font-size:12px;color:#7A98AE;margin:0;line-height:1.6;"><strong style="color:#506070;">Project Management Office</strong> &middot; Riphah International University<br>An automated reminder sent only to you: on the due date, then 3, 7, 15 and 30 days after it while the task is open.</p></td></tr>
+<tr><td style="background:#F2F8FC;padding:14px 32px;border-top:1px solid #DDE8F4;"><p style="font-size:12px;color:#7A98AE;margin:0;line-height:1.6;"><strong style="color:#506070;">Project Management Office</strong> &middot; Riphah International University<br>An automated reminder sent only to you, Monday to Friday: on the due date, then 3, 7, 15 and 30 days after it while the task is open (weekend dates are covered on Monday).</p></td></tr>
 </table></td></tr></table></body></html>`;
   return { subject, text, html };
 }

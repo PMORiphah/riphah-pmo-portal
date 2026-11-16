@@ -1,8 +1,8 @@
 // goals-reminders — PMO Goals due-today and overdue emails (PMO, 16 Nov 2026).
 //
-// Every day at 09:30 PKT (pg_cron job `goals-reminders`, 04:30 UTC) each team member whose open PMO Goals
+// Monday to Friday at 09:30 PKT (pg_cron job `goals-reminders`, 04:30 UTC, `30 4 * * 1-5`) each team member whose open PMO Goals
 // task is due today, or exactly 3, 7, 15 or 30 days overdue, gets ONE email listing those tasks, sent to
-// them alone (no CC). Tasks without a due date, done or removed tasks and Pending PRs are never included.
+// them alone (no CC). Monday also covers dates that fell on Saturday or Sunday. Tasks without a due date, done or removed tasks and Pending PRs are never included.
 // Addresses: PMO-only setting `goals_reminders` {"enabled": true, "emails": {"<list>": "<address>"}}
 // (kept out of the code: the repository is public). Names come from settings.team_config.
 // Each person is emailed at most once a day (notifications_log channel goals-reminder, detail "<date> <list>").
@@ -11,7 +11,7 @@
 //   { dry_run: true, date?: "YYYY-MM-DD" }   who would get what, nothing sent
 //   { preview: "<list>", date? }             that person's email (subject, html), nothing sent
 //   { test: true, date? }                    every email of that day, sent to the PMO only, subject "[Test]"
-import { pick, nameFor, reminderEmail, todayPkt, MEMBER_LISTS, type Row } from "./email.ts";
+import { pick, nameFor, reminderEmail, todayPkt, weekday, catchUpDays, MEMBER_LISTS, type Row } from "./email.ts";
 import { mail, log, PORTAL_URL, type Ctx, type Recipient } from "../epdd-sync/notify.ts";
 
 const CORS = {
@@ -48,13 +48,15 @@ Deno.serve(async (req: Request) => {
   const emails = (conf.emails ?? {}) as Record<string, string>;
   const team = ((await get("settings?key=eq.team_config&select=value"))[0]?.value ?? {}) as Row;
   if (cron && conf.enabled === false) return json({ ok: true, today, skipped: "switched off" });
+  // Monday to Friday only (PMO, 16 Nov 2026); Monday's email also covers Saturday and Sunday.
+  if (weekday(today) === 0 || weekday(today) === 6) return json({ ok: true, today, skipped: "weekend", plan: [] });
 
   const tasks = await get(`pmo_tasks?done=eq.false&removed=eq.false&due_date=not.is.null&list=in.(${MEMBER_LISTS.join(",")})&select=id,list,title,note,priority,due_date,project_id,past_project_id,done,removed`);
   const pIds = [...new Set(tasks.map(t => t.project_id).filter(Boolean))], xIds = [...new Set(tasks.map(t => t.past_project_id).filter(Boolean))];
   const projects = pIds.length ? await get(`projects?id=in.(${pIds.join(",")})&select=id,code,name`) : [];
   const past = xIds.length ? await get(`past_projects?id=in.(${xIds.join(",")})&select=id,code,name`) : [];
   const pn = new Map([...projects, ...past].map(p => [String(p.id), [p.code, p.name].filter(Boolean).join(" · ")]));
-  const groups = pick(tasks, today, t => pn.get(String(t.project_id ?? t.past_project_id ?? "")) ?? "");
+  const groups = pick(tasks, today, t => pn.get(String(t.project_id ?? t.past_project_id ?? "")) ?? "", catchUpDays(today));
 
   const plan = Object.entries(groups).map(([list, items]) => ({ list, name: nameFor(list, team), email: String(emails[list] ?? "").trim(),
     tasks: items.map(i => ({ title: i.title, due: i.due, days: i.days })) }));
