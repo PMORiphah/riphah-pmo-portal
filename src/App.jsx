@@ -11431,6 +11431,10 @@ function Login({ T, dark, onLogin }) {
   const [success, setSuccess] = useState(false);   // §25
   const [authStep, setAuthStep] = useState(null);  // which round-trip is in flight
   const vpL = useViewport();
+  // Larger sign-in card on big screens (17 Nov 2026); needs the height too, or the open username form spills off a laptop.
+  const [loginVh, setLoginVh] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 900));
+  useEffect(() => { const on = () => setLoginVh(window.innerHeight); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
+  const bigCard = vpL.width >= 1280 && loginVh >= 860;
   const anyFocus = focusField !== null;            // §16
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
@@ -11764,12 +11768,26 @@ function Login({ T, dark, onLogin }) {
       </div>
 
       {/* ── RIGHT PANEL — Glass card ─────────────────────────────────────── */}
+      {/* Larger card on wide screens (PMO, 17 Nov 2026: "it looks small"). */}
       <div className="pmo-li" style={{
-        width: vpL.width < 900 ? "100%" : 480,
-        flex: vpL.width < 900 ? "1 1 100%" : "0 0 480px",
+        width: vpL.width < 900 ? "100%" : (bigCard ? 640 : 520),
+        flex: vpL.width < 900 ? "1 1 100%" : `0 0 ${bigCard ? 640 : 520}px`,
         display:"flex", alignItems:"center", justifyContent:"center",
         padding: vpL.width < 640 ? 18 : 36,
         position:"relative", zIndex:1, animationDelay:"500ms" }}>
+        {/* A slow gold-and-blue glow behind the card. */}
+        {vpL.width >= 900 && (
+          <div aria-hidden="true" className="pmo-login-aura" style={{ position:"absolute", inset:"6% 2%", pointerEvents:"none", zIndex:0 }}>
+            <style>{`
+              @keyframes pmoAuraA { 0%,100% { transform: translate(-6%, -4%) scale(1); opacity:.55 } 50% { transform: translate(6%, 5%) scale(1.12); opacity:.85 } }
+              @keyframes pmoAuraB { 0%,100% { transform: translate(5%, 6%) scale(1.05); opacity:.45 } 50% { transform: translate(-6%, -5%) scale(.92); opacity:.75 } }
+              .pmo-login-aura span { position:absolute; border-radius:50%; filter: blur(60px); }
+              @media (prefers-reduced-motion: reduce) { .pmo-login-aura span { animation:none !important } }
+            `}</style>
+            <span style={{ left:"10%", top:"8%", width:"62%", height:"52%", background:"radial-gradient(circle, rgba(224,169,74,.42), transparent 70%)", animation:"pmoAuraA 14s ease-in-out infinite" }} />
+            <span style={{ right:"6%", bottom:"6%", width:"66%", height:"56%", background:"radial-gradient(circle, rgba(74,155,224,.40), transparent 70%)", animation:"pmoAuraB 17s ease-in-out infinite" }} />
+          </div>
+        )}
         <div
           className={success ? "pmo-card-out" : ""}
           ref={cardLight.ref}
@@ -11777,7 +11795,7 @@ function Login({ T, dark, onLogin }) {
           onMouseEnter={() => setCardHot(true)}
           onMouseLeave={() => { setCardHot(false); cardLight.onMouseLeave(); }}
           style={{
-            width:"100%", maxWidth: vpL.width < 900 ? 420 : 400,
+            width:"100%", maxWidth: vpL.width < 900 ? 420 : (bigCard ? 520 : 440),
             minWidth: 0,
             // §12 — layered depth: shadow, outer glow, glass, inner highlight.
             // Mobile has no hover, so "more solid while interacting" is tied
@@ -11790,7 +11808,7 @@ function Login({ T, dark, onLogin }) {
             backdropFilter: vpL.width < 900 ? "blur(2px) saturate(130%)" : "blur(30px) saturate(150%)",
             WebkitBackdropFilter: vpL.width < 900 ? "blur(2px) saturate(130%)" : "blur(30px) saturate(150%)",
             border:"1px solid transparent", borderRadius:R.xl,
-            padding:"38px 34px",
+            padding: bigCard ? "52px 48px 44px" : "38px 34px",
             boxShadow: cardHot
               ? "0 40px 110px rgba(0,0,0,0.62), 0 0 0 1px rgba(224,169,74,0.20), 0 0 60px -18px rgba(224,169,74,0.32), inset 0 1px 0 rgba(255,255,255,0.10)"
               : "0 32px 90px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.10), inset 0 1px 0 rgba(255,255,255,0.06)",
@@ -11817,7 +11835,7 @@ function Login({ T, dark, onLogin }) {
           <div style={{ position:"absolute", top:-1, left:"15%", right:"15%", height:1, background:"linear-gradient(90deg,transparent,rgba(216,152,64,0.8),transparent)" }} />
 
           {/* Logo badge */}
-          <div style={{ textAlign:"center", marginBottom:26 }}>
+          <div style={{ textAlign:"center", marginBottom: bigCard ? 34 : 26, position:"relative" }}>
             {/* §15 — the existing crest, in a premium ring that slowly brightens
                 and dims. It never spins. */}
             <div style={{ position:"relative", display:"inline-block", marginBottom:16 }}>
@@ -11827,7 +11845,7 @@ function Login({ T, dark, onLogin }) {
                 boxShadow:`0 0 26px ${GOLD}55, inset 0 0 18px ${GOLD}22`,
               }} />
               <div style={{
-                width:74, height:74, borderRadius:"50%",
+                width: bigCard ? 96 : 74, height: bigCard ? 96 : 74, borderRadius:"50%",
                 background:"#193869",
                 border:"2.5px solid " + GOLD,
                 boxShadow:"0 0 24px rgba(216,152,64,0.45), 0 0 60px rgba(216,152,64,0.15)",
@@ -11837,8 +11855,8 @@ function Login({ T, dark, onLogin }) {
                 <img src={CREST_LOGO} alt="" style={{ width:"84%", height:"84%", objectFit:"contain" }} />
               </div>
             </div>
-            <div style={{ fontSize:23, fontWeight:800, color:"#fff", letterSpacing:-0.5, fontFamily:TYPE.display.fontFamily }}>Welcome Back</div>
-            <div style={{ fontSize:12.5, color:"rgba(255,255,255,0.5)", marginTop:5 }}>{GOOGLE_SIGNIN ? "Sign in with your Riphah Google account" : "Sign in to continue to PMO Portal"}</div>
+            <div style={{ fontSize: bigCard ? 32 : 23, fontWeight:800, color:"#fff", letterSpacing:-0.6, fontFamily:TYPE.display.fontFamily }}>Welcome Back</div>
+            <div style={{ fontSize: bigCard ? 15 : 12.5, color:"rgba(255,255,255,0.55)", marginTop: bigCard ? 8 : 5 }}>{GOOGLE_SIGNIN ? "Sign in with your Riphah Google account" : "Sign in to continue to PMO Portal"}</div>
             <div style={{
               width: anyFocus ? 84 : 40, height:2, margin:"13px auto 0", borderRadius:1,
               background:`linear-gradient(90deg, ${GOLD}00, ${GOLD}, ${GOLD}00)`,
@@ -11882,9 +11900,9 @@ function Login({ T, dark, onLogin }) {
                     try { localStorage.setItem("pmo-login-method", "google"); } catch { /* ignore */ }
                     try { await startGoogleSignIn(true); } catch (e) { setErr("Google sign-in could not start. Please try again."); setGoogleBusy(false); } }}
                   style={{
-                    position:"relative", width:"100%", padding:"15px 18px", borderRadius:14, cursor: googleBusy ? "default" : "pointer",
+                    position:"relative", width:"100%", padding: bigCard ? "19px 20px" : "15px 18px", borderRadius:14, cursor: googleBusy ? "default" : "pointer",
                     background:"linear-gradient(180deg, #ffffff, #f3f5f8)", border:"none", color:"#1f1f1f",
-                    fontSize:15.5, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:-0.1,
+                    fontSize: bigCard ? 17.5 : 15.5, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:-0.1,
                     display:"flex", alignItems:"center", justifyContent:"center", gap:12,
                     boxShadow:"0 10px 30px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,.5) inset", opacity: googleBusy ? 0.8 : 1,
                     transition:"transform .25s cubic-bezier(.16,1,.3,1), box-shadow .25s ease",
@@ -11892,7 +11910,7 @@ function Login({ T, dark, onLogin }) {
                   {googleBusy ? (
                     <span aria-hidden="true" style={{ width:18, height:18, borderRadius:"50%", border:"2.5px solid rgba(0,0,0,0.15)", borderTopColor:"#4285F4", animation:"pmoSpin .7s linear infinite", display:"inline-block" }} />
                   ) : (
-                    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+                    <svg width={bigCard ? 24 : 20} height={bigCard ? 24 : 20} viewBox="0 0 48 48" aria-hidden="true">
                       <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
                       <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
                       <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
@@ -11902,19 +11920,19 @@ function Login({ T, dark, onLogin }) {
                   {googleBusy ? "Opening Google…" : "Sign in with Google"}
                 </button>
               </div>
-              <div style={{ fontSize:12, color:"rgba(255,255,255,0.62)", textAlign:"center", marginTop:12 }}>
+              <div style={{ fontSize: bigCard ? 13.5 : 12, color:"rgba(255,255,255,0.65)", textAlign:"center", marginTop: bigCard ? 16 : 12 }}>
                 Use your <span style={{ color:"#fff", fontWeight:600 }}>riphah.edu.pk</span> account: no password needed
               </div>
               <div style={{ display:"flex", justifyContent:"center", gap:5, flexWrap:"wrap", marginTop:14 }}>
                 {[["🛡", "Riphah only"], ["🔑", "No password"], ["✓", "Secured by Google"]].map(([i, t]) => (
-                  <span key={t} style={{ fontSize:10.5, color:"rgba(255,255,255,0.6)", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.10)",
-                    padding:"3px 8px", borderRadius:999, display:"inline-flex", alignItems:"center", gap:4, whiteSpace:"nowrap" }}>
+                  <span key={t} style={{ fontSize: bigCard ? 11.5 : 10.5, color:"rgba(255,255,255,0.62)", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.10)",
+                    padding: bigCard ? "5px 11px" : "3px 8px", borderRadius:999, display:"inline-flex", alignItems:"center", gap:4, whiteSpace:"nowrap" }}>
                     <span style={{ color:GOLD, fontSize:10 }}>{i}</span>{t}</span>
                 ))}
               </div>
               <div style={{ textAlign:"center", marginTop: showPw ? 18 : 22 }}>
                 <button className="pmo-focusable" data-show-password onClick={() => setShowPw(v => !v)}
-                  style={{ background:"none", border:"none", cursor:"pointer", padding:"4px 6px", fontSize:12.5, fontFamily:TYPE.body.fontFamily,
+                  style={{ background:"none", border:"none", cursor:"pointer", padding:"4px 6px", fontSize: bigCard ? 14 : 12.5, fontFamily:TYPE.body.fontFamily,
                     color: showPw ? "rgba(255,255,255,0.5)" : (T.goldText || GOLD), fontWeight:600, textDecoration:"underline", textUnderlineOffset:3, textDecorationColor:"rgba(224,169,74,0.4)" }}>
                   {showPw ? "Hide username sign-in" : "Can't use Google? Use username and password"}
                 </button>
