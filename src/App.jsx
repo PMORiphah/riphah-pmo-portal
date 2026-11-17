@@ -34,12 +34,13 @@ import { InstallPrompt } from "./InstallPrompt.jsx";
 import { BiometricButton } from "./BiometricButton.jsx";
 import { NotificationButton } from "./NotificationButton.jsx";
 import { biometricAvailable, signInWithBiometric, BIOMETRIC_HINT_KEY } from "./biometric.js";
+import { GOOGLE_SIGNIN, startGoogleSignIn, isGoogleReturn, finishGoogleSignIn, takeGoogleError } from "./googleAuth.js";
 import {
   LayoutDashboard, FolderKanban, TrendingUp, MessageSquare,
   Users, Activity, Settings, LogOut, Search, Eye, EyeOff,
   RefreshCw, CheckCircle2, AlertCircle, Clock, ChevronRight,
   ArrowUpRight, Minus, Bell, Edit2, X, Trash2, Plus, Upload, Download, PenLine,
-  Shield, BarChart3, Building2, Lock, Fingerprint,
+  Shield, BarChart3, Building2, Lock, Fingerprint, Globe,
   FileText, Wallet, PiggyBank, Layers, TrendingDown, AlertTriangle,
   CheckCircle, ClipboardList, Landmark, ArrowDownRight, PauseCircle,
   Sparkles, Sun, Moon, Camera, Copy, ShieldAlert, Lightbulb, Ellipsis, SlidersHorizontal,
@@ -8780,6 +8781,7 @@ const BoardReportPopup = lazy(() => loadBoardReport().then(m => ({ default: m.Bo
 
 // Welcome email generator (PMO, 8 Oct 2026): loaded only when opened.
 const WelcomeEmailModal = lazy(() => import("./WelcomeEmail.jsx").then(m => ({ default: m.WelcomeEmailModal })));
+const GoogleAccessList = lazy(() => import("./GoogleAccessList.jsx"));
 
 function UserManagementPage({ T, session }) {
   const ro = isHeadView(session);   // Head PMO: sees the users, changes nothing
@@ -8818,6 +8820,12 @@ function UserManagementPage({ T, session }) {
   const [editPhoneId,      setEditPhoneId]      = useState(null);
   const [welcomeFor,       setWelcomeFor]       = useState(null); // null = closed; "" = no one picked yet; else user id
   const [phoneDraft,       setPhoneDraft]       = useState("");
+  // Super admin (Abdullah Azhar, 17 Nov 2026): the only one who changes roles. The database enforces it.
+  const [superAdmin,       setSuperAdmin]       = useState(false);
+  const [superIds,         setSuperIds]         = useState(new Set());
+  const [googleList,       setGoogleList]       = useState(new Map());   // email -> active
+  const [showGoogle,       setShowGoogle]       = useState(false);
+  const [roleBusy,         setRoleBusy]         = useState(null);
 
   const savePhone = async (userId) => {
     const raw = phoneDraft.trim();
@@ -8838,11 +8846,19 @@ function UserManagementPage({ T, session }) {
     setLoading(true); setErr(null);
     try {
       const [usersData, assignData, projData] = await Promise.all([
-        supa("/rest/v1/user_profiles?select=id,username,full_name,email,phone,whatsapp_opt_in,role,is_active,created_at&order=role.asc,username.asc", {}, session.access_token),
+        supa("/rest/v1/user_profiles?select=id,username,full_name,email,phone,whatsapp_opt_in,role,is_active,created_at,designation&order=role.asc,username.asc", {}, session.access_token),
         supa("/rest/v1/project_assignments?select=user_id,project_id,projects(code,name)", {}, session.access_token),
         supa("/rest/v1/projects?select=id,code,name,workflow_stage&order=code.asc", {}, session.access_token),
       ]);
       setUsers(usersData);
+      const [sa, sIds, gl] = await Promise.all([
+        supa("/rest/v1/rpc/is_super_admin", { method:"POST", body:"{}" }, session.access_token).catch(() => false),
+        supa("/rest/v1/super_admins?select=user_id", {}, session.access_token).catch(() => []),
+        supa("/rest/v1/google_allowlist?select=email,active", {}, session.access_token).catch(() => []),
+      ]);
+      setSuperAdmin(sa === true);
+      setSuperIds(new Set((sIds || []).map(r => r.user_id)));
+      setGoogleList(new Map((gl || []).map(r => [r.email, r.active])));
       setAllAssignments(assignData);
       setAllProjects(projData);
     } catch(e) { setErr(e.message); }
@@ -8859,6 +8875,22 @@ function UserManagementPage({ T, session }) {
     guest:           { label:"Guest",           c:T.textOf(DATA.neutral) },
   };
   const isMe = uid => uid === session.user_id;
+  // Role change (super admin only). The Google list row is changed first so the list and the account agree.
+  const changeRole = async (u, role) => {
+    if (role === u.role) return;
+    const lbl = r => (ROLE_CFG[r]?.label || r);
+    if (!window.confirm(`Change ${u.full_name || u.username} from ${lbl(u.role)} to ${lbl(role)}?`)) return;
+    setRoleBusy(u.id);
+    try {
+      const em = String(u.email || "").toLowerCase();
+      if (googleList.has(em)) await supa(`/rest/v1/google_allowlist?email=eq.${encodeURIComponent(em)}`,
+        { method:"PATCH", body: JSON.stringify({ role }), headers:{ Prefer:"return=minimal" } }, session.access_token);
+      await supa(`/rest/v1/user_profiles?id=eq.${u.id}`,
+        { method:"PATCH", body: JSON.stringify({ role }), headers:{ Prefer:"return=minimal" } }, session.access_token);
+      setUsers(us => us.map(x => x.id === u.id ? { ...x, role } : x));
+    } catch (e) { alert("Could not change the role: " + String(e.message || e).replace(/^.*?(Only the super admin)/, "$1")); }
+    setRoleBusy(null);
+  };
   const setField = (k, v) => setForm(f => ({...f, [k]: v}));
 
   // ── Create user ─────────────────────────────────────────────────────────────
@@ -8980,9 +9012,11 @@ function UserManagementPage({ T, session }) {
       {/* Header */}
       <div className="pmo-in" style={{ ...pageBar(T), gap:SP.md }}>
         <div data-tour="users-header" style={{ ...TYPE.bodySm, color:T.muted }}>
-          {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts
+          {users.length} user{users.length === 1 ? "" : "s"} · only the PMO can create accounts{superAdmin ? " · you are the super admin: only you can change roles" : " · roles are changed by the super admin"}
         </div>
-        {!ro && <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm }}>
+        {!ro && <div style={{ marginLeft:"auto", display:"flex", gap:SP.sm, flexWrap:"wrap" }}>
+          <Button T={T} variant="ghost" icon={Globe} onClick={() => setShowGoogle(true)} data-open-google
+            title="Riphah Google accounts allowed to sign in with Google">Google sign-in list</Button>
           <Button T={T} variant="ghost" icon={Mail} onClick={() => setWelcomeFor("")}
             title="Invite a project manager to the portal: preview the email, then send it">Welcome email</Button>
           <Button T={T} variant="primary" icon={Plus} onClick={() => { setShowCreate(true); setCreateStatus(null); }}>Create user</Button>
@@ -9025,7 +9059,10 @@ function UserManagementPage({ T, session }) {
                         {me && <span style={{ fontSize:10, color:T.dim }}>(you)</span>}
                       </div>
                     </td>
-                    <td style={{ ...td, fontSize:13, color:T.text }} data-col="fullname">{u.full_name || "—"}</td>
+                    <td style={{ ...td, fontSize:13, color:T.text }} data-col="fullname">
+                      {u.full_name || "—"}
+                      {u.designation && <div style={{ fontSize:11, color:T.muted, marginTop:2 }}>{u.designation}</div>}
+                    </td>
                     <td style={{ ...td, fontSize:12, color:T.muted }} data-col="email">{u.email || "—"}</td>
                     <td style={{ ...td, fontSize:12, color:T.muted }} data-col="phone">
                       {editPhoneId === u.id ? (
@@ -9047,7 +9084,23 @@ function UserManagementPage({ T, session }) {
                       )}
                     </td>
                     <td style={td} data-col="role">
-                      <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:R.pill }}>{rc.label}</span>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                        {superAdmin && !me && !ro ? (
+                          <Select T={T} size="sm" value={u.role} disabled={roleBusy === u.id} data-role-select={u.username}
+                            onChange={e => changeRole(u, e.target.value)}
+                            style={{ background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:R.sm, padding:"4px 8px", fontSize:12, color:rc.c, fontWeight:700, cursor:"pointer" }}>
+                            <option value="pmo">Administrator</option>
+                            <option value="project_manager">Project Manager</option>
+                            <option value="guest">Guest</option>
+                          </Select>
+                        ) : (
+                          <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:R.pill }}>{rc.label}</span>
+                        )}
+                        {superIds.has(u.id) && <span data-super-badge title="Only the super admin can change roles"
+                          style={{ fontSize:10.5, fontWeight:800, color:"#1A1206", background:`linear-gradient(135deg, ${GOLD}, #F2C46D)`, padding:"3px 9px", borderRadius:R.pill }}>Super admin</span>}
+                        {googleList.get(String(u.email || "").toLowerCase()) && <span title="Can sign in with their Riphah Google account"
+                          style={{ fontSize:10.5, fontWeight:700, color:T.textOf(DATA.info), background:`${DATA.info}18`, padding:"3px 8px", borderRadius:R.pill }}>Google</span>}
+                      </div>
                     </td>
                     <td style={td}>
                       <span style={{ fontSize:11, fontWeight:700, color:u.is_active?T.textOf(EMERALD):ROSE, background:u.is_active?"rgba(45,212,191,0.12)":"rgba(248,113,113,0.12)", padding:"3px 10px", borderRadius:R.pill }}>
@@ -9079,21 +9132,21 @@ function UserManagementPage({ T, session }) {
                               Assign
                             </Button>
                           )}
-                          {u.role !== "pmo" && (
+                          {(u.role !== "pmo" || superAdmin) && !superIds.has(u.id) && (
                             <Button T={T} variant="ghost" size="sm" tone={u.is_active ? undefined : T.positive}
                               onClick={() => toggleActive(u)}
                               title={u.is_active ? "Suspend this account — reversible" : "Restore access for this account"}>
                               {u.is_active ? "Deactivate" : "Reactivate"}
                             </Button>
                           )}
-                          {u.role !== "pmo" && (
+                          {(u.role !== "pmo" || superAdmin) && !superIds.has(u.id) && (
                             <Button T={T} variant="ghost" size="sm"
                               onClick={() => setResettingUser(u)}
                               title="Set a new password for this account directly">
                               Reset Password
                             </Button>
                           )}
-                          {u.role !== "pmo" && (
+                          {(u.role !== "pmo" || superAdmin) && !superIds.has(u.id) && (
                             confirmDelete === u.id ? (
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                                 <span style={{ ...TYPE.caption, color:T.textOf(T.danger), fontWeight:600 }}>Permanent —</span>
@@ -9145,6 +9198,12 @@ function UserManagementPage({ T, session }) {
           onSave={saveAssignments}
           onClose={() => setAssigningUser(null)}
         />
+      )}
+      {showGoogle && (
+        <Suspense fallback={null}>
+          <GoogleAccessList T={T} session={session} supa={supa} superAdmin={superAdmin} users={users}
+            isMobile={vpD.isCompact} onClose={() => setShowGoogle(false)} onChanged={load} />
+        </Suspense>
       )}
       {welcomeFor !== null && (
         <Suspense fallback={null}>
@@ -11362,8 +11421,9 @@ function Login({ T, dark, onLogin }) {
   const [pass, setPass] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState(null);
+  const [err, setErr] = useState(() => takeGoogleError());   // a refused Google sign-in comes back here
   const [remember, setRemember] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [mode, setMode] = useState("login");       // "login" | "reset"
   const [resetUser, setResetUser] = useState("");
   const [resetStatus, setResetStatus] = useState(null);
@@ -11770,6 +11830,39 @@ function Login({ T, dark, onLogin }) {
             <div style={{ marginBottom:16, padding:"10px 14px", borderRadius:R.md, background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.35)", color:"#FCA5A5", fontSize:13, display:"flex", alignItems:"center", gap:8 }}>
               <AlertCircle size={14} style={{flexShrink:0, marginTop:1}} /><span>{err}</span>
             </div>
+          )}
+
+          {/* Sign in with Google (PMO, 17 Nov 2026): listed Riphah accounts, no password. /preview/ first. */}
+          {GOOGLE_SIGNIN && (
+            <>
+              <button className="pmo-focusable pmo-btn" data-google-signin disabled={googleBusy || loading}
+                onClick={async () => { setErr(null); setGoogleBusy(true);
+                  try { await startGoogleSignIn(remember); } catch (e) { setErr("Google sign-in could not start. Please try again."); setGoogleBusy(false); } }}
+                style={{
+                  width:"100%", padding:"12px 16px", borderRadius:R.md, cursor: googleBusy ? "default" : "pointer",
+                  background:"#ffffff", border:"1px solid #dadce0", color:"#1f1f1f",
+                  fontSize:14, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+                  display:"flex", alignItems:"center", justifyContent:"center", gap:10,
+                  boxShadow:"0 6px 18px -8px rgba(0,0,0,0.45)", opacity: googleBusy ? 0.75 : 1,
+                  transition:"transform .2s ease, box-shadow .2s ease",
+                }}>
+                <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                  <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
+                  <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+                  <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
+                  <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/>
+                </svg>
+                {googleBusy ? "Opening Google…" : "Sign in with Google"}
+              </button>
+              <div style={{ fontSize:11.5, color:"rgba(255,255,255,0.45)", textAlign:"center", marginTop:8 }}>
+                Use your Riphah (riphah.edu.pk) account
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:10, margin:"18px 0 16px" }}>
+                <span style={{ flex:1, height:1, background:"rgba(255,255,255,0.12)" }} />
+                <span style={{ fontSize:10.5, color:"rgba(255,255,255,0.38)", letterSpacing:1 }}>OR WITH USERNAME</span>
+                <span style={{ flex:1, height:1, background:"rgba(255,255,255,0.12)" }} />
+              </div>
+            </>
           )}
 
           {/* Username */}
@@ -12895,6 +12988,13 @@ export default function App() {
   // Session restore + invite/recovery token detection
   useEffect(() => {
     (async () => {
+      // 0. Back from Google (?code=… or ?error=…): finish the sign-in, or go to the sign-in page with the reason.
+      if (isGoogleReturn()) {
+        const g = await finishGoogleSignIn().catch(() => null);
+        if (g) { saveSession(g); setSession(g); }
+        setRestoring(false);
+        return;
+      }
       // 1a. New format: a link to our own app, carrying only a hashed_token.
       // A plain HTTP fetch (an email security scanner checking the link for
       // malware, for instance) never executes this code, since it never runs
