@@ -20,8 +20,9 @@ const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const KEY = "pmo_google_pkce";
 const ERR_KEY = "pmo_google_error";
 
-// Shown on /preview/ only until the PMO has tried it (sign-in changes go to /preview/ first).
-export const GOOGLE_SIGNIN = /\/preview\/$/.test(import.meta.env.BASE_URL || "");
+// On in both builds since 17 Nov 2026 (PMO tested it on /preview/, then "push to production").
+// To withdraw from production only: /\/preview\/$/.test(import.meta.env.BASE_URL || "").
+export const GOOGLE_SIGNIN = true;
 
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)))
   .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
