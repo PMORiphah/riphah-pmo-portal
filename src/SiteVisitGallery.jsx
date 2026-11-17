@@ -45,6 +45,13 @@ export function SiteVisitGallery({
   const startedFor  = useRef(null);  // "<index>:<id>" playback has begun for
   const advancedFor = useRef(null);  // slide index already advanced from
 
+  // Phones get a taller frame (portrait clips and photos are the norm there) and a full-width Upload button.
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  useEffect(() => {
+    const on = () => setNarrow(window.innerWidth < 640);
+    window.addEventListener("resize", on); return () => window.removeEventListener("resize", on);
+  }, []);
+
   const reduced = typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -55,7 +62,9 @@ export function SiteVisitGallery({
   // mount rather than requested on every render.
   useEffect(() => {
     let alive = true;
-    const need = items.slice(safeIdx, safeIdx + 2).filter(m => m && !urls[m.id]);
+    // Current and next first, then every other item, so the thumbnail strip shows pictures (17 Nov 2026).
+    const first = items.slice(safeIdx, safeIdx + 2).filter(m => m && !urls[m.id]);
+    const need = first.length ? first : items.filter(m => m && !urls[m.id]).slice(0, 40);
     if (!need.length) return;
     Promise.all(need.map(m => getUrl(m).then(u => [m.id, u]).catch(() => null)))
       .then(pairs => {
@@ -272,7 +281,7 @@ export function SiteVisitGallery({
   };
 
   return (
-    <div>
+    <div style={{ minWidth:0, maxWidth:"100%" }}>
       {/* Header + upload */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
         marginBottom:SP.md, gap:SP.md, flexWrap:"wrap" }}>
@@ -308,13 +317,14 @@ export function SiteVisitGallery({
             <input ref={fileRef} type="file" multiple accept="image/*,video/*"
               style={{ display:"none" }}
               onChange={e => { onUpload(e.target.files); e.target.value = ""; }} />
-            <button className="pmo-focusable pmo-btn" disabled={uploading}
+            <button className="pmo-focusable pmo-btn" disabled={uploading} data-sv-upload
               onClick={() => fileRef.current?.click()}
-              style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 13px",
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+                padding: narrow ? "11px 14px" : "6px 13px", ...(narrow ? { width:"100%", order:3 } : {}),
                 background: uploading ? T.muted : T.blue, border:"none",
                 borderRadius:R.sm, color:"#fff", ...TYPE.bodySm, fontWeight:600,
                 cursor: uploading ? "default" : "pointer" }}>
-              <Upload size={12} /> {uploading ? "Uploading…" : "Upload photos or video"}
+              <Upload size={narrow ? 15 : 12} /> {uploading ? "Uploading…" : "Upload photos or video"}
             </button>
           </>
         )}
@@ -392,12 +402,15 @@ export function SiteVisitGallery({
       ) : (
         <>
           {/* Stage */}
-          <div style={{
-            position:"relative", width:"100%", aspectRatio:"16 / 9",
+          <div data-sv-stage style={{
+            position:"relative", width:"100%", aspectRatio: narrow ? "4 / 5" : "16 / 9",
+            maxHeight: narrow ? "62vh" : undefined, minHeight:0,
             background:"#05080F", border:`1px solid ${T.border}`,
             borderRadius:R.lg, overflow:"hidden", boxShadow:T.shadow,
           }}>
-            {stage(current, urls[current?.id])}
+            {/* Absolutely placed: with aspect-ratio alone a tall portrait video's own size stretched the frame
+                to several screens high on phones (PMO, 17 Nov 2026). */}
+            <div style={{ position:"absolute", inset:0 }}>{stage(current, urls[current?.id])}</div>
 
             {/* Click the frame to open full screen. Kept off the video so its
                 own controls stay usable. */}
@@ -480,8 +493,9 @@ export function SiteVisitGallery({
 
           {/* Thumbnails */}
           {items.length > 1 && (
-            <div className="pmo-scroll" style={{
-              display:"flex", gap:SP.sm, marginTop:SP.md, overflowX:"auto", paddingBottom:4 }}>
+            <div className="pmo-scroll" data-sv-thumbs style={{
+              display:"flex", gap:SP.sm, marginTop:SP.md, overflowX:"auto", paddingBottom:4,
+              maxWidth:"100%", minWidth:0, WebkitOverflowScrolling:"touch" }}>
               {items.map((m, i) => (
                 <button key={m.id} className="pmo-focusable"
                   onClick={() => setIdx(i)} title={m.file_name}
@@ -497,9 +511,14 @@ export function SiteVisitGallery({
                     <img src={urls[m.id]} alt=""
                       style={{ width:"100%", height:"100%", objectFit:"cover" }} />
                   )}
+                  {isVideo(m) && urls[m.id] && (
+                    <video src={`${urls[m.id]}#t=0.5`} muted playsInline preload="metadata" tabIndex={-1}
+                      style={{ width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none", display:"block" }} />
+                  )}
                   {isVideo(m) && (
                     <span style={{ position:"absolute", inset:0, display:"flex",
-                      alignItems:"center", justifyContent:"center", color:"#fff" }}>
+                      alignItems:"center", justifyContent:"center", color:"#fff",
+                      background:"rgba(3,7,15,.28)" }}>
                       <Play size={16} />
                     </span>
                   )}

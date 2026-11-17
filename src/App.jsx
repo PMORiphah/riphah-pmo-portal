@@ -7435,7 +7435,7 @@ function ProjectAttachments({ T, session, projectId, kind = "document", render }
   if (render) {
     return (
       <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:R.lg,
-        boxShadow:T.shadow, padding:"20px 22px" }}>
+        boxShadow:T.shadow, padding: vpA.isCompact ? "16px 14px" : "20px 22px", minWidth:0, maxWidth:"100%", boxSizing:"border-box" }}>
         {render({
           items, loading, canManage, err, uploading, storageBar, progressLine,
           onUpload: handleFiles,
@@ -8517,7 +8517,7 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             canWrite={canEditPmo(session)} isCompact={vpD.isCompact} />
         </div>
 
-        <div data-tour="detail-documents" style={{ display: tab === "documents" ? "block" : "none", gridColumn:"1 / -1" }}>
+        <div data-tour="detail-documents" style={{ display: tab === "documents" ? "block" : "none", gridColumn:"1 / -1", minWidth:0 }}>
           <ProjectAttachments T={T} session={session} projectId={projectId} kind="document" />
         </div>
 
@@ -8525,7 +8525,9 @@ function ProjectDetailPage({ T, session, projectId, onBack, returnLabel, onGoToD
             URLs and the storage total are all shared; only the presentation
             differs, supplied through `render`. Mounted only when selected, so
             the slideshow timer does not run in a hidden tab. */}
-        <div data-tour="detail-sitevisit" style={{ display: tab === "sitevisit" ? "block" : "none", gridColumn:"1 / -1" }}>
+        {/* minWidth 0: a grid item otherwise grows to its widest child (the thumbnail strip), which pushed the
+            card and its Upload button off the right edge on phones (PMO, 17 Nov 2026). */}
+        <div data-tour="detail-sitevisit" style={{ display: tab === "sitevisit" ? "block" : "none", gridColumn:"1 / -1", minWidth:0 }}>
           {tab === "sitevisit" && (
             <ProjectAttachments T={T} session={session} projectId={projectId} kind="site_visit"
               render={(api) => <SiteVisitGallery T={T} {...api} />} />
