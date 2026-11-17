@@ -11439,6 +11439,12 @@ function Login({ T, dark, onLogin }) {
   const [err, setErr] = useState(() => takeGoogleError());   // a refused Google sign-in comes back here
   const [remember, setRemember] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  // The username form opens after a refused Google sign-in, or when this device last signed in with a password.
+  const [showPw, setShowPw] = useState(() => {
+    if (!GOOGLE_SIGNIN) return true;
+    try { return localStorage.getItem("pmo-login-method") === "password"; } catch { return false; }
+  });
+  useEffect(() => { if (err && GOOGLE_SIGNIN) setShowPw(true); }, [err]);
   const [mode, setMode] = useState("login");       // "login" | "reset"
   const [resetUser, setResetUser] = useState("");
   const [resetStatus, setResetStatus] = useState(null);
@@ -11530,6 +11536,7 @@ function Login({ T, dark, onLogin }) {
         remember,
       };
       saveSession(session);
+      try { localStorage.setItem("pmo-login-method", "password"); } catch { /* ignore */ }
 
       // §25 — authentication has succeeded; play the hand-over before the
       // dashboard mounts. Under reduced motion this is skipped entirely, and
@@ -11831,7 +11838,7 @@ function Login({ T, dark, onLogin }) {
               </div>
             </div>
             <div style={{ fontSize:23, fontWeight:800, color:"#fff", letterSpacing:-0.5, fontFamily:TYPE.display.fontFamily }}>Welcome Back</div>
-            <div style={{ fontSize:12.5, color:"rgba(255,255,255,0.5)", marginTop:5 }}>Sign in to continue to PMO Portal</div>
+            <div style={{ fontSize:12.5, color:"rgba(255,255,255,0.5)", marginTop:5 }}>{GOOGLE_SIGNIN ? "Sign in with your Riphah Google account" : "Sign in to continue to PMO Portal"}</div>
             <div style={{
               width: anyFocus ? 84 : 40, height:2, margin:"13px auto 0", borderRadius:1,
               background:`linear-gradient(90deg, ${GOLD}00, ${GOLD}, ${GOLD}00)`,
@@ -11847,39 +11854,76 @@ function Login({ T, dark, onLogin }) {
             </div>
           )}
 
-          {/* Sign in with Google (PMO, 17 Nov 2026): listed Riphah accounts, no password. /preview/ first. */}
+          {/* Sign in with Google first (PMO, 17 Nov 2026): the username form only opens on request, after a
+              refused Google sign-in, or when this device last signed in with a password. /preview/ first. */}
           {GOOGLE_SIGNIN && (
-            <>
-              <button className="pmo-focusable pmo-btn" data-google-signin disabled={googleBusy || loading}
-                onClick={async () => { setErr(null); setGoogleBusy(true);
-                  try { await startGoogleSignIn(remember); } catch (e) { setErr("Google sign-in could not start. Please try again."); setGoogleBusy(false); } }}
-                style={{
-                  width:"100%", padding:"12px 16px", borderRadius:R.md, cursor: googleBusy ? "default" : "pointer",
-                  background:"#ffffff", border:"1px solid #dadce0", color:"#1f1f1f",
-                  fontSize:14, fontWeight:600, fontFamily:TYPE.body.fontFamily,
-                  display:"flex", alignItems:"center", justifyContent:"center", gap:10,
-                  boxShadow:"0 6px 18px -8px rgba(0,0,0,0.45)", opacity: googleBusy ? 0.75 : 1,
-                  transition:"transform .2s ease, box-shadow .2s ease",
-                }}>
-                <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-                  <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
-                  <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
-                  <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
-                  <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/>
-                </svg>
-                {googleBusy ? "Opening Google…" : "Sign in with Google"}
-              </button>
-              <div style={{ fontSize:11.5, color:"rgba(255,255,255,0.45)", textAlign:"center", marginTop:8 }}>
-                Use your Riphah (riphah.edu.pk) account
+            <div className="pmo-g-wrap">
+              <style>{`
+                @keyframes pmoGSpin { to { transform: rotate(360deg); } }
+                @keyframes pmoGSheen { 0% { transform: translateX(-120%) skewX(-18deg); } 100% { transform: translateX(240%) skewX(-18deg); } }
+                @keyframes pmoGRise { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform:none; } }
+                @keyframes pmoGOpen { from { opacity:0; transform: translateY(-6px); } to { opacity:1; transform:none; } }
+                .pmo-g-wrap > * { animation: pmoGRise .6s cubic-bezier(.16,1,.3,1) both; }
+                .pmo-g-wrap > *:nth-child(2) { animation-delay: .08s } .pmo-g-wrap > *:nth-child(3) { animation-delay: .16s }
+                .pmo-g-wrap > *:nth-child(4) { animation-delay: .24s } .pmo-g-wrap > *:nth-child(5) { animation-delay: .32s }
+                .pmo-g-ring { position:absolute; inset:0; border-radius:16px; overflow:hidden; pointer-events:none; background: linear-gradient(135deg, rgba(224,169,74,.45), rgba(74,155,224,.35)); box-shadow: 0 0 28px -6px rgba(224,169,74,.45); }
+                .pmo-g-ring::before { content:""; position:absolute; inset:-150%; background: conic-gradient(from 0deg, rgba(224,169,74,0) 0deg, rgba(224,169,74,.95) 60deg, rgba(74,155,224,.9) 140deg, rgba(74,155,224,0) 200deg, rgba(224,169,74,0) 360deg); animation: pmoGSpin 4.5s linear infinite; }
+                .pmo-g-btn { position:relative; overflow:hidden; }
+                .pmo-g-btn::after { content:""; position:absolute; top:0; bottom:0; width:38%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.75), transparent); transform: translateX(-120%) skewX(-18deg); }
+                .pmo-g-btn:hover::after { animation: pmoGSheen .9s ease; }
+                .pmo-g-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 34px -10px rgba(224,169,74,.55), 0 0 0 1px rgba(255,255,255,.6) inset !important; }
+                .pmo-pw-open { animation: pmoGOpen .45s cubic-bezier(.16,1,.3,1) both; }
+                @media (prefers-reduced-motion: reduce) { .pmo-g-ring::before, .pmo-g-wrap > *, .pmo-pw-open, .pmo-g-btn:hover::after { animation: none !important; } }
+              `}</style>
+              <div style={{ position:"relative", borderRadius:16, padding:2 }}>
+                <span aria-hidden="true" className="pmo-g-ring" />
+                <button className="pmo-focusable pmo-btn pmo-g-btn" data-google-signin disabled={googleBusy || loading}
+                  onClick={async () => { setErr(null); setGoogleBusy(true);
+                    try { localStorage.setItem("pmo-login-method", "google"); } catch { /* ignore */ }
+                    try { await startGoogleSignIn(true); } catch (e) { setErr("Google sign-in could not start. Please try again."); setGoogleBusy(false); } }}
+                  style={{
+                    position:"relative", width:"100%", padding:"15px 18px", borderRadius:14, cursor: googleBusy ? "default" : "pointer",
+                    background:"linear-gradient(180deg, #ffffff, #f3f5f8)", border:"none", color:"#1f1f1f",
+                    fontSize:15.5, fontWeight:700, fontFamily:TYPE.body.fontFamily, letterSpacing:-0.1,
+                    display:"flex", alignItems:"center", justifyContent:"center", gap:12,
+                    boxShadow:"0 10px 30px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,.5) inset", opacity: googleBusy ? 0.8 : 1,
+                    transition:"transform .25s cubic-bezier(.16,1,.3,1), box-shadow .25s ease",
+                  }}>
+                  {googleBusy ? (
+                    <span aria-hidden="true" style={{ width:18, height:18, borderRadius:"50%", border:"2.5px solid rgba(0,0,0,0.15)", borderTopColor:"#4285F4", animation:"pmoSpin .7s linear infinite", display:"inline-block" }} />
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+                      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
+                      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+                      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
+                      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/>
+                    </svg>
+                  )}
+                  {googleBusy ? "Opening Google…" : "Sign in with Google"}
+                </button>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:10, margin:"18px 0 16px" }}>
-                <span style={{ flex:1, height:1, background:"rgba(255,255,255,0.12)" }} />
-                <span style={{ fontSize:10.5, color:"rgba(255,255,255,0.38)", letterSpacing:1 }}>OR WITH USERNAME</span>
-                <span style={{ flex:1, height:1, background:"rgba(255,255,255,0.12)" }} />
+              <div style={{ fontSize:12, color:"rgba(255,255,255,0.62)", textAlign:"center", marginTop:12 }}>
+                Use your <span style={{ color:"#fff", fontWeight:600 }}>riphah.edu.pk</span> account: no password needed
               </div>
-            </>
+              <div style={{ display:"flex", justifyContent:"center", gap:5, flexWrap:"wrap", marginTop:14 }}>
+                {[["🛡", "Riphah only"], ["🔑", "No password"], ["✓", "Secured by Google"]].map(([i, t]) => (
+                  <span key={t} style={{ fontSize:10.5, color:"rgba(255,255,255,0.6)", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.10)",
+                    padding:"3px 8px", borderRadius:999, display:"inline-flex", alignItems:"center", gap:4, whiteSpace:"nowrap" }}>
+                    <span style={{ color:GOLD, fontSize:10 }}>{i}</span>{t}</span>
+                ))}
+              </div>
+              <div style={{ textAlign:"center", marginTop: showPw ? 18 : 22 }}>
+                <button className="pmo-focusable" data-show-password onClick={() => setShowPw(v => !v)}
+                  style={{ background:"none", border:"none", cursor:"pointer", padding:"4px 6px", fontSize:12.5, fontFamily:TYPE.body.fontFamily,
+                    color: showPw ? "rgba(255,255,255,0.5)" : (T.goldText || GOLD), fontWeight:600, textDecoration:"underline", textUnderlineOffset:3, textDecorationColor:"rgba(224,169,74,0.4)" }}>
+                  {showPw ? "Hide username sign-in" : "Can't use Google? Use username and password"}
+                </button>
+              </div>
+            </div>
           )}
 
+          {(!GOOGLE_SIGNIN || showPw) && (
+          <div className={GOOGLE_SIGNIN ? "pmo-pw-open" : undefined} data-password-form style={GOOGLE_SIGNIN ? { marginTop:14, paddingTop:18, borderTop:"1px solid rgba(255,255,255,0.10)" } : undefined}>
           {/* Username */}
           <div style={{ marginBottom:15 }}>
             <label style={{ display:"block", fontSize:10.5, fontWeight:700, color:"rgba(255,255,255,0.55)", letterSpacing:1.5, textTransform:"uppercase", marginBottom:7 }}>Username</label>
@@ -11987,6 +12031,8 @@ function Login({ T, dark, onLogin }) {
               </>
             )}
           </button>
+          </div>
+          )}
 
           {/* Biometric sign-in. Only rendered once this device actually has a
               credential enrolled, so a first-time user isn't offered a button
