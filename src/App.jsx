@@ -636,6 +636,21 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
   const mini = collapsed && !isCompact;
   const W = mini ? 68 : 244;
 
+  // The user card: name, designation, then role (PMO, 17 Nov 2026). Designation comes from the Google sign-in list.
+  const [me, setMe] = useState({ designation: null, superAdmin: false });
+  useEffect(() => {
+    if (!session?.user_id || !session?.access_token || typeof window !== "undefined" && window.__PMO_SIM__) return;
+    let alive = true;
+    Promise.all([
+      supa(`/rest/v1/user_profiles?id=eq.${session.user_id}&select=designation`, {}, session.access_token).catch(() => []),
+      supa("/rest/v1/rpc/is_super_admin", { method:"POST", body:"{}" }, session.access_token).catch(() => false),
+    ]).then(([rows, sa]) => { if (alive) setMe({ designation: rows?.[0]?.designation || null, superAdmin: sa === true }); });
+    return () => { alive = false; };
+  }, [session?.user_id]);
+  const roleText = session?.headView ? "Head PMO"
+    : ({ pmo:"PMO", project_manager:"Project Manager", guest:"Guest" }[session?.role] || session?.role || "—")
+      + (me.superAdmin ? " · Super admin" : "");
+
   const NavRow = ({ id, Icon, label, admin }) => {
     const active = page === id;
     const [hover, setHover] = useState(false);
@@ -821,12 +836,16 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
                 whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                 {session?.full_name || "PMO"}
               </div>
+              {me.designation && (
+                <div data-designation-label="" title={me.designation} style={{ color:T.sidebarName, opacity:.72, fontSize:11, lineHeight:1.3, marginTop:1,
+                  whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{me.designation}</div>
+              )}
               <div style={{
                 display:"inline-flex", alignItems:"center", marginTop:3,
                 fontSize:10, fontWeight:600, letterSpacing:"0.06em", textTransform:"uppercase",
                 color:T.goldText || BRAND.gold, background:BRAND.gold+"1E",
                 padding:"1.5px 7px", borderRadius:R.pill,
-              }} data-role-label="">{session?.headView ? "Head PMO" : (session?.role?.replace("_", " ") || "—")}</div>
+              }} data-role-label="">{roleText}</div>
             </div>
           )}
         </div>
