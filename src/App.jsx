@@ -617,7 +617,7 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (n.pastOnly && !(session?.role === "pmo" || pastAllowed)) return false;
     if (n.reportsOnly && !(session?.role === "pmo" || reportsAllowed)) return false;
-    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule" || n.id === "benefits")) return false;
+    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "benefits")) return false;
     return true;
   });
   // On mobile, the bottom tab bar already surfaces this user's top 4 — a
@@ -930,7 +930,7 @@ function BottomTabBar({ page, setPage, session, T, onMore, unreadCount = 0, revi
     if (n.pmoOnly && session?.role !== "pmo") return false;
     if (n.pastOnly && !(session?.role === "pmo" || pastAllowed)) return false;
     if (n.reportsOnly && !(session?.role === "pmo" || reportsAllowed)) return false;
-    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "schedule" || n.id === "benefits")) return false;
+    if (session?.role === "project_manager" && (n.id === "cmd" || n.id === "camp" || n.id === "perf" || n.id === "risks" || n.id === "lessons" || n.id === "benefits")) return false;
     return true;
   });
   const ordered = [...filtered].sort((a, b) => {
@@ -12104,6 +12104,7 @@ const PAGE_TITLES = {
   proj: { title:"Projects",        subtitle:"All capital projects across the portfolio" },
   camp: { title:"Campus / Sites",  subtitle:"Projects and approvals by campus" },
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
+  schedule: { title:"Timeline & Schedule", subtitle:"Planned and actual dates of the FY 2026-27 projects" },
   review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
   benefits: { title:"Benefits Realization", subtitle:"Revenue and student experience from completed FY 25-26 and FY 26-27 projects" },
   goals: { title:"Achievements/Goals", subtitle:"What the PMO has achieved, and the team's goals and tasks" },
@@ -13389,7 +13390,8 @@ export default function App() {
 
   // Pages hidden from PMs in the nav redirect to Projects as well, so a stale
   // page value or an old link can't open them (same list as the nav filter).
-  const PM_HIDDEN = ["cmd", "camp", "perf", "risks", "lessons", "schedule", "benefits"];
+  // Timeline & Schedule is shown to project managers since 17 Nov 2026 (PMO); RLS limits it to their own projects.
+  const PM_HIDDEN = ["cmd", "camp", "perf", "risks", "lessons", "benefits"];
   const effectivePage =
     (session?.role === "project_manager" && PM_HIDDEN.includes(page)) ? "proj" :
     // Both PMO-only pages redirect rather than rendering empty. Hiding the nav
