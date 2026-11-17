@@ -637,19 +637,17 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
   const W = mini ? 68 : 244;
 
   // The user card: name, designation, then role (PMO, 17 Nov 2026). Designation comes from the Google sign-in list.
-  const [me, setMe] = useState({ designation: null, superAdmin: false });
+  const [me, setMe] = useState({ designation: null });
   useEffect(() => {
     if (!session?.user_id || !session?.access_token || typeof window !== "undefined" && window.__PMO_SIM__) return;
     let alive = true;
-    Promise.all([
-      supa(`/rest/v1/user_profiles?id=eq.${session.user_id}&select=designation`, {}, session.access_token).catch(() => []),
-      supa("/rest/v1/rpc/is_super_admin", { method:"POST", body:"{}" }, session.access_token).catch(() => false),
-    ]).then(([rows, sa]) => { if (alive) setMe({ designation: rows?.[0]?.designation || null, superAdmin: sa === true }); });
+    supa(`/rest/v1/user_profiles?id=eq.${session.user_id}&select=designation`, {}, session.access_token).catch(() => [])
+      .then(rows => { if (alive) setMe({ designation: rows?.[0]?.designation || null }); });
     return () => { alive = false; };
   }, [session?.user_id]);
+  // The super admin is not labelled on the card (PMO, 17 Nov 2026).
   const roleText = session?.headView ? "Head PMO"
-    : ({ pmo:"PMO", project_manager:"Project Manager", guest:"Guest" }[session?.role] || session?.role || "—")
-      + (me.superAdmin ? " · Super admin" : "");
+    : ({ pmo:"PMO", project_manager:"Project Manager", guest:"Guest" }[session?.role] || session?.role || "—");
 
   const NavRow = ({ id, Icon, label, admin }) => {
     const active = page === id;
@@ -9115,8 +9113,6 @@ function UserManagementPage({ T, session }) {
                         ) : (
                           <span style={{ fontSize:11, fontWeight:700, color:rc.c, background:`${rc.c}18`, padding:"3px 10px", borderRadius:R.pill }}>{rc.label}</span>
                         )}
-                        {superIds.has(u.id) && <span data-super-badge title="Only the super admin can change roles"
-                          style={{ fontSize:10.5, fontWeight:800, color:"#1A1206", background:`linear-gradient(135deg, ${GOLD}, #F2C46D)`, padding:"3px 9px", borderRadius:R.pill }}>Super admin</span>}
                         {googleList.get(String(u.email || "").toLowerCase()) && <span title="Can sign in with their Riphah Google account"
                           style={{ fontSize:10.5, fontWeight:700, color:T.textOf(DATA.info), background:`${DATA.info}18`, padding:"3px 8px", borderRadius:R.pill }}>Google</span>}
                       </div>
