@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { FileDiff, ExternalLink, CheckCircle2, UserRound, CircleDashed, Hourglass, RefreshCw, AlertTriangle,
-  ChevronDown, ArrowRight, Loader2 } from "lucide-react";
+import { FileDiff, ExternalLink, CheckCircle2, RefreshCw, AlertTriangle,
+  ChevronDown, ArrowRight, Loader2, PackagePlus, PackageCheck } from "lucide-react";
 import { TYPE, SP, R, DATA } from "./theme.js";
 import { Button, Skeleton } from "./ui.jsx";
 import { storageUrl } from "./storageUrl.js";
@@ -42,12 +42,6 @@ const fmtStamp = (ts) => {
   return isNaN(x) ? null : x.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric", timeZone:"Asia/Karachi" });
 };
 const TYPE_LABEL = { budget:"Budget", scope:"Scope", schedule:"Schedule", deliverable:"Deliverables", other:"Other" };
-const STATUS = {
-  signed:  { label:"Signed",   color:OK_CLR,        Icon:CheckCircle2 },
-  named:   { label:"Named",    color:DATA.info,     Icon:UserRound },
-  pending: { label:"Pending",  color:PCR_CLR,       Icon:Hourglass },
-  blank:   { label:"Not filled", color:DATA.neutral, Icon:CircleDashed },
-};
 
 /** Newest first: the form's date, else when the document was uploaded. */
 export function orderPcrs(docs, readings) {
@@ -207,14 +201,13 @@ function Section({ T, title, children }) {
   );
 }
 
-function PcrReading({ T, isCompact, isPMO, item, latest, approved, busy, onConfirm, onUnconfirm, onReadAgain, onOpen }) {
+function PcrReading({ T, isCompact, isPMO, item, latest, approved, busy, onConfirm, onUnconfirm, onReadAgain, onOpen,
+                      inDeliv = 0, onAddDeliv, onRemoveDeliv }) {
   const { doc, reading: r } = item;
   const base = r?.baseline_cost != null ? +r.baseline_cost : null;
   const add = r?.additional_cost != null ? +r.additional_cost : null;
   const rev = r?.revised_cost != null ? +r.revised_cost : null;
   const pct = base && add != null ? add / base * 100 : null;
-  const signed = (r?.approvals || []).filter((x) => x.status === "signed").length;
-  const total = (r?.approvals || []).length;
   const a = approved != null ? +approved : null;
   const texts = [["Problem / Opportunity", r?.problem], ["Description", r?.description], ["Justification", r?.justification],
                  ["Impact on project", r?.impact]].filter(([, t]) => t);
@@ -314,6 +307,25 @@ function PcrReading({ T, isCompact, isPMO, item, latest, approved, busy, onConfi
                   </tbody>
                 </table>
               </div>
+              {/* PCR deliverables into the Deliverables tab (PMO, 17 Nov 2026): after the reading is confirmed. */}
+              <div data-pcr-deliv={inDeliv > 0 ? "added" : r.confirmed ? "ready" : "unconfirmed"}
+                style={{ display:"flex", alignItems:"center", gap:SP.sm, flexWrap:"wrap", marginTop:SP.sm }}>
+                {inDeliv > 0 ? (<>
+                  <span style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:12, fontWeight:600, color:T.textOf(DATA.positive),
+                    background:DATA.positive + T.wash, border:`1px solid ${DATA.positive}44`, padding:"4px 10px", borderRadius:R.pill }}>
+                    <PackageCheck size={13} /> {inDeliv} item{inDeliv === 1 ? " is" : "s are"} in the Deliverables tab
+                  </span>
+                  {isPMO && <Button T={T} variant="ghost" size="sm" disabled={!!busy} onClick={() => onRemoveDeliv?.(r)}
+                    title="Take these lines out of the Deliverables tab (their ticks and notes are kept)">Remove from Deliverables</Button>}
+                </>) : isPMO && r.confirmed ? (
+                  <Button T={T} variant="accent" tone={PCR_CLR} size="sm" icon={PackagePlus} disabled={!!busy} onClick={() => onAddDeliv?.(r)}
+                    data-pcr-add-deliv="">
+                    Add {r.deliverables.length === 1 ? "this item" : `these ${r.deliverables.length} items`} to the Deliverables tab
+                  </Button>
+                ) : isPMO ? (
+                  <span style={{ fontSize:12, color:T.dim }}>Confirm the reading to add these items to the Deliverables tab.</span>
+                ) : null}
+              </div>
             </Section>
           </div>
         )}
@@ -325,29 +337,7 @@ function PcrReading({ T, isCompact, isPMO, item, latest, approved, busy, onConfi
           </div>
         )}
 
-        {/* Approval block: eight steps */}
-        <div style={{ marginTop:SP.lg }}>
-          <Section T={T} title={total ? `Approvals · ${signed} of ${total} signed` : "Approvals"}>
-            {!total && <div style={{ fontSize:12.5, color:T.muted }}>The approval page is not in this document.</div>}
-            <div data-pcr-approvals="" style={{ display:"grid", gridTemplateColumns: isCompact ? "1fr" : "repeat(4, minmax(0,1fr))", gap:SP.sm }}>
-              {(r.approvals || []).map((x, i) => {
-                const s = STATUS[x.status] || STATUS.blank;
-                return (
-                  <div key={i} data-status={x.status} title={`${x.role}: ${s.label}${x.name ? ` (${x.name})` : ""}${x.date ? `, ${x.date}` : ""}`}
-                    style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"8px 10px", borderRadius:R.md,
-                      border:`1px solid ${x.status === "blank" ? T.border : s.color + "44"}`,
-                      background: x.status === "blank" ? "transparent" : s.color + T.wash, minWidth:0 }}>
-                    <s.Icon size={14} color={T.textOf(s.color)} style={{ flexShrink:0, marginTop:1 }} />
-                    <div style={{ minWidth:0 }}>
-                      <div style={{ fontSize:11.5, color:T.text, fontWeight:600, lineHeight:1.3 }}>{x.role}</div>
-                      <div style={{ fontSize:11, color:T.muted, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                        {x.name || s.label}{x.name && x.status !== "named" ? ` · ${s.label.toLowerCase()}` : ""}{x.date ? ` · ${x.date}` : ""}</div>
-                    </div>
-                  </div>);
-              })}
-            </div>
-          </Section>
-        </div>
+        {/* The approval block of the form is not shown (PMO, 17 Nov 2026). */}
 
         {(r.checks || []).length > 0 && (
           <div style={{ marginTop:SP.md, display:"flex", flexDirection:"column", gap:4 }}>
@@ -382,6 +372,25 @@ export function PcrTab({ T, session, supa, projectId, isCompact, ticked, approve
   const [busy, setBusy] = useState(null);        // attachment id being read, or "save"
   const [msg, setMsg] = useState(null);
   const tried = useRef(new Set());               // documents already tried this visit (never loop on a failure)
+  // PCR lines already in the Deliverables tab, by reading.
+  const [delivBy, setDelivBy] = useState({});
+  const loadDeliv = useCallback(async () => {
+    if (inSim()) return;
+    const rows = await supa(`/rest/v1/project_deliverables?project_id=eq.${projectId}&source=eq.pcr&superseded=eq.false&select=pcr_id`, {},
+                            session.access_token).catch(() => []);
+    const m = {}; (Array.isArray(rows) ? rows : []).forEach((x) => { if (x.pcr_id) m[x.pcr_id] = (m[x.pcr_id] || 0) + 1; });
+    setDelivBy(m);
+  }, [supa, session.access_token, projectId]);
+  useEffect(() => { loadDeliv(); }, [loadDeliv]);
+  const delivCall = async (fn, r, ok) => {
+    setBusy("save"); setMsg(null);
+    try {
+      const n = await supa(`/rest/v1/rpc/${fn}`, { method:"POST", body: JSON.stringify({ p_pcr: r.id }) }, session.access_token);
+      setMsg({ tone:"info", text: ok(n) });
+    } catch (e) { setMsg({ tone:"bad", text: e.message || "Could not save that." }); }
+    await loadDeliv();
+    setBusy(null);
+  };
 
   const read = useCallback(async (doc, force) => {
     setBusy(doc.id); setMsg(null);
@@ -460,7 +469,11 @@ export function PcrTab({ T, session, supa, projectId, isCompact, ticked, approve
         <PcrReading key={it.doc.id} T={T} isCompact={isCompact} isPMO={isPMO} item={it} latest={i === 0 && items.length > 1}
           approved={approved} busy={busy} onOpen={open}
           onConfirm={(r) => patch(r, { confirmed: true })} onUnconfirm={(r) => patch(r, { confirmed: false })}
-          onReadAgain={(d) => read(d, true)} />
+          onReadAgain={(d) => read(d, true)}
+          inDeliv={delivBy[it.reading.id] || 0}
+          onAddDeliv={(r) => delivCall("add_pcr_deliverables", r, (n) => `${n} item${n === 1 ? "" : "s"} added to the Deliverables tab, marked PCR.`)}
+          onRemoveDeliv={(r) => { if (window.confirm("Take these PCR lines out of the Deliverables tab? Their ticks and notes are kept if you add them again."))
+            delivCall("remove_pcr_deliverables", r, (n) => `${n} PCR item${n === 1 ? "" : "s"} taken out of the Deliverables tab.`); }} />
       ) : (
         <div key={it.doc.id} data-pcr-unread={it.doc.id} style={{ display:"flex", alignItems:"center", gap:SP.md, flexWrap:"wrap",
           padding:SP.lg, borderRadius:R.lg, border:`1px dashed ${PCR_CLR}66`, background:T.surface }}>

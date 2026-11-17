@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { PackageCheck, Sparkles, Plus, Pencil, Undo2, Check, X, TrendingUp, TrendingDown, FileText, ArrowRightLeft } from "lucide-react";
+import { PackageCheck, Sparkles, Plus, Pencil, Undo2, Check, X, TrendingUp, TrendingDown, FileText, ArrowRightLeft, FileDiff } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, CAN_HOVER } from "./ui.jsx";
 import { canEditPmo } from "./headView.js";
@@ -37,6 +37,7 @@ const GRID_REV = "24px minmax(0,1fr) minmax(0,1fr) 90px 100px 110px minmax(110px
 const REV = DATA.warning;   // amber: revised against the PDD
 const money = (n, cur = "PKR") => n == null ? "—" : `${cur === "PKR" ? "" : cur + " "}${Number(n).toLocaleString("en", { maximumFractionDigits: 2 })}`;
 const qtyText = (r) => r.qty == null ? "—" : `${Number(r.qty).toLocaleString("en")}${r.unit ? ` ${r.unit}` : ""}`;
+const PCR = DATA.warning;   // lines added from a project change request (same amber as the PCR tab)
 const fmtDay = (s) => s ? new Date(String(s).slice(0,10) + "T00:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }) : "";
 /** The revised figures that were given, as one short text ("2 Nos · unit 500 · total 1,000"). */
 const revFigures = (r) => {
@@ -62,6 +63,7 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
   const isPMO = canEditPmo(session);   // edit controls (not the Head PMO)
   const [rows, setRows]   = useState(null);
   const [pdds, setPdds]   = useState({});
+  const [pcrs, setPcrs]   = useState({});      // pcr_id -> { change_name, pcr_label, pcr_date } for lines added from a PCR
   const [err, setErr]     = useState(null);
   const [busy, setBusy]   = useState(null);      // id being saved, or "read" / "confirm"
   const [msg, setMsg]     = useState(null);
@@ -76,6 +78,12 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
                            {}, session.access_token);
       const list = Array.isArray(r) ? r : [];
       setRows(list);
+      const pcrIds = [...new Set(list.map(x => x.pcr_id).filter(Boolean))];
+      if (pcrIds.length) {
+        const q = await supa(`/rest/v1/project_pcrs?id=in.(${pcrIds.join(",")})&select=id,change_name,pcr_label,pcr_date`, {}, session.access_token)
+          .catch(() => []);
+        setPcrs(Object.fromEntries((Array.isArray(q) ? q : []).map(x => [x.id, x])));
+      }
       const ids = [...new Set(list.map(x => x.pdd_id).filter(Boolean))];
       if (seesPmo && ids.length) {
         const p = await supa(`/rest/v1/epdd_pdds?id=in.(${ids.join(",")})&select=id,pdd_number,epdd_status`, {}, session.access_token)
@@ -175,7 +183,12 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
             <ArrowRightLeft size={11} /> {revised.length} revised
           </span>
         )}
-        <span style={{ ...TYPE.caption, color:T.dim }}>{pddLabel ? `from ${pddLabel}` : active.length ? "from the charter" : ""}</span>
+        {(() => { const pcrN = active.filter(r => r.source === "pcr").length, rest = active.length - pcrN;
+          return (
+            <span style={{ ...TYPE.caption, color:T.dim }}>
+              {pddLabel ? `from ${pddLabel}` : rest ? "from the charter" : ""}
+              {pcrN > 0 && <span data-deliv="pcr-count" style={{ color:T.textOf(PCR), fontWeight:700 }}>{(pddLabel || rest) ? " · " : ""}{pcrN} from PCR</span>}
+            </span>); })()}
         {active.length > 0 && (
           <span aria-hidden="true" style={{ flex:"1 1 120px", maxWidth:240, height:5, borderRadius:R.pill, background:T.card2, overflow:"hidden" }}>
             <span style={{ display:"block", width:`${pct}%`, height:"100%", background:DATA.positive, transition:`width ${MOTION.base}` }} />
@@ -267,6 +280,14 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
                 textDecoration: isDone ? "line-through" : "none", textDecorationColor:`${T.muted}88`, overflowWrap:"anywhere" }}>
                 {r.title}
                 {!r.confirmed && <span style={{ ...TYPE.caption, fontWeight:700, color:T.textOf(BRAND.gold), marginLeft:6 }}>draft</span>}
+                {r.source === "pcr" && (() => { const c = pcrs[r.pcr_id];
+                  const tip = ["From the project change request", c?.change_name || c?.pcr_label, c?.pcr_date ? fmtDay(c.pcr_date) : ""].filter(Boolean).join(" · ");
+                  return (
+                    <span data-deliv="pcr" title={tip} style={{ display:"inline-flex", alignItems:"center", gap:3, marginLeft:7, verticalAlign:"1px",
+                      fontSize:10, fontWeight:800, letterSpacing:0.4, color:T.textOf(PCR), background:PCR + T.badge,
+                      border:`1px solid ${PCR}66`, padding:"1px 6px", borderRadius:R.pill, textDecoration:"none" }}>
+                      <FileDiff size={10} /> PCR
+                    </span>); })()}
                 {priceTag}
               </span>
             );
@@ -285,7 +306,9 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
             const note = canUpdate
               ? <NoteField T={T} value={r.note || ""} onSave={v => patch(r.id, { note: v || null })} />
               : <span style={{ fontSize:12, color:T.muted }}>{r.note || ""}</span>;
-            const rowStyle = { borderTop: i ? `1px solid ${T.border}` : "none", background: hot ? T.surfaceRaised : "transparent",
+            const rowStyle = { borderTop: i ? `1px solid ${T.border}` : "none",
+              background: hot ? T.surfaceRaised : r.source === "pcr" ? PCR + "0F" : "transparent",
+              boxShadow: r.source === "pcr" ? `inset 3px 0 0 ${PCR}` : "none",
               transition:`background ${MOTION.fast}` };
             if (isCompact) return (
               <div key={r.id} {...on} style={{ ...rowStyle, display:"flex", gap:10, padding:"9px 12px", alignItems:"flex-start" }}>
@@ -335,7 +358,7 @@ export function ProjectDeliverables({ T, session, supa, projectId, canUpdate, is
             <div key={r.id} style={{ display:"flex", gap:SP.sm, alignItems:"center", padding:"6px 0", borderBottom:`1px solid ${T.border}`,
               fontSize:12, color:T.dim }}>
               <span style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                {r.source === "charter" ? "Charter" : r.source === "pdd" ? "PDD" : "PMO"} · {r.title}
+                {r.source === "charter" ? "Charter" : r.source === "pdd" ? "PDD" : r.source === "pcr" ? "PCR" : "PMO"} · {r.title}
               </span>
               <span>{qtyText(r)}</span>
               <Button T={T} size="sm" variant="ghost" icon={Undo2} onClick={() => patch(r.id, { superseded: false })}>Restore</Button>
