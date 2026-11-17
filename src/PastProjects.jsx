@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { History, Search, X, Send, Mail, Pencil, ChevronDown, ChevronRight,
          Clock, AlertTriangle, CheckCircle2, MessageSquare, Plus,
          Upload, Download, ArrowLeft, CalendarRange, ListTree, List,
-         ClipboardList, BellRing, Hourglass, FileCheck2 } from "lucide-react";
+         ClipboardList, BellRing, Hourglass, FileCheck2, CheckCheck } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 import { ProjectTasks } from "./Tasks.jsx";
@@ -1615,6 +1615,25 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
   // Unread messages on a project: its own thread, plus manager-chat messages tagged to it.
   const unreadOf = useCallback(r => (unread[`project:${r.id}`] || 0) + (unread[`tagged:${r.id}`] || 0), [unread]);
   const unreadProjects = useMemo(() => (rows || []).filter(r => unreadOf(r) > 0).length, [rows, unreadOf]);
+  // Mark all as read (PMO admins, 17 Nov 2026): one read marker per unread conversation, for this user only.
+  const [markingAll, setMarkingAll] = useState(false);
+  const unreadThreads = useMemo(() => Object.entries(unread).filter(([k, n]) => n > 0 && !k.startsWith("tagged:")).map(([k]) => k), [unread]);
+  const markAllRead = async () => {
+    if (!unreadThreads.length) return;
+    const n = unreadThreads.reduce((a, k) => a + (unread[k] || 0), 0);
+    if (!window.confirm(`Mark all ${n} unread message${n === 1 ? "" : "s"} as read?\n\nThis clears the gold badges for you only; other PMO members keep theirs.`)) return;
+    setMarkingAll(true);
+    const at = new Date().toISOString();
+    try {
+      await supa("/rest/v1/past_chat_reads?on_conflict=user_id,thread", {
+        method:"POST", headers:{ Prefer:"resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(unreadThreads.map(thread => ({ user_id: session.user_id, thread, read_at: at }))),
+      }, session.access_token);
+      setOnlyUnread(false);
+    } catch (e) { window.alert("Could not mark them as read: " + (e?.message || e)); }
+    await refreshUnread();
+    setMarkingAll(false);
+  };
   useEffect(() => { if (onlyUnread && !unreadProjects) setOnlyUnread(false); }, [onlyUnread, unreadProjects]);
   // Open projects whose status was asked and not yet given (past_project_summary.status_pending_since).
   const waitingRows = useMemo(() => (rows || []).filter(r => r.status_pending_since && r.status !== "closed"), [rows]);
@@ -1965,6 +1984,16 @@ export function PastProjectsPage({ T, session, supa, isCompact, initialOpen = nu
               Unread
               {unreadProjects > 0 && <UnreadDot T={T} n={unreadProjects} />}
             </button>
+            {canEditPmo(session) && unreadThreads.length > 0 && (
+              <button type="button" className="pmo-focusable pmo-btn" data-mark-all-read disabled={markingAll}
+                title="Clear every unread follow-up message (for you only)" onClick={markAllRead}
+                style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 12px", borderRadius:R.md,
+                  cursor: markingAll ? "default" : "pointer", fontSize:12.5, fontWeight:600, fontFamily:TYPE.body.fontFamily,
+                  border:`1px solid ${T.border}`, background:"transparent", color:T.textSoft, opacity: markingAll ? 0.6 : 1 }}>
+                <CheckCheck size={13} color={T.textOf(DATA.positive)} />
+                {markingAll ? "Marking…" : "Mark all as read"}
+              </button>
+            )}
             <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:SP.sm,
               flexWrap:"wrap" }}>
               <div role="tablist" aria-label="View" data-tour="past-views" style={{ display:"flex", padding:2, borderRadius:R.pill,
