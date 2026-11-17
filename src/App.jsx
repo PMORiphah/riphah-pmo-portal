@@ -9542,7 +9542,7 @@ function ActivityLogPage({ T, session, supa }) {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      let q = `/rest/v1/activity_log?select=id,actor_name,actor_role,action,entity_type,entity_id,summary,details,created_at&order=created_at.desc&limit=${limit}`;
+      let q = `/rest/v1/activity_log?select=id,actor_id,actor_name,actor_role,action,entity_type,entity_id,summary,details,created_at&order=created_at.desc&limit=${limit}`;
       if (actionFilter) q += `&action=eq.${actionFilter}`;
       if (entityFilter) q += `&entity_type=eq.${entityFilter}`;
       if (dateFrom)     q += `&created_at=gte.${dateFrom}T00:00:00`;
@@ -9571,6 +9571,13 @@ function ActivityLogPage({ T, session, supa }) {
         supa("/rest/v1/past_projects?select=id,name", {}, session.access_token).catch(() => []),
       ]);
       const who = new Map((people || []).map(u => [u.id, u]));
+      // Show each person's current full name, not the username the database recorded ("Azhar" → "Abdullah Azhar",
+      // PMO 17 Nov 2026). Rows without an actor id are matched by that username.
+      const byUser = new Map((people || []).filter(u => u.username).map(u => [u.username.toLowerCase(), u]));
+      (data || []).forEach(e => {
+        const u = (e.actor_id && who.get(e.actor_id)) || (e.actor_name && byUser.get(String(e.actor_name).toLowerCase()));
+        if (u?.full_name) e.actor_name = u.full_name;
+      });
       // Ids in a change (a project manager, a linked project) read as names.
       const nm = new Map();
       (people || []).forEach(u => nm.set(u.id, u.full_name || u.username));
@@ -12145,13 +12152,16 @@ function NotificationsDrawer({ T, session, open, onClose, onSelectProject, onGoT
       safe(supa(`/rest/v1/projects?select=id,code,name,end_date,workflow_stage&end_date=lt.${today}&workflow_stage=neq.closed&order=end_date.asc&limit=20`, {}, session.access_token)),
       safe(supa("/rest/v1/comments?select=id,project_id,author_id,author_name,body,created_at&order=created_at.desc&limit=40", {}, session.access_token)),
       safe(supa("/rest/v1/comment_reads?select=comment_id", {}, session.access_token)),
-      safe(supa("/rest/v1/activity_log?select=id,action,entity_type,summary,actor_name,created_at&order=created_at.desc&limit=15", {}, session.access_token)),
-    ]).then(([od, cm, rd, act]) => {
+      safe(supa("/rest/v1/activity_log?select=id,action,entity_type,summary,actor_id,actor_name,created_at&order=created_at.desc&limit=15", {}, session.access_token)),
+      safe(supa("/rest/v1/user_profiles?select=id,username,full_name", {}, session.access_token)),
+    ]).then(([od, cm, rd, act, ppl]) => {
       if (!alive) return;
       const readSet = new Set((rd || []).map(r => r.comment_id));
       setOverdue(od || []);
       setUnread((cm || []).filter(c => c.author_id !== session.user_id && !readSet.has(c.id)).slice(0, 12));
-      setActivity(act || []);
+      const pid = new Map((ppl || []).map(u => [u.id, u])), pun = new Map((ppl || []).filter(u => u.username).map(u => [u.username.toLowerCase(), u]));
+      setActivity((act || []).map(a => { const u = (a.actor_id && pid.get(a.actor_id)) || (a.actor_name && pun.get(String(a.actor_name).toLowerCase()));
+        return u?.full_name ? { ...a, actor_name: u.full_name } : a; }));
       setLoading(false);
     });
     return () => { alive = false; };
