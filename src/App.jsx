@@ -10669,6 +10669,8 @@ const MEMBER_TITLES = {
   exec_pmo:    "Executive PMO",
   po1:         "Executive PMO",      // Mr. Abdullah Azhar, Executive PMO since 12 Nov 2026 (PMO); was Projects Officer
   po2:         "Projects Officer",
+  mto1:        "MTO PMO",            // two MTOs reporting to Usman, Abdullah and Atisham (PMO, 18 Nov 2026)
+  mto2:        "MTO PMO",
 };
 
 // Exact pixel positions for SVG connecting lines + card placement
@@ -10736,6 +10738,8 @@ const ORG_ACCENT = {
   exec_pmo:    DATA.info,
   po1:         DATA.positive,
   po2:         DATA.positive,
+  mto1:        DATA.violet,
+  mto2:        DATA.violet,
 };
 
 function OrgCardInner({ T, roleId, data, title, initials, isPMO, onEdit, big }) {
@@ -11025,6 +11029,12 @@ function TeamPage({ T, session }) {
                   title={MEMBER_TITLES[roleId]} initials={initials}
                   isPMO={isPMO} onEdit={()=>setEditMember(roleId)} />
               ))}
+              <div style={{ ...TYPE.label, color:T.dim, textAlign:"center", marginTop:SP.sm }}>Reporting to the Executive PMOs and Projects Officer</div>
+              {["mto1", "mto2"].map((roleId) => (
+                <OrgCardInner key={roleId} T={T} roleId={roleId} data={team?.[roleId]}
+                  title={MEMBER_TITLES[roleId]} initials="MT"
+                  isPMO={isPMO} onEdit={()=>setEditMember(roleId)} />
+              ))}
             </div>
           ) : (
           <div style={{ paddingBottom:SP.lg, overflowX:"auto" }}>
@@ -11074,8 +11084,8 @@ function TeamPage({ T, session }) {
                     <div aria-hidden="true" style={{ position:"relative", width:"100%", height:30 }}>
                       <span style={{
                         position:"absolute", top:0, height:2, background:borderColor,
-                        left:  i === 0 ? "50%" : 0,
-                        right: i === arr.length - 1 ? "50%" : 0,
+                        left:  i === 0 ? "50%" : -SP.lg / 2,
+                        right: i === arr.length - 1 ? "50%" : -SP.lg / 2,
                       }} />
                       <span style={{
                         position:"absolute", top:0, bottom:0, left:"50%",
@@ -11086,8 +11096,38 @@ function TeamPage({ T, session }) {
                         title={MEMBER_TITLES[roleId]} initials={initials}
                         isPMO={isPMO} onEdit={()=>setEditMember(roleId)} />
                     </div>
+                    {/* Usman, Abdullah and Atisham: a drop towards the MTOs below. */}
+                    {i > 0 && <div aria-hidden="true" style={{ width:2, height:22, background:borderColor, flexShrink:0 }} />}
+                    {i === 0 && <div aria-hidden="true" style={{ height:22, flexShrink:0 }} />}
                   </div>
                 ))}
+              </div>
+
+              {/* Tier 4 (18 Nov 2026): two MTO PMOs reporting to the three cards above (columns 2-4). The bar joins
+                  those three drops; one line runs down from its middle (the centre of column 3) to the two MTOs. */}
+              <div data-tier="mto" style={{ display:"grid", gridTemplateColumns:"repeat(4, minmax(0, 1fr))", gap:SP.lg, width:"100%" }}>
+                <div style={{ gridColumn:"2 / 5", display:"flex", flexDirection:"column", alignItems:"center", position:"relative" }}>
+                  {/* bar from the centre of column 2 to the centre of column 4 */}
+                  <span aria-hidden="true" style={{ position:"absolute", top:0, height:2, background:borderColor,
+                    left:`calc((100% - ${2 * SP.lg}px) / 6)`, right:`calc((100% - ${2 * SP.lg}px) / 6)` }} />
+                  <div aria-hidden="true" style={{ width:2, height:26, background:borderColor, flexShrink:0 }} />
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(2, minmax(0, 1fr))", gap:SP.lg, width:"68%" }}>
+                    {["mto1", "mto2"].map((roleId, i) => (
+                      <div key={roleId} style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                        <div aria-hidden="true" style={{ position:"relative", width:"100%", height:26 }}>
+                          <span style={{ position:"absolute", top:0, height:2, background:borderColor,
+                            left: i === 0 ? "50%" : `-${SP.lg / 2}px`, right: i === 1 ? "50%" : `-${SP.lg / 2}px` }} />
+                          <span style={{ position:"absolute", top:0, bottom:0, left:"50%", width:2, marginLeft:-1, background:borderColor }} />
+                        </div>
+                        <div style={{ width:"100%", display:"flex", flex:1 }}>
+                          <OrgCardInner T={T} roleId={roleId} data={team?.[roleId]}
+                            title={MEMBER_TITLES[roleId]} initials="MT"
+                            isPMO={isPMO} onEdit={()=>setEditMember(roleId)} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
             </div>
