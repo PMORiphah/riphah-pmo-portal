@@ -1,5 +1,10 @@
 // ask — the Riphah PMO portal assistant
 //
+// v44 (20 Nov 2026), after the PMO's session that day: missing dates can be asked about
+// (op empty / filled: "budget released but no release date"); Budgeted / Non-Budgeted is the
+// project type (budget_type), never "no DF"; refusals are plain and never say "ask the PMO";
+// complaints ("you idiot, I am the PMO admin") get an apology instead of a repeat of the last plan.
+//
 // v41 (29 Sep 2026): open to every role again at the PMO's instruction
 // (PMO_ONLY = false), after the v38/v40 audits. Access is still RLS: a project
 // manager's plan runs over their own projects only, with no cash flow, risk
@@ -657,14 +662,20 @@ Deno.serve(async (req) => {
   }));
   const cashRows = ((cfData ?? []) as CashRow[]);
   // v43: budget release dates (not in assistant_rows; same RLS through the caller's client).
-  const { data: relData } = await supa.from("projects").select("id, code, name, budget_release_date");
+  // v44: and the project type (Budgeted / Non Budgeted), same way.
+  const { data: relData } = await supa.from("projects").select("id, code, name, budget_release_date, project_type");
   const projById = new Map<string, string>();
   const relByKey = new Map<string, string>();
-  for (const p of (relData ?? []) as { id: string; code: string | null; name: string; budget_release_date: string | null }[]) {
+  const typeByKey = new Map<string, string>();
+  for (const p of (relData ?? []) as { id: string; code: string | null; name: string; budget_release_date: string | null; project_type: string | null }[]) {
     projById.set(p.id, p.name);
     if (p.budget_release_date) relByKey.set(`${p.code ?? ""}|${p.name}`, p.budget_release_date);
+    if (p.project_type) typeByKey.set(`${p.code ?? ""}|${p.name}`, p.project_type);
   }
-  for (const r of allRows) (r as Row).release_date = relByKey.get(`${r.code ?? ""}|${r.name}`) ?? null;
+  for (const r of allRows) {
+    (r as Row).release_date = relByKey.get(`${r.code ?? ""}|${r.name}`) ?? null;
+    (r as Row).project_type = typeByKey.get(`${r.code ?? ""}|${r.name}`) ?? null;
+  }
   const riskRows = ((riskData ?? []) as Risk[]);
   // Published dashboard KPIs, only for roles that can open the dashboard.
   let kpis: Kpi[] | null = null;

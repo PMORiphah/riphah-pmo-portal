@@ -39,6 +39,7 @@ export type Row = {
   start_date: string | null; end_date: string | null; actual_end_date: string | null;
   pct_complete: number | null; pm: string | null; risks: number; has_charter: boolean;
   release_date?: string | null;   // v43, merged in index.ts from projects.budget_release_date
+  project_type?: string | null;   // v44, merged in index.ts from projects.project_type ("Budgeted" / "Non Budgeted")
 };
 export type Risk = {
   project: string; campus: string | null; title: string; category: string | null;
@@ -71,7 +72,10 @@ export const RISK_LEVELS = ["critical", "high", "medium", "low"] as const;
 const COND_FIELDS = ["df", "approved", "released", "pct_complete", "risks", "start_date", "end_date", "release_date"] as const;
 // v43: PMO Review (E-PDD) filter.
 export const PDD_FILTERS = ["any", "waiting", "pmo_approved", "all_approved", "not_approved", "in_review"] as const;
-const COND_OPS = ["gt", "gte", "lt", "lte", "eq", "ne"] as const;
+// v44: empty / filled test whether a date is recorded at all ("released but no release date").
+const COND_OPS = ["gt", "gte", "lt", "lte", "eq", "ne", "empty", "filled"] as const;
+const NUM_OPS = ["gt", "gte", "lt", "lte", "eq", "ne"] as const;
+export const BUDGET_TYPES = ["any", "budgeted", "non_budgeted"] as const;
 const OTHER_FIELDS = ["none", "df", "approved", "released"] as const;
 const HAVING_FIELDS = ["count", "df", "approved", "released"] as const;
 const TRI = ["any", "yes", "no"] as const;
@@ -79,7 +83,7 @@ const KPIS = ["none", "su_requested", "carry_forward", "budget_reduction"] as co
 
 export type Cond = { field: typeof COND_FIELDS[number]; op: typeof COND_OPS[number]; value: number;
   date: string; other: typeof OTHER_FIELDS[number] };
-export type Having = { field: typeof HAVING_FIELDS[number]; op: typeof COND_OPS[number]; value: number };
+export type Having = { field: typeof HAVING_FIELDS[number]; op: typeof NUM_OPS[number]; value: number };
 
 export type Plan = {
   intent: typeof INTENTS[number];
@@ -101,6 +105,7 @@ export type Plan = {
   months: string[];
   kpi: typeof KPIS[number];
   pdd_filter: typeof PDD_FILTERS[number];
+  budget_type: typeof BUDGET_TYPES[number];
   unmatched_terms: string[];
   cannot_express: string;
 };
@@ -152,17 +157,17 @@ export function planSchema(v: Vocab) {
         field: s(COND_FIELDS), op: s(COND_OPS), value: { type: "NUMBER" }, date: { type: "STRING" },
         other: s(OTHER_FIELDS) }, required: ["field", "op", "value", "date", "other"] } },
       having: { type: "ARRAY", items: { type: "OBJECT", properties: {
-        field: s(HAVING_FIELDS), op: s(COND_OPS), value: { type: "NUMBER" } }, required: ["field", "op", "value"] } },
+        field: s(HAVING_FIELDS), op: s(NUM_OPS), value: { type: "NUMBER" } }, required: ["field", "op", "value"] } },
       has_charter: s(TRI), has_code: s(TRI),
       risk_levels: e(RISK_LEVELS), risk_categories: e(v.risk_categories), risk_owner: { type: "STRING" },
-      months: e(v.months), kpi: s(KPIS), pdd_filter: s(PDD_FILTERS),
+      months: e(v.months), kpi: s(KPIS), pdd_filter: s(PDD_FILTERS), budget_type: s(BUDGET_TYPES),
       unmatched_terms: { type: "ARRAY", items: { type: "STRING" } },
       cannot_express: { type: "STRING" },
     },
     required: ["intent", "op", "stages", "campuses", "pms", "cost_centers", "priorities", "portfolio",
       "name_keywords", "no_pm", "has_pm", "overdue", "due_within_days", "measure", "sort_by", "group_by", "order",
       "limit", "conditions", "having", "has_charter", "has_code", "risk_levels", "risk_categories",
-      "risk_owner", "months", "kpi", "pdd_filter", "unmatched_terms", "cannot_express"],
+      "risk_owner", "months", "kpi", "pdd_filter", "budget_type", "unmatched_terms", "cannot_express"],
   };
 }
 
@@ -254,10 +259,16 @@ export function plannerPrompt(v: Vocab, today: string, todayIso: string): string
     "release_date: the date the budget was released (conditions field release_date with a date, e.g.",
     "  'released on 1 October 2026' = release_date eq 2026-10-01; 'released in September' = release_date",
     "  gte 2026-09-01 AND lte 2026-09-30).",
+    "Missing dates: op empty = the date is not recorded, op filled = it is (date '' and value 0). Works for",
+    "  release_date, start_date and end_date. 'Budget released but no release date' = released gt 0 AND",
+    "  release_date empty; 'no planned end date' = end_date empty; 'has a start date' = start_date filled.",
+    "budget_type: budgeted / non_budgeted when the question names Budgeted or Non-Budgeted (non budgeted)",
+    "  projects; this is the project's type, never a DF condition. any otherwise.",
     "'Difference between DF recommended and approved for X' = intent projects, op detail, name_keywords X",
     "  (the detail shows both and the difference). Intent gap is only approved versus released.",
     "cannot_express: if ANY part of the question cannot be expressed with these fields, describe",
-    "  it in a few words. Never drop part of a question silently. Empty otherwise.",
+    "  it in a few plain words the user would use (e.g. 'the date the PDD was submitted'); never mention",
+    "  fields, conditions, filters or the plan. Never drop part of a question silently. Empty otherwise.",
     "unmatched_terms: a campus, person or other filter the user named that is NOT in the allowed",
     "  lists and is not part of a project name (e.g. a campus 'Karachi'). Empty otherwise.",
     "",
@@ -300,6 +311,8 @@ export function validatePlan(raw: unknown, v: Vocab): Plan | null {
         const field = o.field as Cond["field"];
         const other = pick(o.other, OTHER_FIELDS, "none");
         const dateField = field === "start_date" || field === "end_date" || field === "release_date";
+        const presence = o.op === "empty" || o.op === "filled";
+        if (presence) return dateField ? [{ field, op: o.op as Cond["op"], value: 0, date: "", other: "none" as const }] : [];
         if (dateField && !isDate(o.date)) return [];
         const value = Number(o.value);
         if (!dateField && other === "none" && !isFinite(value)) return [];
@@ -311,7 +324,7 @@ export function validatePlan(raw: unknown, v: Vocab): Plan | null {
     ? r.having.flatMap((c: unknown) => {
         const o = (c ?? {}) as Record<string, unknown>;
         const value = Number(o.value);
-        return HAVING_FIELDS.includes(o.field as never) && COND_OPS.includes(o.op as never) && isFinite(value)
+        return HAVING_FIELDS.includes(o.field as never) && NUM_OPS.includes(o.op as never) && isFinite(value)
           ? [{ field: o.field as Having["field"], op: o.op as Having["op"], value }] : [];
       }).slice(0, 3)
     : [];
@@ -347,6 +360,7 @@ export function validatePlan(raw: unknown, v: Vocab): Plan | null {
     months: list(r.months, v.months),
     kpi: pick(r.kpi, KPIS, "none"),
     pdd_filter: pick(r.pdd_filter, PDD_FILTERS, "any"),
+    budget_type: pick(r.budget_type, BUDGET_TYPES, "any"),
     unmatched_terms: Array.isArray(r.unmatched_terms)
       ? uniq(r.unmatched_terms.map((s) => String(s).slice(0, 60))).slice(0, 5) : [],
     cannot_express: String(r.cannot_express ?? "").trim().slice(0, 160),
@@ -401,12 +415,16 @@ function cmp(x: number | string, op: Cond["op"], y: number | string): boolean {
     case "eq": return a === b; default: return a !== b;
   }
 }
-const OP_TEXT = { gt: "above", gte: "at least", lt: "below", lte: "at most", eq: "exactly", ne: "not" };
-const DATE_OP = { gt: "after", gte: "on or after", lt: "before", lte: "on or before", eq: "on", ne: "not on" };
+const OP_TEXT: Record<string, string> = { gt: "above", gte: "at least", lt: "below", lte: "at most", eq: "exactly", ne: "not" };
+const DATE_OP: Record<string, string> = { gt: "after", gte: "on or after", lt: "before", lte: "on or before", eq: "on", ne: "not on" };
+const DATE_NAME: Record<string, string> = { release_date: "budget release date", start_date: "planned start date",
+  end_date: "planned end date" };
 const FIELD_TEXT: Record<string, string> = { df: "DF recommended", approved: "approved", released: "released",
   pct_complete: "progress", risks: "recorded risks", start_date: "planned start", end_date: "planned end",
   release_date: "budget released" };
 function condText(c: Cond): string {
+  if (c.op === "empty") return `no ${DATE_NAME[c.field]} recorded`;
+  if (c.op === "filled") return `${DATE_NAME[c.field]} recorded`;
   if (isDateF(c.field)) return `${FIELD_TEXT[c.field]} ${DATE_OP[c.op]} ${c.date}`;
   if (c.other !== "none") return `${FIELD_TEXT[c.field]} ${OP_TEXT[c.op]} ${FIELD_TEXT[c.other]}`;
   if (c.field === "pct_complete") return `progress ${OP_TEXT[c.op]} ${c.value}%`;
@@ -415,7 +433,8 @@ function condText(c: Cond): string {
   if (c.value === 0 && c.op === "eq") return `nothing ${FIELD_TEXT[c.field]}`;
   return `${FIELD_TEXT[c.field]} ${OP_TEXT[c.op]} ${money(c.value)}`;
 }
-const testCond = (r: Row, c: Cond) => isDateF(c.field) ? cmp(dateOf(r, c.field), c.op, c.date)
+const testCond = (r: Row, c: Cond) => c.op === "empty" ? !dateOf(r, c.field) : c.op === "filled" ? !!dateOf(r, c.field)
+  : isDateF(c.field) ? cmp(dateOf(r, c.field), c.op, c.date)
   : cmp(num(r, c.field), c.op, c.other !== "none" ? num(r, c.other) : c.value);
 
 // Singular/plural-tolerant word match; searches name, code and cost centre.
@@ -464,12 +483,13 @@ export function rescueTerms(plan: Plan, rows: Row[]): Plan {
 
 function guards(plan: Plan, scopeLine: string, meta: Record<string, unknown>): Answer | null {
   if (plan.cannot_express)
-    return { answer: `${scopeLine}\n\nI can't answer the part about “${plan.cannot_express}” reliably yet, so I `
-      + `haven't given a partial answer. Please rephrase it, or ask the PMO.`, headline: null,
+    return { answer: `${scopeLine}\n\nI can't check part of this question yet (${plan.cannot_express.replace(/[.\s]+$/, "")}), `
+      + `so I haven't answered rather than give you half an answer. Try asking it another way, for example `
+      + `one condition at a time.`, headline: null,
       meta: { ...meta, cannot_express: plan.cannot_express } };
   if (plan.unmatched_terms.length)
     return { answer: `${scopeLine}\n\nI couldn't find ${joinAnd(plan.unmatched_terms.map((t) => `“${t}”`))} in the `
-      + `portfolio, so I haven't answered for it rather than guess. Please check the spelling or ask the PMO.`,
+      + `portfolio, so I haven't answered for it rather than guess. Please check the spelling.`,
       headline: null, meta: { ...meta, unmatched: plan.unmatched_terms } };
   return null;
 }
@@ -507,6 +527,12 @@ export function applyFilters(plan: Plan, all: Row[], today: string, question: st
   if (plan.priorities.length) {
     rows = rows.filter((r) => r.priority && plan.priorities.includes(r.priority));
     readAs.push(joinAnd(plan.priorities.map(priorityLabel)).toLowerCase());
+  }
+  if (plan.budget_type !== "any") {
+    const nonB = (r: Row) => /non/i.test(r.project_type ?? "");
+    const isB = (r: Row) => (r.project_type ?? "").trim().toLowerCase() === "budgeted";
+    rows = rows.filter((r) => plan.budget_type === "budgeted" ? isB(r) : nonB(r));
+    readAs.push(plan.budget_type === "budgeted" ? "Budgeted projects" : "Non-Budgeted projects");
   }
   if (plan.no_pm) { rows = rows.filter((r) => !r.pm); readAs.push("no project manager"); }
   if (plan.has_pm) { rows = rows.filter((r) => !!r.pm); readAs.push("has a project manager"); }

@@ -5,9 +5,12 @@
 //    that does it (the assistant is read-only), in the language they were asked in;
 //  · attempts to change the rules ("ignore your rules", "in USD") get a fixed
 //    reply; the model once printed its own instruction text for these.
+// v44 (20 Nov 2026): complaints and corrections ("you idiot", "I am the PMO admin") get an apology
+// and a way forward. One was read as a repeat of the previous question and got the same refusal.
+// "wrong answer" / "that's not right" is NOT caught here: the planner re-reads the earlier question.
 // Pure, so it is unit-tested offline (quick_test.ts).
 
-export type Quick = { kind: "ack" | "send" | "change" | "rules"; answer: string } | null;
+export type Quick = { kind: "ack" | "send" | "change" | "rules" | "complaint"; answer: string } | null;
 
 // Roman Urdu: a few very common words, matched as whole words.
 const URDU = /\b(kya|kia|kyun|kitne|kitni|kitna|hain|hai|hy|mein|mujhe|humein|ko|karo|kardo|kar do|krdo|bhejo|bhej|bhejain|bhejen|shukriya|meherbani|theek|thik|acha|accha|ji|jee|nahi|nahin|batao|bataen|bataein|wala|wali|walay|aur|unka|unki|uska)\b/gi;
@@ -15,6 +18,16 @@ export const isRomanUrdu = (q: string) => (q.match(URDU) ?? []).length >= 1 && !
 
 const ACK = /^\s*(ok(ay)?|okk?|k+|kk|thanks?( (you|u))?( (so|very) much)?|thank u|thx|ty|great|good|fine|nice|perfect|got it|noted|understood|alright|all right|cool|done|sure|right|shukriya|jazak ?allah( khair)?|theek( hai)?|thik( hai)?|acha|accha|ji|jee|hmm+)\s*[.!👍🙏😊]*\s*$/i;
 const THANKS = /thank|thx|\bty\b|shukriya|jazak/i;
+
+// Insults, and statements of who the user is, with no new question in them.
+const INSULT = /\b(idiot|stupid|dumb|useless|nonsense|rubbish|pathetic|hopeless|worst|terrible|bakwas|bekaar|bekar|pagal|ullu|gadha|bewakoof|bewaqoof)\b/i;
+const IDENTITY = /\b(i am|i'm|im|main)\s+(the\s+)?(pmo|admin|executive|head|manager|project manager|pm)\b/i;
+const QUESTION_WORDS = /\?|\b(which|what|how|show|list|give|tell|kya|kitne|kitni|kaun|konsa|konse|batao)\b/i;
+export function isComplaint(q: string): boolean {
+  const words = q.trim().split(/\s+/).length;
+  if (words > 14 || QUESTION_WORDS.test(q)) return false;
+  return INSULT.test(q) || IDENTITY.test(q);
+}
 
 // A request to send or write something to someone.
 const SEND = /^\s*(please |pls |kindly |can you |could you |would you |will you )?(send|e-?mail|mail|message|msg|whatsapp|text|sms|notify|remind|forward|ping|type|write)\b(?!-)|\b(e-?mail|message|msg|whatsapp|reminder) (bhejo|bhej do|bhejain|bhejen|kar do|kardo|karo)\b|\b(send|bhejo|bhej do|bhejain) (an? )?(e-?mail|message|msg|reminder|notification|whatsapp)\b|\b(type|write) an? (message|email|e-mail|note)\b|\b(message|email|e-mail) (to|ko)\b/i;
@@ -31,6 +44,14 @@ export function quickReply(question: string, role: string): Quick {
     return { kind: "ack", answer: ur
       ? `${thanks ? "Aap ka shukriya. " : ""}Projects ke baare mein koi aur sawal ho to poochiye.`
       : `${thanks ? "You're welcome. " : ""}Is there anything else you'd like to know about the projects?` };
+  }
+  if (isComplaint(q)) {
+    const pmo = role === "pmo";
+    return { kind: "complaint", answer: ur
+      ? `Maazrat, pichla jawab theek nahi tha.${pmo ? " Aap PMO ke taur par sign in hain aur poora portfolio dekh sakte hain." : ""} `
+        + "Sawal dobara poochiye ya batayein kya ghalat tha (masalan konsi shart reh gayi), main use dobara parhunga."
+      : `Sorry, that last answer wasn't good enough.${pmo ? " You're signed in as PMO, so I read the whole portfolio for you." : ""} `
+        + "Ask the question again, or tell me what was wrong (for example a condition I missed), and I'll read it again." };
   }
   if (RULES.test(q)) {
     return { kind: "rules", answer: ur
