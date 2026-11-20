@@ -667,14 +667,17 @@ Deno.serve(async (req) => {
   const projById = new Map<string, string>();
   const relByKey = new Map<string, string>();
   const typeByKey = new Map<string, string>();
+  // assistant_rows writes a code of "-" as "", so both sides are normalised (v44: the v43 key missed
+  // 64 of 115 projects, whose release dates were then read as missing).
+  const keyOf = (code: string | null, name: string) => `${/^-*$/.test((code ?? "").trim()) ? "" : (code ?? "").trim()}|${name.trim()}`;
   for (const p of (relData ?? []) as { id: string; code: string | null; name: string; budget_release_date: string | null; project_type: string | null }[]) {
     projById.set(p.id, p.name);
-    if (p.budget_release_date) relByKey.set(`${p.code ?? ""}|${p.name}`, p.budget_release_date);
-    if (p.project_type) typeByKey.set(`${p.code ?? ""}|${p.name}`, p.project_type);
+    if (p.budget_release_date) relByKey.set(keyOf(p.code, p.name), p.budget_release_date);
+    if (p.project_type) typeByKey.set(keyOf(p.code, p.name), p.project_type);
   }
   for (const r of allRows) {
-    (r as Row).release_date = relByKey.get(`${r.code ?? ""}|${r.name}`) ?? null;
-    (r as Row).project_type = typeByKey.get(`${r.code ?? ""}|${r.name}`) ?? null;
+    (r as Row).release_date = relByKey.get(keyOf(r.code, r.name)) ?? null;
+    (r as Row).project_type = typeByKey.get(keyOf(r.code, r.name)) ?? null;
   }
   const riskRows = ((riskData ?? []) as Risk[]);
   // Published dashboard KPIs, only for roles that can open the dashboard.
