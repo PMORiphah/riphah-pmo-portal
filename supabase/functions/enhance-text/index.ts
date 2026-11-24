@@ -11,6 +11,7 @@
 // reference number or e-mail is refused and the model is asked once more with the problem named; a second failure
 // returns an error instead of wrong text. Nothing is saved; the PMO decides whether to use the text.
 // Gemini order as everywhere: 3.5 Flash Lite on key 1, key 2, then 3.1 Flash Lite on key 1, key 2.
+// Each try waits at most 15 s; a timeout or network error moves on to the next key / model (24 Nov 2026).
 import { GEMINI_MODELS, geminiFailure } from "../epdd-sync/ai.ts";
 import { checkFacts, tidy } from "./check.ts";
 
@@ -62,7 +63,8 @@ async function ask(keys: string[], prompt: string, until: number, signal: AbortS
     const ctl = new AbortController();
     const stop = () => ctl.abort();
     signal.addEventListener("abort", stop);
-    const t = setTimeout(stop, Math.min(25_000, left));
+    let timedOut = false;
+    const t = setTimeout(() => { timedOut = true; stop(); }, Math.min(15_000, left));
     try {
       const res = await fetch(`${GEMINI_URL}/${model}:generateContent`, {
         method: "POST", signal: ctl.signal,
@@ -85,8 +87,11 @@ async function ask(keys: string[], prompt: string, until: number, signal: AbortS
       try { const v = JSON.parse(txt)?.text; if (typeof v === "string" && v.trim()) return { ok: true as const, model: ki ? `${model} (key ${ki + 1})` : model, text: v }; } catch { /* next */ }
       last = `${model} key ${ki + 1}: unreadable answer`;
     } catch (e) {
-      last = signal.aborted ? "cancelled" : `${model} key ${ki + 1}: ${(e as Error).name}`;
-      break outer;
+      if (signal.aborted) { last = "cancelled"; break outer; }
+      last = `${model} key ${ki + 1}: ${timedOut ? "no answer in 15 s" : (e as Error).name}`;
+      // 24 Nov 2026: a model that hangs (seen twice that morning, 25 s each) is skipped: try the next key / model
+      // while time is left, instead of giving up on the first slow answer.
+      continue;
     } finally { clearTimeout(t); signal.removeEventListener("abort", stop); }
   }
   return { ok: false as const, error: last };
