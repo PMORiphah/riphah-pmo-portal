@@ -1,9 +1,10 @@
-// Optional themes (24 Nov 2026). Imported first by main.jsx so the chosen theme is in place before theme.js builds
-// its token sets. Only on /preview/ (or a local build with VITE_THEMES=1); never on the simulation page.
+// Optional themes (24 Nov 2026; production since 24 Nov 2026 at the PMO's request). Imported first by main.jsx so the
+// chosen theme is in place before theme.js builds its token sets. Never on the simulation page.
 // The choice lives on this device (localStorage "pmo-theme"); changing it reloads the page.
 import { THEMES } from "./themes/index.js";
 
-export const THEMES_ON = import.meta.env.BASE_URL === "/riphah-pmo-portal/preview/" || import.meta.env.VITE_THEMES === "1";
+// To withdraw from production: limit this to the preview base ("/riphah-pmo-portal/preview/").
+export const THEMES_ON = true;
 const KEY = "pmo-theme";
 
 export function themeList() {

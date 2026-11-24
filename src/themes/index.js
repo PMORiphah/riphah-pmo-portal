@@ -1,4 +1,4 @@
-// The optional themes (24 Nov 2026, /preview/ only). Each entry builds its theme on demand, so a build without
+// The optional themes (24 Nov 2026; production and /preview/). Each entry builds its theme on demand, so a build without
 // themes (production) drops this folder entirely. Order = the order in the chooser.
 import drawing from "./drawing.js";
 import contour from "./contour.js";
