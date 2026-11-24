@@ -343,15 +343,22 @@ Deno.serve(async (req: Request) => {
   const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
   const CRON_SECRET = Deno.env.get("CRON_SECRET");
 
-  // Auth: pg_cron with the shared secret, or a signed-in PMO.
+  // Auth: pg_cron with the shared secret, or a signed-in PMO, or (24 Nov 2026) a PMO Review worker listed in
+  // settings.review_viewers (is_review_viewer()), who may only run "Check now" or redo one review ({review: id}).
   let trigger = "cron";
+  let reviewerOnly = false;
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
     const auth = req.headers.get("authorization") ?? "";
-    const r = await fetch(`${SUPA}/rest/v1/rpc/is_pmo`, {
-      method: "POST", headers: { apikey: ANON, Authorization: auth, "Content-Type": "application/json" }, body: "{}",
-    }).catch(() => null);
-    const ok = r?.ok ? (await r.json().catch(() => false)) === true : false;
-    if (!ok) return json({ error: "Unauthorized" }, 401);
+    const rpc = async (fn: string) => {
+      const r = await fetch(`${SUPA}/rest/v1/rpc/${fn}`, {
+        method: "POST", headers: { apikey: ANON, Authorization: auth, "Content-Type": "application/json" }, body: "{}",
+      }).catch(() => null);
+      return r?.ok ? (await r.json().catch(() => false)) === true : false;
+    };
+    if (!(await rpc("is_pmo"))) {
+      if (!(await rpc("is_review_viewer"))) return json({ error: "Unauthorized" }, 401);
+      reviewerOnly = true;
+    }
     trigger = "manual";
   }
 
@@ -613,6 +620,8 @@ Deno.serve(async (req: Request) => {
   // Manual one-offs for the PMO: redo one review, preview/run the AI reading.
   const body = await req.json().catch(() => ({})) as { review?: number; ai?: number; dry?: boolean; ai_run?: number;
     notify_preview?: number; notify_test?: number };
+  if (reviewerOnly && Object.keys(body ?? {}).some((k) => k !== "review"))
+    return json({ error: "PMO only" }, 403);
   if (trigger === "manual" && (body?.review || body?.ai || body?.ai_run || body?.notify_preview || body?.notify_test)) {
     try {
       if (body.notify_preview) return json({ ok: true, ...(await runNotify({ id: Number(body.notify_preview), send: false })) });

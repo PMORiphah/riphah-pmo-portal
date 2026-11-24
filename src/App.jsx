@@ -175,7 +175,11 @@ let HEAD_VIEW = false;
 const HEAD_WRITABLE = /^\/rest\/v1\/(pmo_tasks|pmo_achievements|pmo_pr_documents|comment_reads|past_chat_reads|push_subscriptions|user_webauthn_credentials|tour_events)(\?|$)/;
 const HEAD_BLOCKED_FN = /^\/functions\/v1\/(invite-user|reset-user-password|delete-user|send-deadline-email|send-welcome-email|board-report-notify|notify-past|notify-update|notify-comment|epdd-sync|pcr-extract|deliverables-extract|send-pdd-reminders|send-deadline-alerts)\b/;
 export const HEAD_VIEW_MSG = "View only: as Head PMO you can edit PMO Goals and PMO Achievements. Ask the PMO for other changes.";
-const headBlocks = (path, method) => HEAD_VIEW && (HEAD_BLOCKED_FN.test(path)
+// PMO Review workers (settings.review_viewers, 24 Nov 2026): a Head PMO on that list may also work on PMO Review
+// (link / unlink a PDD, "Not in the plan", Check now). The database and epdd-sync enforce the same.
+let REVIEW_WORK = false;
+const REVIEW_WORK_PATH = /^\/(rest\/v1\/epdd_pdds|functions\/v1\/epdd-sync)(\?|$)/;
+const headBlocks = (path, method) => HEAD_VIEW && !(REVIEW_WORK && REVIEW_WORK_PATH.test(path)) && (HEAD_BLOCKED_FN.test(path)
   || (method !== "GET" && method !== "HEAD" && path.startsWith("/rest/v1/") && !path.startsWith("/rest/v1/rpc/") && !HEAD_WRITABLE.test(path)));
 
 const supa = async (path, opts = {}, token = null) => {
@@ -610,7 +614,7 @@ function SidebarSimButton({ T, session, getSession }) {
   );
 }
 
-function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false, reportsNew = 0, onChangePassword, simShared = null,
+function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCount = 0, pastCount = 0, pastAllowed = false, reportsAllowed = false, reviewAllowed = false, reportsNew = 0, onChangePassword, simShared = null,
                   T, collapsed, setCollapsed, mobileOpen, setMobileOpen, isCompact,
                   fyLabel = "FY 2026-27", navStats = null }) {
   const roleFiltered = NAV.filter(n => {
@@ -801,6 +805,18 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
               </div>
             )}
             {PMO_NAV.map((item) => <NavRow key={item.id} {...item} admin />)}
+          </>
+        )}
+        {/* PMO Review workers (settings.review_viewers, 24 Nov 2026) who are not Head PMO: the PMO Review page only. */}
+        {session?.role !== "pmo" && reviewAllowed && (
+          <>
+            {mini ? <div style={{ height:1, background:T.sidebarBorder, margin:"14px 16px" }} /> : (
+              <div style={{ display:"flex", alignItems:"center", gap:8, margin:"18px 20px 8px" }}>
+                <span style={{ ...TYPE.label, color:T.sidebarFgSoft }}>E-PDD</span>
+                <div style={{ flex:1, height:1, background:T.sidebarBorder }} />
+              </div>
+            )}
+            {PMO_NAV.filter((item) => item.id === "review").map((item) => <NavRow key={item.id} {...item} admin />)}
           </>
         )}
       </nav>
@@ -12711,14 +12727,21 @@ export default function App() {
   // Head PMO: treated as the PMO for what is shown (role "pmo", headView true); writes are limited by the
   // guard above and by the database. The real role (guest) stays in realRole for session tracking.
   const [headView, setHeadView] = useState(false);
+  const [reviewWork, setReviewWork] = useState(false);   // listed in settings.review_viewers: works on PMO Review
   useEffect(() => {
-    let on = true; HEAD_VIEW = false; setHeadView(false);
+    let on = true; HEAD_VIEW = false; setHeadView(false); REVIEW_WORK = false; setReviewWork(false);
     if (!rawSession?.access_token || rawSession.role === "pmo") return;
     supa("/rest/v1/rpc/is_head_pmo", { method: "POST", body: "{}" }, rawSession.access_token)
       .then((v) => { if (on && v === true) { HEAD_VIEW = true; setHeadView(true); } }).catch(() => {});
+    supa("/rest/v1/rpc/is_review_viewer", { method: "POST", body: "{}" }, rawSession.access_token)
+      .then((v) => { if (on && v === true) { REVIEW_WORK = true; setReviewWork(true); } }).catch(() => {});
     return () => { on = false; };
   }, [rawSession?.user_id]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const session = useMemo(() => (rawSession && headView ? { ...rawSession, role: "pmo", headView: true, realRole: rawSession.role } : rawSession), [rawSession, headView]);
+  const session = useMemo(() => {
+    if (!rawSession) return rawSession;
+    const s = headView ? { ...rawSession, role: "pmo", headView: true, realRole: rawSession.role } : rawSession;
+    return reviewWork ? { ...s, reviewWork: true } : s;
+  }, [rawSession, headView, reviewWork]);
   // The current session for code that outlives a render (the Simulation launcher reads it at each
   // request). Any end of the session also stops a simulation hand-over (no-op unless one ran).
   const sessionRef = useRef(null);
@@ -12781,6 +12804,7 @@ export default function App() {
   const [unreadTick, setUnreadTick] = useState(0); // bump to force an immediate refresh
   const [reviewCount, setReviewCount] = useState(0); // PDDs from the E-PDD portal not yet opened (PMO)
   const [pastAllowed, setPastAllowed] = useState(false); // PMO, or manages at least one past project
+  const reviewAllowed = reviewWork;   // a PMO Review worker who is not (also) a Head PMO still gets the page
   const [pastCount, setPastCount] = useState(0);         // unread past-project follow-up messages
   const [reportsAllowed, setReportsAllowed] = useState(false); // PMO, or a board report was shared with them
   const [reportsUnseen, setReportsUnseen] = useState([]);       // shared reports not yet opened
@@ -13448,7 +13472,8 @@ export default function App() {
     // entry is not enough on its own: a restored session, a bookmark or a stale
     // page value can still land here, and Past Projects would have shown an
     // empty list rather than saying anything.
-    ((page === "cashflow" || page === "review" || page === "inventory" || page === "goals") && session?.role !== "pmo") ? "proj" :
+    (page === "review" && session?.role !== "pmo" && !reviewAllowed) ? "proj" :
+    ((page === "cashflow" || page === "inventory" || page === "goals") && session?.role !== "pmo") ? "proj" :
     (page === "past" && session?.role !== "pmo" && !pastAllowed) ? "proj" :
     (page === "reports" && session?.role !== "pmo" && !reportsAllowed && !reportsPinned) ? "proj" :
     page;
@@ -13590,7 +13615,7 @@ export default function App() {
       }} />
       <Sidebar
         T={T} page={effectivePage} setPage={navigateToPage} session={session} getSession={getSession}
-        unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} reportsAllowed={reportsAllowed} reportsNew={reportsUnseen.length} onChangePassword={() => setShowChangePassword(true)}
+        unreadCount={unreadCount} reviewCount={reviewCount} pastCount={pastCount} pastAllowed={pastAllowed} reportsAllowed={reportsAllowed} reviewAllowed={reviewAllowed} reportsNew={reportsUnseen.length} onChangePassword={() => setShowChangePassword(true)}
         simShared={simShareButton}
         collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         mobileOpen={navMobileOpen} setMobileOpen={setNavMobileOpen}

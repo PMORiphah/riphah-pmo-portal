@@ -7,6 +7,9 @@ import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Select, Input, Button, Surface, Tabs, CAN_HOVER } from "./ui.jsx";
 import { storageUrl } from "./storageUrl.js";
 import { canEditPmo } from "./headView.js";
+// The PMO, or a PMO Review worker (settings.review_viewers, 24 Nov 2026): link / unlink, "Not in the plan", Check now.
+// Creating a CAPEX project and marking PDDs seen stay with the PMO.
+const canWork = (s) => canEditPmo(s) || !!s?.reviewWork;
 import { fileLink } from "./fileLinks.js";
 
 // Always run epdd-sync in Singapore, like the 5-minute pg_cron run. Called from the
@@ -308,7 +311,7 @@ function ReviewPanel({ T, session, supa, row, review, ai, isCompact, onChanged }
                       </ul>
                     )}
                     {c.id === "budget" && (
-                      <BudgetMatch T={T} session={session} supa={supa} row={row} check={c} busy={busy} onRelink={canEditPmo(session) ? relink : null} />
+                      <BudgetMatch T={T} session={session} supa={supa} row={row} check={c} busy={busy} onRelink={canWork(session) ? relink : null} />
                     )}
                   </div>
                 </div>
@@ -1066,7 +1069,7 @@ export function PmoReviewPage({ T, session, supa, isCompact, onSeenChange, initi
                   <span className="rev-dot" style={{ width:7, height:7, borderRadius:"50%", background:health.c }} />
                   {health.t}
                 </span>
-                {canEditPmo(session) && <Button T={T} variant="ghost" icon={RefreshCw} onClick={syncNow} loading={syncing} disabled={syncing}>
+                {canWork(session) && <Button T={T} variant="ghost" icon={RefreshCw} onClick={syncNow} loading={syncing} disabled={syncing}>
                   Check now
                 </Button>}
               </div>
