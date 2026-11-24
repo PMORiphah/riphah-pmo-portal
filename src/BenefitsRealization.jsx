@@ -4,9 +4,9 @@ import {
 } from "recharts";
 import {
   Sparkles, TrendingUp, GraduationCap, Wallet, Coins, Percent, Pencil, Plus, Hourglass, ChevronDown, ChevronRight,
-  Building2, PieChart as PieIcon, BarChart3, CalendarRange, RotateCcw, Trash2, FileText, HeartPulse, Activity,
+  Building2, PieChart as PieIcon, BarChart3, CalendarRange, RotateCcw, Trash2, FileText, HeartPulse, Activity, BookOpen, Banknote,
 } from "lucide-react";
-import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
+import { TYPE, SP, R, MOTION, BRAND, DATA, DK } from "./theme.js";
 import { Button, Input, Select, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
 import { canEditPmo } from "./headView.js";
 
@@ -32,6 +32,61 @@ const CAT = {
   patient_experience: { label: "Patient Experience", short: "Patient exp.", color: ROSE, icon: HeartPulse },
 };
 const KEYS = Object.keys(CAT);
+
+// Section banner shared by the three benefits (24 Nov 2026, PMO: "make student and revenue look good the same way").
+// Deep tinted band, glowing animated badge, a drawn motif along the bottom and stat chips.
+const MOTIF = {
+  // Revenue: a rising growth line with a gold point where it peaks
+  revenue: (c) => (<>
+    <path className="br-draw" d="M0 70 L60 64 L110 68 L170 52 L230 56 L290 40 L350 44 L410 26 L470 30 L530 14 L600 8" fill="none" stroke={c} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
+    <path d="M0 70 L60 64 L110 68 L170 52 L230 56 L290 40 L350 44 L410 26 L470 30 L530 14 L600 8 V80 H0 Z" fill={c} opacity="0.10" />
+    {[[170, 52], [290, 40], [410, 26], [530, 14]].map(([x, y], i) => <circle key={x} className="br-twinkle" style={{ animationDelay: `${i * 0.5}s` }} cx={x} cy={y} r="3.2" fill={c} />)}
+  </>),
+  // Student Experience: a winding learning path with stars along the way
+  student_experience: (c) => (<>
+    <path className="br-draw" d="M0 52 C60 20 120 72 180 46 S300 22 360 48 S480 70 540 36 S590 26 600 28" fill="none" stroke={c} strokeWidth="2" strokeDasharray="1 0" strokeLinecap="round" />
+    {[[90, 44], [250, 30], [420, 58], [560, 30]].map(([x, y], i) => (
+      <path key={x} className="br-twinkle" style={{ animationDelay: `${i * 0.6}s`, transformOrigin: `${x}px ${y}px` }}
+        d={`M${x} ${y - 7} L${x + 2} ${y - 2} L${x + 7} ${y} L${x + 2} ${y + 2} L${x} ${y + 7} L${x - 2} ${y + 2} L${x - 7} ${y} L${x - 2} ${y - 2} Z`} fill={c} />))}
+  </>),
+  // Patient Experience: a heartbeat line
+  patient_experience: (c) => (
+    <path className="br-pulse" d="M0 50 H170 L188 50 L200 18 L214 72 L228 30 L240 50 H380 L394 50 L404 26 L416 64 L428 50 H600"
+      fill="none" stroke={c} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />),
+};
+const DEEP = { revenue: "#3A2A0C", student_experience: "#261A52", patient_experience: "#3B1230" };
+const BADGE_ANIM = { revenue: "br-float", student_experience: "br-float", patient_experience: "br-beat" };
+
+function BenefitBanner({ T, cat, title, sub, stats, onAdd, compact }) {
+  const c = CAT[cat].color, Icon = CAT[cat].icon;
+  return (
+    <div data-br-banner={cat} style={{ position: "relative", overflow: "hidden", borderRadius: R.lg, margin: compact ? `-${SP.xs}px 0 ${SP.md}px` : `0 0 ${SP.md}px`,
+      padding: compact ? `${SP.md}px ${SP.md}px ${SP.md + 18}px` : `${SP.md}px ${SP.lg}px ${SP.md + 18}px`, color: "#fff",
+      background: `radial-gradient(520px 200px at 100% 0%, ${c}55, transparent 65%), linear-gradient(120deg, ${DEEP[cat]}, ${BRAND.navyDeep} 70%)` }}>
+      <svg aria-hidden="true" viewBox="0 0 600 80" preserveAspectRatio="none" style={{ position: "absolute", left: 0, right: 0, bottom: 2, width: "100%", height: 24, opacity: 0.8, overflow: "visible" }}>
+        {MOTIF[cat](c)}
+      </svg>
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: SP.md, flexWrap: "wrap" }}>
+        <span className={BADGE_ANIM[cat]} style={{ width: 46, height: 46, borderRadius: 14, display: "grid", placeItems: "center", background: `${c}33`, boxShadow: `0 0 0 1px ${c}66, 0 0 24px ${c}55` }}>
+          <Icon size={24} color={c} />
+        </span>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ ...TYPE.h2, fontSize: compact ? 17 : 20, color: "#fff" }}>{title}</div>
+          <div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>{sub}</div>
+        </div>
+        <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap" }}>
+          {stats.map(([v, l]) => (
+            <div key={l} style={{ padding: "6px 12px", borderRadius: R.md, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", minWidth: 0 }}>
+              <div style={{ ...TYPE.h3, fontSize: 16, color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{v}</div>
+              <div style={{ ...TYPE.label, fontSize: 8.5, color: "rgba(255,255,255,0.65)" }}>{l}</div>
+            </div>
+          ))}
+          {onAdd && <Button T={DK} size="sm" icon={Plus} onClick={onAdd}>Add</Button>}
+        </div>
+      </div>
+    </div>
+  );
+}
 const FYS = ["FY 25-26", "FY 26-27"];
 const STAGE = { pdd_not_submitted: "PDD not submitted", identified: "PDD submitted", mt_review: "MT Review", ed_review: "ED Review",
   df_review: "DF Review", approved: "Approved", closed: "Closed" };
@@ -180,6 +235,9 @@ export function BenefitsRealizationPage({ T, session, supa }) {
   const se = view.filter(r => r.category === "student_experience");
   const pe = view.filter(r => r.category === "patient_experience");
 
+  const siteN = (list) => new Set(list.map(r => r.campus).filter(Boolean)).size;
+  const budgetOf = (list) => list.some(r => num(r.budget) !== null) ? pkrM(list.reduce((t, r) => t + (num(r.budget) || 0), 0)) : "—";
+
   const k = useMemo(() => {
     const budget = view.reduce((s, r) => s + (num(r.budget) || 0), 0);
     const withBudget = view.filter(r => num(r.budget) !== null).length;
@@ -259,10 +317,16 @@ export function BenefitsRealizationPage({ T, session, supa }) {
         @keyframes brBeat { 0%,100% { transform: scale(1) } 12% { transform: scale(1.12) } 24% { transform: scale(1) } 36% { transform: scale(1.07) } 48% { transform: scale(1) } }
         .br-pulse { stroke-dasharray: 900; animation: brPulse 3.2s linear infinite }
         .br-beat { animation: brBeat 2.4s ease-in-out infinite }
+        @keyframes brDraw { 0% { stroke-dashoffset: 900 } 55%,100% { stroke-dashoffset: 0 } }
+        @keyframes brFloat { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
+        @keyframes brTwinkle { 0%,100% { opacity: .35; transform: scale(.8) } 50% { opacity: 1; transform: scale(1.15) } }
+        .br-draw { stroke-dasharray: 900; animation: brDraw 5s ease-out infinite }
+        .br-float { animation: brFloat 3.2s ease-in-out infinite }
+        .br-twinkle { transform-box: fill-box; transform-origin: center; animation: brTwinkle 2.6s ease-in-out infinite }
         .br-rise { animation: brRise 620ms cubic-bezier(.2,.7,.2,1) both }
         .br-card { transition: transform ${MOTION.fast}, box-shadow ${MOTION.fast}, border-color ${MOTION.fast} }
         .br-card:hover { transform: translateY(-2px); box-shadow: ${T.shadowLg}; }
-        @media (prefers-reduced-motion: reduce) { .br-rise, .br-glow, .br-pulse, .br-beat { animation: none !important } .br-pulse { stroke-dasharray: none } .br-card:hover { transform: none } }
+        @media (prefers-reduced-motion: reduce) { .br-rise, .br-glow, .br-pulse, .br-beat, .br-draw, .br-float, .br-twinkle { animation: none !important } .br-pulse, .br-draw { stroke-dasharray: none } .br-card:hover { transform: none } }
       `}</style>
 
       {/* Hero */}
@@ -427,26 +491,34 @@ export function BenefitsRealizationPage({ T, session, supa }) {
         {/* Revenue projects */}
         {rev.length > 0 && (
           <Section T={T} tone={BRAND.gold} pad={compact ? SP.md : SP.lg} data-br="revenue">
-            <SectionTitle T={T} icon={TrendingUp} title={`Revenue · ${rev.length} project${rev.length === 1 ? "" : "s"}`}
+            <BenefitBanner T={T} cat="revenue" compact={compact}
+              title={`Revenue · ${rev.length} project${rev.length === 1 ? "" : "s"}`}
               sub="Projects that bring income: budget invested, revenue generated so far and the return"
-              right={isPMO ? <Button T={T} size="sm" icon={Plus} onClick={() => setEdit({ category: "revenue", fiscal_year: fy || "FY 25-26" })}>Add</Button> : null} />
+              stats={[[rev.length, "projects"], [budgetOf(rev), "budget invested"],
+                [rev.some(r => num(r.revenue) !== null) ? pkrM(rev.reduce((t, r) => t + (num(r.revenue) || 0), 0)) : "—", "revenue generated"]]}
+              onAdd={isPMO ? () => setEdit({ category: "revenue", fiscal_year: fy || "FY 25-26" }) : null} />
             <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: compact ? "1fr" : "repeat(auto-fill, minmax(340px, 1fr))" }}>
               {rev.map((r, i) => {
                 const b = num(r.budget), v = num(r.revenue), roi = v !== null && b > 0 ? v / b : null;
                 return (
-                  <div key={r.id} data-br-card={r.project_code} className="br-card br-rise pmo-focusable" {...cardProps(r)} style={{ animationDelay: `${Math.min(i, 10) * 50}ms`, cursor: "pointer",
-                    padding: SP.md, borderRadius: R.lg, background: T.surface, border: `1px solid ${T.border}`, borderTop: `3px solid ${BRAND.gold}`, minWidth: 0 }}>
-                    <div style={{ display: "flex", gap: SP.sm, alignItems: "flex-start" }}>
+                  <div key={r.id} data-br-card={r.project_code} className="br-card br-rise pmo-focusable" {...cardProps(r)} style={{ animationDelay: `${Math.min(i, 10) * 50}ms`, position: "relative", overflow: "hidden", cursor: "pointer",
+                    padding: SP.md, borderRadius: R.lg, minWidth: 0, border: `1px solid ${BRAND.gold}45`, borderLeft: `3px solid ${BRAND.gold}`,
+                    background: `linear-gradient(160deg, ${BRAND.gold}1a, ${T.surface} 58%)` }}>
+                    <Coins aria-hidden="true" size={88} color={BRAND.gold} style={{ position: "absolute", right: -14, bottom: -20, opacity: 0.08 }} />
+                    <div style={{ display: "flex", gap: SP.sm, alignItems: "flex-start", position: "relative" }}>
+                      <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "grid", placeItems: "center", background: `${BRAND.gold}22`, border: `1px solid ${BRAND.gold}55` }}>
+                        <Banknote size={15} color={T.textOf(BRAND.gold)} />
+                      </span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ ...TYPE.h3, fontSize: 14, color: T.text, lineHeight: 1.3 }}>{r.project_name}</div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5, alignItems: "center" }}>
                           <span style={{ ...TYPE.caption, color: T.dim, fontFamily: "ui-monospace,Consolas,monospace" }}>{r.project_code}</span>
-                          <Pill T={T} c={BRAND.blueBright}>{r.fiscal_year}</Pill>{r.campus && <Pill T={T} c={DATA.neutral}>{r.campus}</Pill>}
+                          <Pill T={T} c={BRAND.blueBright}>{r.fiscal_year}</Pill>{r.campus && <Pill T={T} c={BRAND.gold}>{r.campus}</Pill>}
                         </div>
                       </div>
                       {editBtn(r)}
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.8fr", gap: SP.sm, marginTop: SP.md }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.8fr", gap: SP.sm, marginTop: SP.md, position: "relative" }}>
                       {[["Budget", b !== null ? pkrM(b) : blank("not entered"), BRAND.blueBright],
                         ["Revenue", v !== null ? pkrM(v) : blank("not reported"), DATA.positive],
                         ["Return", roi !== null ? `${roi.toFixed(2)}×` : blank("—"), DATA.cyan]].map(([l, val, c]) => (
@@ -457,7 +529,7 @@ export function BenefitsRealizationPage({ T, session, supa }) {
                       ))}
                     </div>
                     {roi !== null && (
-                      <div title={`Revenue is ${Math.round(roi * 100)}% of the budget`} style={{ height: 6, borderRadius: 6, background: T.rowHover, marginTop: SP.sm, overflow: "hidden" }}>
+                      <div title={`Revenue is ${Math.round(roi * 100)}% of the budget`} style={{ height: 6, borderRadius: 6, background: T.rowHover, marginTop: SP.sm, overflow: "hidden", position: "relative" }}>
                         <div style={{ height: "100%", width: `${Math.min(100, roi * 100)}%`, borderRadius: 6,
                           background: `linear-gradient(90deg, ${DATA.positive}88, ${DATA.positive})`, transition: "width 900ms ease-out" }} />
                       </div>
@@ -474,23 +546,28 @@ export function BenefitsRealizationPage({ T, session, supa }) {
         {/* Student Experience projects */}
         {se.length > 0 && (
           <Section T={T} tone={DATA.violet} pad={compact ? SP.md : SP.lg} data-br="student">
-            <SectionTitle T={T} icon={GraduationCap} title={`Student Experience · ${se.length} project${se.length === 1 ? "" : "s"}`}
-              sub="Projects that improve campus life and learning"
-              right={isPMO ? <Button T={T} size="sm" icon={Plus} onClick={() => setEdit({ category: "student_experience", fiscal_year: fy || "FY 25-26" })}>Add</Button> : null} />
+            <BenefitBanner T={T} cat="student_experience" compact={compact}
+              title={`Student Experience · ${se.length} project${se.length === 1 ? "" : "s"}`}
+              sub="Projects that improve campus life, learning spaces and the day-to-day of students"
+              stats={[[se.length, "projects"], [siteN(se), "campuses / sites"], [budgetOf(se), "budget invested"]]}
+              onAdd={isPMO ? () => setEdit({ category: "student_experience", fiscal_year: fy || "FY 25-26" }) : null} />
             <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: compact ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))" }}>
               {se.map((r, i) => {
                 const b = num(r.budget);
                 return (
                   <div key={r.id} data-br-card={r.project_code} className="br-card br-rise pmo-focusable" {...cardProps(r)} style={{ animationDelay: `${Math.min(i, 10) * 50}ms`, position: "relative", overflow: "hidden", cursor: "pointer",
-                    padding: SP.md, borderRadius: R.lg, minWidth: 0, border: `1px solid ${DATA.violet}40`,
-                    background: `linear-gradient(160deg, ${DATA.violet}1c, ${T.surface} 55%)` }}>
-                    <GraduationCap aria-hidden="true" size={84} color={DATA.violet} style={{ position: "absolute", right: -14, bottom: -18, opacity: 0.09 }} />
+                    padding: SP.md, borderRadius: R.lg, minWidth: 0, border: `1px solid ${DATA.violet}45`, borderLeft: `3px solid ${DATA.violet}`,
+                    background: `linear-gradient(160deg, ${DATA.violet}1c, ${T.surface} 58%)` }}>
+                    <GraduationCap aria-hidden="true" size={88} color={DATA.violet} style={{ position: "absolute", right: -14, bottom: -20, opacity: 0.09 }} />
                     <div style={{ display: "flex", gap: SP.sm, alignItems: "flex-start", position: "relative" }}>
+                      <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "grid", placeItems: "center", background: `${DATA.violet}22`, border: `1px solid ${DATA.violet}55` }}>
+                        <BookOpen size={15} color={T.textOf(DATA.violet)} />
+                      </span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ ...TYPE.h3, fontSize: 14, color: T.text, lineHeight: 1.3 }}>{r.project_name}</div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5, alignItems: "center" }}>
                           <span style={{ ...TYPE.caption, color: T.dim, fontFamily: "ui-monospace,Consolas,monospace" }}>{r.project_code}</span>
-                          <Pill T={T} c={BRAND.blueBright}>{r.fiscal_year}</Pill>{r.campus && <Pill T={T} c={DATA.neutral}>{r.campus}</Pill>}
+                          <Pill T={T} c={BRAND.blueBright}>{r.fiscal_year}</Pill>{r.campus && <Pill T={T} c={DATA.violet}>{r.campus}</Pill>}
                         </div>
                       </div>
                       {editBtn(r)}
@@ -509,33 +586,11 @@ export function BenefitsRealizationPage({ T, session, supa }) {
         {/* Patient Experience projects (24 Nov 2026) */}
         {pe.length > 0 && (
           <Section T={T} tone={ROSE} pad={compact ? SP.md : SP.lg} data-br="patient">
-            <div style={{ position: "relative", overflow: "hidden", borderRadius: R.lg, margin: compact ? `-${SP.xs}px 0 ${SP.md}px` : `0 0 ${SP.md}px`,
-              padding: compact ? `${SP.md}px ${SP.md}px ${SP.md + 18}px` : `${SP.md}px ${SP.lg}px ${SP.md + 18}px`, color: "#fff",
-              background: `radial-gradient(520px 200px at 100% 0%, ${ROSE}55, transparent 65%), linear-gradient(120deg, #3B1230, ${BRAND.navyDeep} 70%)` }}>
-              <svg aria-hidden="true" viewBox="0 0 600 80" preserveAspectRatio="none" style={{ position: "absolute", left: 0, right: 0, bottom: 2, width: "100%", height: 22, opacity: 0.6 }}>
-                <path className="br-pulse" d="M0 50 H170 L188 50 L200 18 L214 72 L228 30 L240 50 H380 L394 50 L404 26 L416 64 L428 50 H600"
-                  fill="none" stroke={ROSE} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
-              </svg>
-              <div style={{ position: "relative", display: "flex", alignItems: "center", gap: SP.md, flexWrap: "wrap" }}>
-                <span className="br-beat" style={{ width: 46, height: 46, borderRadius: 14, display: "grid", placeItems: "center", background: `${ROSE}33`, boxShadow: `0 0 0 1px ${ROSE}66, 0 0 24px ${ROSE}55` }}>
-                  <HeartPulse size={24} color={ROSE} />
-                </span>
-                <div style={{ flex: 1, minWidth: 180 }}>
-                  <div style={{ ...TYPE.h2, fontSize: compact ? 17 : 20, color: "#fff" }}>Patient Experience · {pe.length} project{pe.length === 1 ? "" : "s"}</div>
-                  <div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>Hospital and healthcare projects that improve care, comfort and clinical services for patients</div>
-                </div>
-                <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap" }}>
-                  {[[pe.length, "projects"], [new Set(pe.map(r => r.campus).filter(Boolean)).size, "hospitals / sites"],
-                    [pe.some(r => num(r.budget) !== null) ? pkrM(pe.reduce((t, r) => t + (num(r.budget) || 0), 0)) : "—", "budget invested"]].map(([v, l]) => (
-                    <div key={l} style={{ padding: "6px 12px", borderRadius: R.md, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", minWidth: 0 }}>
-                      <div style={{ ...TYPE.h3, fontSize: 16, color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{v}</div>
-                      <div style={{ ...TYPE.label, fontSize: 8.5, color: "rgba(255,255,255,0.65)" }}>{l}</div>
-                    </div>
-                  ))}
-                  {isPMO && <Button T={T} size="sm" icon={Plus} onClick={() => setEdit({ category: "patient_experience", fiscal_year: fy || "FY 25-26" })}>Add</Button>}
-                </div>
-              </div>
-            </div>
+            <BenefitBanner T={T} cat="patient_experience" compact={compact}
+              title={`Patient Experience · ${pe.length} project${pe.length === 1 ? "" : "s"}`}
+              sub="Hospital and healthcare projects that improve care, comfort and clinical services for patients"
+              stats={[[pe.length, "projects"], [siteN(pe), "hospitals / sites"], [budgetOf(pe), "budget invested"]]}
+              onAdd={isPMO ? () => setEdit({ category: "patient_experience", fiscal_year: fy || "FY 25-26" }) : null} />
             <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: compact ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))" }}>
               {pe.map((r, i) => {
                 const b = num(r.budget);
