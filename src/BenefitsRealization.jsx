@@ -4,7 +4,7 @@ import {
 } from "recharts";
 import {
   Sparkles, TrendingUp, GraduationCap, Wallet, Coins, Percent, Pencil, Plus, Hourglass, ChevronDown, ChevronRight,
-  Building2, PieChart as PieIcon, BarChart3, CalendarRange, RotateCcw, Trash2, FileText,
+  Building2, PieChart as PieIcon, BarChart3, CalendarRange, RotateCcw, Trash2, FileText, HeartPulse, Activity,
 } from "lucide-react";
 import { TYPE, SP, R, MOTION, BRAND, DATA } from "./theme.js";
 import { Button, Input, Select, Modal, Section, SectionTitle, EmptyState, useViewport } from "./ui.jsx";
@@ -21,12 +21,17 @@ import { canEditPmo } from "./headView.js";
    The PMO edits everything (budget, revenue with an as-of date for Revenue entries, description,
    name, ID, campus, FY, category), adds entries, removes (soft) and restores them, and sees the
    "Waiting to close" panel with the reason for each entry not shown yet.
+   24 Nov 2026 (PMO): third benefit, Patient Experience, for the hospital and healthcare projects
+   (category patient_experience; budget and description like Student Experience, no revenue figure).
    ═══════════════════════════════════════════════════════════════════════════ */
 
+const ROSE = "#F472B6";   // categorical rose (light-mode text #B31E63 via textOf)
 const CAT = {
   revenue:            { label: "Revenue",            short: "Revenue",  color: BRAND.gold,  icon: Coins },
   student_experience: { label: "Student Experience", short: "Student exp.", color: DATA.violet, icon: GraduationCap },
+  patient_experience: { label: "Patient Experience", short: "Patient exp.", color: ROSE, icon: HeartPulse },
 };
+const KEYS = Object.keys(CAT);
 const FYS = ["FY 25-26", "FY 26-27"];
 const STAGE = { pdd_not_submitted: "PDD not submitted", identified: "PDD submitted", mt_review: "MT Review", ed_review: "ED Review",
   df_review: "DF Review", approved: "Approved", closed: "Closed" };
@@ -173,6 +178,7 @@ export function BenefitsRealizationPage({ T, session, supa }) {
   const view = useMemo(() => shown.filter(r => (!fy || r.fiscal_year === fy) && (!cat || r.category === cat)), [shown, fy, cat]);
   const rev = view.filter(r => r.category === "revenue");
   const se = view.filter(r => r.category === "student_experience");
+  const pe = view.filter(r => r.category === "patient_experience");
 
   const k = useMemo(() => {
     const budget = view.reduce((s, r) => s + (num(r.budget) || 0), 0);
@@ -193,12 +199,13 @@ export function BenefitsRealizationPage({ T, session, supa }) {
   const byFy = useMemo(() => FYS.map(y => {
     const list = shown.filter(r => r.fiscal_year === y && (!cat || r.category === cat));
     return { name: y, revenue: list.filter(r => r.category === "revenue").length, student_experience: list.filter(r => r.category === "student_experience").length,
-      budget: list.reduce((s, r) => s + (num(r.budget) || 0), 0) };
+      patient_experience: list.filter(r => r.category === "patient_experience").length, budget: list.reduce((s, r) => s + (num(r.budget) || 0), 0) };
   }), [shown, cat]);
   const byCampus = useMemo(() => {
     const m = new Map();
-    view.forEach(r => { const c = r.campus || "—"; const x = m.get(c) || { name: c, revenue: 0, student_experience: 0 }; x[r.category]++; m.set(c, x); });
-    return [...m.values()].sort((a, b) => (b.revenue + b.student_experience) - (a.revenue + a.student_experience));
+    view.forEach(r => { const c = r.campus || "—"; const x = m.get(c) || { name: c, revenue: 0, student_experience: 0, patient_experience: 0 }; x[r.category]++; m.set(c, x); });
+    const tot = (x) => x.revenue + x.student_experience + x.patient_experience;
+    return [...m.values()].sort((a, b) => tot(b) - tot(a));
   }, [view]);
   const money = useMemo(() => rev.filter(r => num(r.budget) !== null || num(r.revenue) !== null)
     .map(r => ({ name: short(r.project_name, compact ? 17 : 54), full: r.project_name, budget: num(r.budget), revenue: num(r.revenue),
@@ -207,7 +214,7 @@ export function BenefitsRealizationPage({ T, session, supa }) {
   const [hoverSlice, setHoverSlice] = useState(null);
   const CH = 270;   // one height for the three small charts, so their cards line up
   // Stack total for a bar label (recharts hands the row either flat or under payload).
-  const totalOf = (e) => { const d = e?.payload || e || {}; return (d.revenue || 0) + (d.student_experience || 0) || ""; };
+  const totalOf = (e) => { const d = e?.payload || e || {}; return (d.revenue || 0) + (d.student_experience || 0) + (d.patient_experience || 0) || ""; };
 
   if (rows === null) return <div style={{ flex: 1, padding: SP.xl, color: T.muted, fontSize: 13 }}>Loading Benefits Realization…</div>;
 
@@ -248,10 +255,14 @@ export function BenefitsRealizationPage({ T, session, supa }) {
       <style>{`
         @keyframes brRise { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
         @keyframes brGlow { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+        @keyframes brPulse { from { stroke-dashoffset: 900 } to { stroke-dashoffset: 0 } }
+        @keyframes brBeat { 0%,100% { transform: scale(1) } 12% { transform: scale(1.12) } 24% { transform: scale(1) } 36% { transform: scale(1.07) } 48% { transform: scale(1) } }
+        .br-pulse { stroke-dasharray: 900; animation: brPulse 3.2s linear infinite }
+        .br-beat { animation: brBeat 2.4s ease-in-out infinite }
         .br-rise { animation: brRise 620ms cubic-bezier(.2,.7,.2,1) both }
         .br-card { transition: transform ${MOTION.fast}, box-shadow ${MOTION.fast}, border-color ${MOTION.fast} }
         .br-card:hover { transform: translateY(-2px); box-shadow: ${T.shadowLg}; }
-        @media (prefers-reduced-motion: reduce) { .br-rise, .br-glow { animation: none !important } .br-card:hover { transform: none } }
+        @media (prefers-reduced-motion: reduce) { .br-rise, .br-glow, .br-pulse, .br-beat { animation: none !important } .br-pulse { stroke-dasharray: none } .br-card:hover { transform: none } }
       `}</style>
 
       {/* Hero */}
@@ -271,17 +282,17 @@ export function BenefitsRealizationPage({ T, session, supa }) {
               <CountUp value={view.length} ms={900} format={(v) => Math.round(v)} /> completed project{view.length === 1 ? "" : "s"} expected to deliver benefits
             </div>
             <div style={{ ...TYPE.bodySm, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>
-              {rev.length ? `Revenue reported for ${k.withRev} of ${rev.length} revenue project${rev.length === 1 ? "" : "s"}` : "No revenue projects"} · {se.length} aimed at the student experience{isPMO && waiting.length ? ` · ${waiting.length} more on the list once they close` : ""}
+              {rev.length ? `Revenue reported for ${k.withRev} of ${rev.length} revenue project${rev.length === 1 ? "" : "s"}` : "No revenue projects"} · {se.length} aimed at the student experience · {pe.length} at the patient experience{isPMO && waiting.length ? ` · ${waiting.length} more on the list once they close` : ""}
             </div>
           </div>
           <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap" }}>
             <Seg T={T} value={fy} set={setFy} items={[["", "Both years"], ...FYS.map(y => [y, y])]} />
-            <Seg T={T} value={cat} set={setCat} items={[["", "All"], ["revenue", "Revenue", BRAND.gold], ["student_experience", "Student Experience", DATA.violet]]} />
+            <Seg T={T} value={cat} set={setCat} items={[["", "All"], ["revenue", "Revenue", BRAND.gold], ["student_experience", "Student Experience", DATA.violet], ["patient_experience", "Patient Experience", ROSE]]} />
           </div>
         </div>
         <div style={{ position: "relative", display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "repeat(4, minmax(0,1fr))", gap: compact ? SP.sm : SP.md, marginTop: SP.lg }}>
-          <Kpi T={T} compact={compact} i={0} icon={Sparkles} color={BRAND.gold} label="Projects completed" value={<CountUp value={view.length} ms={900} format={(v) => Math.round(v)} />} sub={`expected benefit: ${rev.length} revenue · ${se.length} student exp.`}
-            meter={view.length ? [{ v: rev.length / view.length, c: BRAND.gold }, { v: se.length / view.length, c: DATA.violet }] : null} />
+          <Kpi T={T} compact={compact} i={0} icon={Sparkles} color={BRAND.gold} label="Projects completed" value={<CountUp value={view.length} ms={900} format={(v) => Math.round(v)} />} sub={`${rev.length} revenue · ${se.length} student · ${pe.length} patient`}
+            meter={view.length ? [{ v: rev.length / view.length, c: BRAND.gold }, { v: se.length / view.length, c: DATA.violet }, { v: pe.length / view.length, c: ROSE }] : null} />
           <Kpi T={T} compact={compact} i={1} icon={Wallet} color={BRAND.blueBright} label="Budget invested" value={k.withBudget ? <CountUp value={k.budget} format={pkrM} /> : "—"}
             sub={k.withBudget === view.length ? "all budgets entered" : `${k.withBudget} of ${view.length} budgets entered`}
             meter={view.length ? [{ v: k.withBudget / view.length, c: BRAND.blueBright }] : null} />
@@ -349,10 +360,11 @@ export function BenefitsRealizationPage({ T, session, supa }) {
                   <XAxis type="number" allowDecimals={false} tick={axis(T)} tickLine={false} axisLine={{ stroke: T.border }} />
                   <YAxis type="category" dataKey="name" tick={{ ...axis(T), fontSize: 11, fill: T.textSoft }} tickLine={false} axisLine={false} width={compact ? 70 : 96} />
                   <Tooltip cursor={{ fill: T.rowHover }} content={(p) => <Tip {...p} T={T} fmtV={(v) => `${v} project${v === 1 ? "" : "s"}`} />} />
-                  <Bar dataKey="revenue" name="Revenue" stackId="c" fill={BRAND.gold} {...A(200, 900)} />
-                  <Bar dataKey="student_experience" name="Student Experience" stackId="c" fill={DATA.violet} radius={[0, 5, 5, 0]} {...A(600, 900)}>
-                    <LabelList position="right" valueAccessor={totalOf} style={{ ...axis(T), fontWeight: 700, fill: T.textSoft }} />
-                  </Bar>
+                  {KEYS.filter(c => !cat || cat === c).map((c, j, arr) => (
+                    <Bar key={c} dataKey={c} name={CAT[c].label} stackId="c" fill={CAT[c].color} radius={j === arr.length - 1 ? [0, 5, 5, 0] : 0} {...A(200 + j * 350, 900)}>
+                      {j === arr.length - 1 && <LabelList position="right" valueAccessor={totalOf} style={{ ...axis(T), fontWeight: 700, fill: T.textSoft }} />}
+                    </Bar>
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>, { "data-chart": "campus" })}
@@ -369,18 +381,17 @@ export function BenefitsRealizationPage({ T, session, supa }) {
                     return <Tip {...p} T={T} fmtV={(v) => `${v} project${v === 1 ? "" : "s"}`} foot={d ? (d.budget ? `Budget ${pkrM(d.budget)}` : "Budgets not entered") : null} />;
                   }} />
                   <Legend wrapperStyle={{ fontSize: 11, fontFamily: TYPE.body.fontFamily }} formatter={(v) => <span style={{ color: T.textSoft }}>{v}</span>} />
-                  {(!cat || cat === "revenue") && <Bar dataKey="revenue" name="Revenue" stackId="f" fill={BRAND.gold} {...A(200, 900)} radius={cat === "revenue" ? [6, 6, 0, 0] : 0}>
-                    {cat === "revenue" && <LabelList position="top" valueAccessor={totalOf} style={{ ...axis(T), fontSize: 12, fontWeight: 800, fill: T.text }} />}
-                  </Bar>}
-                  {(!cat || cat === "student_experience") && <Bar dataKey="student_experience" name="Student Experience" stackId="f" fill={DATA.violet} radius={[6, 6, 0, 0]} {...A(600, 900)}>
-                    <LabelList position="top" valueAccessor={totalOf} style={{ ...axis(T), fontSize: 12, fontWeight: 800, fill: T.text }} />
-                  </Bar>}
+                  {KEYS.filter(c => !cat || cat === c).map((c, j, arr) => (
+                    <Bar key={c} dataKey={c} name={CAT[c].label} stackId="f" fill={CAT[c].color} radius={j === arr.length - 1 ? [6, 6, 0, 0] : 0} {...A(200 + j * 350, 900)}>
+                      {j === arr.length - 1 && <LabelList position="top" valueAccessor={totalOf} style={{ ...axis(T), fontSize: 12, fontWeight: 800, fill: T.text }} />}
+                    </Bar>
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>, { "data-chart": "years" })}
         </div>
 
-        {card(BRAND.blueBright, BarChart3, "Revenue against budget",
+        {(!cat || cat === "revenue") && card(BRAND.blueBright, BarChart3, "Revenue against budget",
           `Each revenue project: budget invested and revenue generated${rev.length ? ` · revenue reported for ${k.withRev} of ${rev.length}` : ""}`,
           money.length ? (
             <div style={{ height: Math.max(200, money.length * 40 + 50) }}>
@@ -494,6 +505,68 @@ export function BenefitsRealizationPage({ T, session, supa }) {
             </div>
           </Section>
         )}
+
+        {/* Patient Experience projects (24 Nov 2026) */}
+        {pe.length > 0 && (
+          <Section T={T} tone={ROSE} pad={compact ? SP.md : SP.lg} data-br="patient">
+            <div style={{ position: "relative", overflow: "hidden", borderRadius: R.lg, margin: compact ? `-${SP.xs}px 0 ${SP.md}px` : `0 0 ${SP.md}px`,
+              padding: compact ? `${SP.md}px ${SP.md}px ${SP.md + 18}px` : `${SP.md}px ${SP.lg}px ${SP.md + 18}px`, color: "#fff",
+              background: `radial-gradient(520px 200px at 100% 0%, ${ROSE}55, transparent 65%), linear-gradient(120deg, #3B1230, ${BRAND.navyDeep} 70%)` }}>
+              <svg aria-hidden="true" viewBox="0 0 600 80" preserveAspectRatio="none" style={{ position: "absolute", left: 0, right: 0, bottom: 2, width: "100%", height: 22, opacity: 0.6 }}>
+                <path className="br-pulse" d="M0 50 H170 L188 50 L200 18 L214 72 L228 30 L240 50 H380 L394 50 L404 26 L416 64 L428 50 H600"
+                  fill="none" stroke={ROSE} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
+              </svg>
+              <div style={{ position: "relative", display: "flex", alignItems: "center", gap: SP.md, flexWrap: "wrap" }}>
+                <span className="br-beat" style={{ width: 46, height: 46, borderRadius: 14, display: "grid", placeItems: "center", background: `${ROSE}33`, boxShadow: `0 0 0 1px ${ROSE}66, 0 0 24px ${ROSE}55` }}>
+                  <HeartPulse size={24} color={ROSE} />
+                </span>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ ...TYPE.h2, fontSize: compact ? 17 : 20, color: "#fff" }}>Patient Experience · {pe.length} project{pe.length === 1 ? "" : "s"}</div>
+                  <div style={{ ...TYPE.caption, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>Hospital and healthcare projects that improve care, comfort and clinical services for patients</div>
+                </div>
+                <div style={{ display: "flex", gap: SP.sm, flexWrap: "wrap" }}>
+                  {[[pe.length, "projects"], [new Set(pe.map(r => r.campus).filter(Boolean)).size, "hospitals / sites"],
+                    [pe.some(r => num(r.budget) !== null) ? pkrM(pe.reduce((t, r) => t + (num(r.budget) || 0), 0)) : "—", "budget invested"]].map(([v, l]) => (
+                    <div key={l} style={{ padding: "6px 12px", borderRadius: R.md, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", minWidth: 0 }}>
+                      <div style={{ ...TYPE.h3, fontSize: 16, color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{v}</div>
+                      <div style={{ ...TYPE.label, fontSize: 8.5, color: "rgba(255,255,255,0.65)" }}>{l}</div>
+                    </div>
+                  ))}
+                  {isPMO && <Button T={T} size="sm" icon={Plus} onClick={() => setEdit({ category: "patient_experience", fiscal_year: fy || "FY 25-26" })}>Add</Button>}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: compact ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))" }}>
+              {pe.map((r, i) => {
+                const b = num(r.budget);
+                return (
+                  <div key={r.id} data-br-card={r.project_code} className="br-card br-rise pmo-focusable" {...cardProps(r)} style={{ animationDelay: `${Math.min(i, 10) * 50}ms`, position: "relative", overflow: "hidden", cursor: "pointer",
+                    padding: SP.md, borderRadius: R.lg, minWidth: 0, border: `1px solid ${ROSE}45`, borderLeft: `3px solid ${ROSE}`,
+                    background: `linear-gradient(160deg, ${ROSE}1a, ${T.surface} 58%)` }}>
+                    <HeartPulse aria-hidden="true" size={88} color={ROSE} style={{ position: "absolute", right: -14, bottom: -20, opacity: 0.09 }} />
+                    <div style={{ display: "flex", gap: SP.sm, alignItems: "flex-start", position: "relative" }}>
+                      <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "grid", placeItems: "center", background: `${ROSE}22`, border: `1px solid ${ROSE}55` }}>
+                        <Activity size={15} color={T.textOf(ROSE)} />
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ ...TYPE.h3, fontSize: 14, color: T.text, lineHeight: 1.3 }}>{r.project_name}</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5, alignItems: "center" }}>
+                          <span style={{ ...TYPE.caption, color: T.dim, fontFamily: "ui-monospace,Consolas,monospace" }}>{r.project_code}</span>
+                          <Pill T={T} c={BRAND.blueBright}>{r.fiscal_year}</Pill>{r.campus && <Pill T={T} c={ROSE}>{r.campus}</Pill>}
+                        </div>
+                      </div>
+                      {editBtn(r)}
+                    </div>
+                    <div style={{ marginTop: SP.md, ...TYPE.caption, color: T.muted, position: "relative" }}>
+                      Budget <b style={{ color: T.text, fontVariantNumeric: "tabular-nums" }}>{b !== null ? `PKR ${fmt(b)}` : blank("not entered")}</b>
+                    </div>
+                    {readLink(r, ROSE)}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+        )}
       </>)}
 
       {/* PMO only: waiting and removed */}
@@ -555,14 +628,15 @@ export function BenefitsRealizationPage({ T, session, supa }) {
 // ─── Read one entry (everyone who sees the page) ─────────────────────────────
 function ReadBenefit({ T, compact, row: r, isPMO, onClose, onEdit }) {
   const isRev = r.category === "revenue";
-  const c = isRev ? BRAND.gold : DATA.violet;
+  const meta = CAT[r.category] || CAT.student_experience;
+  const c = meta.color;
   const b = num(r.budget), v = num(r.revenue), roi = v !== null && b > 0 ? v / b : null;
   const tiles = isRev
     ? [["Budget", b !== null ? `PKR ${fmt(b)}` : "Not entered"], ["Revenue", v !== null ? `PKR ${fmt(v)}` : "Not reported"], ["Return", roi !== null ? `${roi.toFixed(2)}×` : "—"]]
     : [["Budget", b !== null ? `PKR ${fmt(b)}` : "Not entered"]];
   return (
-    <Modal T={T} isMobile={compact} onClose={onClose} icon={isRev ? Coins : GraduationCap} width={640}
-      title={r.project_name} sub={[r.project_code, r.fiscal_year, r.campus, CAT[r.category].label].filter(Boolean).join(" · ")}
+    <Modal T={T} isMobile={compact} onClose={onClose} icon={meta.icon} width={640}
+      title={r.project_name} sub={[r.project_code, r.fiscal_year, r.campus, meta.label].filter(Boolean).join(" · ")}
       footer={<div style={{ display: "flex", gap: SP.sm, justifyContent: "flex-end", width: "100%" }}>
         {isPMO && <Button T={T} icon={Pencil} onClick={onEdit}>Edit</Button>}
         <Button T={T} variant="primary" onClick={onClose}>Close</Button>
@@ -577,7 +651,7 @@ function ReadBenefit({ T, compact, row: r, isPMO, onClose, onEdit }) {
           ))}
         </div>
         {isRev && v !== null && r.revenue_as_of && <div style={{ ...TYPE.caption, color: T.dim, marginTop: 6 }}>Revenue as of {fmtDay(r.revenue_as_of)}</div>}
-        <div style={{ ...TYPE.label, fontSize: 9.5, color: T.dim, marginTop: SP.lg }}>{isRev ? "How it generates revenue" : "How students benefit"}</div>
+        <div style={{ ...TYPE.label, fontSize: 9.5, color: T.dim, marginTop: SP.lg }}>{isRev ? "How it generates revenue" : r.category === "patient_experience" ? "How patients benefit" : "How students benefit"}</div>
         <div style={{ ...TYPE.body, fontSize: 14, lineHeight: 1.6, color: r.description ? T.text : T.dim, fontStyle: r.description ? "normal" : "italic",
           whiteSpace: "pre-wrap", marginTop: 6 }}>{r.description || "No description yet."}</div>
       </div>
@@ -630,7 +704,7 @@ function EditBenefit({ T, compact, row, supa, session, onClose, onSaved }) {
     color: T.text, fontSize: 13, fontFamily: TYPE.body.fontFamily, outline: "none" };
 
   return (
-    <Modal T={T} isMobile={compact} onClose={busy ? undefined : onClose} icon={isRev ? Coins : GraduationCap} width={600}
+    <Modal T={T} isMobile={compact} onClose={busy ? undefined : onClose} icon={(CAT[f.category] || CAT.revenue).icon} width={600}
       title={isNew ? "Add a benefit entry" : "Edit benefit entry"} sub={isNew ? "Benefits Realization" : row.project_name}
       footer={
         <div style={{ display: "flex", gap: SP.sm, alignItems: "center", width: "100%", flexWrap: "wrap" }}>
@@ -643,7 +717,7 @@ function EditBenefit({ T, compact, row, supa, session, onClose, onSaved }) {
       <div data-br-edit style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr 1fr", gap: SP.md }}>
         <L T={T} label="Benefit">
           <select value={f.category} onChange={e => set("category", e.target.value)} style={box} aria-label="Benefit">
-            <option value="revenue">Revenue</option><option value="student_experience">Student Experience</option>
+            <option value="revenue">Revenue</option><option value="student_experience">Student Experience</option><option value="patient_experience">Patient Experience</option>
           </select>
         </L>
         <L T={T} label="Fiscal year">
@@ -665,9 +739,9 @@ function EditBenefit({ T, compact, row, supa, session, onClose, onSaved }) {
           </L>
           <L T={T} label="Revenue as of"><input type="date" value={f.revenue_as_of} onChange={e => set("revenue_as_of", e.target.value)} style={box} /></L>
         </> : <div />}
-        <L T={T} label={isRev ? "How it generates revenue" : "How students benefit"} wide>
+        <L T={T} label={isRev ? "How it generates revenue" : f.category === "patient_experience" ? "How patients benefit" : "How students benefit"} wide>
           <textarea value={f.description} onChange={e => set("description", e.target.value)} rows={5} style={{ ...box, resize: "vertical", lineHeight: 1.45 }}
-            placeholder={isRev ? "e.g. New MS programme: 40 students enrolled in the first intake…" : "e.g. 600 students now use the upgraded lab every week…"} />
+            placeholder={isRev ? "e.g. New MS programme: 40 students enrolled in the first intake…" : f.category === "patient_experience" ? "e.g. New ward beds cut the waiting time for admission from 3 days to 1…" : "e.g. 600 students now use the upgraded lab every week…"} />
         </L>
       </div>
     </Modal>

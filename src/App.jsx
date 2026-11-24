@@ -12153,7 +12153,7 @@ const PAGE_TITLES = {
   perf: { title:"Performance",     subtitle:"EVM analysis and schedule tracking" },
   schedule: { title:"Timeline & Schedule", subtitle:"Planned and actual dates of the FY 2026-27 projects" },
   review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
-  benefits: { title:"Benefits Realization", subtitle:"Revenue and student experience from completed FY 25-26 and FY 26-27 projects" },
+  benefits: { title:"Benefits Realization", subtitle:"Revenue, student experience and patient experience from completed FY 25-26 and FY 26-27 projects" },
   goals: { title:"Achievements/Goals", subtitle:"What the PMO has achieved, and the team's goals and tasks" },
   inventory: { title:"Inventory", subtitle:"Items procured from FY 25-26 till present \u00b7 SAP ME2J" },
   cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
