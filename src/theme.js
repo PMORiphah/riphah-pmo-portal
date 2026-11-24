@@ -36,6 +36,11 @@ export const DATA = {
   violet:    "#8B7FD9",   // categorical distinction only
   cyan:      "#2BD4D4",
 };
+// Optional themes (24 Nov 2026, /preview/ only): src/themeBoot.js puts the chosen theme in window.__PMO_THEME__
+// before this module runs. It may replace the data colours, fonts, type tweaks, radii and the whole token set.
+// Without a theme nothing below changes.
+const __TH = (typeof window !== "undefined" && window.__PMO_THEME__) || null;
+if (__TH && __TH.data) Object.assign(DATA, __TH.data);
 
 // Text-safe variants. The palette above is tuned for dark surfaces; measured on
 // white, every one of those hues falls below the 4.5:1 WCAG AA floor for text
@@ -47,6 +52,7 @@ export const DATA_TEXT_LIGHT = {
   positive:"#126A5B", info:"#1A5F99", warning:"#82560F", danger:"#B3112F",
   neutral:"#485F77", violet:"#5846C8", cyan:"#166B6B",
 };
+if (__TH && __TH.dataText) Object.assign(DATA_TEXT_LIGHT, __TH.dataText);
 
 // Ordered ramp for categorical series (segments, organisations) so charts pick
 // colours deterministically instead of each chart choosing its own palette.
@@ -68,6 +74,7 @@ export const FONT = {
   body:    "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
   mono:    "'IBM Plex Mono', ui-monospace, monospace",
 };
+if (__TH && __TH.font) Object.assign(FONT, __TH.font);
 
 // Every size/weight/spacing combination the product is allowed to use.
 export const TYPE = {
@@ -398,6 +405,13 @@ export function seriesColours(n, dark = true) {
 
 export const DK = { ...DARK,  ...BRAND, ...DATA, ...legacy(DARK),  TYPE, SP, R, MOTION, FONT };
 export const LT = { ...LIGHT, ...BRAND, ...DATA, ...legacy(LIGHT), TYPE, SP, R, MOTION, FONT };
+// A theme replaces both token sets (the sun/moon toggle is hidden while a theme is on).
+if (__TH && __TH.tokens) {
+  const t = { ...(__TH.mode === "light" ? LIGHT : DARK), mode: __TH.mode, ...__TH.tokens };
+  Object.assign(DK, t, legacy(t)); Object.assign(LT, t, legacy(t));
+}
+if (__TH && __TH.type) for (const k in __TH.type) if (TYPE[k]) Object.assign(TYPE[k], __TH.type[k]);
+if (__TH && __TH.r) Object.assign(R, __TH.r);
 
 export const getTheme = (dark) => (dark ? DK : LT);
 

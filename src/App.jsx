@@ -113,6 +113,8 @@ import {
 import { Bar, Scatter } from "react-chartjs-2";
 import { nameInitials } from "./nameInitials.js";
 import { canEditPmo, isHeadView } from "./headView.js";
+import { THEMES_ON, activeTheme } from "./themeBoot.js";
+import ThemeChooser from "./ThemeChooser.jsx";
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
 // Settings rows written before the save path was fixed contain a JSON string
@@ -758,7 +760,7 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
   };
 
   const panel = (
-    <div style={{
+    <div data-sidebar="" style={{
       width:W, flexShrink:0, display:"flex", flexDirection:"column",
       background:T.sidebar,
       borderRight:`1px solid ${T.sidebarBorder}`,
@@ -767,7 +769,7 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
       height:"100%",
     }}>
       {/* Institutional arch, anchored at the base — deliberately almost invisible */}
-      <svg width="220" height="240" viewBox="0 0 200 220" aria-hidden="true"
+      <svg data-arch="" width="220" height="240" viewBox="0 0 200 220" aria-hidden="true"
         style={{ position:"absolute", left:-34, bottom:-24, pointerEvents:"none" }}>
         <path d="M0 220 L0 140 Q0 90 55 78 Q50 100 68 118 Q40 126 40 158 L40 220 Z"
           fill={BRAND.gold} opacity={T.mode === "dark" ? 0.05 : 0.09} />
@@ -826,7 +828,7 @@ function Sidebar({ page, setPage, session, getSession, unreadCount = 0, reviewCo
           positioned and pointer-transparent: navigation must never lose space
           to decoration, which is exactly what happened when this was in flow. */}
       {!mini && (
-        <div aria-hidden="true" style={{
+        <div data-ribbon="" aria-hidden="true" style={{
           position:"absolute", left:0, right:0, bottom:64, height:230,
           pointerEvents:"none", zIndex:0, opacity:.9,
         }}>
@@ -1031,7 +1033,7 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
   const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
   const [searchHot, setSearchHot] = useState(false);
   return (
-    <div style={{
+    <div data-topbar="" style={{
       minHeight:62, flexShrink:0, display:"flex", alignItems:"center",
       padding: isCompact ? "0 14px" : "0 24px", gap:14,
       background:T.header,
@@ -1092,8 +1094,9 @@ function TopBar({ T, title, subtitle, dark, setDark, onLogout, isCompact, onMenu
       ))}
       <IconButton T={T} icon={Bell} onClick={onBellClick} badge={unreadCount}
         title={unreadCount > 0 ? `${unreadCount} unread update${unreadCount === 1 ? "" : "s"}` : "Updates"} />
-      <IconButton T={T} data-tour="theme-toggle" icon={dark ? Sun : Moon} onClick={() => setDark(d => !d)}
-        title={dark ? "Switch to light mode" : "Switch to dark mode"} />
+      {THEMES_ON && <ThemeChooser T={T} isCompact={isCompact} />}
+      {!activeTheme() && <IconButton T={T} data-tour="theme-toggle" icon={dark ? Sun : Moon} onClick={() => setDark(d => !d)}
+        title={dark ? "Switch to light mode" : "Switch to dark mode"} />}
       {isCompact
         ? <IconButton T={T} icon={LogOut} onClick={onLogout} title="Sign out" />
         : <Button T={T} variant="ghost" icon={LogOut} onClick={onLogout}>Sign out</Button>}
@@ -11696,7 +11699,7 @@ function Login({ T, dark, onLogin }) {
 
   // ── Main login screen ──────────────────────────────────────────────────────
   return (
-    <div ref={parallax} className={success ? "pmo-signin-out" : ""}
+    <div ref={parallax} data-login="" className={success ? "pmo-signin-out" : ""}
       style={{ height: vpL.width < 900 ? "auto" : "100vh", minHeight:"100vh",
         display:"flex", flexDirection: vpL.width < 900 ? "column" : "row",
         position:"relative", overflow: vpL.width < 900 ? "visible" : "hidden",

@@ -1,3 +1,5 @@
+// Optional themes (preview only) must be in place before App and theme.js load.
+import './themeBoot.js'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
