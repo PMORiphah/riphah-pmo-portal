@@ -336,8 +336,9 @@ const NAV = [
   { id:"team", Icon:Users,           label:"Team & About" },
 ];
 const PMO_NAV = [
-  // PMO Achievements and PMO Goals (PMO, 12 Nov 2026): achievements the PMO records, and the team task lists.
-  { id:"goals", Icon:Trophy, label:"Achievements/Goals" },
+  // PMO Achievements and PMO Goals: one tab with a switch from 12 Nov 2026, two tabs since 25 Nov 2026 (PMO).
+  { id:"achievements", Icon:Trophy, label:"PMO Achievements" },
+  { id:"goals", Icon:Target, label:"PMO Goals" },
   // New PDDs from the E-PDD portal (PMO). Under Administration since 5 Nov 2026 (PMO), above User Management.
   { id:"review", Icon:ClipboardCheck, label:"PMO Review" },
   { id:"users", Icon:Users,    label:"User Management" },
@@ -8770,11 +8771,16 @@ const BenefitsRealizationPage = lazy(() => import("./BenefitsRealization.jsx").c
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
   return { BenefitsRealizationPage: () => null };
 }).then(m => ({ default: m.BenefitsRealizationPage })));
-// Achievements/Goals (PMO, 12 Nov 2026): loaded only when the page is opened. Reload once on a missing chunk.
-const AchievementsGoalsPage = lazy(() => import("./AchievementsGoals.jsx").catch(() => {
+// PMO Achievements and PMO Goals (PMO; two tabs since 25 Nov 2026): each loaded only when its page is opened.
+// Reload once on a missing chunk.
+const PmoAchievementsPage = lazy(() => import("./PmoAchievements.jsx").catch(() => {
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
-  return { AchievementsGoalsPage: () => null };
-}).then(m => ({ default: m.AchievementsGoalsPage })));
+  return { PmoAchievementsView: () => null };
+}).then(m => ({ default: m.PmoAchievementsView })));
+const PmoGoalsPage = lazy(() => import("./PmoTasks.jsx").catch(() => {
+  try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
+  return { PmoTasksPage: () => null };
+}).then(m => ({ default: m.PmoTasksPage })));
 // Inventory (PMO, 26 Oct 2026): loaded only when the page is opened. Reload once on a missing chunk, as above.
 const InventoryPage = lazy(() => import("./Inventory.jsx").catch(() => {
   try { if (sessionStorage.getItem("pmo-chunk-reload") !== "1") { sessionStorage.setItem("pmo-chunk-reload", "1"); window.location.reload(); } } catch (_) { /* ignore */ }
@@ -12173,7 +12179,8 @@ const PAGE_TITLES = {
   schedule: { title:"Timeline & Schedule", subtitle:"Planned and actual dates of the FY 2026-27 projects" },
   review: { title:"PMO Review", subtitle:"New PDDs from the E-PDD portal, checked every 5 minutes" },
   benefits: { title:"Benefits Realization", subtitle:"Revenue, student experience and patient experience from completed FY 25-26 and FY 26-27 projects" },
-  goals: { title:"Achievements/Goals", subtitle:"What the PMO has achieved, and the team's goals and tasks" },
+  achievements: { title:"PMO Achievements", subtitle:"What the PMO has achieved" },
+  goals: { title:"PMO Goals", subtitle:"The team's goals, tasks and pending PRs" },
   inventory: { title:"Inventory", subtitle:"Items procured from FY 25-26 till present \u00b7 SAP ME2J" },
   cashflow: { title:"Project Cashflows", subtitle:"FY 26-27 monthly spend profile \u00b7 CAPEX including PMDC, with investment shown separately" },
   upd:  { title:"Updates",         subtitle:"Project comments and communications" },
@@ -13476,7 +13483,7 @@ export default function App() {
     // page value can still land here, and Past Projects would have shown an
     // empty list rather than saying anything.
     (page === "review" && session?.role !== "pmo" && !reviewAllowed) ? "proj" :
-    ((page === "cashflow" || page === "inventory" || page === "goals") && session?.role !== "pmo") ? "proj" :
+    ((page === "cashflow" || page === "inventory" || page === "goals" || page === "achievements") && session?.role !== "pmo") ? "proj" :
     (page === "past" && session?.role !== "pmo" && !pastAllowed) ? "proj" :
     (page === "reports" && session?.role !== "pmo" && !reportsAllowed && !reportsPinned) ? "proj" :
     page;
@@ -13699,10 +13706,15 @@ export default function App() {
             <BenefitsRealizationPage T={T} session={session} supa={supa} />
           </Suspense>
         )}
-        {effectivePage === "goals" && (
+        {(effectivePage === "achievements" || effectivePage === "goals") && (
           <Suspense fallback={<div style={{ flex:1 }} />}>
-            <AchievementsGoalsPage T={T} session={session} supa={supa} onOpenProject={openProject}
-              onOpenPast={(id) => { setPastLink({ kind:"project", id }); navigateToPage("past"); }} />
+            <div style={{ flex:1, minHeight:0, display:"flex", flexDirection:"column", background:T.page }}>
+              {effectivePage === "achievements"
+                ? <PmoAchievementsPage T={T} session={session} supa={supa} onOpenProject={openProject}
+                    onOpenPast={(id) => { setPastLink({ kind:"project", id }); navigateToPage("past"); }} />
+                : <PmoGoalsPage T={T} session={session} supa={supa} onOpenProject={openProject}
+                    onOpenPast={(id) => { setPastLink({ kind:"project", id }); navigateToPage("past"); }} />}
+            </div>
           </Suspense>
         )}
         {effectivePage === "inventory" && (
